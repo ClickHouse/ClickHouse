@@ -90,6 +90,8 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"removal_tid",                                 getTransactionIDDataType()},
         {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
         {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
+
+        {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>()},
     }
     )
 {
@@ -98,7 +100,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 void StorageSystemParts::processNextStorage(
     ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
-    using State = IMergeTreeDataPart::State;
+    using State = MergeTreeDataPartState;
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
@@ -193,21 +195,22 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(info.engine);
 
-        if (part->isStoredOnDisk())
+        if (columns_mask[src_index++])
         {
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getDiskName());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getFullPath());
-        }
-        else
-        {
-            if (columns_mask[src_index++])
-                columns[res_index++]->insertDefault();
-            if (columns_mask[src_index++])
+            if (part->isStoredOnDisk())
+                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
+            else
                 columns[res_index++]->insertDefault();
         }
 
+        if (columns_mask[src_index++])
+        {
+            // The full path changes at clean up thread under deleting state, do not read it, avoid the race
+            if (part->isStoredOnDisk() && part_state != State::Deleting)
+                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
+            else
+                columns[res_index++]->insertDefault();
+        }
 
         {
             MinimalisticDataPartChecksums helper;
@@ -305,6 +308,8 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(part->version.creation_csn.load(std::memory_order_relaxed));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->hasLightweightDelete());
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

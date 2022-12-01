@@ -40,7 +40,7 @@ public:
 #ifdef __SSE2__
 protected:
     static constexpr auto n = sizeof(__m128i);
-    const int page_size = ::getPageSize();
+    const Int64 page_size = ::getPageSize();
 
     bool pageSafe(const void * const ptr) const
     {

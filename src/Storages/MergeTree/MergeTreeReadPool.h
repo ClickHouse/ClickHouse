@@ -70,11 +70,16 @@ private:
 
 public:
     MergeTreeReadPool(
-        size_t threads_, size_t sum_marks_, size_t min_marks_for_concurrent_read_,
-        RangesInDataParts && parts_, const MergeTreeData & data_, const StorageSnapshotPtr & storage_snapshot_,
+        size_t threads_,
+        size_t sum_marks_,
+        size_t min_marks_for_concurrent_read_,
+        RangesInDataParts && parts_,
+        const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
-        const Names & column_names_, const Names & virtual_column_names_,
-        const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
+        const Names & column_names_,
+        const Names & virtual_column_names_,
+        const BackoffSettings & backoff_settings_,
+        size_t preferred_block_size_bytes_,
         bool do_not_steal_tasks_ = false);
 
     MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names);
@@ -94,7 +99,6 @@ private:
         size_t threads, size_t sum_marks, std::vector<size_t> per_part_sum_marks,
         const RangesInDataParts & parts, size_t min_marks_for_concurrent_read);
 
-    const MergeTreeData & data;
     StorageSnapshotPtr storage_snapshot;
     const Names column_names;
     const Names virtual_column_names;

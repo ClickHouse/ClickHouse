@@ -14,7 +14,7 @@
 
 namespace std // NOLINT(cert-dcl58-cpp)
 {
-    using namespace experimental::coroutines_v1;
+    using namespace experimental::coroutines_v1; // NOLINT(cert-dcl58-cpp)
 }
 
 #if __has_warning("-Wdeprecated-experimental-coroutine")

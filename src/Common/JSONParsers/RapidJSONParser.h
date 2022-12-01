@@ -1,12 +1,12 @@
 #pragma once
 
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_RAPIDJSON
 #    include <base/types.h>
 #    include <base/defines.h>
 #    include <rapidjson/document.h>
-
+#    include "ElementTypes.h"
 
 namespace DB
 {
@@ -25,6 +25,20 @@ struct RapidJSONParser
     public:
         ALWAYS_INLINE Element() = default;
         ALWAYS_INLINE Element(const rapidjson::Value & value_) : ptr(&value_) {} /// NOLINT
+
+        ALWAYS_INLINE ElementType type() const
+        {
+            switch (ptr->GetType())
+            {
+                case rapidjson::kNumberType: return ptr->IsDouble() ? ElementType::DOUBLE : (ptr->IsUint64() ? ElementType::UINT64 : ElementType::INT64);
+                case rapidjson::kStringType: return ElementType::STRING;
+                case rapidjson::kArrayType: return ElementType::ARRAY;
+                case rapidjson::kObjectType: return ElementType::OBJECT;
+                case rapidjson::kTrueType: return ElementType::BOOL;
+                case rapidjson::kFalseType: return ElementType::BOOL;
+                case rapidjson::kNullType: return ElementType::NULL_VALUE;
+            }
+        }
 
         ALWAYS_INLINE bool isInt64() const { return ptr->IsInt64(); }
         ALWAYS_INLINE bool isUInt64() const { return ptr->IsUint64(); }

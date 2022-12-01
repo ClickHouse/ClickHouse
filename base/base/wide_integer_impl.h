@@ -227,6 +227,8 @@ struct integer<Bits, Signed>::_impl
     template <typename T>
     __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
     {
+        /// NOTE: this can be called with DB::Decimal, and in this case, result
+        /// will be wrong
         if constexpr (std::is_signed_v<T>)
             return static_cast<int64_t>(f);
         else
@@ -453,7 +455,7 @@ private:
             if constexpr (sizeof(T) <= sizeof(base_type))
             {
                 if (0 == idx)
-                    return x;
+                    return static_cast<base_type>(x);
             }
             else if (idx * sizeof(base_type) < sizeof(T))
                 return x >> (idx * base_bits); // & std::numeric_limits<base_type>::max()
@@ -1239,13 +1241,13 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator double() const noexcept
 {
-    return static_cast<long double>(*this);
+    return static_cast<double>(static_cast<long double>(*this));
 }
 
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator float() const noexcept
 {
-    return static_cast<long double>(*this);
+    return static_cast<float>(static_cast<long double>(*this));
 }
 
 // Unary operators

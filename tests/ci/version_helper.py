@@ -20,7 +20,7 @@ const char * auto_contributors[] {{
 
 VERSIONS = Dict[str, Union[int, str]]
 
-VERSIONS_TEMPLATE = """# This variables autochanged by release_lib.sh:
+VERSIONS_TEMPLATE = """# This variables autochanged by tests/ci/version_helper.py:
 
 # NOTE: has nothing common with DBMS_TCP_PROTOCOL_VERSION,
 # only DBMS_TCP_PROTOCOL_VERSION should be incremented on protocol changes.
@@ -344,7 +344,7 @@ def main():
         update_contributors()
         return
 
-    version = get_version_from_repo(args.version_path)
+    version = get_version_from_repo(args.version_path, Git(True))
 
     if args.update:
         version = version.update(args.update)

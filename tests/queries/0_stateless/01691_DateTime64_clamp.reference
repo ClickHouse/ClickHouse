@@ -10,11 +10,11 @@ SELECT CAST('2020-01-01 00:00:00.3' AS DateTime64(0, 'Asia/Istanbul'));
 2020-01-01 00:00:00
 SELECT toDateTime64(bitShiftLeft(toUInt64(1), 33), 2, 'Asia/Istanbul') FORMAT Null;
 SELECT toTimeZone(toDateTime(-2., 2), 'Asia/Istanbul');
-1970-01-01 02:00:00.00
+1970-01-01 01:59:58.00
 SELECT toDateTime64(-2., 2, 'Asia/Istanbul');
-1970-01-01 02:00:00.00
+1970-01-01 01:59:58.00
 SELECT toDateTime64(toFloat32(bitShiftLeft(toUInt64(1),33)), 2, 'Asia/Istanbul');
-2106-02-07 09:28:16.00
+2242-03-16 15:56:32.00
 SELECT toDateTime64(toFloat64(bitShiftLeft(toUInt64(1),33)), 2, 'Asia/Istanbul') FORMAT Null;
 -- These are outsize of extended range and hence clamped
 SELECT toDateTime64(-1 * bitShiftLeft(toUInt64(1), 35), 2, 'Asia/Istanbul');

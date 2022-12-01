@@ -6,7 +6,7 @@
 #include "Coordination/KeeperStorage.h"
 #include "Core/Defines.h"
 #include "IO/WriteHelpers.h"
-#include "config_core.h"
+#include "config.h"
 
 #if USE_NURAFT
 #include <Poco/ConsoleChannel.h>
@@ -137,7 +137,7 @@ struct SimpliestRaftServer
         if (!raft_instance)
         {
             std::cerr << "Failed to initialize launcher" << std::endl;
-            exit(-1);
+            _exit(1);
         }
 
         std::cout << "init Raft instance " << server_id;
@@ -941,7 +941,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_EQ(itr->active_in_map, true);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
-    for (size_t i = 0; i < 5; ++i)
+    for (int i = 0; i < 5; ++i)
     {
         EXPECT_TRUE(map_snp.insert("/hello" + std::to_string(i), i).second);
     }
@@ -1318,7 +1318,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context, nullptr);
     state_machine->init();
     DB::KeeperLogStore changelog("./logs", settings->rotate_log_storage_interval, true, enable_compression);
     changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
@@ -1339,7 +1339,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
             nuraft::async_result<bool>::handler_type when_done = [&snapshot_created] (bool & ret, nuraft::ptr<std::exception> &/*exception*/)
             {
                 snapshot_created = ret;
-                std::cerr << "Snapshot finised\n";
+                std::cerr << "Snapshot finished\n";
             };
 
             state_machine->create_snapshot(s, when_done);
@@ -1359,7 +1359,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     }
 
     SnapshotsQueue snapshots_queue1{1};
-    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, "./snapshots", settings, keeper_context);
+    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, "./snapshots", settings, keeper_context, nullptr);
     restore_machine->init();
     EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
 
@@ -1471,7 +1471,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context, nullptr);
     state_machine->init();
 
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
@@ -1982,7 +1982,7 @@ TEST_P(CoordinationTest, TestListRequestTypes)
 
     KeeperStorage storage{500, "", keeper_context};
 
-    int64_t zxid = 0;
+    int32_t zxid = 0;
 
     static constexpr std::string_view test_path = "/list_request_type/node";
 
@@ -2139,6 +2139,38 @@ TEST_P(CoordinationTest, TestCurrentApiVersion)
     DB::ReadBufferFromOwnString buf(get_response.data);
     DB::readIntText(keeper_version, buf);
     EXPECT_EQ(keeper_version, static_cast<uint8_t>(current_keeper_api_version));
+}
+
+TEST_P(CoordinationTest, TestSystemNodeModify)
+{
+    using namespace Coordination;
+    int64_t zxid{0};
+
+    // On INIT we abort when a system path is modified
+    keeper_context->server_state = KeeperContext::Phase::RUNNING;
+    KeeperStorage storage{500, "", keeper_context};
+    const auto assert_create = [&](const std::string_view path, const auto expected_code)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        storage.preprocessRequest(request, 0, 0, zxid);
+        auto responses = storage.processRequest(request, 0, zxid);
+        ASSERT_FALSE(responses.empty());
+
+        const auto & response = responses[0];
+        ASSERT_EQ(response.response->error, expected_code) << "Unexpected error for path " << path;
+
+        ++zxid;
+    };
+
+    assert_create("/keeper", Error::ZBADARGUMENTS);
+    assert_create("/keeper/with_child", Error::ZBADARGUMENTS);
+    assert_create(DB::keeper_api_version_path, Error::ZBADARGUMENTS);
+
+    assert_create("/keeper_map", Error::ZOK);
+    assert_create("/keeper1", Error::ZOK);
+    assert_create("/keepe", Error::ZOK);
+    assert_create("/keeper1/test", Error::ZOK);
 }
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL || USE_LIBPQXX
 
@@ -21,7 +21,7 @@ void readFinalFromNestedStorage(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned int num_streams);
+    size_t num_streams);
 
 }
 

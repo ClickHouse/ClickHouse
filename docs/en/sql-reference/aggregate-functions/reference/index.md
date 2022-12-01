@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/
 toc_folder_title: Reference
 sidebar_position: 36
 toc_hidden: true

@@ -7,6 +7,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 
+#include <Disks/ObjectStorages/LocalObjectStorage.h>
+#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
 
 namespace DB
 {
@@ -138,6 +140,11 @@ private:
     const WriteMode mode;
 };
 
+
+DiskMemory::DiskMemory(const String & name_)
+    : IDisk(name_)
+    , disk_path("memory(" + name_ + ')')
+{}
 
 ReservationPtr DiskMemory::reserve(UInt64 /*bytes*/)
 {
@@ -443,17 +450,31 @@ void DiskMemory::truncateFile(const String & path, size_t size)
     file_it->second.data.resize(size);
 }
 
+MetadataStoragePtr DiskMemory::getMetadataStorage()
+{
+    auto object_storage = std::make_shared<LocalObjectStorage>();
+    return std::make_shared<FakeMetadataStorageFromDisk>(
+        std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
+}
+
 
 using DiskMemoryPtr = std::shared_ptr<DiskMemory>;
 
 
-void registerDiskMemory(DiskFactory & factory)
+void registerDiskMemory(DiskFactory & factory, bool global_skip_access_check)
 {
-    auto creator = [](const String & name,
-                      const Poco::Util::AbstractConfiguration & /*config*/,
-                      const String & /*config_prefix*/,
-                      ContextPtr /*context*/,
-                      const DisksMap & /*map*/) -> DiskPtr { return std::make_shared<DiskMemory>(name); };
+    auto creator = [global_skip_access_check](
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        ContextPtr context,
+        const DisksMap & /*map*/) -> DiskPtr
+    {
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        DiskPtr disk = std::make_shared<DiskMemory>(name);
+        disk->startup(context, skip_access_check);
+        return disk;
+    };
     factory.registerDiskType("memory", creator);
 }
 

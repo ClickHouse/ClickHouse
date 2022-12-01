@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/aggregate-functions/reference/quantiletiming
 sidebar_position: 204
 ---
 

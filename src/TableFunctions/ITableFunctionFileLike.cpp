@@ -1,5 +1,5 @@
 #include <TableFunctions/ITableFunctionFileLike.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -32,6 +32,11 @@ void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const Conte
 String ITableFunctionFileLike::getFormatFromFirstArgument()
 {
     return FormatFactory::instance().getFormatFromFileName(filename, true);
+}
+
+bool ITableFunctionFileLike::supportsReadingSubsetOfColumns()
+{
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format);
 }
 
 void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)

@@ -226,7 +226,7 @@ namespace
         void writeInt(NumberType value)
         {
             auto casted = castNumber<Int64>(value);
-            if (casted || !skip_zero_or_empty)
+            if (casted != 0 || !skip_zero_or_empty)
                 writer->writeInt(field_tag, casted);
         }
 
@@ -234,7 +234,7 @@ namespace
         void writeSInt(NumberType value)
         {
             auto casted = castNumber<Int64>(value);
-            if (casted || !skip_zero_or_empty)
+            if (casted != 0 || !skip_zero_or_empty)
                 writer->writeSInt(field_tag, casted);
         }
 
@@ -242,7 +242,7 @@ namespace
         void writeUInt(NumberType value)
         {
             auto casted = castNumber<UInt64>(value);
-            if (casted || !skip_zero_or_empty)
+            if (casted != 0 || !skip_zero_or_empty)
                 writer->writeUInt(field_tag, casted);
         }
 
@@ -250,7 +250,7 @@ namespace
         void writeFixed(NumberType value)
         {
             auto casted = castNumber<FieldType>(value);
-            if (casted || !skip_zero_or_empty)
+            if (casted != 0 || !skip_zero_or_empty)
                 writer->writeFixed(field_tag, casted);
         }
 
@@ -864,7 +864,7 @@ namespace
                 case FieldTypeId::TYPE_ENUM:
                 {
                     write_function = [this](std::string_view str) { writeInt(stringToProtobufEnumValue(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { protobufEnumValueToStringAppend(readInt(), str); };
+                    read_function = [this](PaddedPODArray<UInt8> & str) { protobufEnumValueToStringAppend(static_cast<int>(readInt()), str); };
                     default_function = [this]() -> String { return field_descriptor.default_value_enum()->name(); };
                     break;
                 }
@@ -1029,7 +1029,7 @@ namespace
                 case FieldTypeId::TYPE_ENUM:
                 {
                     this->write_function = [this](NumberType value) { writeInt(enumDataTypeValueToProtobufEnumValue(value)); };
-                    this->read_function = [this]() -> NumberType { return protobufEnumValueToEnumDataTypeValue(readInt()); };
+                    this->read_function = [this]() -> NumberType { return protobufEnumValueToEnumDataTypeValue(static_cast<NumberType>(readInt())); };
                     this->default_function = [this]() -> NumberType { return protobufEnumValueToEnumDataTypeValue(this->field_descriptor.default_value_enum()->number()); };
                     break;
                 }
@@ -1539,10 +1539,13 @@ namespace
                     read_function = [this]() -> UInt32
                     {
                         readStr(text_buffer);
-                        return stringToDateTime(text_buffer, date_lut);
+                        return static_cast<UInt32>(stringToDateTime(text_buffer, date_lut));
                     };
 
-                    default_function = [this]() -> UInt32 { return stringToDateTime(field_descriptor.default_value_string(), date_lut); };
+                    default_function = [this]() -> UInt32
+                    {
+                        return static_cast<UInt32>(stringToDateTime(field_descriptor.default_value_string(), date_lut));
+                    };
                     break;
                 }
 
@@ -3535,7 +3538,7 @@ namespace
             }
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 }
 

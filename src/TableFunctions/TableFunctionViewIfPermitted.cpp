@@ -8,7 +8,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionViewIfPermitted.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include "registerTableFunctions.h"
 
@@ -107,7 +107,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>();
+    factory.registerFunction<TableFunctionViewIfPermitted>({.documentation = {}, .allow_readonly = true});
 }
 
 }

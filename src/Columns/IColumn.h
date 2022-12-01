@@ -7,7 +7,7 @@
 #include <base/StringRef.h>
 #include <Core/Types.h>
 
-#include "config_core.h"
+#include "config.h"
 
 
 class SipHash;
@@ -85,8 +85,8 @@ public:
     [[nodiscard]] virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
 
     /// Creates column with the same type and specified size.
-    /// If size is less current size, then data is cut.
-    /// If size is greater, than default values are appended.
+    /// If size is less than current size, then data is cut.
+    /// If size is greater, then default values are appended.
     [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cloneResized() column {}", getName()); }
 
     /// Returns number of values in column.
@@ -105,13 +105,6 @@ public:
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual StringRef getDataAt(size_t n) const = 0;
-
-    /// Like getData, but has special behavior for columns that contain variable-length strings.
-    /// Returns zero-ending memory chunk (i.e. its size is 1 byte longer).
-    [[nodiscard]] virtual StringRef getDataAtWithTerminatingZero(size_t n) const
-    {
-        return getDataAt(n);
-    }
 
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
@@ -418,8 +411,22 @@ public:
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
-    using ColumnCallback = std::function<void(WrappedPtr&)>;
-    virtual void forEachSubcolumn(ColumnCallback) {}
+
+    using ColumnCallback = std::function<void(const WrappedPtr &)>;
+    virtual void forEachSubcolumn(ColumnCallback) const {}
+
+    using MutableColumnCallback = std::function<void(WrappedPtr &)>;
+    virtual void forEachSubcolumn(MutableColumnCallback callback);
+
+    /// Similar to forEachSubcolumn but it also do recursive calls.
+    /// In recursive calls it's prohibited to replace pointers
+    /// to subcolumns, so we use another callback function.
+
+    using RecursiveColumnCallback = std::function<void(const IColumn &)>;
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
+
+    using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
+    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback);
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
@@ -457,6 +464,16 @@ public:
         return getPtr();
     }
 
+    /// Some columns may require finalization before using of other operations.
+    virtual void finalize() {}
+    virtual bool isFinalized() const { return true; }
+
+    MutablePtr cloneFinalized() const
+    {
+        auto finalized = IColumn::mutate(getPtr());
+        finalized->finalize();
+        return finalized;
+    }
 
     [[nodiscard]] static MutablePtr mutate(Ptr ptr)
     {
@@ -507,7 +524,7 @@ public:
     [[nodiscard]] virtual bool isFixedAndContiguous() const { return false; }
 
     /// If isFixedAndContiguous, returns the underlying data array, otherwise throws an exception.
-    [[nodiscard]] virtual StringRef getRawData() const { throw Exception("Column " + getName() + " is not a contiguous block of memory", ErrorCodes::NOT_IMPLEMENTED); }
+    [[nodiscard]] virtual std::string_view getRawData() const { throw Exception("Column " + getName() + " is not a contiguous block of memory", ErrorCodes::NOT_IMPLEMENTED); }
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
     [[nodiscard]] virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }

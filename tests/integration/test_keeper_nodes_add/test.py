@@ -2,6 +2,7 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -41,9 +42,11 @@ def started_cluster():
 
 def start(node):
     node.start_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node)
 
 
 def test_nodes_add(started_cluster):
+    keeper_utils.wait_until_connected(cluster, node1)
     zk_conn = get_fake_zk(node1)
 
     for i in range(100):
@@ -62,6 +65,7 @@ def test_nodes_add(started_cluster):
     )
     node1.query("SYSTEM RELOAD CONFIG")
     waiter.wait()
+    keeper_utils.wait_until_connected(cluster, node2)
 
     zk_conn2 = get_fake_zk(node2)
 
@@ -93,6 +97,7 @@ def test_nodes_add(started_cluster):
     node2.query("SYSTEM RELOAD CONFIG")
 
     waiter.wait()
+    keeper_utils.wait_until_connected(cluster, node3)
     zk_conn3 = get_fake_zk(node3)
 
     for i in range(100):

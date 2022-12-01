@@ -115,7 +115,13 @@ protected:
     }
 
     /// Minimum amount of memory to allocate for num_elements, including padding.
-    static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; } /// NOLINT
+    static size_t minimum_memory_for_elements(size_t num_elements)
+    {
+        size_t amount;
+        if (__builtin_add_overflow(byte_size(num_elements), pad_left + pad_right, &amount))
+            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        return amount;
+    }
 
     void alloc_for_num_elements(size_t num_elements) /// NOLINT
     {
@@ -225,9 +231,7 @@ public:
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
-#if defined(__clang__)
     ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
-#endif
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
@@ -498,7 +502,7 @@ public:
     template <typename It1, typename It2, typename ... TAllocatorParams>
     void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
-        static_assert(pad_right_ >= 15);
+        static_assert(pad_right_ >= PADDING_FOR_SIMD - 1);
         static_assert(sizeof(T) == sizeof(*from_begin));
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
@@ -774,14 +778,13 @@ void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, P
 
 /// Prevent implicit template instantiation of PODArray for common numeric types
 
-extern template class PODArray<UInt8, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<UInt16, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<UInt32, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<UInt64, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<UInt8, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<UInt16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<UInt32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<UInt64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
 
-extern template class PODArray<Int8, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<Int16, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<Int32, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<Int64, 4096, Allocator<false>, 15, 16>;
-
+extern template class PODArray<Int8, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<Int16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<Int32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<Int64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
 }

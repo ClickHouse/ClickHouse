@@ -17,6 +17,7 @@
 #endif
 #if USE_MYSQL
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Databases/MySQL/ConnectionMySQLSettings.h>
 #endif
 #if USE_NATSIO
 #include <Storages/NATS/NATSSettings.h>
@@ -306,7 +307,8 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
             {
                 const auto header_prefix = headers_prefix + header;
                 configuration.headers.emplace_back(
-                    std::make_pair(headers_config->getString(header_prefix + ".name"), headers_config->getString(header_prefix + ".value")));
+                    headers_config->getString(header_prefix + ".name"),
+                    headers_config->getString(header_prefix + ".value"));
             }
         }
 
@@ -445,7 +447,9 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
                 for (const auto & header : header_keys)
                 {
                     const auto header_prefix = config_prefix + ".headers." + header;
-                    configuration.headers.emplace_back(std::make_pair(config.getString(header_prefix + ".name"), config.getString(header_prefix + ".value")));
+                    configuration.headers.emplace_back(
+                        config.getString(header_prefix + ".name"),
+                        config.getString(header_prefix + ".value"));
                 }
             }
             else
@@ -577,11 +581,16 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
 
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<ConnectionMySQLSettingsTraits> & storage_settings);
+
+template
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
     ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<MySQLSettingsTraits> & settings);
 
 template
 SettingsChanges getSettingsChangesFromConfig(
     const BaseSettings<MySQLSettingsTraits> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
 #endif
 }

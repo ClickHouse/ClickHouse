@@ -1,6 +1,3 @@
-include(configure_config.cmake)
-configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
-
 add_subdirectory(divide)
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
@@ -25,13 +22,21 @@ list (APPEND PUBLIC_LIBS
         ch_contrib::metrohash
         ch_contrib::murmurhash
         ch_contrib::hashidsxx
+        ch_contrib::morton_nd
 )
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
         boost::filesystem
         divide_impl
+        ch_contrib::xxHash
 )
+
+if (TARGET ch_rust::blake3)
+    list (APPEND PUBLIC_LIBS
+        ch_rust::blake3
+    )
+endif()
 
 if (TARGET OpenSSL::Crypto)
     list (APPEND PUBLIC_LIBS OpenSSL::Crypto)
@@ -61,8 +66,6 @@ if (TARGET ch_contrib::base64)
     list (APPEND PRIVATE_LIBS ch_contrib::base64)
 endif()
 
-list (APPEND PRIVATE_LIBS ch_contrib::lz4)
-
 if (ENABLE_NLP)
     list (APPEND PRIVATE_LIBS ch_contrib::cld2)
 endif()
@@ -91,6 +94,11 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_url>)
 
 add_subdirectory(array)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
+
+if (TARGET ch_contrib::datasketches)
+    add_subdirectory(UniqTheta)
+    list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_uniqtheta>)
+endif()
 
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)

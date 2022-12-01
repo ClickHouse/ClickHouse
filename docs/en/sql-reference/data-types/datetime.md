@@ -1,9 +1,10 @@
 ---
+slug: /en/sql-reference/data-types/datetime
 sidebar_position: 48
 sidebar_label: DateTime
 ---
 
-# Datetime
+# DateTime
 
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day.
 

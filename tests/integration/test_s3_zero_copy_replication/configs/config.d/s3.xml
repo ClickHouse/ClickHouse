@@ -1,5 +1,5 @@
 <clickhouse>
-
+    <enable_system_unfreeze>true</enable_system_unfreeze>
     <storage_configuration>
         <disks>
             <s31>

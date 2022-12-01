@@ -63,6 +63,7 @@
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
@@ -114,12 +115,13 @@ namespace ErrorCodes
 
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
-    OpenTelemetrySpanHolder span("InterpreterFactory::get()");
-
     ProfileEvents::increment(ProfileEvents::Query);
 
     if (query->as<ASTSelectQuery>())
     {
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, options, context);
+
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
         return std::make_unique<InterpreterSelectQuery>(query, context, options);
@@ -127,6 +129,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
+
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, options, context);
+
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }
     else if (query->as<ASTSelectIntersectExceptQuery>())
@@ -298,7 +304,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     }
     else if (query->as<ASTCreateFunctionQuery>())
     {
-        return std::make_unique<InterpreterCreateFunctionQuery>(query, context, true /*persist_function*/);
+        return std::make_unique<InterpreterCreateFunctionQuery>(query, context);
     }
     else if (query->as<ASTDropFunctionQuery>())
     {

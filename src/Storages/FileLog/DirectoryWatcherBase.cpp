@@ -70,10 +70,10 @@ void DirectoryWatcherBase::watchFunc()
     while (!stopped)
     {
         const auto & settings = owner.storage.getFileLogSettings();
-        if (poll(&pfd, 1, milliseconds_to_wait) > 0 && pfd.revents & POLLIN)
+        if (poll(&pfd, 1, static_cast<int>(milliseconds_to_wait)) > 0 && pfd.revents & POLLIN)
         {
             milliseconds_to_wait = settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
-            int n = read(fd, buffer.data(), buffer.size());
+            ssize_t n = read(fd, buffer.data(), buffer.size());
             int i = 0;
             if (n > 0)
             {

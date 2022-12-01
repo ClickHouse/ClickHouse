@@ -28,4 +28,5 @@ public:
     }
 
     friend class MemoryTracker;
+    friend class AllocationTrace;
 };

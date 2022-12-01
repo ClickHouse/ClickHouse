@@ -166,7 +166,6 @@ def test_add_key():
                 "bash",
                 "-c",
                 """cat > /etc/clickhouse-server/config.d/storage_policy_{policy_name}.xml << EOF
-<?xml version="1.0"?>
 <clickhouse>
     <storage_configuration>
         <disks>

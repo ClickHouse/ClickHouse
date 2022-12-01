@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/AsynchronousReader.h>

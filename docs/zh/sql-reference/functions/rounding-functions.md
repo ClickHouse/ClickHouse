@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/rounding-functions
+---
 # 取整函数 {#qu-zheng-han-shu}
 
 ## 楼(x\[,N\]) {#floorx-n}
