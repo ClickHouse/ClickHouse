@@ -186,11 +186,11 @@ protected:
     template <typename ... TAllocatorParams>
     void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
-        if (empty())
+        if (unlikely(empty()))
         {
             // The allocated memory should be multiplication of ELEMENT_SIZE to hold the element, otherwise,
             // memory issue such as corruption could appear in edge case.
-            realloc(std::max(integerRoundUp(initial_bytes, ELEMENT_SIZE),
+            alloc(std::max(integerRoundUp(initial_bytes, ELEMENT_SIZE),
                              minimum_memory_for_elements(1)),
                     std::forward<TAllocatorParams>(allocator_params)...);
         }
@@ -437,7 +437,7 @@ public:
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
-        this->c_end += this->byte_size(1);
+        this->c_end += sizeof(T);
     }
 
     /** This method doesn't allow to pass parameters for Allocator,
@@ -450,12 +450,12 @@ public:
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
-        this->c_end += this->byte_size(1);
+        this->c_end += sizeof(T);
     }
 
     void pop_back() /// NOLINT
     {
-        this->c_end -= this->byte_size(1);
+        this->c_end -= sizeof(T);
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
