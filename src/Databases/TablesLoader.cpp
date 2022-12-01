@@ -101,6 +101,7 @@ void TablesLoader::loadTables()
 
     stopwatch.restart();
 
+    buildDependencyGraph();
     logDependencyGraph();
 
     /// Remove tables that do not exist
@@ -120,6 +121,26 @@ void TablesLoader::startupTables()
     /// Startup tables after all tables are loaded. Background tasks (merges, mutations, etc) may slow down data parts loading.
     for (auto & database : databases)
         database.second->startupTables(pool, strictness_mode);
+}
+
+
+void TablesLoader::buildDependencyGraph()
+{
+    for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
+    {
+        TableNamesSet new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
+        if (new_loading_dependencies.empty())
+        {
+            metadata.independent_database_objects.emplace_back(table_name);
+        }
+        else
+        {
+            for (const auto & dependency : new_loading_dependencies)
+                metadata.dependencies_info[dependency].dependent_database_objects.insert(table_name);
+            assert(metadata.dependencies_info[table_name].dependencies.empty());
+            metadata.dependencies_info[table_name].dependencies = std::move(new_loading_dependencies);
+        }
+    }
 }
 
 

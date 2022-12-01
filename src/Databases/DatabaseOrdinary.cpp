@@ -205,21 +205,9 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 }
 
                 QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
-                TableNamesSet loading_dependencies = getLoadingDependenciesFromCreateQuery(getContext(), qualified_name, ast);
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
-                if (loading_dependencies.empty())
-                {
-                    metadata.independent_database_objects.emplace_back(std::move(qualified_name));
-                }
-                else
-                {
-                    for (const auto & dependency : loading_dependencies)
-                        metadata.dependencies_info[dependency].dependent_database_objects.insert(qualified_name);
-                    assert(metadata.dependencies_info[qualified_name].dependencies.empty());
-                    metadata.dependencies_info[qualified_name].dependencies = std::move(loading_dependencies);
-                }
                 metadata.total_dictionaries += create_query->is_dictionary;
             }
         }

@@ -98,6 +98,8 @@ private:
 
     ThreadPool pool;
 
+    void buildDependencyGraph();
+
     void removeUnresolvableDependencies(bool remove_loaded);
 
     void loadTablesInTopologicalOrder(ThreadPool & pool);
