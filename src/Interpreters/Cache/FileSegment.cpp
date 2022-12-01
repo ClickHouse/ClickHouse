@@ -595,8 +595,6 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         case State::DOWNLOADED:
         {
             chassert(getDownloadedSizeUnlocked(segment_lock) == range().size());
-            assert(is_downloaded);
-            assert(!cache_writer);
             break;
         }
         case State::DOWNLOADING:
