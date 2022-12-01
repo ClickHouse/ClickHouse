@@ -91,7 +91,7 @@ size_t FileSegmentRangeWriter::tryWriteImpl(const char * data, size_t size, size
     else
     {
         auto file_segment = *current_file_segment_it;
-        chassert(file_segment->getCurrentWriteOffset() == current_file_segment_write_offset);
+        assert(file_segment->getCurrentWriteOffset() == current_file_segment_write_offset);
 
         if (current_file_segment_write_offset != offset)
         {

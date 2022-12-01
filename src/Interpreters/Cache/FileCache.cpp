@@ -291,7 +291,7 @@ FileSegments FileCache::splitRangeIntoCells(
     const CreateFileSegmentSettings & settings,
     std::lock_guard<std::mutex> & cache_lock)
 {
-    chassert(size > 0);
+    assert(size > 0);
 
     auto current_pos = offset;
     auto end_pos_non_included = offset + size;
@@ -308,12 +308,12 @@ FileSegments FileCache::splitRangeIntoCells(
         auto * cell = addCell(key, current_pos, current_cell_size, state, settings, cache_lock);
         if (cell)
             file_segments.push_back(cell->file_segment);
-        chassert(cell);
+        assert(cell);
 
         current_pos += current_cell_size;
     }
 
-    chassert(file_segments.empty() || offset + size - 1 == file_segments.back()->range().right);
+    assert(file_segments.empty() || offset + size - 1 == file_segments.back()->range().right);
     return file_segments;
 }
 
@@ -363,7 +363,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
             continue;
         }
 
-        chassert(current_pos < segment_range.left);
+        assert(current_pos < segment_range.left);
 
         auto hole_size = segment_range.left - current_pos;
 
@@ -434,7 +434,7 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
     {
         fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */false, settings, cache_lock);
     }
-    chassert(!file_segments.empty());
+    assert(!file_segments.empty());
     return FileSegmentsHolder(std::move(file_segments));
 }
 
@@ -640,7 +640,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
             else
             {
                 size_t cell_size = cell->size();
-                chassert(iter->size() == cell_size);
+                assert(iter->size() == cell_size);
 
                 if (cell->releasable())
                 {
@@ -681,7 +681,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
             remove(file_segment, cache_lock);
         };
 
-        chassert(trash.empty());
+        assert(trash.empty());
         for (auto & cell : trash)
         {
             if (auto file_segment = cell->file_segment)
@@ -719,7 +719,7 @@ bool FileCache::tryReserveForMainList(
 {
     auto removed_size = 0;
     size_t queue_size = main_priority->getElementsNum(cache_lock);
-    chassert(queue_size <= max_element_size);
+    assert(queue_size <= max_element_size);
 
     /// Since space reservation is incremental, cache cell already exists if it's state is EMPTY.
     /// And it cache cell does not exist on startup -- as we first check for space and then add a cell.
@@ -756,7 +756,7 @@ bool FileCache::tryReserveForMainList(
                 key.toString(), offset);
 
         size_t cell_size = cell->size();
-        chassert(it->size() == cell_size);
+        assert(it->size() == cell_size);
 
         /// It is guaranteed that cell is not removed from cache as long as
         /// pointer to corresponding file segment is hold by any other thread.
@@ -797,7 +797,7 @@ bool FileCache::tryReserveForMainList(
 
     /// This case is very unlikely, can happen in case of exception from
     /// file_segment->complete(), which would be a logical error.
-    chassert(trash.empty());
+    assert(trash.empty());
     for (auto & cell : trash)
     {
         if (auto file_segment = cell->file_segment)
@@ -1140,7 +1140,7 @@ void FileCache::reduceSizeToDownloaded(
     cell->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{});
 
-    chassert(file_segment->reserved_size == downloaded_size);
+    assert(file_segment->reserved_size == downloaded_size);
 }
 
 bool FileCache::isLastFileSegmentHolder(
@@ -1285,8 +1285,8 @@ void FileCache::assertCacheCellsCorrectness(
 
         if (file_segment->reserved_size != 0)
         {
-            chassert(cell.queue_iterator);
-            chassert(main_priority->contains(file_segment->key(), file_segment->offset(), cache_lock));
+            assert(cell.queue_iterator);
+            assert(main_priority->contains(file_segment->key(), file_segment->offset(), cache_lock));
         }
     }
 }
@@ -1332,9 +1332,9 @@ void FileCache::assertPriorityCorrectness(std::lock_guard<std::mutex> & cache_lo
         total_size += size;
     }
 
-    chassert(total_size == main_priority->getCacheSize(cache_lock));
-    chassert(main_priority->getCacheSize(cache_lock) <= max_size);
-    chassert(main_priority->getElementsNum(cache_lock) <= max_element_size);
+    assert(total_size == main_priority->getCacheSize(cache_lock));
+    assert(main_priority->getCacheSize(cache_lock) <= max_size);
+    assert(main_priority->getElementsNum(cache_lock) <= max_element_size);
 }
 
 FileCache::QueryContextHolder::QueryContextHolder(

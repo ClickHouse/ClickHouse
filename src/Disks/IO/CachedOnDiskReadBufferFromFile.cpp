@@ -446,8 +446,8 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegmentPtr & file_se
             {
                 read_buffer_for_file_segment->seek(file_offset_of_buffer_end, SEEK_SET);
 
-                chassert(static_cast<size_t>(read_buffer_for_file_segment->getPosition()) == file_offset_of_buffer_end);
-                chassert(static_cast<size_t>(read_buffer_for_file_segment->getFileOffsetOfBufferEnd()) == file_offset_of_buffer_end);
+                assert(static_cast<size_t>(read_buffer_for_file_segment->getPosition()) == file_offset_of_buffer_end);
+                assert(static_cast<size_t>(read_buffer_for_file_segment->getFileOffsetOfBufferEnd()) == file_offset_of_buffer_end);
             }
 
             auto current_write_offset = file_segment->getCurrentWriteOffset();
@@ -885,10 +885,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         }
         else
         {
-            chassert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
+            assert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
         }
 
-        chassert(!implementation_buffer->hasPendingData());
+        assert(!implementation_buffer->hasPendingData());
 #endif
 
         Stopwatch watch(CLOCK_MONOTONIC);
@@ -1059,8 +1059,8 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
         if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
         {
             pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-            chassert(pos >= working_buffer.begin());
-            chassert(pos <= working_buffer.end());
+            assert(pos >= working_buffer.begin());
+            assert(pos <= working_buffer.end());
             return new_pos;
         }
     }
@@ -1071,6 +1071,43 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 
     first_offset = file_offset_of_buffer_end = new_pos;
     resetWorkingBuffer();
+
+    // if (file_segments_holder && current_file_segment_it != file_segments_holder->file_segments.end())
+    // {
+    //      auto & file_segments = file_segments_holder->file_segments;
+    //      LOG_TRACE(
+    //          log,
+    //          "Having {} file segments to read: {}, current offset: {}",
+    //          file_segments_holder->file_segments.size(), file_segments_holder->toString(), file_offset_of_buffer_end);
+
+    //      auto it = std::upper_bound(
+    //          file_segments.begin(),
+    //          file_segments.end(),
+    //          new_pos,
+    //          [](size_t pos, const FileSegmentPtr & file_segment) { return pos < file_segment->range().right; });
+
+    //      if (it != file_segments.end())
+    //      {
+    //          if (it != file_segments.begin() && (*std::prev(it))->range().right == new_pos)
+    //              current_file_segment_it = std::prev(it);
+    //          else
+    //              current_file_segment_it = it;
+
+    //          [[maybe_unused]] const auto & file_segment = *current_file_segment_it;
+    //          assert(file_offset_of_buffer_end <= file_segment->range().right);
+    //          assert(file_offset_of_buffer_end >= file_segment->range().left);
+
+    //          resetWorkingBuffer();
+    //          swap(*implementation_buffer);
+    //          implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
+    //          swap(*implementation_buffer);
+
+    //          LOG_TRACE(log, "Found suitable file segment: {}", file_segment->range().toString());
+
+    //          LOG_TRACE(log, "seek2 Internal buffer size: {}", internal_buffer.size());
+    //          return new_pos;
+    //      }
+    // }
 
     file_segments_holder.reset();
     implementation_buffer.reset();
