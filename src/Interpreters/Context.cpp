@@ -32,6 +32,7 @@
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskDecorator.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
@@ -102,6 +103,7 @@
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <filesystem>
 #include <re2/re2.h>
 
@@ -746,28 +748,65 @@ void Context::setPath(const String & path)
         shared->user_scripts_path = shared->path + "user_scripts/";
 }
 
-VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name, size_t max_size)
+static void setupTmpPath(Poco::Logger * log, const std::string & path)
+try
+{
+    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
+
+    fs::create_directories(path);
+
+    /// Clearing old temporary files.
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
+    {
+        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
+        {
+            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+            fs::remove(it->path());
+        }
+        else
+            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+    }
+}
+catch (...)
+{
+    DB::tryLogCurrentException(log, fmt::format(
+        "Caught exception while setup temporary path: {}. "
+        "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
+}
+
+static VolumePtr createLocalSingleDiskVolume(const std::string & path)
+{
+    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0);
+    VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
+    return volume;
+}
+
+void Context::setTemporaryStoragePath(const String & path, size_t max_size)
+{
+    shared->tmp_path = path;
+    if (!shared->tmp_path.ends_with('/'))
+        shared->tmp_path += '/';
+
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+
+    for (const auto & disk : volume->getDisks())
+    {
+        setupTmpPath(shared->log, disk->getPath());
+    }
+
+    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, nullptr, max_size);
+}
+
+void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
 {
     std::lock_guard lock(shared->storage_policies_mutex);
-    VolumePtr volume;
 
-    if (policy_name.empty())
-    {
-        shared->tmp_path = path;
-        if (!shared->tmp_path.ends_with('/'))
-            shared->tmp_path += '/';
-
-        auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
-    }
-    else
-    {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
-        if (tmp_policy->getVolumes().size() != 1)
-             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
-        volume = tmp_policy->getVolume(0);
-    }
+     StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
+    if (tmp_policy->getVolumes().size() != 1)
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
+    VolumePtr volume = tmp_policy->getVolume(0);
 
     if (volume->getDisks().empty())
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
@@ -789,10 +828,33 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
                 "Disk '{}' ({}) is not local and can't be used for temporary files",
                 disk_ptr->getName(), typeid(*disk_raw_ptr).name());
         }
+
+        setupTmpPath(shared->log, disk->getPath());
     }
 
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
-    return volume;
+    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, nullptr, max_size);
+}
+
+
+void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
+{
+    auto disk_ptr = getDisk(cache_disk_name);
+    if (!disk_ptr)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' is not found", cache_disk_name);
+
+    const auto * disk_object_storage_ptr = dynamic_cast<const DiskObjectStorage *>(disk_ptr.get());
+    if (!disk_object_storage_ptr)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' does not use cache", cache_disk_name);
+
+    auto file_cache = disk_object_storage_ptr->getCache();
+    if (!file_cache)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", file_cache->getBasePath());
+
+    LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
+
+    shared->tmp_path = file_cache->getBasePath();
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 
 void Context::setFlagsPath(const String & path)
