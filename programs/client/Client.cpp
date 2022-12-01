@@ -186,7 +186,7 @@ std::vector<String> Client::loadWarningMessages()
 void Client::loadPasswordComplexityRules()
 {
     /// Older server versions cannot execute the query loading password complexity rules.
-    constexpr UInt64 min_server_revision_to_load_complexity_rules = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
+    constexpr UInt64 min_server_revision_to_load_complexity_rules = DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES;
 
     if (server_revision < min_server_revision_to_load_complexity_rules)
         return;
@@ -318,15 +318,7 @@ try
     if (is_interactive && !config().has("no-warnings"))
         showWarnings();
 
-    /// Load password complexity rules
-    try
-    {
-        loadPasswordComplexityRules();
-    }
-    catch (...)
-    {
-        /// Ignore exception
-    }
+    loadPasswordComplexityRules();
 
     if (is_interactive && !delayed_interactive)
     {
