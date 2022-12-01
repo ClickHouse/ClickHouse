@@ -31,7 +31,7 @@ def test_simple_get(started_cluster):
         """
     )
 
-    assert result.strip() == 'Inspect Browser'
+    assert result.strip() == "Inspect Browser"
 
 
 def test_nested_get(started_cluster):
@@ -43,7 +43,9 @@ def test_nested_get(started_cluster):
         """
     )
 
-    assert result.strip() == "('Chromium 1994','1994 amd64','Google Chrome Chromium 1994')"
+    assert (
+        result.strip() == "('Chromium 1994','1994 amd64','Google Chrome Chromium 1994')"
+    )
 
 
 def test_collecting_get(started_cluster):
@@ -67,7 +69,7 @@ def test_not_found(started_cluster):
         """
     )
 
-    assert result.strip() == '\\N'
+    assert result.strip() == "\\N"
 
 
 def test_not_all_attributes_found(started_cluster):
