@@ -72,12 +72,13 @@ public:
 
         auto c_res = ColumnString::create();
         c_res->reserve(input_rows_count);
-
         const ColumnConst * col_sep = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
         if (!col_sep)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}. Must be a constant String.", 
-                arguments[0].column->getName(), getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}. Must be a constant String.",
+                arguments[0].column->getName(),
+                getName());
         String sep_str = col_sep->getValue<String>();
 
         const size_t num_exprs = arguments.size() - 1;
