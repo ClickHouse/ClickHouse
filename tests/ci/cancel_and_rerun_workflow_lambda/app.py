@@ -13,14 +13,16 @@ import jwt
 import requests  # type: ignore
 import boto3  # type: ignore
 
-PULL_REQUEST_CI = "PullRequestCI"
+
+NEED_RERUN_ON_EDITED = {
+    "PullRequestCI",
+    "DocsCheck",
+}
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
-    PULL_REQUEST_CI,
-    "DocsCheck",
     "DocsReleaseChecks",
     "BackportPR",
-}
+}.union(NEED_RERUN_ON_EDITED)
 
 MAX_RETRY = 5
 
@@ -335,7 +337,7 @@ def main(event):
         most_recent_workflow = workflow_descriptions[-1]
         if (
             most_recent_workflow.status == "completed"
-            and most_recent_workflow.name == PULL_REQUEST_CI
+            and most_recent_workflow.name in NEED_RERUN_ON_EDITED
         ):
             print(
                 "The PR's body is changed and workflow is finished. "
