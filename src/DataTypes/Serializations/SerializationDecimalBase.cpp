@@ -12,14 +12,14 @@ namespace DB
 {
 
 template <typename T>
-void SerializationDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     FieldType x = field.get<DecimalField<T>>();
     writeBinary(x, ostr);
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationDecimalBase<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const FieldType & x = assert_cast<const ColumnType &>(column).getElement(row_num);
     writeBinary(x, ostr);

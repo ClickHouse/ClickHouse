@@ -42,8 +42,8 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         auto serialization = type->getDefaultSerialization();
 
-        serialization->serializeBinary(hyperrectangle[i].left, ostr);
-        serialization->serializeBinary(hyperrectangle[i].right, ostr);
+        serialization->serializeBinary(hyperrectangle[i].left, ostr, {});
+        serialization->serializeBinary(hyperrectangle[i].right, ostr, {});
     }
 }
 

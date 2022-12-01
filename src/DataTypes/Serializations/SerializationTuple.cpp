@@ -29,13 +29,13 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
     return assert_cast<const ColumnTuple &>(column).getColumn(idx);
 }
 
-void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const auto & tuple = field.get<const Tuple &>();
     for (size_t element_index = 0; element_index < elems.size(); ++element_index)
     {
         const auto & serialization = elems[element_index];
-        serialization->serializeBinary(tuple[element_index], ostr);
+        serialization->serializeBinary(tuple[element_index], ostr, settings);
     }
 }
 
@@ -50,12 +50,12 @@ void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr, con
         elems[i]->deserializeBinary(tuple.emplace_back(), istr, settings);
 }
 
-void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     for (size_t element_index = 0; element_index < elems.size(); ++element_index)
     {
         const auto & serialization = elems[element_index];
-        serialization->serializeBinary(extractElementColumn(column, element_index), row_num, ostr);
+        serialization->serializeBinary(extractElementColumn(column, element_index), row_num, ostr, settings);
     }
 }
 

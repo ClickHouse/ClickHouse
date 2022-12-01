@@ -399,7 +399,7 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block &
     HashingWriteBuffer out_hashing(*out);
     for (size_t i = 0; i < value.size(); ++i)
     {
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing);
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing, {});
     }
 
     out_hashing.next();

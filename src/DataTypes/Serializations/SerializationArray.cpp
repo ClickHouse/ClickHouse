@@ -27,13 +27,13 @@ static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
 static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 
 
-void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const Array & a = field.get<const Array &>();
     writeVarUInt(a.size(), ostr);
     for (size_t i = 0; i < a.size(); ++i)
     {
-        nested->serializeBinary(a[i], ostr);
+        nested->serializeBinary(a[i], ostr, settings);
     }
 }
 
@@ -50,7 +50,7 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
 }
 
 
-void SerializationArray::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationArray::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
@@ -63,7 +63,7 @@ void SerializationArray::serializeBinary(const IColumn & column, size_t row_num,
 
     const IColumn & nested_column = column_array.getData();
     for (size_t i = offset; i < next_offset; ++i)
-        nested->serializeBinary(nested_column, i, ostr);
+        nested->serializeBinary(nested_column, i, ostr, settings);
 }
 
 

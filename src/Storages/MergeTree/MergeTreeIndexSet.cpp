@@ -56,11 +56,11 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 
     if (max_rows != 0 && size() > max_rows)
     {
-        size_serialization->serializeBinary(0, ostr);
+        size_serialization->serializeBinary(0, ostr, {});
         return;
     }
 
-    size_serialization->serializeBinary(size(), ostr);
+    size_serialization->serializeBinary(size(), ostr, {});
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {

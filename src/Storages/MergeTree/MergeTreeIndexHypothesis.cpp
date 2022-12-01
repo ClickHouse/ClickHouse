@@ -26,7 +26,7 @@ MergeTreeIndexGranuleHypothesis::MergeTreeIndexGranuleHypothesis(const String & 
 void MergeTreeIndexGranuleHypothesis::serializeBinary(WriteBuffer & ostr) const
 {
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt8>());
-    size_type->getDefaultSerialization()->serializeBinary(static_cast<UInt8>(met), ostr);
+    size_type->getDefaultSerialization()->serializeBinary(static_cast<UInt8>(met), ostr, {});
 }
 
 void MergeTreeIndexGranuleHypothesis::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)

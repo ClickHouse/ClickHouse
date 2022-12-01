@@ -302,9 +302,9 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 
 /// All methods below just wrap nested serialization.
 
-void SerializationSparse::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationSparse::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    nested->serializeBinary(field, ostr);
+    nested->serializeBinary(field, ostr, settings);
 }
 
 void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
@@ -312,10 +312,10 @@ void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr, co
     nested->deserializeBinary(field, istr, settings);
 }
 
-void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
-    nested->serializeBinary(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr);
+    nested->serializeBinary(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
 void SerializationSparse::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const

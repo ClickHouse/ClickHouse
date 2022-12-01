@@ -20,8 +20,8 @@ public:
     SerializationDecimalBase(UInt32 precision_, UInt32 scale_)
         : precision(precision_), scale(scale_) {}
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;

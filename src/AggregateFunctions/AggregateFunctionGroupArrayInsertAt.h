@@ -160,7 +160,7 @@ public:
             else
             {
                 writeBinary(UInt8(0), buf);
-                serialization->serializeBinary(elem, buf);
+                serialization->serializeBinary(elem, buf, {});
             }
         }
     }

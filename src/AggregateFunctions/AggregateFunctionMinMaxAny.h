@@ -795,7 +795,7 @@ public:
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            serialization.serializeBinary(value, buf);
+            serialization.serializeBinary(value, buf, {});
         }
         else
             writeBinary(false, buf);

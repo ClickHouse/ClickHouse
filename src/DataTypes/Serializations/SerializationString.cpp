@@ -28,9 +28,17 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.get<const String &>();
+    if (s.size() > settings.max_binary_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_string_size",
+            s.size(),
+            settings.max_binary_string_size);
+
     writeVarUInt(s.size(), ostr);
     writeString(s, ostr);
 }
@@ -44,9 +52,9 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "input_format_max_binary_string_size",
+            "format_binary_max_string_size",
             size,
-            size > settings.max_binary_string_size);
+            settings.max_binary_string_size);
 
     field = String();
     String & s = field.get<String &>();
@@ -55,9 +63,17 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 }
 
 
-void SerializationString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+    if (s.size > settings.max_binary_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_string_size",
+            s.size,
+            settings.max_binary_string_size);
+
     writeVarUInt(s.size, ostr);
     writeString(s, ostr);
 }
@@ -75,7 +91,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "input_format_max_binary_string_size",
+            "format_binary_max_string_size",
             size,
             settings.max_binary_string_size);
 

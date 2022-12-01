@@ -17,7 +17,7 @@
 namespace DB
 {
 
-void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     const AggregateFunctionStateData & state = field.get<const AggregateFunctionStateData &>();
     writeBinary(state.data, ostr);
@@ -31,7 +31,7 @@ void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer
     s.name = type_name;
 }
 
-void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr, version);
 }

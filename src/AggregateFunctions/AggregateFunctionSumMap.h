@@ -296,19 +296,19 @@ public:
         {
             case 0:
             {
-                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
+                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
                 break;
             }
             case 1:
             {
-                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
+                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
                 break;
             }
         }
 
         for (const auto & elem : merged_maps)
         {
-            keys_serialization->serializeBinary(elem.first, buf);
+            keys_serialization->serializeBinary(elem.first, buf, {});
             for (size_t col = 0; col < values_types.size(); ++col)
                 serialize(col, elem.second);
         }

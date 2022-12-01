@@ -718,18 +718,18 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     column = std::move(mutable_column);
 }
 
-void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr);
+    dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
 }
 void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
 }
 
-void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeImpl(column, row_num, &ISerialization::serializeBinary, ostr);
+    serializeImpl(column, row_num, &ISerialization::serializeBinary, ostr, settings);
 }
 void SerializationLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {

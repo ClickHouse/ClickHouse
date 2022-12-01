@@ -66,9 +66,9 @@ void SerializationWrapper::deserializeBinaryBulk(IColumn & column, ReadBuffer & 
     nested_serialization->deserializeBinaryBulk(column, istr, limit, avg_value_size_hint);
 }
 
-void SerializationWrapper::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationWrapper::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    nested_serialization->serializeBinary(field, ostr);
+    nested_serialization->serializeBinary(field, ostr, settings);
 }
 
 void SerializationWrapper::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
@@ -76,9 +76,9 @@ void SerializationWrapper::deserializeBinary(Field & field, ReadBuffer & istr, c
     nested_serialization->deserializeBinary(field, istr, settings);
 }
 
-void SerializationWrapper::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationWrapper::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    nested_serialization->serializeBinary(column, row_num, ostr);
+    nested_serialization->serializeBinary(column, row_num, ostr, settings);
 }
 
 void SerializationWrapper::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

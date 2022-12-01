@@ -150,7 +150,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
 }
 
 
-void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (field.isNull())
     {
@@ -159,7 +159,7 @@ void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & o
     else
     {
         writeBinary(false, ostr);
-        nested->serializeBinary(field, ostr);
+        nested->serializeBinary(field, ostr, settings);
     }
 }
 
@@ -177,14 +177,14 @@ void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr, 
     }
 }
 
-void SerializationNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     bool is_null = col.isNullAt(row_num);
     writeBinary(is_null, ostr);
     if (!is_null)
-        nested->serializeBinary(col.getNestedColumn(), row_num, ostr);
+        nested->serializeBinary(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 /// Deserialize value into ColumnNullable.
