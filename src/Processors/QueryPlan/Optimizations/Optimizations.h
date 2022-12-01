@@ -58,6 +58,9 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 /// Reading in order from MergeTree table if DISTINCT columns match or form a prefix of MergeTree sorting key
 size_t tryDistinctReadInOrder(QueryPlan::Node * node);
 
+/// Remove redudant ORDER BYs
+void tryRemoveRedundantOrderBy(QueryPlan::Node * parent_node);
+
 /// Put some steps under union, so that plan optimisation could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
 ///                      - Something -                    - Expression - Something -
