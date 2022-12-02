@@ -4829,3 +4829,11 @@ Disabled by default.
 Allow skipping columns with unsupported types while schema inference for format BSONEachRow.
 
 Disabled by default.
+
+## RowBinary format settings {#row-binary-format-settings}
+
+### format_binary_max_string_size {#format_binary_max_string_size}
+
+The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit.
+
+Default value: `1GiB`
