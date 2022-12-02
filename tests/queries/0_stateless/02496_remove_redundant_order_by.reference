@@ -1,0 +1,60 @@
+-- Disable query_plan_remove_redundant_order_by
+-- ORDER BY(s) in subqueries are untouched
+Expression (Project names)
+Header: number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: number_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Header: number_0 UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number_1 UInt64
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+        Header: number_1 UInt64
+          Sorting (Sorting for ORDER BY)
+          Header: number_2 UInt64
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            Header: number_2 UInt64
+              ReadFromStorage (SystemNumbers)
+              Header: number UInt64
+-- Enable query_plan_remove_redundant_order_by
+-- ORDER BY eliminates ORDER BY(s) in subqueries
+Expression (Project names)
+Header: number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: number_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))))
+    Header: number_0 UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64
+-- ORDER BY cannot remove ORDER BY in subquery with ORDER BY WITH FILL
+Expression (Project names)
+Header: number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: number_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Header: number_0 UInt64
+      Filling
+      Header: number_1 UInt64
+        Sorting (Sorting for ORDER BY)
+        Header: number_1 UInt64
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+          Header: number_1 UInt64
+            ReadFromStorage (SystemNumbers)
+            Header: number UInt64
+-- ORDER BY cannot remove ORDER BY in subquery with LIMIT BY
+Expression (Project names)
+Header: number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: number_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Header: number_0 UInt64
+      LimitBy
+      Header: number_1 UInt64
+        Expression (Before LIMIT BY)
+        Header: number_1 UInt64
+          Sorting (Sorting for ORDER BY)
+          Header: number_1 UInt64
+            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+            Header: number_1 UInt64
+              ReadFromStorage (SystemNumbers)
+              Header: number UInt64

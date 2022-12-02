@@ -13,6 +13,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.filter_push_down = from.query_plan_filter_push_down;
     settings.distinct_in_order = from.optimize_distinct_in_order;
     settings.read_in_order = from.optimize_read_in_order && from.query_plan_read_in_order;
+    settings.remove_redundant_order_by = from.query_plan_remove_redundant_order_by;
     return settings;
 }
 

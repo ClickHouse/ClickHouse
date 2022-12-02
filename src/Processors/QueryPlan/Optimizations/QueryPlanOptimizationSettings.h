@@ -27,6 +27,9 @@ struct QueryPlanOptimizationSettings
     /// If read-in-order optimisation is enabled
     bool read_in_order = true;
 
+    /// true if removing redundant ORDER BY clauses in subqueries is enabled
+    bool remove_redundant_order_by = true;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };
