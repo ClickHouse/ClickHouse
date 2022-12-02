@@ -822,13 +822,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
     auto query = query_to_execute;
 
-    if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
-    {
-        /// Rewrite query if new settings were added.
-        if (addMergeTreeSettings(*parsed_query->as<ASTCreateQuery>()))
-            query = serializeAST(*parsed_query);
-    }
-
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
@@ -842,6 +835,22 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
         /// Get new query after substitutions.
         query = serializeAST(*parsed_query);
+    }
+
+    if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
+    {
+        /// Rewrite query if new settings were added.
+        if (addMergeTreeSettings(*parsed_query->as<ASTCreateQuery>()))
+        {
+            /// Replace query parameters because AST cannot be serialized otherwise.
+            if (!query_parameters.empty())
+            {
+                ReplaceQueryParameterVisitor visitor(query_parameters);
+                visitor.visit(parsed_query);
+            }
+
+            query = serializeAST(*parsed_query);
+        }
     }
 
     int retries_left = 10;
