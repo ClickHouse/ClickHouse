@@ -39,7 +39,7 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int REPLICA_IS_ALREADY_EXIST;
+    extern const int REPLICA_ALREADY_EXISTS;
     extern const int DATABASE_REPLICATION_FAILED;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
@@ -297,7 +297,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             if (is_create_query || replica_host_id != host_id)
             {
                 throw Exception(
-                    ErrorCodes::REPLICA_IS_ALREADY_EXIST,
+                    ErrorCodes::REPLICA_ALREADY_EXISTS,
                     "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
                     replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
             }
@@ -702,7 +702,18 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     /// We will drop or move tables which exist only in local metadata
     Strings tables_to_detach;
-    std::vector<std::pair<String, String>> replicated_tables_to_rename;
+
+    struct RenameEdge
+    {
+        String from;
+        String intermediate;
+        String to;
+    };
+
+    /// This is needed to generate intermediate name
+    String salt = toString(thread_local_rng());
+
+    std::vector<RenameEdge> replicated_tables_to_rename;
     size_t total_tables = 0;
     std::vector<UUID> replicated_ids;
     for (auto existing_tables_it = getTablesIterator(getContext(), {}); existing_tables_it->isValid();
@@ -719,8 +730,15 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             {
                 if (name != it->second)
                 {
+                    String intermediate_name;
+                    /// Possibly we failed to rename it on previous iteration
+                    /// And this table was already renamed to an intermediate name
+                    if (startsWith(name, ".rename-") && !startsWith(it->second, ".rename-"))
+                        intermediate_name = name;
+                    else
+                        intermediate_name = fmt::format(".rename-{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
                     /// Need just update table name
-                    replicated_tables_to_rename.emplace_back(name, it->second);
+                    replicated_tables_to_rename.push_back({name, intermediate_name, it->second});
                 }
                 continue;
             }
@@ -840,13 +858,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                     tables_to_detach.size(), dropped_dictionaries, dropped_tables.size() - dropped_dictionaries, moved_tables);
 
     /// Now database is cleared from outdated tables, let's rename ReplicatedMergeTree tables to actual names
-    for (const auto & old_to_new : replicated_tables_to_rename)
+    /// We have to take into account that tables names could be changed with two general queries
+    /// 1) RENAME TABLE. There could be multiple pairs of tables (e.g. RENAME b TO c, a TO b, c TO d)
+    /// But it is equal to multiple subsequent RENAMEs each of which operates only with two tables
+    /// 2) EXCHANGE TABLE. This query swaps two names atomically and could not be represented with two separate RENAMEs
+    auto rename_table = [&](String from, String to)
     {
-        const String & from = old_to_new.first;
-        const String & to = old_to_new.second;
-
         LOG_DEBUG(log, "Will RENAME TABLE {} TO {}", backQuoteIfNeed(from), backQuoteIfNeed(to));
-        /// TODO Maybe we should do it in two steps: rename all tables to temporary names and then rename them to actual names?
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
         DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
 
@@ -858,7 +876,23 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
         tables_metadata_digest = new_digest;
         assert(checkDigestValid(getContext()));
+    };
+
+    LOG_DEBUG(log, "Starting first stage of renaming process. Will rename tables to intermediate names");
+    for (auto & [from, intermediate, _] : replicated_tables_to_rename)
+    {
+        /// Due to some unknown failures there could be tables
+        /// which are already in an intermediate state
+        /// For them we skip the first stage
+        if (from == intermediate)
+            continue;
+        rename_table(from, intermediate);
     }
+    LOG_DEBUG(log, "Starting second stage of renaming process. Will rename tables from intermediate to desired names");
+    for (auto & [_, intermediate, to] : replicated_tables_to_rename)
+        rename_table(intermediate, to);
+
+    LOG_DEBUG(log, "Renames completed succesessfully");
 
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);

@@ -4,6 +4,7 @@
 #include <IO/WriteSettings.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Common/filesystemHelpers.h>
 
 namespace Poco
 {
@@ -28,22 +29,44 @@ public:
         FileCache * cache_, const FileSegment::Key & key_,
         std::shared_ptr<FilesystemCacheLog> cache_log_, const String & query_id_, const String & source_path_);
 
-    /**
-    * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
-    * it until it is full and then allocate next file segment.
-    */
-    bool write(const char * data, size_t size, size_t offset, bool is_persistent);
+    /* Write a range of file segments.
+     * Allocate file segment of `max_file_segment_size` and write to it until it is full and then allocate next file segment.
+     * If it's impossible to allocate new file segment and reserve space to write all data, then returns false.
+     *
+     * Note: the data that was written to file segments before the error occurred is not rolled back.
+     */
+    bool write(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind);
+
+    /* Tries to write data to current file segment.
+     * Size of written data may be less than requested_size, because it may not be enough space.
+     *
+     * Returns size of written data.
+     */
+    size_t tryWrite(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind = FileSegmentKind::Regular, bool strict = false);
+
+    /// Same as `write/tryWrite`, but doesn't write anything, just reserves some space in cache
+    bool reserve(size_t size, size_t offset);
+    size_t tryReserve(size_t size, size_t offset);
 
     void finalize();
+
+    size_t currentOffset() const { return current_file_segment_write_offset; }
 
     ~FileSegmentRangeWriter();
 
 private:
-    FileSegments::iterator allocateFileSegment(size_t offset, bool is_persistent);
+    FileSegments::iterator allocateFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void appendFilesystemCacheLog(const FileSegment & file_segment);
 
-    void completeFileSegment(FileSegment & file_segment);
+    void completeFileSegment(FileSegment & file_segment, std::optional<FileSegment::State> state = {});
+
+    /* Writes data to current file segment as much as possible and returns size of written data, do not allocate new file segments
+     * In `strict` mode it will write all data or nothing, otherwise it will write as much as possible
+     * If returned non zero value, then we can try to write again to next file segment.
+     * If no space is available, returns zero.
+     */
+    size_t tryWriteImpl(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind, bool strict);
 
     FileCache * cache;
     FileSegment::Key key;

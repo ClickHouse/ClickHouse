@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Interpreters/Context.h>
 
@@ -27,11 +28,11 @@ public:
             return;
 
         auto & first_argument = function_node->getArguments().getNodes()[0];
-        auto first_argument_constant_value = first_argument->getConstantValueOrNull();
-        if (!first_argument_constant_value)
+        auto * first_argument_constant_node = first_argument->as<ConstantNode>();
+        if (!first_argument_constant_node)
             return;
 
-        const auto & first_argument_constant_literal = first_argument_constant_value->getValue();
+        const auto & first_argument_constant_literal = first_argument_constant_node->getValue();
 
         if (function_node->getFunctionName() == "count" && !first_argument_constant_literal.isNull())
         {
