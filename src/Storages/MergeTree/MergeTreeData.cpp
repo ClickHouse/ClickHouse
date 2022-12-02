@@ -4691,7 +4691,7 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
     [[maybe_unused]] size_t visible_size = maybe_visible_parts.size();
 
     LOG_TEST(log, "Got {} parts (of {}) visible in snapshot {} (TID {}): {}",
-             visible_size, total_size, snapshot_version, current_tid, fmt::join(getPartsNamesWithStates(maybe_visible_parts), ", "));
+             visible_size, total_size, snapshot_version, current_tid, fmt::join(getPartsNames(maybe_visible_parts), ", "));
 }
 
 
