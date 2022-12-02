@@ -19,6 +19,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
 #include <base/find_symbols.h>
 #include <Poco/AccessExpireCache.h>
@@ -38,6 +39,10 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
 }
 
+namespace
+{
+    constexpr const char MERGE_TREE_SETTINGS_PREFIX[] = "merge_tree_";
+}
 
 namespace
 {
@@ -104,6 +109,8 @@ public:
     bool isSettingNameAllowed(std::string_view setting_name) const
     {
         if (Settings::hasBuiltin(setting_name))
+            return true;
+        if (setting_name.starts_with(MERGE_TREE_SETTINGS_PREFIX) && MergeTreeSettings::hasBuiltin(setting_name.substr(strlen(MERGE_TREE_SETTINGS_PREFIX))))
             return true;
 
         std::lock_guard lock{mutex};
