@@ -24,6 +24,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MovesList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -31,6 +32,7 @@
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskDecorator.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
@@ -79,6 +81,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -99,6 +103,7 @@
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <filesystem>
 #include <re2/re2.h>
 
@@ -227,6 +232,7 @@ struct ContextSharedPart : boost::noncopyable
     ProcessList process_list;                               /// Executing queries at the moment.
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
+    MovesList moves_list;                                   /// The list of executing moves (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
@@ -635,6 +641,8 @@ const ProcessList & Context::getProcessList() const { return shared->process_lis
 OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
+MovesList & Context::getMovesList() { return shared->moves_list; }
+const MovesList & Context::getMovesList() const { return shared->moves_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
 const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
 
@@ -740,28 +748,65 @@ void Context::setPath(const String & path)
         shared->user_scripts_path = shared->path + "user_scripts/";
 }
 
-VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name, size_t max_size)
+static void setupTmpPath(Poco::Logger * log, const std::string & path)
+try
+{
+    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
+
+    fs::create_directories(path);
+
+    /// Clearing old temporary files.
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
+    {
+        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
+        {
+            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+            fs::remove(it->path());
+        }
+        else
+            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+    }
+}
+catch (...)
+{
+    DB::tryLogCurrentException(log, fmt::format(
+        "Caught exception while setup temporary path: {}. "
+        "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
+}
+
+static VolumePtr createLocalSingleDiskVolume(const std::string & path)
+{
+    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0);
+    VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
+    return volume;
+}
+
+void Context::setTemporaryStoragePath(const String & path, size_t max_size)
+{
+    shared->tmp_path = path;
+    if (!shared->tmp_path.ends_with('/'))
+        shared->tmp_path += '/';
+
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+
+    for (const auto & disk : volume->getDisks())
+    {
+        setupTmpPath(shared->log, disk->getPath());
+    }
+
+    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, nullptr, max_size);
+}
+
+void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
 {
     std::lock_guard lock(shared->storage_policies_mutex);
-    VolumePtr volume;
 
-    if (policy_name.empty())
-    {
-        shared->tmp_path = path;
-        if (!shared->tmp_path.ends_with('/'))
-            shared->tmp_path += '/';
-
-        auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
-    }
-    else
-    {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
-        if (tmp_policy->getVolumes().size() != 1)
-             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
-        volume = tmp_policy->getVolume(0);
-    }
+     StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
+    if (tmp_policy->getVolumes().size() != 1)
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
+    VolumePtr volume = tmp_policy->getVolume(0);
 
     if (volume->getDisks().empty())
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
@@ -783,10 +828,33 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
                 "Disk '{}' ({}) is not local and can't be used for temporary files",
                 disk_ptr->getName(), typeid(*disk_raw_ptr).name());
         }
+
+        setupTmpPath(shared->log, disk->getPath());
     }
 
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
-    return volume;
+    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, nullptr, max_size);
+}
+
+
+void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
+{
+    auto disk_ptr = getDisk(cache_disk_name);
+    if (!disk_ptr)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' is not found", cache_disk_name);
+
+    const auto * disk_object_storage_ptr = dynamic_cast<const DiskObjectStorage *>(disk_ptr.get());
+    if (!disk_object_storage_ptr)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' does not use cache", cache_disk_name);
+
+    auto file_cache = disk_object_storage_ptr->getCache();
+    if (!file_cache)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", file_cache->getBasePath());
+
+    LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
+
+    shared->tmp_path = file_cache->getBasePath();
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 
 void Context::setFlagsPath(const String & path)
@@ -987,10 +1055,12 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     return access ? access : ContextAccess::getFullAccess();
 }
 
-ASTPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
+RowPolicyFilterPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     auto lock = getLock();
-    auto row_filter_of_initial_user = row_policies_of_initial_user ? row_policies_of_initial_user->getFilter(database, table_name, filter_type) : nullptr;
+    RowPolicyFilterPtr row_filter_of_initial_user;
+    if (row_policies_of_initial_user)
+        row_filter_of_initial_user = row_policies_of_initial_user->getFilter(database, table_name, filter_type);
     return getAccess()->getRowPolicyFilter(database, table_name, filter_type, row_filter_of_initial_user);
 }
 
@@ -1227,7 +1297,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 }
 
 
-StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     auto hash = table_expression->getTreeHash();
     String key = toString(hash.first) + '_' + toString(hash.second);
@@ -1237,15 +1307,61 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     if (!res)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
+        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & insertion_table = getInsertionTable();
-            if (!insertion_table.empty())
+            const auto & structure_hint = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            bool use_columns_from_insert_query = true;
+
+            /// use_structure_from_insertion_table_in_table_functions=2 means `auto`
+            if (select_query_hint && getSettingsRef().use_structure_from_insertion_table_in_table_functions == 2)
             {
-                const auto & structure_hint
-                    = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
-                table_function_ptr->setStructureHint(structure_hint);
+                const auto * expression_list = select_query_hint->select()->as<ASTExpressionList>();
+                Names columns_names;
+                bool have_asterisk = false;
+                /// First, check if we have only identifiers, asterisk and literals in select expression,
+                /// and if no, we cannot use the structure from insertion table.
+                for (const auto & expression : expression_list->children)
+                {
+                    if (auto * identifier = expression->as<ASTIdentifier>())
+                    {
+                        columns_names.push_back(identifier->name());
+                    }
+                    else if (expression->as<ASTAsterisk>())
+                    {
+                        have_asterisk = true;
+                    }
+                    else if (!expression->as<ASTLiteral>())
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                }
+
+                /// Check that all identifiers are column names from insertion table.
+                for (const auto & column_name : columns_names)
+                {
+                    if (!structure_hint.has(column_name))
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                }
+
+                /// If we don't have asterisk but only subset of columns, we should use
+                /// structure from insertion table only in case when table function
+                /// supports reading subset of columns from data.
+                if (use_columns_from_insert_query && !have_asterisk && !columns_names.empty())
+                {
+                    /// For input function we should check if input format supports reading subset of columns.
+                    if (table_function_ptr->getName() == "input")
+                        use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                    else
+                        use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+                }
             }
+
+            if (use_columns_from_insert_query)
+                table_function_ptr->setStructureHint(structure_hint);
         }
 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
@@ -1482,10 +1598,19 @@ String Context::getDefaultFormat() const
     return default_format.empty() ? "TabSeparated" : default_format;
 }
 
-
 void Context::setDefaultFormat(const String & name)
 {
     default_format = name;
+}
+
+String Context::getInsertFormat() const
+{
+    return insert_format;
+}
+
+void Context::setInsertFormat(const String & name)
+{
+    insert_format = name;
 }
 
 MultiVersion<Macros>::Version Context::getMacros() const

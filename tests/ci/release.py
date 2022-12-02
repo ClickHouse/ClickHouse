@@ -1,13 +1,24 @@
 #!/usr/bin/env python
 
+"""
+script to create releases for ClickHouse
+
+The `gh` CLI prefered over the PyGithub to have an easy way to rollback bad
+release in command line by simple execution giving rollback commands
+
+On another hand, PyGithub is used for convenient getting commit's status from API
+"""
+
 
 from contextlib import contextmanager
-from typing import List, Optional
+from typing import Any, Iterator, List, Literal, Optional
 import argparse
 import logging
 import subprocess
 
 from git_helper import commit, release_branch
+from github_helper import GitHub
+from mark_release_ready import RELEASE_READY_STATUS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -37,7 +48,7 @@ class Repo:
         return self._url
 
     @url.setter
-    def url(self, protocol: str):
+    def url(self, protocol: str) -> None:
         if protocol == "ssh":
             self._url = f"git@github.com:{self}.git"
         elif protocol == "https":
@@ -57,22 +68,28 @@ class Release:
     CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
     CONTRIBUTORS_PATH = get_abs_path(GENERATED_CONTRIBUTORS)
 
-    def __init__(self, repo: Repo, release_commit: str, release_type: str):
+    def __init__(
+        self,
+        repo: Repo,
+        release_commit: str,
+        release_type: Literal["major", "minor", "patch"],
+    ):
         self.repo = repo
         self._release_commit = ""
         self.release_commit = release_commit
+        assert release_type in self.BIG + self.SMALL
         self.release_type = release_type
         self._git = git
         self._version = get_version_from_repo(git=self._git)
         self._release_branch = ""
         self._rollback_stack = []  # type: List[str]
 
-    def run(self, cmd: str, cwd: Optional[str] = None) -> str:
+    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs: Any) -> str:
         cwd_text = ""
         if cwd:
             cwd_text = f" (CWD='{cwd}')"
         logging.info("Running command%s:\n    %s", cwd_text, cmd)
-        return self._git.run(cmd, cwd)
+        return self._git.run(cmd, cwd, **kwargs)
 
     def set_release_branch(self):
         # Fetch release commit in case it does not exist locally
@@ -94,6 +111,38 @@ class Release:
             return VersionType.LTS
         return VersionType.STABLE
 
+    def check_commit_release_ready(self):
+        # First, get the auth token from gh cli
+        auth_status = self.run(
+            "gh auth status -t", stderr=subprocess.STDOUT
+        ).splitlines()
+        token = ""
+        for line in auth_status:
+            if "✓ Token:" in line:
+                token = line.split()[-1]
+        if not token:
+            logging.error("Can not extract token from `gh auth`")
+            raise subprocess.SubprocessError("Can not extract token from `gh auth`")
+        gh = GitHub(token, per_page=100)
+        repo = gh.get_repo(str(self.repo))
+
+        # Statuses are ordered by descending updated_at, so the first necessary
+        # status in the list is the most recent
+        statuses = repo.get_commit(self.release_commit).get_statuses()
+        for status in statuses:
+            if status.context == RELEASE_READY_STATUS:
+                if status.state == "success":
+                    return
+
+                raise Exception(
+                    f"the status {RELEASE_READY_STATUS} is {status.state}, not success"
+                )
+
+        raise Exception(
+            f"the status {RELEASE_READY_STATUS} "
+            f"is not found for commit {self.release_commit}"
+        )
+
     def check_prerequisites(self):
         """
         Check tooling installed in the system, `git` is checked by Git() init
@@ -108,7 +157,11 @@ class Release:
             )
             raise
 
-    def do(self, check_dirty: bool, check_branch: bool, with_release_branch: bool):
+        self.check_commit_release_ready()
+
+    def do(
+        self, check_dirty: bool, check_branch: bool, with_release_branch: bool
+    ) -> None:
         self.check_prerequisites()
 
         if check_dirty:
@@ -118,6 +171,8 @@ class Release:
             except subprocess.CalledProcessError:
                 logging.fatal("Repo contains uncommitted changes")
                 raise
+            if self._git.branch != "master":
+                raise Exception("the script must be launched only from master")
 
         self.set_release_branch()
 
@@ -263,7 +318,7 @@ class Release:
         return self._version
 
     @version.setter
-    def version(self, version: ClickHouseVersion):
+    def version(self, version: ClickHouseVersion) -> None:
         if not isinstance(version, ClickHouseVersion):
             raise ValueError(f"version must be ClickHouseVersion, not {type(version)}")
         self._version = version
@@ -273,7 +328,7 @@ class Release:
         return self._release_branch
 
     @release_branch.setter
-    def release_branch(self, branch: str):
+    def release_branch(self, branch: str) -> None:
         self._release_branch = release_branch(branch)
 
     @property
@@ -281,7 +336,7 @@ class Release:
         return self._release_commit
 
     @release_commit.setter
-    def release_commit(self, release_commit: str):
+    def release_commit(self, release_commit: str) -> None:
         self._release_commit = commit(release_commit)
 
     @contextmanager
@@ -320,7 +375,7 @@ class Release:
                     yield
 
     @contextmanager
-    def _bump_testing_version(self, helper_branch: str):
+    def _bump_testing_version(self, helper_branch: str) -> Iterator[None]:
         self.read_version()
         self.version = self.version.update(self.release_type)
         self.version.with_description(VersionType.TESTING)
@@ -340,7 +395,7 @@ class Release:
             yield
 
     @contextmanager
-    def _checkout(self, ref: str, with_checkout_back: bool = False):
+    def _checkout(self, ref: str, with_checkout_back: bool = False) -> Iterator[None]:
         orig_ref = self._git.branch or self._git.sha
         need_rollback = False
         if ref not in (self._git.branch, self._git.sha):
@@ -359,7 +414,7 @@ class Release:
                 self.run(rollback_cmd)
 
     @contextmanager
-    def _create_branch(self, name: str, start_point: str = ""):
+    def _create_branch(self, name: str, start_point: str = "") -> Iterator[None]:
         self.run(f"git branch {name} {start_point}")
         rollback_cmd = f"git branch -D {name}"
         self._rollback_stack.append(rollback_cmd)
@@ -371,7 +426,7 @@ class Release:
             raise
 
     @contextmanager
-    def _create_gh_label(self, label: str, color_hex: str):
+    def _create_gh_label(self, label: str, color_hex: str) -> Iterator[None]:
         # API call, https://docs.github.com/en/rest/reference/issues#create-a-label
         self.run(
             f"gh api repos/{self.repo}/labels -f name={label} -f color={color_hex}"
@@ -386,7 +441,7 @@ class Release:
             raise
 
     @contextmanager
-    def _create_gh_release(self, as_prerelease: bool):
+    def _create_gh_release(self, as_prerelease: bool) -> Iterator[None]:
         with self._create_tag():
             # Preserve tag if version is changed
             tag = self.version.describe
@@ -421,7 +476,9 @@ class Release:
             raise
 
     @contextmanager
-    def _push(self, ref: str, with_rollback_on_fail: bool = True, remote_ref: str = ""):
+    def _push(
+        self, ref: str, with_rollback_on_fail: bool = True, remote_ref: str = ""
+    ) -> Iterator[None]:
         if remote_ref == "":
             remote_ref = ref
 

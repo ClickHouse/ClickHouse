@@ -14,7 +14,12 @@ String ASTShowGrantsQuery::getID(char) const
 
 ASTPtr ASTShowGrantsQuery::clone() const
 {
-    return std::make_shared<ASTShowGrantsQuery>(*this);
+    auto res = std::make_shared<ASTShowGrantsQuery>(*this);
+
+    if (for_roles)
+        res->for_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(for_roles->clone());
+
+    return res;
 }
 
 

@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import sys
+from typing import List, Tuple
 
 from github import Github
 
@@ -87,8 +88,10 @@ def get_env_for_runner(build_path, repo_path, result_path, work_path):
     return my_env
 
 
-def process_results(result_folder):
-    test_results = []
+def process_results(
+    result_folder: str,
+) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
+    test_results = []  # type: List[Tuple[str, str]]
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content of result_folder.
@@ -115,7 +118,7 @@ def process_results(result_folder):
     results_path = os.path.join(result_folder, "test_results.tsv")
     if os.path.exists(results_path):
         with open(results_path, "r", encoding="utf-8") as results_file:
-            test_results = list(csv.reader(results_file, delimiter="\t"))
+            test_results = list(csv.reader(results_file, delimiter="\t"))  # type: ignore
     if len(test_results) == 0:
         return "error", "Empty test_results.tsv", test_results, additional_files
 
@@ -153,8 +156,8 @@ if __name__ == "__main__":
     validate_bugix_check = args.validate_bugfix
 
     if "RUN_BY_HASH_NUM" in os.environ:
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM"))
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL"))
+        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
         check_name_with_group = (
             check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
         )
@@ -167,17 +170,22 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     is_flaky_check = "flaky" in check_name
-    pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugix_check)
+
+    # For validate_bugix_check we need up to date information about labels, so pr_event_from_api is used
+    pr_info = PRInfo(
+        need_changed_files=is_flaky_check or validate_bugix_check,
+        pr_event_from_api=validate_bugix_check,
+    )
 
     if validate_bugix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
                 os.path.join(temp_path, "post_commit_status.tsv"),
-                "Skipped (no pr-bugfix)",
+                f"Skipped (no pr-bugfix in {pr_info.labels})",
                 "success",
                 "null",
             )
-        logging.info("Skipping '%s' (no pr-bugfix)", check_name)
+        logging.info("Skipping '%s' (no pr-bugfix in '%s')", check_name, pr_info.labels)
         sys.exit(0)
 
     gh = Github(get_best_robot_token(), per_page=100)
@@ -244,7 +252,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     state, description, test_results, additional_logs = process_results(result_path)
-    state = override_status(state, check_name, validate_bugix_check)
+    state = override_status(state, check_name, invert=validate_bugix_check)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)

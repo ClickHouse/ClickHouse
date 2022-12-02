@@ -70,11 +70,13 @@ void SerializationNullable::enumerateStreams(
 }
 
 void SerializationNullable::serializeBinaryBulkStatePrefix(
+        const IColumn & column,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::NullableElements);
-    nested->serializeBinaryBulkStatePrefix(settings, state);
+    const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
+    nested->serializeBinaryBulkStatePrefix(column_nullable.getNestedColumn(), settings, state);
     settings.path.pop_back();
 }
 

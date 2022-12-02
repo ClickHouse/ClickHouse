@@ -192,7 +192,7 @@ private:
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
         size_t sum_input_rows_upper_bound{0};
-        std::unique_ptr<TemporaryFile> rows_sources_file{nullptr};
+        std::unique_ptr<PocoTemporaryFile> rows_sources_file{nullptr};
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes{};
@@ -257,7 +257,7 @@ private:
         /// Begin dependencies from previous stage
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-        std::unique_ptr<TemporaryFile> rows_sources_file;
+        std::unique_ptr<PocoTemporaryFile> rows_sources_file;
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
         DiskPtr tmp_disk{nullptr};
