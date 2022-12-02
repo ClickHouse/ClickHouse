@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
 script to create releases for ClickHouse
@@ -18,7 +18,6 @@ import subprocess
 
 from git_helper import commit, release_branch
 from github_helper import GitHub
-from mark_release_ready import RELEASE_READY_STATUS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -30,6 +29,8 @@ from version_helper import (
     update_cmake_version,
     update_contributors,
 )
+
+RELEASE_READY_STATUS = "Ready for release"
 
 
 git = Git()
