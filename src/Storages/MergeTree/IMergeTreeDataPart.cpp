@@ -2041,14 +2041,6 @@ bool isCompressedFromIndexExtension(const String & index_extension)
     return index_extension == getIndexExtension(true);
 }
 
-Strings getPartsNamesWithStates(const MergeTreeDataPartsVector & parts)
-{
-    Strings part_names;
-    for (const auto & p : parts)
-        part_names.push_back(p->getNameWithState());
-    return part_names;
-}
-
 Strings getPartsNames(const MergeTreeDataPartsVector & parts)
 {
     Strings part_names;
