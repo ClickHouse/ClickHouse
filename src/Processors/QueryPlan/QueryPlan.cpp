@@ -447,7 +447,9 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlanOptimizations::tryRemoveRedundantOrderBy(root);
+    if (optimization_settings.remove_redundant_order_by)
+        QueryPlanOptimizations::tryRemoveRedundantOrderBy(root);
+
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
 }
