@@ -1,3 +1,4 @@
+-- { echoOn }
 SELECT
     cutURLParameter('http://bigmir.net/?a=b&c=d', []),
     cutURLParameter('http://bigmir.net/?a=b&c=d', ['a']),
@@ -25,7 +26,8 @@ SELECT
     cutURLParameter('//bigmir.net/?a=b&c=d#e&g=h', ['c', 'e']),
     cutURLParameter('//bigmir.net/?a=b&c=d#e&g=h', ['e', 'g']),
     cutURLParameter('//bigmir.net/?a=b&c=d#test?e=f&g=h', ['test', 'e']),
-    cutURLParameter('//bigmir.net/?a=b&c=d#test?e=f&g=h', ['test', 'g']);
+    cutURLParameter('//bigmir.net/?a=b&c=d#test?e=f&g=h', ['test', 'g'])
+    FORMAT Vertical;
 
 SELECT
     cutURLParameter(materialize('http://bigmir.net/?a=b&c=d'), []),
@@ -54,4 +56,6 @@ SELECT
     cutURLParameter(materialize('//bigmir.net/?a=b&c=d#e&g=h'), ['c', 'e']),
     cutURLParameter(materialize('//bigmir.net/?a=b&c=d#e&g=h'), ['e', 'g']),
     cutURLParameter(materialize('//bigmir.net/?a=b&c=d#test?e=f&g=h'), ['test', 'e']),
-    cutURLParameter(materialize('//bigmir.net/?a=b&c=d#test?e=f&g=h'), ['test', 'g']);
+    cutURLParameter(materialize('//bigmir.net/?a=b&c=d#test?e=f&g=h'), ['test', 'g'])
+    FORMAT Vertical;
+-- { echoOff }
