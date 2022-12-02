@@ -1,9 +1,5 @@
 #!/bin/sh -e
 
-if [ -f "clickhouse" ]; then
-    rm -f clickhouse || { echo "clickhouse already exists and I'm not able to remove it - probably I have no enough rights to do so. Please, remove it manually and repeat."; exit 1; }
-fi
-
 OS=$(uname -s)
 ARCH=$(uname -m)
 
@@ -53,18 +49,28 @@ then
     exit 1
 fi
 
+ch="clickhouse"
+clickhouse="$ch"
+
+i=0
+while [ -f "$clickhouse" ]
+do
+    clickhouse="${ch}.${i}"
+    i=$(($i+1))
+done
+
 URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo
-echo "Will download ${URL}"
+echo "Will download ${URL} into ${clickhouse}"
 echo
-curl -O "${URL}" && chmod a+x clickhouse || exit 1
+curl "${URL}" -o "${clickhouse}" && chmod a+x "${clickhouse}" || exit 1
 echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
-    ./clickhouse"
+    ./${clickhouse}"
 
 if [ "${OS}" = "Linux" ]
 then
     echo
     echo "You can also install it:
-    sudo ./clickhouse install"
+    sudo ./${clickhouse} install"
 fi
