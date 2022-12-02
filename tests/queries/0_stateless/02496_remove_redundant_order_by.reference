@@ -1,5 +1,5 @@
 -- Disable query_plan_remove_redundant_order_by
--- ORDER BY(s) in subqueries are untouched
+-- ORDER BY clauses in subqueries are untouched
 Expression (Project names)
 Header: number UInt64
   Sorting (Sorting for ORDER BY)
@@ -17,7 +17,7 @@ Header: number UInt64
               ReadFromStorage (SystemNumbers)
               Header: number UInt64
 -- Enable query_plan_remove_redundant_order_by
--- ORDER BY eliminates ORDER BY(s) in subqueries
+-- ORDER BY removes ORDER BY clauses in subqueries
 Expression (Project names)
 Header: number UInt64
   Sorting (Sorting for ORDER BY)
@@ -26,7 +26,7 @@ Header: number UInt64
     Header: number_0 UInt64
       ReadFromStorage (SystemNumbers)
       Header: number UInt64
--- ORDER BY cannot remove ORDER BY in subquery with ORDER BY WITH FILL
+-- ORDER BY cannot remove ORDER BY in subquery WITH FILL
 Expression (Project names)
 Header: number UInt64
   Sorting (Sorting for ORDER BY)
@@ -58,3 +58,12 @@ Header: number UInt64
             Header: number_1 UInt64
               ReadFromStorage (SystemNumbers)
               Header: number UInt64
+-- GROUP BY removes ORDER BY in _all_ subqueries
+Expression ((Project names + Projection))
+Header: number UInt64
+  Aggregating
+  Header: number_0 UInt64
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))))))
+    Header: number_0 UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64

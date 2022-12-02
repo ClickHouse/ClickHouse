@@ -33,52 +33,53 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 
         QueryPlan::Node * current_node = frame.node;
         IQueryPlanStep * current_step = frame.node->step.get();
-        if (!steps_affect_order.empty())
+
+        /// if there is parent node which can affect order and current step is sorting
+        /// then check if we can remove the sorting step (and corresponding expression step)
+        if (!steps_affect_order.empty() && typeid_cast<SortingStep *>(current_step))
         {
-            if (SortingStep * ss = typeid_cast<SortingStep *>(current_step); ss)
+            auto try_to_remove_sorting_step = [&]() -> bool
             {
-                auto try_to_remove_sorting_step = [&]() -> bool
+                /// if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
+                /// if ORDER BY is with FILL WITH, it is non-removable
+                if (typeid_cast<LimitStep *>(steps_affect_order.back()) || typeid_cast<LimitByStep *>(steps_affect_order.back())
+                    || typeid_cast<FillingStep *>(steps_affect_order.back()))
+                    return false;
+
+                bool remove_sorting = false;
+                /// (1) aggregation
+                if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(steps_affect_order.back()); parent_aggr)
                 {
-                    /// if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-                    /// if ORDER BY is with FILL WITH, it is non-removable
-                    if (typeid_cast<LimitStep *>(steps_affect_order.back()) || typeid_cast<LimitByStep *>(steps_affect_order.back())
-                        || typeid_cast<FillingStep *>(steps_affect_order.back()))
-                        return false;
-
-                    bool remove_sorting = false;
-                    /// (1) aggregation
-                    if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(steps_affect_order.back()); parent_aggr)
-                    {
-                        /// check if it contains aggregation functions which depends on order
-                    }
-                    /// (2) sorting
-                    else if (SortingStep * parent_sorting = typeid_cast<SortingStep *>(steps_affect_order.back()); parent_sorting)
-                    {
-                        remove_sorting = true;
-                    }
-
-                    if (remove_sorting)
-                    {
-                        /// need to remove sorting and its expression from plan
-                        QueryPlan::Node * parent = frame.parent_node;
-
-                        QueryPlan::Node * next_node = !current_node->children.empty() ? current_node->children.front() : nullptr;
-                        if (next_node && typeid_cast<ExpressionStep *>(next_node->step.get()))
-                            next_node = !current_node->children.empty() ? current_node->children.front() : nullptr;
-
-                        if (next_node)
-                            parent->children[0] = next_node;
-                    }
-                    return remove_sorting;
-                };
-                if (try_to_remove_sorting_step())
-                {
-                    /// current step was removed from plan, its parent has new children, need to visit them
-                    for (auto * child : frame.parent_node->children)
-                        stack.push_back({.node = child, .parent_node = frame.parent_node});
-
-                    continue;
+                    /// TODO: check if it contains aggregation functions which depends on order
+                    remove_sorting = true;
                 }
+                /// (2) sorting
+                else if (SortingStep * parent_sorting = typeid_cast<SortingStep *>(steps_affect_order.back()); parent_sorting)
+                {
+                    remove_sorting = true;
+                }
+
+                if (remove_sorting)
+                {
+                    /// need to remove sorting and its expression from plan
+                    QueryPlan::Node * parent = frame.parent_node;
+
+                    QueryPlan::Node * next_node = !current_node->children.empty() ? current_node->children.front() : nullptr;
+                    if (next_node && typeid_cast<ExpressionStep *>(next_node->step.get()))
+                        next_node = !current_node->children.empty() ? current_node->children.front() : nullptr;
+
+                    if (next_node)
+                        parent->children[0] = next_node;
+                }
+                return remove_sorting;
+            };
+            if (try_to_remove_sorting_step())
+            {
+                /// current sorting step has been removed from plan, its parent has new children, need to visit them
+                for (auto * child : frame.parent_node->children)
+                    stack.push_back({.node = child, .parent_node = frame.parent_node});
+
+                continue;
             }
         }
 
@@ -111,5 +112,4 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
         }
     }
 }
-
 }
