@@ -1,6 +1,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <IO/WriteHelpers.h>
@@ -16,6 +17,11 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int SETTING_CONSTRAINT_VIOLATION;
     extern const int UNKNOWN_SETTING;
+}
+
+namespace
+{
+    constexpr const char MERGE_TREE_SETTINGS_PREFIX[] = "merge_tree_";
 }
 
 
@@ -97,6 +103,17 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
         });
 }
 
+void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
+{
+    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
+}
+
+void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const
+{
+    for (const auto & change : changes)
+        check(current_settings, change);
+}
+
 void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes) const
 {
     boost::range::remove_erase_if(
@@ -106,7 +123,6 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
             return !checkImpl(current_settings, change, CLAMP_ON_VIOLATION);
         });
 }
-
 
 bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
@@ -175,6 +191,57 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     }
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction);
+}
+
+bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
+{
+    const String & setting_name = change.name;
+    String prefixed_name = MERGE_TREE_SETTINGS_PREFIX + setting_name;
+
+    bool cannot_cast;
+    auto cast_value = [&](const Field & x) -> Field
+    {
+        cannot_cast = false;
+        if (reaction == THROW_ON_VIOLATION)
+            return MergeTreeSettings::castValueUtil(setting_name, x);
+        else
+        {
+            try
+            {
+                return MergeTreeSettings::castValueUtil(setting_name, x);
+            }
+            catch (...)
+            {
+                cannot_cast = true;
+                return {};
+            }
+        }
+    };
+
+    if (reaction == THROW_ON_VIOLATION)
+        access_control->checkSettingNameIsAllowed(prefixed_name);
+    else if (!access_control->isSettingNameAllowed(prefixed_name))
+        return false;
+
+    Field current_value, new_value;
+    if (current_settings.tryGet(setting_name, current_value))
+    {
+        /// Setting isn't checked if value has not changed.
+        if (change.value == current_value)
+            return false;
+
+        new_value = cast_value(change.value);
+        if ((new_value == current_value) || cannot_cast)
+            return false;
+    }
+    else
+    {
+        new_value = cast_value(change.value);
+        if (cannot_cast)
+            return false;
+    }
+
+    return getMergeTreeChecker(prefixed_name).check(change, new_value, reaction);
 }
 
 bool SettingsConstraints::Checker::check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const
@@ -277,6 +344,14 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
         if (it == constraints.end())
             return Checker(); // Allowed
     }
+    return Checker(it->second);
+}
+
+SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view setting_name) const
+{
+    auto it = constraints.find(setting_name);
+    if (it == constraints.end())
+        return Checker(); // Allowed
     return Checker(it->second);
 }
 
