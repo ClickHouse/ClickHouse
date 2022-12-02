@@ -4,7 +4,7 @@ SET optimize_duplicate_order_by_and_distinct=0;
 SELECT '-- Disable query_plan_remove_redundant_order_by';
 SET query_plan_remove_redundant_order_by=0;
 
-SELECT '-- ORDER BY(s) in subqueries are untouched';
+SELECT '-- ORDER BY clauses in subqueries are untouched';
 EXPLAIN header=1
 SELECT *
 FROM
@@ -23,7 +23,7 @@ ORDER BY number ASC;
 SELECT '-- Enable query_plan_remove_redundant_order_by';
 SET query_plan_remove_redundant_order_by=1;
 
-SELECT '-- ORDER BY eliminates ORDER BY(s) in subqueries';
+SELECT '-- ORDER BY removes ORDER BY clauses in subqueries';
 EXPLAIN header=1
 SELECT *
 FROM
@@ -39,7 +39,7 @@ FROM
 )
 ORDER BY number ASC;
 
-SELECT '-- ORDER BY cannot remove ORDER BY in subquery with ORDER BY WITH FILL';
+SELECT '-- ORDER BY cannot remove ORDER BY in subquery WITH FILL';
 EXPLAIN header=1
 SELECT *
 FROM
@@ -72,21 +72,21 @@ FROM
 )
 ORDER BY number ASC;
 
--- SELECT '-- GROUP BY eliminates ORDER BY in _all_ subqueries';
--- EXPLAIN
--- SELECT *
--- FROM
--- (
---     SELECT *
---     FROM
---     (
---         SELECT *
---         FROM numbers(3)
---         ORDER BY number ASC
---     )
---     ORDER BY number DESC
--- )
--- GROUP BY number;
+SELECT '-- GROUP BY removes ORDER BY in _all_ subqueries';
+EXPLAIN header=1
+SELECT *
+FROM
+(
+    SELECT *
+    FROM
+    (
+        SELECT *
+        FROM numbers(3)
+        ORDER BY number ASC
+    )
+    ORDER BY number DESC
+)
+GROUP BY number;
 
 -- SELECT '-- GROUP BY with aggregation function which does NOT depend on order -> eliminate ORDER BY(s) in _all_ subqueries';
 -- EXPLAIN
@@ -224,4 +224,3 @@ ORDER BY number ASC;
 --     ORDER BY number DESC
 -- ) AS t2
 -- ORDER BY t1.number ASC;
-
