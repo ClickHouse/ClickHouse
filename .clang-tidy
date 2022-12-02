@@ -16,6 +16,7 @@ Checks: '*,
 
     -android-*,
 
+    -bugprone-assignment-in-if-condition,
     -bugprone-branch-clone,
     -bugprone-easily-swappable-parameters,
     -bugprone-exception-escape,
@@ -23,7 +24,6 @@ Checks: '*,
     -bugprone-narrowing-conversions,
     -bugprone-not-null-terminated-result,
     -bugprone-unchecked-optional-access,
-    -bugprone-assignment-in-if-condition,
 
     -cert-dcl16-c,
     -cert-err58-cpp,
@@ -34,7 +34,6 @@ Checks: '*,
 
     -clang-analyzer-optin.performance.Padding,
     -clang-analyzer-optin.portability.UnixAPI,
-
     -clang-analyzer-security.insecureAPI.bzero,
     -clang-analyzer-security.insecureAPI.strcpy,
 
@@ -103,12 +102,13 @@ Checks: '*,
 
     -openmp-*,
 
+    -misc-const-correctness,
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
-    -misc-const-correctness,
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
+    -modernize-macro-to-enum,
     -modernize-pass-by-value,
     -modernize-return-braced-init-list,
     -modernize-use-auto,
@@ -117,7 +117,6 @@ Checks: '*,
     -modernize-use-nodiscard,
     -modernize-use-override,
     -modernize-use-trailing-return-type,
-    -modernize-macro-to-enum,
 
     -performance-inefficient-string-concatenation,
     -performance-no-int-to-ptr,
@@ -135,11 +134,11 @@ Checks: '*,
     -readability-magic-numbers,
     -readability-named-parameter,
     -readability-redundant-declaration,
+    -readability-simplify-boolean-expr,
     -readability-static-accessed-through-instance,
     -readability-suspicious-call-argument,
     -readability-uppercase-literal-suffix,
     -readability-use-anyofallof,
-    -readability-simplify-boolean-expr,
 
     -zirkon-*,
 '
