@@ -29,7 +29,7 @@ Columns:
     -   `MUTATE_PART` — Apply one or several mutations to the part.
     -   `ALTER_METADATA` — Apply alter modification according to global /metadata and /columns paths.
 
--   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was submitted for execution.
+-   `create_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was submitted for execution.
 
 -   `required_quorum` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of replicas waiting for the task to complete with confirmation of completion. This column is only relevant for the `GET_PARTS` task.
 
@@ -47,13 +47,13 @@ Columns:
 
 -   `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text message about the last error that occurred (if any).
 
--   `last_attempt_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was last attempted.
+-   `last_attempt_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was last attempted.
 
 -   `num_postponed` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of postponed tasks.
 
 -   `postpone_reason` ([String](../../sql-reference/data-types/string.md)) — The reason why the task was postponed.
 
--   `last_postpone_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was last postponed.
+-   `last_postpone_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was last postponed.
 
 -   `merge_type` ([String](../../sql-reference/data-types/string.md)) — Type of the current merge. Empty if it's a mutation.
 

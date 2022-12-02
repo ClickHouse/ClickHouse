@@ -244,6 +244,7 @@ try
     registerAggregateFunctions();
 
     processConfig();
+    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
 
     /// Includes delayed_interactive.
     if (is_interactive)
@@ -1093,7 +1094,6 @@ void Client::processConfig()
     }
     else
     {
-        need_render_progress = config().getBool("progress", false);
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
