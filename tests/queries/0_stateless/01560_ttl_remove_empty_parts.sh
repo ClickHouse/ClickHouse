@@ -7,11 +7,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./parts.lib
 . "$CURDIR"/parts.lib
 
-# -- To be sure, that task, which clears outdated parts executed.
-# DETACH TABLE ttl_empty_parts;
-# ATTACH TABLE ttl_empty_parts;
-# SELECT 'detach / attach';
-
 ${CLICKHOUSE_CLIENT} -q 'DROP TABLE IF EXISTS ttl_empty_parts'
 
 ${CLICKHOUSE_CLIENT} -q '
