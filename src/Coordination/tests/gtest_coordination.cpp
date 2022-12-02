@@ -67,6 +67,7 @@ class CoordinationTest : public ::testing::TestWithParam<CompressionParam>
 {
 protected:
     DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>();
+    Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
 };
 
 TEST_P(CoordinationTest, BuildTest)
@@ -214,7 +215,7 @@ TEST_P(CoordinationTest, TestSummingRaft1)
 
     while (s1.state_machine->getValue() != 143)
     {
-        std::cout << "Waiting s1 to apply entry\n";
+        LOG_INFO(log, "Waiting s1 to apply entry");
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
@@ -1407,7 +1408,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
             nuraft::async_result<bool>::handler_type when_done = [&snapshot_created] (bool & ret, nuraft::ptr<std::exception> &/*exception*/)
             {
                 snapshot_created = ret;
-                std::cerr << "Snapshot finished\n";
+                LOG_INFO(&Poco::Logger::get("CoordinationTest"), "Snapshot finished");
             };
 
             state_machine->create_snapshot(s, when_done);
@@ -1760,7 +1761,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
     auto params = GetParam();
     ChangelogDirTest test("./logs");
     {
-        std::cerr << "================First time=====================\n";
+        LOG_INFO(log, "================First time=====================");
         DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
         changelog.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1771,7 +1772,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
     }
 
     {
-        std::cerr << "================Second time=====================\n";
+        LOG_INFO(log, "================Second time=====================");
         DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
         changelog.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1782,7 +1783,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
     }
 
     {
-        std::cerr << "================Third time=====================\n";
+        LOG_INFO(log, "================Third time=====================");
         DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
         changelog.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1793,7 +1794,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
     }
 
     {
-        std::cerr << "================Fourth time=====================\n";
+        LOG_INFO(log, "================Fourth time=====================");
         DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
         changelog.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1811,7 +1812,7 @@ TEST_P(CoordinationTest, ChangelogInsertMultipleTimesSmooth)
     ChangelogDirTest test("./logs");
     for (size_t i = 0; i < 36; ++i)
     {
-        std::cerr << "================First time=====================\n";
+        LOG_INFO(log, "================First time=====================");
         DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
         changelog.init(1, 0);
         for (size_t j = 0; j < 7; ++j)
@@ -1832,41 +1833,49 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
 {
     auto params = GetParam();
     ChangelogDirTest test("./logs");
-    std::cerr << "================First time=====================\n";
-    DB::KeeperLogStore changelog1("./logs", 100, true, params.enable_compression);
-    changelog1.init(1, 0);
-    auto entry = getLogEntry("hello_world", 1000);
-    changelog1.append(entry);
-    changelog1.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog1.next_slot(), 2);
-    waitDurableLogs(changelog1);
+    {
+        LOG_INFO(log, "================First time=====================");
+        DB::KeeperLogStore changelog1("./logs", 100, true, params.enable_compression);
+        changelog1.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog1.append(entry);
+        changelog1.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog1.next_slot(), 2);
+        waitDurableLogs(changelog1);
+    }
 
-    std::cerr << "================Second time=====================\n";
-    DB::KeeperLogStore changelog2("./logs", 100, true, params.enable_compression);
-    changelog2.init(1, 0);
-    entry = getLogEntry("hello_world", 1000);
-    changelog2.append(entry);
-    changelog2.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog2.next_slot(), 3);
-    waitDurableLogs(changelog2);
+    {
+        LOG_INFO(log, "================Second time=====================");
+        DB::KeeperLogStore changelog2("./logs", 100, true, params.enable_compression);
+        changelog2.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog2.append(entry);
+        changelog2.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog2.next_slot(), 3);
+        waitDurableLogs(changelog2);
+    }
 
-    std::cerr << "================Third time=====================\n";
-    DB::KeeperLogStore changelog3("./logs", 100, true, params.enable_compression);
-    changelog3.init(1, 0);
-    entry = getLogEntry("hello_world", 1000);
-    changelog3.append(entry);
-    changelog3.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog3.next_slot(), 4);
-    waitDurableLogs(changelog3);
+    {
+        LOG_INFO(log, "================Third time=====================");
+        DB::KeeperLogStore changelog3("./logs", 100, true, params.enable_compression);
+        changelog3.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog3.append(entry);
+        changelog3.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog3.next_slot(), 4);
+        waitDurableLogs(changelog3);
+    }
 
-    std::cerr << "================Fourth time=====================\n";
-    DB::KeeperLogStore changelog4("./logs", 100, true, params.enable_compression);
-    changelog4.init(1, 0);
-    entry = getLogEntry("hello_world", 1000);
-    changelog4.append(entry);
-    changelog4.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog4.next_slot(), 5);
-    waitDurableLogs(changelog4);
+    {
+        LOG_INFO(log, "================Fourth time=====================");
+        DB::KeeperLogStore changelog4("./logs", 100, true, params.enable_compression);
+        changelog4.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog4.append(entry);
+        changelog4.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog4.next_slot(), 5);
+        waitDurableLogs(changelog4);
+    }
 }
 
 TEST_P(CoordinationTest, TestStorageSnapshotEqual)
