@@ -67,8 +67,6 @@ public:
 
     bool isRemote() const override { return true; }
 
-    bool supportsCache() const override { return true; }
-
     std::string getName() const override { return "NFSObjectStorage"; }
 
     String getObjectsNamespace() const override { return ""; }

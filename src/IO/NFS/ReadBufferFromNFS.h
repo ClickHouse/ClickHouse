@@ -27,8 +27,9 @@ public:
         const String & nfs_file_path_,
         const ReadSettings & settings_,
         UInt64 max_single_read_retries_ = 2,
-        size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        size_t read_until_position_ = 0);
+        size_t offset_ = 0,
+        size_t read_until_position_ = 0,
+        bool use_external_buffer_ = false);
 
     ~ReadBufferFromNFS() override;
 
@@ -36,7 +37,7 @@ public:
 
     off_t seek(off_t offset_, int whence) override;
 
-    std::optional<size_t> getTotalSize();
+    size_t getFileSize() override;
 
     // the remote file offset of buffer end.
     size_t getFileOffsetOfBufferEnd() const override;
@@ -51,7 +52,10 @@ public:
     String getFileName() const override;
 
     String getInfoForLog() override;
+
+    bool supportsRightBoundedReads() const override { return true; }
 private:
+    bool use_external_buffer;
     std::unique_ptr<ReadBufferFromNFSImpl> impl;
     Poco::Logger* log;
 };

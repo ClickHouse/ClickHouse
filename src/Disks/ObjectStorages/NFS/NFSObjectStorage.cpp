@@ -112,8 +112,9 @@ std::unique_ptr<ReadBufferFromFileBase> NFSObjectStorage::readObjects( /// NOLIN
             fs::path(path),
             disk_read_settings,
             settings->nfs_max_single_read_retries,
-            buffer_size,
-            read_until_position ? read_until_position : buffer_size);
+            /* offset */0,
+            read_until_position ? read_until_position : buffer_size,
+            /* use_external_buffer */true);
     };
 
     auto nfs_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, disk_read_settings);
