@@ -15,28 +15,35 @@ namespace DB::QueryPlanOptimizations
 void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 {
     // do top down find first order by or group by
-    Stack stack;
+    struct Frame
+    {
+        QueryPlan::Node * node = nullptr;
+        QueryPlan::Node * parent_node = nullptr;
+    };
+
+    std::vector<Frame> stack;
     stack.push_back({.node = root});
 
-    std::vector<IQueryPlanStep *> steps_affect_order; /// aggregation or sorting
+    std::vector<IQueryPlanStep *> steps_affect_order;
 
     while (!stack.empty())
     {
-        auto & frame = stack.back();
+        auto frame = stack.back();
+        stack.pop_back();
 
         QueryPlan::Node * current_node = frame.node;
         IQueryPlanStep * current_step = frame.node->step.get();
         if (!steps_affect_order.empty())
         {
-            while (true)
+            if (SortingStep * ss = typeid_cast<SortingStep *>(current_step); ss)
             {
-                if (SortingStep * ss = typeid_cast<SortingStep *>(current_step); ss)
+                auto try_to_remove_sorting_step = [&]() -> bool
                 {
                     /// if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
                     /// if ORDER BY is with FILL WITH, it is non-removable
                     if (typeid_cast<LimitStep *>(steps_affect_order.back()) || typeid_cast<LimitByStep *>(steps_affect_order.back())
                         || typeid_cast<FillingStep *>(steps_affect_order.back()))
-                        break;
+                        return false;
 
                     bool remove_sorting = false;
                     /// (1) aggregation
@@ -53,8 +60,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
                     if (remove_sorting)
                     {
                         /// need to remove sorting and its expression from plan
-                        QueryPlan::Node * parent = stack.back().node;
-                        chassert(parent->children.front() == current_node);
+                        QueryPlan::Node * parent = frame.parent_node;
 
                         QueryPlan::Node * next_node = !current_node->children.empty() ? current_node->children.front() : nullptr;
                         if (next_node && typeid_cast<ExpressionStep *>(next_node->step.get()))
@@ -63,31 +69,45 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
                         if (next_node)
                             parent->children[0] = next_node;
                     }
+                    return remove_sorting;
+                };
+                if (try_to_remove_sorting_step())
+                {
+                    /// current step was removed from plan, its parent has new children, need to visit them
+                    for (auto * child : frame.parent_node->children)
+                        stack.push_back({.node = child, .parent_node = frame.parent_node});
+
+                    continue;
                 }
             }
         }
 
         if (typeid_cast<LimitStep *>(current_step)
-            || typeid_cast<LimitByStep *>(current_step) /// if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FillingStep *>(current_step) /// if ORDER BY is with FILL WITH, it is non-removable
-            || typeid_cast<SortingStep *>(current_step) /// ORDER BY will change order of previous sorting
-            || typeid_cast<AggregatingStep *>(current_step)) /// aggregation change order
+            || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<FillingStep *>(current_step) /// (2) if ORDER BY is with FILL WITH, it is non-removable
+            || typeid_cast<SortingStep *>(current_step) /// (3) ORDER BY will change order of previous sorting
+            || typeid_cast<AggregatingStep *>(current_step)) /// (4) aggregation change order
             steps_affect_order.push_back(current_step);
 
-        /// visit children if there are non-visited
-        if (frame.next_child < frame.node->children.size())
-        {
-            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-            ++frame.next_child;
-            stack.push_back(next_frame);
-        }
-        /// all children are visited
-        else
-        {
-            if (!steps_affect_order.empty() && current_step == steps_affect_order.back())
-                steps_affect_order.pop_back();
+        /// visit children
+        for (auto * child : current_node->children)
+            stack.push_back({.node = child, .parent_node = current_node});
 
-            stack.pop_back();
+        /// if all children of a particular parent are visited
+        /// then the parent need to be removed from nodes which affects order, if it's such node
+        if (!steps_affect_order.empty() && frame.parent_node)
+        {
+            Frame next_frame;
+            if (!stack.empty())
+                next_frame = stack.back();
+
+            /// if next frame node is not child of current node,
+            /// and it doesn't have the same parent as current frame
+            /// then we are visiting last child of the parent.
+            /// So, remove the parent if it's on top of stack with affecting order nodes
+            if (next_frame.parent_node != frame.node && next_frame.parent_node != frame.parent_node
+                && steps_affect_order.back() == frame.parent_node->step.get())
+                steps_affect_order.pop_back();
         }
     }
 }
