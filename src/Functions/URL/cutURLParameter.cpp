@@ -1,16 +1,7 @@
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-#include <base/StringRef.h>
 #include <Functions/FunctionFactory.h>
 #include <base/find_symbols.h>
 
