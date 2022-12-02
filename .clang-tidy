@@ -146,6 +146,11 @@ Checks: '*,
 
 WarningsAsErrors: '*'
 
+# TODO: use dictionary syntax for CheckOptions when minimum clang-tidy level rose to 15
+#           some-check.SomeOption: 'some value'
+#       instead of
+#           - key:             some-check.SomeOption
+#             value:           'some value'
 CheckOptions:
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
