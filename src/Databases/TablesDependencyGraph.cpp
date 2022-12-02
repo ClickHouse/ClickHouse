@@ -1,5 +1,6 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Common/logger_useful.h>
+#include <boost/range/adaptor/reversed.hpp>
 
 
 namespace DB
@@ -30,7 +31,7 @@ TablesDependencyGraph::TablesDependencyGraph(const TablesDependencyGraph & src)
 }
 
 
-TablesDependencyGraph::TablesDependencyGraph(const TablesDependencyGraph && src)
+TablesDependencyGraph::TablesDependencyGraph(TablesDependencyGraph && src) noexcept
     : TablesDependencyGraph(src.name_for_logging)
 {
     *this = std::move(src);
@@ -39,24 +40,32 @@ TablesDependencyGraph::TablesDependencyGraph(const TablesDependencyGraph && src)
 
 TablesDependencyGraph & TablesDependencyGraph::operator=(const TablesDependencyGraph & src)
 {
+    nodes = src.nodes;
     nodes_by_database_and_table_names = src.nodes_by_database_and_table_names;
     nodes_by_uuid = src.nodes_by_uuid;
+    levels_calculated = src.levels_calculated;
+    nodes_sorted_by_level_lazy = src.nodes_sorted_by_level_lazy;
     return *this;
 }
 
 
-TablesDependencyGraph & TablesDependencyGraph::operator=(const TablesDependencyGraph && src)
+TablesDependencyGraph & TablesDependencyGraph::operator=(TablesDependencyGraph && src) noexcept
 {
-    nodes_by_database_and_table_names = std::move(src.nodes_by_database_and_table_names);
-    nodes_by_uuid = std::move(src.nodes_by_uuid);
+    nodes = std::exchange(src.nodes, decltype(nodes){});
+    nodes_by_database_and_table_names = std::exchange(src.nodes_by_database_and_table_names, decltype(nodes_by_database_and_table_names){});
+    nodes_by_uuid = std::exchange(src.nodes_by_uuid, decltype(nodes_by_uuid){});
+    levels_calculated = std::exchange(src.levels_calculated, false);
+    nodes_sorted_by_level_lazy = std::exchange(src.nodes_sorted_by_level_lazy, decltype(nodes_sorted_by_level_lazy){});
     return *this;
 }
 
 
 void TablesDependencyGraph::clear()
 {
+    nodes.clear();
     nodes_by_database_and_table_names.clear();
     nodes_by_uuid.clear();
+    setNeedRecalculateLevels();
 }
 
 
@@ -74,8 +83,8 @@ size_t TablesDependencyGraph::getNumberOfTables() const
 
 void TablesDependencyGraph::addDependency(const StorageID & table_id, const StorageID & dependency)
 {
-    auto table_node = addOrUpdateNode(table_id);
-    auto dependency_node = addOrUpdateNode(dependency);
+    auto * table_node = addOrUpdateNode(table_id);
+    auto * dependency_node = addOrUpdateNode(dependency);
 
     if (table_node->dependencies.contains(dependency_node))
         return; /// Already have this dependency.
@@ -83,22 +92,22 @@ void TablesDependencyGraph::addDependency(const StorageID & table_id, const Stor
     table_node->dependencies.insert(dependency_node);
     dependency_node->dependents.insert(table_node);
 
-    levels_calculated = false;
+    setNeedRecalculateLevels();
 }
 
 
 void TablesDependencyGraph::addDependencies(const StorageID & table_id, const std::vector<StorageID> & dependencies)
 {
-    auto table_node = addOrUpdateNode(table_id);
+    auto * table_node = addOrUpdateNode(table_id);
 
-    std::unordered_set<NodePtr> new_dependency_nodes;
+    std::unordered_set<Node *> new_dependency_nodes;
     for (const auto & dependency : dependencies)
         new_dependency_nodes.emplace(addOrUpdateNode(dependency));
 
     if (table_node->dependencies == new_dependency_nodes)
         return;
 
-    auto old_dependencies = getDependencies(table_node);
+    auto old_dependencies = getDependencies(*table_node);
     auto old_dependency_nodes = std::move(table_node->dependencies);
 
     if (!old_dependencies.empty())
@@ -111,21 +120,20 @@ void TablesDependencyGraph::addDependencies(const StorageID & table_id, const st
             fmt::join(dependencies, ", "));
     }
 
-    for (const auto & dependency_node : old_dependency_nodes)
+    for (auto * dependency_node : old_dependency_nodes)
     {
         if (!new_dependency_nodes.contains(dependency_node))
             dependency_node->dependents.erase(table_node);
     }
 
-    for (const auto & dependency_node : new_dependency_nodes)
+    for (auto * dependency_node : new_dependency_nodes)
     {
         if (!old_dependency_nodes.contains(dependency_node))
             dependency_node->dependents.insert(table_node);
     }
 
     table_node->dependencies = std::move(new_dependency_nodes);
-
-    levels_calculated = false;
+    setNeedRecalculateLevels();
 }
 
 
@@ -146,11 +154,11 @@ void TablesDependencyGraph::addDependencies(const QualifiedTableName & table_nam
 
 bool TablesDependencyGraph::removeDependency(const StorageID & table_id, const StorageID & dependency, bool remove_isolated_tables)
 {
-    auto table_node = findNode(table_id);
+    auto * table_node = findNode(table_id);
     if (!table_node)
         return false;
 
-    auto dependency_node = findNode(dependency);
+    auto * dependency_node = findNode(dependency);
     if (!dependency_node)
         return false;
 
@@ -172,14 +180,14 @@ bool TablesDependencyGraph::removeDependency(const StorageID & table_id, const S
     if (remove_isolated_tables && !table_node_removed && table_node->dependencies.empty() && table_node->dependents.empty())
         removeNode(table_node);
 
-    levels_calculated = false;
+    setNeedRecalculateLevels();
     return true;
 }
 
 
 std::vector<StorageID> TablesDependencyGraph::removeDependencies(const StorageID & table_id, bool remove_isolated_tables)
 {
-    auto table_node = findNode(table_id);
+    auto * table_node = findNode(table_id);
     if (!table_node)
         return {};
 
@@ -190,7 +198,7 @@ std::vector<StorageID> TablesDependencyGraph::removeDependencies(const StorageID
     std::vector<StorageID> dependencies;
     dependencies.reserve(dependency_nodes.size());
 
-    for (const auto & dependency_node : dependency_nodes)
+    for (auto * dependency_node : dependency_nodes)
     {
         dependencies.emplace_back(dependency_node->storage_id);
         dependency_node->dependents.erase(table_node);
@@ -206,25 +214,25 @@ std::vector<StorageID> TablesDependencyGraph::removeDependencies(const StorageID
     if (remove_isolated_tables && !table_node_removed && table_node->dependencies.empty() && table_node->dependents.empty())
         removeNode(table_node);
 
-    levels_calculated = false;
+    setNeedRecalculateLevels();
     return dependencies;
 }
 
 
 bool TablesDependencyGraph::removeTable(const StorageID & table_id)
 {
-    auto table_node = findNode(table_id);
+    auto * table_node = findNode(table_id);
     if (!table_node)
         return false;
 
     removeNode(table_node);
 
-    levels_calculated = false;
+    setNeedRecalculateLevels();
     return true;
 }
 
 
-TablesDependencyGraph::NodePtr TablesDependencyGraph::findNode(const StorageID & table_id) const
+TablesDependencyGraph::Node * TablesDependencyGraph::findNode(const StorageID & table_id) const
 {
     table_id.assertNotEmpty();
     if (table_id.hasUUID())
@@ -238,7 +246,7 @@ TablesDependencyGraph::NodePtr TablesDependencyGraph::findNode(const StorageID &
         auto it = nodes_by_database_and_table_names.find(table_id);
         if (it != nodes_by_database_and_table_names.end())
         {
-            auto node = it->second;
+            auto * node = it->second;
             if (table_id.hasUUID() && node->storage_id.hasUUID() && (table_id.uuid != node->storage_id.uuid))
                 return nullptr; /// UUID is different, it's not the node we're looking for.
             return node; /// Found by table name.
@@ -248,9 +256,9 @@ TablesDependencyGraph::NodePtr TablesDependencyGraph::findNode(const StorageID &
 }
 
 
-TablesDependencyGraph::NodePtr TablesDependencyGraph::addOrUpdateNode(const StorageID & table_id)
+TablesDependencyGraph::Node * TablesDependencyGraph::addOrUpdateNode(const StorageID & table_id)
 {
-    auto node = findNode(table_id);
+    auto * node = findNode(table_id);
     if (node)
     {
         /// Node has been found, maybe we can update the information in the graph with new table_name or new UUID.
@@ -288,8 +296,9 @@ TablesDependencyGraph::NodePtr TablesDependencyGraph::addOrUpdateNode(const Stor
                 removeNode(it->second);
             }
         }
-        node = std::make_shared<Node>(table_id);
-        nodes.insert(node);
+        auto node_ptr = std::make_shared<Node>(table_id);
+        nodes.insert(node_ptr);
+        node = node_ptr.get();
         if (table_id.hasUUID())
             nodes_by_uuid.emplace(table_id.uuid, node);
         if (!table_id.table_name.empty())
@@ -299,7 +308,7 @@ TablesDependencyGraph::NodePtr TablesDependencyGraph::addOrUpdateNode(const Stor
 }
 
 
-void TablesDependencyGraph::removeNode(const NodePtr & node)
+void TablesDependencyGraph::removeNode(Node * node)
 {
     auto dependency_nodes = std::move(node->dependencies);
     auto dependent_nodes = std::move(node->dependents);
@@ -310,23 +319,24 @@ void TablesDependencyGraph::removeNode(const NodePtr & node)
     if (!node->storage_id.table_name.empty())
         nodes_by_database_and_table_names.erase(node->storage_id);
 
-    for (const auto & dependency_node : dependency_nodes)
+    for (auto * dependency_node : dependency_nodes)
         dependency_node->dependents.erase(node);
 
-    for (const auto & dependent_node : dependent_nodes)
+    for (auto * dependent_node : dependent_nodes)
         dependent_node->dependencies.erase(node);
 
-    nodes.erase(node);
+    nodes.erase(node->shared_from_this());
 }
 
 
 size_t TablesDependencyGraph::removeTablesIf(const std::function<bool(const StorageID &)> & function)
 {
     size_t num_removed = 0;
+
     auto it = nodes.begin();
     while (it != nodes.end())
     {
-        auto current = *(it++);
+        auto * current = (it++)->get();
         if (function(current->storage_id))
         {
             StorageID storage_id = current->storage_id;
@@ -336,7 +346,7 @@ size_t TablesDependencyGraph::removeTablesIf(const std::function<bool(const Stor
     }
 
     if (num_removed)
-        levels_calculated = false;
+        setNeedRecalculateLevels();
 
     return num_removed;
 }
@@ -348,7 +358,7 @@ size_t TablesDependencyGraph::removeIsolatedTables()
     auto it = nodes.begin();
     while (it != nodes.end())
     {
-        auto current = *(it++);
+        auto current = (it++)->get();
         if (current->dependencies.empty() && current->dependents.empty())
         {
             removeNode(current);
@@ -357,7 +367,7 @@ size_t TablesDependencyGraph::removeIsolatedTables()
     }
 
     if (num_removed)
-        levels_calculated = false;
+        setNeedRecalculateLevels();
 
     return num_removed;
 }
@@ -376,31 +386,31 @@ std::vector<StorageID> TablesDependencyGraph::getTables() const
 void TablesDependencyGraph::mergeWith(const TablesDependencyGraph & other)
 {
     for (const auto & other_node : other.nodes)
-        addDependencies(other_node->storage_id, other.getDependencies(other_node));
+        addDependencies(other_node->storage_id, other.getDependencies(*other_node));
 }
 
 
 std::vector<StorageID> TablesDependencyGraph::getDependencies(const StorageID & table_id) const
 {
-    auto node = findNode(table_id);
+    const auto * node = findNode(table_id);
     if (!node)
         return {};
-    return getDependencies(node);
+    return getDependencies(*node);
 }
 
 
-std::vector<StorageID> TablesDependencyGraph::getDependencies(const NodePtr & node) const
+std::vector<StorageID> TablesDependencyGraph::getDependencies(const Node & node)
 {
     std::vector<StorageID> res;
-    res.reserve(node->dependencies.size());
-    for (const auto & dependency_node : node->dependencies)
+    res.reserve(node.dependencies.size());
+    for (const auto * dependency_node : node.dependencies)
         res.emplace_back(dependency_node->storage_id);
     return res;
 }
 
 size_t TablesDependencyGraph::getNumberOfDependencies(const StorageID & table_id) const
 {
-    auto node = findNode(table_id);
+    const auto * node = findNode(table_id);
     if (!node)
         return 0;
     return node->dependencies.size();
@@ -409,18 +419,18 @@ size_t TablesDependencyGraph::getNumberOfDependencies(const StorageID & table_id
 
 std::vector<StorageID> TablesDependencyGraph::getDependents(const StorageID & table_id) const
 {
-    auto node = findNode(table_id);
+    const auto * node = findNode(table_id);
     if (!node)
         return {};
-    return getDependents(node);
+    return getDependents(*node);
 }
 
 
-std::vector<StorageID> TablesDependencyGraph::getDependents(const NodePtr & node) const
+std::vector<StorageID> TablesDependencyGraph::getDependents(const Node & node)
 {
     std::vector<StorageID> res;
-    res.reserve(node->dependents.size());
-    for (const auto & dependent_node : node->dependents)
+    res.reserve(node.dependents.size());
+    for (const auto * dependent_node : node.dependents)
         res.emplace_back(dependent_node->storage_id);
     return res;
 }
@@ -428,7 +438,7 @@ std::vector<StorageID> TablesDependencyGraph::getDependents(const NodePtr & node
 
 size_t TablesDependencyGraph::getNumberOfDependents(const StorageID & table_id) const
 {
-    auto node = findNode(table_id);
+    const auto * node = findNode(table_id);
     if (!node)
         return 0;
     return node->dependents.size();
@@ -440,7 +450,7 @@ void TablesDependencyGraph::getNumberOfAdjacents(const StorageID & table_id, siz
     num_dependencies = 0;
     num_dependents = 0;
 
-    auto node = findNode(table_id);
+    const auto * node = findNode(table_id);
     if (!node)
         return;
 
@@ -451,7 +461,7 @@ void TablesDependencyGraph::getNumberOfAdjacents(const StorageID & table_id, siz
 
 bool TablesDependencyGraph::isIsolatedTable(const StorageID & table_id) const
 {
-    auto node = findNode(table_id);
+    const auto * node = findNode(table_id);
     if (!node)
         return false;
 
@@ -475,24 +485,19 @@ void TablesDependencyGraph::checkNoCyclicDependencies() const
 
 bool TablesDependencyGraph::hasCyclicDependencies() const
 {
-    calculateLevels();
-    for (const auto & node : nodes)
-    {
-        if (node->level == CYCLIC_LEVEL)
-            return true;
-    }
-    return false;
+    const auto & nodes_sorted_by_level = getNodesSortedByLevel();
+    return !nodes_sorted_by_level.empty() && (nodes_sorted_by_level.back()->level == CYCLIC_LEVEL);
 }
 
 
 std::vector<StorageID> TablesDependencyGraph::getTablesWithCyclicDependencies() const
 {
-    calculateLevels();
     std::vector<StorageID> res;
-    for (const auto & node : nodes)
+    for (const auto * node : getNodesSortedByLevel() | boost::adaptors::reversed)
     {
-        if (node->level == CYCLIC_LEVEL)
-            res.emplace_back(node->storage_id);
+        if (node->level != CYCLIC_LEVEL)
+            break;
+        res.emplace_back(node->storage_id);
     }
     return res;
 }
@@ -500,19 +505,17 @@ std::vector<StorageID> TablesDependencyGraph::getTablesWithCyclicDependencies() 
 
 String TablesDependencyGraph::describeCyclicDependencies() const
 {
-    calculateLevels();
-
     String res;
-    for (const auto & node : nodes)
+    for (const auto * node : getNodesSortedByLevel() | boost::adaptors::reversed)
     {
         if (node->level != CYCLIC_LEVEL)
-            continue;
+            break;
         if (!res.empty())
             res += "; ";
         res += node->storage_id.getNameForLogs();
         res += " -> [";
         bool need_comma = false;
-        for (const auto & dependency_node : node->dependencies)
+        for (const auto * dependency_node : node->dependencies)
         {
             if (dependency_node->level != CYCLIC_LEVEL)
                 continue;
@@ -527,27 +530,37 @@ String TablesDependencyGraph::describeCyclicDependencies() const
 }
 
 
+void TablesDependencyGraph::setNeedRecalculateLevels()
+{
+    levels_calculated = false;
+    nodes_sorted_by_level_lazy.clear();
+}
+
+
 void TablesDependencyGraph::calculateLevels() const
 {
     if (levels_calculated)
         return;
     levels_calculated = true;
 
-    nodes_sorted_by_level.clear();
-    nodes_sorted_by_level.reserve(nodes.size());
+    nodes_sorted_by_level_lazy.clear();
+    nodes_sorted_by_level_lazy.reserve(nodes.size());
+
+    std::unordered_set<const Node *> nodes_to_process;
+    for (const auto & node_ptr : nodes)
+        nodes_to_process.emplace(node_ptr.get());
 
     size_t current_level = 0;
-    auto nodes_to_process = nodes;
 
     while (!nodes_to_process.empty())
     {
-        size_t old_num_sorted = nodes_sorted_by_level.size();
+        size_t old_num_sorted = nodes_sorted_by_level_lazy.size();
 
         for (auto it = nodes_to_process.begin(); it != nodes_to_process.end();)
         {
-            const auto & current_node = *(it++);
+            const auto * current_node = *(it++);
             bool has_dependencies = false;
-            for (const auto & dependency : current_node->dependencies)
+            for (const auto * dependency : current_node->dependencies)
             {
                 if (nodes_to_process.contains(dependency))
                     has_dependencies = true;
@@ -556,33 +569,39 @@ void TablesDependencyGraph::calculateLevels() const
             if (!has_dependencies)
             {
                 current_node->level = current_level;
-                nodes_sorted_by_level.emplace_back(current_node);
+                nodes_sorted_by_level_lazy.emplace_back(current_node);
             }
         }
 
-        if (nodes_sorted_by_level.size() == old_num_sorted)
+        if (nodes_sorted_by_level_lazy.size() == old_num_sorted)
             break;
 
-        for (size_t i = old_num_sorted; i != nodes_sorted_by_level.size(); ++i)
-            nodes_to_process.erase(nodes_sorted_by_level[i]);
+        for (size_t i = old_num_sorted; i != nodes_sorted_by_level_lazy.size(); ++i)
+            nodes_to_process.erase(nodes_sorted_by_level_lazy[i]);
 
         ++current_level;
     }
 
-    for (const auto & node_with_cyclic_dependencies : nodes_to_process)
+    for (const auto * node_with_cyclic_dependencies : nodes_to_process)
     {
         node_with_cyclic_dependencies->level = CYCLIC_LEVEL;
-        nodes_sorted_by_level.emplace_back(node_with_cyclic_dependencies);
+        nodes_sorted_by_level_lazy.emplace_back(node_with_cyclic_dependencies);
     }
+}
+
+
+const TablesDependencyGraph::NodesSortedByLevel & TablesDependencyGraph::getNodesSortedByLevel() const
+{
+    calculateLevels();
+    return nodes_sorted_by_level_lazy;
 }
 
 
 std::vector<StorageID> TablesDependencyGraph::getTablesSortedByDependency() const
 {
-    calculateLevels();
     std::vector<StorageID> res;
     res.reserve(nodes.size());
-    for (const auto & node : nodes_sorted_by_level)
+    for (const auto * node : getNodesSortedByLevel())
     {
         res.emplace_back(node->storage_id);
     }
@@ -592,10 +611,9 @@ std::vector<StorageID> TablesDependencyGraph::getTablesSortedByDependency() cons
 
 std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSortedByDependencyForParallel() const
 {
-    calculateLevels();
     std::vector<std::vector<StorageID>> res;
     std::optional<size_t> last_level;
-    for (const auto & node : nodes_sorted_by_level)
+    for (const auto * node : getNodesSortedByLevel())
     {
         if (node->level != last_level)
             res.emplace_back();
@@ -609,18 +627,17 @@ std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSortedByDepe
 
 void TablesDependencyGraph::log() const
 {
-    calculateLevels();
-    if (nodes.empty())
+    if (empty())
     {
         LOG_TEST(getLogger(), "No tables");
         return;
     }
 
-    for (const auto & node : nodes_sorted_by_level)
+    for (const auto * node : getNodesSortedByLevel())
     {
         String dependencies_desc = node->dependencies.empty()
             ? "no dependencies"
-            : fmt::format("{} dependencies: {}", node->dependencies.size(), fmt::join(getDependencies(node), ", "));
+            : fmt::format("{} dependencies: {}", node->dependencies.size(), fmt::join(getDependencies(*node), ", "));
 
         String level_desc = (node->level == CYCLIC_LEVEL) ? "cyclic" : fmt::format("level {}", node->level);
 

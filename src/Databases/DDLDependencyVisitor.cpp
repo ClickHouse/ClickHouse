@@ -129,8 +129,8 @@ namespace
         if (!expr_list)
             return;
 
-        auto database_literal = expr_list->children[database_arg_idx]->as<ASTLiteral>();
-        auto table_name_literal = expr_list->children[table_arg_idx]->as<ASTLiteral>();
+        const auto * database_literal = expr_list->children[database_arg_idx]->as<ASTLiteral>();
+        const auto * table_name_literal = expr_list->children[table_arg_idx]->as<ASTLiteral>();
 
         if (!database_literal || !table_name_literal || (database_literal->value.getType() != Field::Types::String)
             || (table_name_literal->value.getType() != Field::Types::String))

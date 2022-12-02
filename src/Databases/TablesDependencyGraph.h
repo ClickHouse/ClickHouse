@@ -33,9 +33,9 @@ public:
     explicit TablesDependencyGraph(const String & name_for_logging_);
 
     TablesDependencyGraph(const TablesDependencyGraph & src);
-    TablesDependencyGraph(const TablesDependencyGraph && src);
+    TablesDependencyGraph(TablesDependencyGraph && src) noexcept;
     TablesDependencyGraph & operator=(const TablesDependencyGraph & src);
-    TablesDependencyGraph & operator=(const TablesDependencyGraph && src);
+    TablesDependencyGraph & operator=(TablesDependencyGraph && src) noexcept;
 
     /// The dependency graph is empty if doesn't contain any tables.
     bool empty() const;
@@ -114,56 +114,56 @@ public:
     void log() const;
 
 private:
-    struct Node;
-    using NodePtr = std::shared_ptr<Node>;
-
-    struct Node
+    struct Node : public std::enable_shared_from_this<Node>
     {
         StorageID storage_id;
 
         /// If A depends on B then "A.dependencies" contains "B".
-        std::unordered_set<NodePtr> dependencies;
+        std::unordered_set<Node *> dependencies;
 
-        /// If A depends on B then "B.depends" contains "A".
-        std::unordered_set<NodePtr> dependents;
+        /// If A depends on B then "B.dependents" contains "A".
+        std::unordered_set<Node *> dependents;
 
         /// Tables without dependencies have level == 0, tables which depend on the tables without dependencies have level == 1, and so on.
         /// Calculated lazily.
-        size_t level = 0;
+        mutable size_t level = 0;
 
         explicit Node(const StorageID & storage_id_) : storage_id(storage_id_) {}
     };
 
-    using Nodes = std::vector<NodePtr>;
+    using NodeSharedPtr = std::shared_ptr<Node>;
 
     struct LessByLevel
     {
-        bool operator()(const NodePtr & left, const NodePtr & right) { return left->level < right->level; }
+        bool operator()(const Node * left, const Node * right) { return left->level < right->level; }
     };
 
-    std::unordered_set<NodePtr> nodes;
+    std::unordered_set<NodeSharedPtr> nodes;
 
     /// Nodes can be found either by UUID or by database name & table name. That's why we need two maps here.
-    std::unordered_map<StorageID, NodePtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> nodes_by_database_and_table_names;
-    std::unordered_map<UUID, NodePtr> nodes_by_uuid;
+    std::unordered_map<StorageID, Node *, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> nodes_by_database_and_table_names;
+    std::unordered_map<UUID, Node *> nodes_by_uuid;
+
+    /// This is set if both `level` inside each node and `nodes_sorted_by_level_lazy` are calculated.
+    mutable bool levels_calculated = false;
 
     /// Nodes sorted by their level. Calculated lazily.
-    mutable Nodes nodes_sorted_by_level;
-
-    /// This is set if both `level` inside each node and `nodes_sorted_by_level` are calculated.
-    mutable bool levels_calculated = false;
+    using NodesSortedByLevel = std::vector<const Node *>;
+    mutable NodesSortedByLevel nodes_sorted_by_level_lazy;
 
     const String name_for_logging;
     mutable Poco::Logger * logger = nullptr;
 
-    NodePtr findNode(const StorageID & storage_id) const;
-    NodePtr addOrUpdateNode(const StorageID & storage_id);
-    void removeNode(const NodePtr & node);
+    Node * findNode(const StorageID & table_id) const;
+    Node * addOrUpdateNode(const StorageID & table_id);
+    void removeNode(Node * node);
 
-    std::vector<StorageID> getDependencies(const NodePtr & node) const;
-    std::vector<StorageID> getDependents(const NodePtr & node) const;
+    static std::vector<StorageID> getDependencies(const Node & node);
+    static std::vector<StorageID> getDependents(const Node & node);
 
+    void setNeedRecalculateLevels();
     void calculateLevels() const;
+    const NodesSortedByLevel & getNodesSortedByLevel() const;
 
     Poco::Logger * getLogger() const;
 };

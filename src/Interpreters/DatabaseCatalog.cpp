@@ -475,7 +475,7 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     for (const auto & table_name : tables_in_database)
     {
         auto dependencies = referential_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
-        referential_dependencies.addDependencies(StorageID{new_name, table_name}, std::move(dependencies));
+        referential_dependencies.addDependencies(StorageID{new_name, table_name}, dependencies);
     }
 }
 

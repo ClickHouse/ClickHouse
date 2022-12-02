@@ -144,7 +144,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     applyMetadataChangesToCreateQuery(it->second, metadata);
 
     auto new_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
-    DatabaseCatalog::instance().updateDependencies(table_id, std::move(new_dependencies));
+    DatabaseCatalog::instance().updateDependencies(table_id, new_dependencies);
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
