@@ -402,21 +402,31 @@ class FailureReason(enum.Enum):
     INTERNAL_ERROR = "Test internal error: "
 
 
+def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
+    def gen():
+        tmp = random.random()
+        if tmp <= always_on_prob:
+            return min_val
+        if tmp <= always_on_prob + always_off_prob:
+            return max_val
+
+        if isinstance(min_val, int) and isinstance(max_val, int):
+            return random.randint(min_val, max_val)
+        else:
+            return random.uniform(min_val, max_val)
+
+    return gen
+
+
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: 0
         if random.random() < 0.5
         else random.randint(1, 16),
-        "group_by_two_level_threshold": lambda: 1
-        if random.random() < 0.1
-        else 2**60
-        if random.random() < 0.11
-        else 100000,
-        "group_by_two_level_threshold_bytes": lambda: 1
-        if random.random() < 0.1
-        else 2**60
-        if random.random() < 0.11
-        else 50000000,
+        "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
+        "group_by_two_level_threshold_bytes": threshold_generator(
+            0.2, 0.2, 1, 50000000
+        ),
         "distributed_aggregation_memory_efficient": lambda: random.randint(0, 1),
         "fsync_metadata": lambda: random.randint(0, 1),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
@@ -436,16 +446,12 @@ class SettingsRandomizer:
         "min_compress_block_size": lambda: random.randint(1, 1048576 * 3),
         "max_compress_block_size": lambda: random.randint(1, 1048576 * 3),
         "use_uncompressed_cache": lambda: random.randint(0, 1),
-        "min_bytes_to_use_direct_io": lambda: 0
-        if random.random() < 0.5
-        else 1
-        if random.random() < 0.2
-        else random.randint(1, 1024 * 1024 * 1024),
-        "min_bytes_to_use_mmap_io": lambda: 0
-        if random.random() < 0.5
-        else 1
-        if random.random() < 0.2
-        else random.randint(1, 1024 * 1024 * 1024),
+        "min_bytes_to_use_direct_io": threshold_generator(
+            0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
+        "min_bytes_to_use_mmap_io": threshold_generator(
+            0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
         "local_filesystem_read_method": lambda: random.choice(
             ["read", "pread", "mmap", "pread_threadpool"]
         ),
@@ -470,36 +476,25 @@ class SettingsRandomizer:
 
 class MergeTreeSettingsRandomizer:
     settings = {
-        "index_granularity": lambda: random.randint(1, 65536),
-        "min_bytes_for_wide_part": lambda: 0
-        if random.random() < 0.3
-        else random.randint(0, 1024 * 1024 * 1024),
-        "min_rows_for_wide_part": lambda: 0
-        if random.random() < 0.3
-        else random.randint(0, 10000000),
-        "ratio_of_defaults_for_sparse_serialization": lambda: 0.0
-        if random.random() < 0.1
-        else 1.0
-        if random.random() < 4 / 9
-        else random.random(),
-        "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
-        "prefer_fetch_merged_part_size_threshold": lambda: random.randint(
-            1, 10 * 1024 * 1024 * 1024
+        "ratio_of_defaults_for_sparse_serialization": threshold_generator(
+            0.1, 0.6, 0.0, 1.0
         ),
-        "vertical_merge_algorithm_min_rows_to_activate": lambda: 1
-        if random.random() < 0.2
-        else 100000000
-        if random.random() < 0.25
-        else random.randint(1, 32 * 8192),
-        "vertical_merge_algorithm_min_columns_to_activate": lambda: 1
-        if random.random() < 0.2
-        else 100000000
-        if random.random() < 0.25
-        else random.randint(1, 20),
-        "min_merge_bytes_to_use_direct_io": lambda: 1
-        if random.random() < 0.2
-        else random.randint(1, 10 * 1024 * 1024 * 1024),
+        "prefer_fetch_merged_part_size_threshold": threshold_generator(
+            0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
+        "vertical_merge_algorithm_min_rows_to_activate": threshold_generator(
+            0.25, 0.25, 1, 100000000
+        ),
+        "vertical_merge_algorithm_min_columns_to_activate": threshold_generator(
+            0.25, 0.25, 1, 1000
+        ),
+        "min_merge_bytes_to_use_direct_io": threshold_generator(
+            0.25, 0.25, 1, 10 * 1024 * 1024 * 1024
+        ),
         "index_granularity_bytes": lambda: random.randint(1024, 30 * 1024 * 1024),
+        "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
+        "index_granularity": lambda: random.randint(1, 65536),
+        "min_bytes_for_wide_part": threshold_generator(0.3, 0.3, 0, 1024 * 1024 * 1024),
     }
 
     @staticmethod
