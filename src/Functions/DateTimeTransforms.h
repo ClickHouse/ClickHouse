@@ -1353,7 +1353,7 @@ struct ToDateTimeComponentsImpl
     }
     static inline DateLUTImpl::DateTimeComponents execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDateTimeComponents(static_cast<time_t>(t));
+        return time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(t));
     }
     static inline DateLUTImpl::DateTimeComponents execute(Int32 d, const DateLUTImpl & time_zone)
     {
