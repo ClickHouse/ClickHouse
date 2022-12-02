@@ -442,8 +442,9 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+else()
+    link_libraries(global-group)
 endif ()
-link_libraries(global-group)
 
 if (NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
@@ -592,7 +593,7 @@ add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
 
-include (cmake/sanitize_target_link_libraries.cmake)
+include (cmake/sanitize_targets.cmake)
 
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
