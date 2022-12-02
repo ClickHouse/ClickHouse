@@ -146,6 +146,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
       * because ordinary functions or aggregate functions must be stateless.
       */
     result_function->function = function;
+    result_function->kind = kind;
 
     return result_function;
 }
