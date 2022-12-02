@@ -310,6 +310,8 @@ Chain buildPushingToViewsChain(
 
             if (lock == nullptr)
             {
+                // In case the materialized view is dropped at this point, we register a warning and ignore it
+                assert(materialized_view->is_dropped)
                 LOG_WARNING(
                     &Poco::Logger::get("PushingToViews"),
                     "Trying to access table {} but it doesn't exist",
