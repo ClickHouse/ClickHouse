@@ -2,7 +2,6 @@
 
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <IO/ReadHelpers.h>
@@ -12,7 +11,6 @@
 #include <IO/Operators.h>
 #include <pcg-random/pcg_random.hpp>
 #include <filesystem>
-
 
 namespace fs = std::filesystem;
 
@@ -48,27 +46,13 @@ FileCache::Key FileCache::hash(const String & path)
     return Key(sipHash128(path.data(), path.size()));
 }
 
-String FileCache::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
+String FileCache::getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const
 {
-    String file_suffix;
-    switch (segment_kind)
-    {
-        case FileSegmentKind::Persistent:
-            file_suffix = "_persistent";
-            break;
-        case FileSegmentKind::Temporary:
-            file_suffix = "_temporary";
-            break;
-        case FileSegmentKind::Regular:
-            file_suffix = "";
-            break;
-    }
-
     auto key_str = key.toString();
     return fs::path(cache_base_path)
         / key_str.substr(0, 3)
         / key_str
-        / (std::to_string(offset) + file_suffix);
+        / (std::to_string(offset) + (is_persistent ? "_persistent" : ""));
 }
 
 String FileCache::getPathInLocalCache(const Key & key) const
@@ -556,6 +540,9 @@ FileSegmentPtr FileCache::createFileSegmentForDownload(
     assertCacheCorrectness(key, cache_lock);
 #endif
 
+    if (size > max_file_segment_size)
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Requested size exceeds max file segment size");
+
     auto * cell = getCell(key, offset, cache_lock);
     if (cell)
         throw Exception(
@@ -1012,17 +999,9 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
         fs::directory_iterator key_it{key_prefix_it->path()};
         for (; key_it != fs::directory_iterator(); ++key_it)
         {
-            if (key_it->is_regular_file())
+            if (!key_it->is_directory())
             {
-                if (key_prefix_it->path().filename() == "tmp" && startsWith(key_it->path().filename(), "tmp"))
-                {
-                    LOG_DEBUG(log, "Found temporary file '{}', will remove it", key_it->path().string());
-                    fs::remove(key_it->path());
-                }
-                else
-                {
-                    LOG_DEBUG(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
-                }
+                LOG_DEBUG(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
                 continue;
             }
 
@@ -1030,26 +1009,17 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
             fs::directory_iterator offset_it{key_it->path()};
             for (; offset_it != fs::directory_iterator(); ++offset_it)
             {
-                if (offset_it->is_directory())
-                {
-                    LOG_DEBUG(log, "Unexpected directory: {}. Expected a file", offset_it->path().string());
-                    continue;
-                }
-
                 auto offset_with_suffix = offset_it->path().filename().string();
                 auto delim_pos = offset_with_suffix.find('_');
                 bool parsed;
-                FileSegmentKind segment_kind = FileSegmentKind::Regular;
+                bool is_persistent = false;
 
                 if (delim_pos == std::string::npos)
                     parsed = tryParse<UInt64>(offset, offset_with_suffix);
                 else
                 {
                     parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
-                    if (offset_with_suffix.substr(delim_pos+1) == "persistent")
-                        segment_kind = FileSegmentKind::Persistent;
-                    if (offset_with_suffix.substr(delim_pos+1) == "temporary")
-                        segment_kind = FileSegmentKind::Temporary;
+                    is_persistent = offset_with_suffix.substr(delim_pos+1) == "persistent";
                 }
 
                 if (!parsed)
@@ -1069,7 +1039,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
                 {
                     auto * cell = addCell(
                         key, offset, size, FileSegment::State::DOWNLOADED,
-                        CreateFileSegmentSettings(segment_kind), cache_lock);
+                        CreateFileSegmentSettings{ .is_persistent = is_persistent }, cache_lock);
 
                     if (cell)
                         queue_entries.emplace_back(cell->queue_iterator, cell->file_segment);
@@ -1181,7 +1151,7 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
     for (const auto & [offset, cell] : cells_by_offset)
     {
         if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
-            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->getKind()));
+            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->isPersistent()));
     }
 
     return cache_paths;
@@ -1201,16 +1171,6 @@ size_t FileCache::getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_l
 size_t FileCache::getAvailableCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const
 {
     return max_size - getUsedCacheSizeUnlocked(cache_lock);
-}
-
-size_t FileCache::getTotalMaxSize() const
-{
-    return max_size;
-}
-
-size_t FileCache::getTotalMaxElements() const
-{
-    return max_element_size;
 }
 
 size_t FileCache::getFileSegmentsNum() const
