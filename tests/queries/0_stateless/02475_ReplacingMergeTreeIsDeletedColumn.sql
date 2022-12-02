@@ -62,6 +62,7 @@ CREATE TABLE testCleanupR1 (uid String, version UInt32, is_deleted UInt8)
 INSERT INTO testCleanupR1 (*) VALUES ('d1', 1, 0),('d2', 1, 0),('d3', 1, 0),('d4', 1, 0);
 INSERT INTO testCleanupR1 (*) VALUES ('d3', 2, 1);
 INSERT INTO testCleanupR1 (*) VALUES ('d1', 2, 1);
+SYSTEM SYNC REPLICA testCleanupR1; -- Avoid "Cannot select parts for optimization: Entry for part all_2_2_0 hasn't been read from the replication log yet"
 
 OPTIMIZE TABLE testCleanupR1 FINAL CLEANUP;
 
@@ -79,6 +80,7 @@ CREATE TABLE testSettingsR1 (col1 String, version UInt32, is_deleted UInt8)
     SETTINGS clean_deleted_rows = 'Always';
 
 INSERT INTO testSettingsR1 (*) VALUES ('c1', 1, 1),('c2', 1, 0),('c3', 1, 1),('c4', 1, 0);
+SYSTEM SYNC REPLICA testSettingsR1; -- Avoid "Cannot select parts for optimization: Entry for part all_2_2_0 hasn't been read from the replication log yet"
 
 OPTIMIZE TABLE testSettingsR1 FINAL;
 

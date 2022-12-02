@@ -260,17 +260,13 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
                     deduplicate_by_columns = std::move(new_deduplicate_by_columns);
                 }
+                else if (checkString("cleanup: ", in))
+                    in >> cleanup;
                 else
                     trailing_newline_found = true;
             }
         }
 
-        if (!trailing_newline_found)
-            in >> "\n";
-        trailing_newline_found = false;
-
-        if (checkString("cleanup: ", in))
-            in >> cleanup;
     }
     else if (type_str == "drop" || type_str == "detach")
     {
