@@ -80,7 +80,7 @@ public:
                 arguments[0].column->getName(), getName());
     }
 
-    static void cutURL(ColumnString::Chars & data, String pattern, size_t prev_offset, size_t & cur_offset, size_t & offset_adjust)
+    static void cutURL(ColumnString::Chars & data, String pattern, size_t prev_offset, size_t & cur_offset)
     {
         pattern += '=';
         const char * param_str = pattern.c_str();
@@ -123,7 +123,6 @@ public:
 
         size_t cut_length = end_pos - begin_pos;
         cur_offset -= cut_length;
-        offset_adjust += cut_length;
         data.erase(data.begin() + prev_offset + (begin_pos - url_begin), data.begin() + prev_offset+  (end_pos - url_begin));
     }
 
@@ -133,17 +132,22 @@ public:
         const ColumnArray * col_needle_const_array,
         ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
-        res_data.resize(data.size());
-        memcpySmallAllowReadWriteOverflow15(&res_data[0], &data[0], data.size());
+        res_data.reserve(data.size());
         res_offsets.resize(offsets.size());
 
         size_t prev_offset = 0;
         size_t cur_offset;
-        size_t offset_adjust = 0;
+        size_t cur_len;
+        size_t res_offset = 0;
+        size_t cur_res_offset;
 
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            cur_offset = offsets[i] - offset_adjust;
+            cur_offset = offsets[i];
+            cur_len = cur_offset - prev_offset;
+            cur_res_offset = res_offset + cur_len;
+            res_data.resize(cur_res_offset);
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset], cur_len);
 
             if (col_needle_const_array)
             {
@@ -151,14 +155,15 @@ public:
                 for (size_t j = 0; j < num_needles; ++j)
                 {
                     auto field = col_needle_const_array->getData()[j];
-                    cutURL(res_data, field.get<String>(), prev_offset, cur_offset, offset_adjust);
+                    cutURL(res_data, field.get<String>(), res_offset, cur_res_offset);
                 }
             }
             else
             {
-                cutURL(res_data, col_needle->getValue<String>(), prev_offset, cur_offset, offset_adjust);
+                cutURL(res_data, col_needle->getValue<String>(), res_offset, cur_res_offset);
             }
-            res_offsets[i] = cur_offset;
+            res_offsets[i] = cur_res_offset;
+            res_offset = cur_res_offset;
             prev_offset = cur_offset;
         }
     }
