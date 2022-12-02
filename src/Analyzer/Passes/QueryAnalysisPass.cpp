@@ -2854,6 +2854,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         }
     }
 
+    identifier_resolve_settings.allow_to_check_join_tree = false;
+
     while (scope_to_check != nullptr)
     {
         auto lookup_result = tryResolveIdentifier(identifier_lookup, *scope_to_check, identifier_resolve_settings);
