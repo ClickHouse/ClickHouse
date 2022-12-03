@@ -22,3 +22,4 @@ endfunction()
 configure_rustc()
 
 add_subdirectory (BLAKE3)
+add_subdirectory (skim)
