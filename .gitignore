@@ -158,3 +158,6 @@ website/package-lock.json
 # temporary test files
 tests/queries/0_stateless/test_*
 tests/queries/0_stateless/*.binary
+
+# rust
+/rust/**/target
