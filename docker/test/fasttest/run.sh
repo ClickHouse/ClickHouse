@@ -138,7 +138,6 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
-            contrib/google-benchmark
         )
 
         git submodule sync
