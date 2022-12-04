@@ -162,6 +162,8 @@ private:
     size_t num_dimensions_to_fold;
 };
 
+void setAllObjectsToDummyTupleType(NamesAndTypesList & columns);
+
 /// Receives range of objects, which contains collections
 /// of columns-like objects (e.g. ColumnsDescription or NamesAndTypesList)
 /// and deduces the common types of object columns for all entries.

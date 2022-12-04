@@ -7,9 +7,9 @@ import sys
 
 import argparse
 
-import boto3
+import boto3  # type: ignore
+import requests  # type: ignore
 from github import Github
-import requests
 
 from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from stopwatch import Stopwatch

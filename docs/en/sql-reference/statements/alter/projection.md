@@ -11,6 +11,14 @@ Projections store data in a format that optimizes query execution, this feature 
 
 You can define one or more projections for a table, and during the query analysis the projection with the least data to scan will be selected by ClickHouse without modifying the query provided by the user.
 
+:::note Disk usage
+
+Projections will create internally a new hidden table, this means that more IO and space on disk will be required.
+Example, If the projection has defined a different primary key, all the data from the original table will be duplicated.
+:::
+
+You can see more technical details about how projections work internally on this [page](/docs/en/guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-multiple.md/#option-3-projections).
+
 ## Example filtering without using primary keys
 
 Creating the table:
