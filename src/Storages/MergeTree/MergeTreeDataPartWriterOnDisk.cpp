@@ -244,7 +244,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
                     const auto & primary_column = primary_index_block.getByPosition(j);
                     index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
                     primary_column.type->getDefaultSerialization()->serializeBinary(
-                        *primary_column.column, granule.start_row, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream);
+                        *primary_column.column, granule.start_row, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream, {});
                 }
             }
         }
@@ -312,7 +312,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
                 size_t last_row_number = column.size() - 1;
                 index_columns[j]->insertFrom(column, last_row_number);
                 index_types[j]->getDefaultSerialization()->serializeBinary(
-                    column, last_row_number, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream);
+                    column, last_row_number, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream, {});
             }
             last_block_index_columns.clear();
         }

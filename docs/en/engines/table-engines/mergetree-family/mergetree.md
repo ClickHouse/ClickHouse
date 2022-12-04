@@ -537,7 +537,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](/docs/en/sql-reference/operators/index.md/#operators-datetime) operators, for example:
+To define `interval`, use [time interval](/docs/en/sql-reference/operators/index.md#operators-datetime) operators, for example:
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -860,7 +860,7 @@ The number of threads performing background moves of data parts can be changed b
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 -   As a result of an insert (`INSERT` query).
--   During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md/#alter-mutations).
+-   During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md#alter-mutations).
 -   When downloading from another replica.
 -   As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](/docs/en/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
 
@@ -940,6 +940,10 @@ Optional parameters:
 -   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 -   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
+-   `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
+-   `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
+-   `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
+-   `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
 
 S3 disk can be configured as `main` or `cold` storage:
 ``` xml
