@@ -550,7 +550,7 @@ Alias: `dateTrunc`.
 
 -   Value, truncated to the specified part of date.
 
-Type: [Datetime](../../sql-reference/data-types/datetime.md).
+Type: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -881,7 +881,7 @@ now([timezone])
 
 -   Current date and time.
 
-Type: [Datetime](../../sql-reference/data-types/datetime.md).
+Type: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -932,7 +932,7 @@ now64([scale], [timezone])
 
 -   Current date and time with sub-second precision.
 
-Type: [Datetime64](../../sql-reference/data-types/datetime64.md).
+Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -968,7 +968,7 @@ nowInBlock([timezone])
 
 -   Current date and time at the moment of processing of each block of data.
 
-Type: [Datetime](../../sql-reference/data-types/datetime.md).
+Type: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 

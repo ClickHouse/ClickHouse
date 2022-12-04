@@ -50,6 +50,24 @@ def check_backup_and_restore(storage_policy, backup_destination, size=1000):
     )
 
 
+def check_system_tables():
+    disks = [
+        tuple(disk.split("\t"))
+        for disk in node.query("SELECT name, type FROM system.disks").split("\n")
+        if disk
+    ]
+    expected_disks = (
+        ("default", "local"),
+        ("disk_s3", "s3"),
+        ("disk_s3_other_bucket", "s3"),
+        ("disk_s3_plain", "s3_plain"),
+    )
+    assert len(expected_disks) == len(disks)
+    for expected_disk in expected_disks:
+        if expected_disk not in disks:
+            raise AssertionError(f"Missed {expected_disk} in {disks}")
+
+
 @pytest.mark.parametrize(
     "storage_policy, to_disk",
     [
@@ -93,6 +111,7 @@ def test_backup_to_s3():
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
     check_backup_and_restore(storage_policy, backup_destination)
+    check_system_tables()
 
 
 def test_backup_to_s3_named_collection():

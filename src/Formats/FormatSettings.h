@@ -79,6 +79,8 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
+    UInt64 max_binary_string_size = 0;
+
     struct
     {
         UInt64 row_group_size = 1000000;
@@ -303,6 +305,12 @@ struct FormatSettings
         bool use_replace = false;
         bool quote_names = true;
     } sql_insert;
+
+    struct
+    {
+        bool output_string_as_string;
+        bool skip_fields_with_unsupported_types_in_schema_inference;
+    } bson;
 };
 
 }

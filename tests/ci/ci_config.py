@@ -347,6 +347,9 @@ CI_CONFIG = {
         "ClickHouse Keeper Jepsen": {
             "required_build": "binary_release",
         },
+        "ClickHouse Server Jepsen": {
+            "required_build": "binary_release",
+        },
         "Performance Comparison": {
             "required_build": "package_release",
             "test_grep_exclude_filter": "",
