@@ -356,6 +356,12 @@ bool FreeformRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     return true;
 }
 
+void FreeformRowInputFormat::syncAfterError()
+{
+    skipToNextLineOrEOF(*in);
+    // This might be problematic as the next \n is not guaranteed to be the next row
+}
+
 FreeformSchemaReader::FreeformSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowSchemaReader(in_, format_settings_), matcher(in_, format_settings_)
 {

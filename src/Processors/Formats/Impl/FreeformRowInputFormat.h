@@ -134,6 +134,7 @@ private:
 
     bool readField(size_t index, MutableColumns & columns);
     bool readRow(MutableColumns &, RowReadExtension &) override;
+    void syncAfterError() override;
 };
 
 class FreeformSchemaReader : public IRowSchemaReader
