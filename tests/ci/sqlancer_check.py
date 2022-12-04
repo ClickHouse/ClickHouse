@@ -4,6 +4,7 @@ import logging
 import subprocess
 import os
 import sys
+from typing import List, Tuple
 
 from github import Github
 
@@ -137,7 +138,7 @@ if __name__ == "__main__":
     report_url = GITHUB_RUN_URL
 
     status = "success"
-    test_results = []
+    test_results = []  # type: List[Tuple[str, str]]
     # Try to get status message saved by the SQLancer
     try:
         # with open(
@@ -145,7 +146,7 @@ if __name__ == "__main__":
         # ) as status_f:
         #     status = status_f.readline().rstrip("\n")
         if os.path.exists(os.path.join(workspace_path, "server_crashed.log")):
-            test_results.append("Server crashed", "FAIL")
+            test_results.append(("Server crashed", "FAIL"))
         with open(
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:
