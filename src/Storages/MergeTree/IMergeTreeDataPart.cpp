@@ -86,9 +86,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
         auto serialization = minmax_column_types[i]->getDefaultSerialization();
 
         Field min_val;
-        serialization->deserializeBinary(min_val, *file);
+        serialization->deserializeBinary(min_val, *file, {});
         Field max_val;
-        serialization->deserializeBinary(max_val, *file);
+        serialization->deserializeBinary(max_val, *file, {});
 
         // NULL_LAST
         if (min_val.isNull())
@@ -134,8 +134,8 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 
         auto out = part_storage.writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
         HashingWriteBuffer out_hashing(*out);
-        serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
-        serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
+        serialization->serializeBinary(hyperrectangle[i].left, out_hashing, {});
+        serialization->serializeBinary(hyperrectangle[i].right, out_hashing, {});
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -755,7 +755,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
+                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -2039,14 +2039,6 @@ std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorag
 bool isCompressedFromIndexExtension(const String & index_extension)
 {
     return index_extension == getIndexExtension(true);
-}
-
-Strings getPartsNamesWithStates(const MergeTreeDataPartsVector & parts)
-{
-    Strings part_names;
-    for (const auto & p : parts)
-        part_names.push_back(p->getNameWithState());
-    return part_names;
 }
 
 Strings getPartsNames(const MergeTreeDataPartsVector & parts)

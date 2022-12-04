@@ -42,8 +42,8 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         auto serialization = type->getDefaultSerialization();
 
-        serialization->serializeBinary(hyperrectangle[i].left, ostr);
-        serialization->serializeBinary(hyperrectangle[i].right, ostr);
+        serialization->serializeBinary(hyperrectangle[i].left, ostr, {});
+        serialization->serializeBinary(hyperrectangle[i].right, ostr, {});
     }
 }
 
@@ -63,8 +63,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
             case 1:
                 if (!type->isNullable())
                 {
-                    serialization->deserializeBinary(min_val, istr);
-                    serialization->deserializeBinary(max_val, istr);
+                    serialization->deserializeBinary(min_val, istr, {});
+                    serialization->deserializeBinary(max_val, istr, {});
                 }
                 else
                 {
@@ -78,8 +78,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                     readBinary(is_null, istr);
                     if (!is_null)
                     {
-                        serialization->deserializeBinary(min_val, istr);
-                        serialization->deserializeBinary(max_val, istr);
+                        serialization->deserializeBinary(min_val, istr, {});
+                        serialization->deserializeBinary(max_val, istr, {});
                     }
                     else
                     {
@@ -91,8 +91,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
             /// New format with proper Nullable support for values that includes Null values
             case 2:
-                serialization->deserializeBinary(min_val, istr);
-                serialization->deserializeBinary(max_val, istr);
+                serialization->deserializeBinary(min_val, istr, {});
+                serialization->deserializeBinary(max_val, istr, {});
 
                 // NULL_LAST
                 if (min_val.isNull())
