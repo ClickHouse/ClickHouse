@@ -27,41 +27,41 @@ with client(name="client1>", log=log) as client1, client(
     client2.expect(prompt)
 
     client1.send(
-        "CREATE DATABASE IF NOT EXISTS 01065_window_view_event_hop_watch_bounded"
+        "CREATE DATABASE IF NOT EXISTS _01065_window_view_event_hop_watch_bounded"
     )
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01065_window_view_event_hop_watch_bounded.mt")
+    client1.send("DROP TABLE IF EXISTS _01065_window_view_event_hop_watch_bounded.mt")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01065_window_view_event_hop_watch_bounded.wv")
+    client1.send("DROP TABLE IF EXISTS _01065_window_view_event_hop_watch_bounded.wv")
     client1.expect(prompt)
 
     client1.send(
-        "CREATE TABLE 01065_window_view_event_hop_watch_bounded.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
+        "CREATE TABLE _01065_window_view_event_hop_watch_bounded.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01065_window_view_event_hop_watch_bounded.wv ENGINE Memory WATERMARK=INTERVAL '2' SECOND AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01065_window_view_event_hop_watch_bounded.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
+        "CREATE WINDOW VIEW _01065_window_view_event_hop_watch_bounded.wv ENGINE Memory WATERMARK=INTERVAL '2' SECOND AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM _01065_window_view_event_hop_watch_bounded.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client1.expect("Ok.")
 
-    client1.send("WATCH 01065_window_view_event_hop_watch_bounded.wv")
+    client1.send("WATCH _01065_window_view_event_hop_watch_bounded.wv")
     client1.expect("Query id" + end_of_block)
     client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:00');"
+        "INSERT INTO _01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:00');"
     )
     client2.expect("Ok.")
     client2.send(
-        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:05');"
+        "INSERT INTO _01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:05');"
     )
     client2.expect("Ok.")
     client1.expect("1" + end_of_block)
     client2.send(
-        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:06');"
+        "INSERT INTO _01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:06');"
     )
     client2.expect("Ok.")
     client2.send(
-        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:10');"
+        "INSERT INTO _01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:10');"
     )
     client2.expect("Ok.")
     client1.expect("2" + end_of_block)
@@ -72,9 +72,9 @@ with client(name="client1>", log=log) as client1, client(
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
-    client1.send("DROP TABLE 01065_window_view_event_hop_watch_bounded.wv")
+    client1.send("DROP TABLE _01065_window_view_event_hop_watch_bounded.wv")
     client1.expect(prompt)
-    client1.send("DROP TABLE 01065_window_view_event_hop_watch_bounded.mt")
+    client1.send("DROP TABLE _01065_window_view_event_hop_watch_bounded.mt")
     client1.expect(prompt)
-    client1.send("DROP DATABASE IF EXISTS 01065_window_view_event_hop_watch_bounded")
+    client1.send("DROP DATABASE IF EXISTS _01065_window_view_event_hop_watch_bounded")
     client1.expect(prompt)

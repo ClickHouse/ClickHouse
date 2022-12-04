@@ -31,51 +31,51 @@ with client(name="client1>", log=log) as client1, client(
     client3.send("SET window_view_heartbeat_interval = 1")
     client3.expect(prompt)
 
-    client1.send("CREATE DATABASE IF NOT EXISTS 01078_window_view_alter_query_watch")
+    client1.send("CREATE DATABASE IF NOT EXISTS _01078_window_view_alter_query_watch")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01078_window_view_alter_query_watch.mt NO DELAY")
+    client1.send("DROP TABLE IF EXISTS _01078_window_view_alter_query_watch.mt NO DELAY")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01078_window_view_alter_query_watch.wv NO DELAY")
+    client1.send("DROP TABLE IF EXISTS _01078_window_view_alter_query_watch.wv NO DELAY")
     client1.expect(prompt)
 
     client1.send(
-        "CREATE TABLE 01078_window_view_alter_query_watch.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
+        "CREATE TABLE _01078_window_view_alter_query_watch.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01078_window_view_alter_query_watch.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
+        "CREATE WINDOW VIEW _01078_window_view_alter_query_watch.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM _01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client1.expect(prompt)
 
-    client1.send("WATCH 01078_window_view_alter_query_watch.wv")
+    client1.send("WATCH _01078_window_view_alter_query_watch.wv")
     client1.expect("Query id" + end_of_block)
     client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
+        "INSERT INTO _01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client2.send(
-        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));"
+        "INSERT INTO _01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client1.expect("1" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")
     client2.send(
-        "ALTER TABLE 01078_window_view_alter_query_watch.wv MODIFY QUERY SELECT count(a) * 2 AS count, hopEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
+        "ALTER TABLE _01078_window_view_alter_query_watch.wv MODIFY QUERY SELECT count(a) * 2 AS count, hopEnd(wid) AS w_end FROM _01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client2.expect("Ok.")
     client2.expect(prompt)
     client1.expect("1 row" + end_of_block)
     client1.expect(prompt)
-    client3.send("WATCH 01078_window_view_alter_query_watch.wv")
+    client3.send("WATCH _01078_window_view_alter_query_watch.wv")
     client3.expect("Query id" + end_of_block)
     client3.expect("Progress: 0.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));"
+        "INSERT INTO _01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client2.send(
-        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));"
+        "INSERT INTO _01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client3.expect("2" + end_of_block)
@@ -87,9 +87,9 @@ with client(name="client1>", log=log) as client1, client(
     if match.groups()[1]:
         client3.send(client3.command)
         client3.expect(prompt)
-    client3.send("DROP TABLE 01078_window_view_alter_query_watch.wv NO DELAY;")
+    client3.send("DROP TABLE _01078_window_view_alter_query_watch.wv NO DELAY;")
     client3.expect(prompt)
-    client3.send("DROP TABLE 01078_window_view_alter_query_watch.mt;")
+    client3.send("DROP TABLE _01078_window_view_alter_query_watch.mt;")
     client3.expect(prompt)
-    client3.send("DROP DATABASE IF EXISTS 01078_window_view_alter_query_watch;")
+    client3.send("DROP DATABASE IF EXISTS _01078_window_view_alter_query_watch;")
     client3.expect(prompt)
