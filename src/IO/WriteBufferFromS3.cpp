@@ -71,7 +71,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
-    const S3Settings::ReadWriteSettings & s3_settings_,
+    const S3Settings::RequestSettings & request_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
     ThreadPoolCallbackRunner<void> schedule_,
@@ -79,10 +79,10 @@ WriteBufferFromS3::WriteBufferFromS3(
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
-    , s3_settings(s3_settings_)
+    , request_settings(request_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , upload_part_size(s3_settings_.min_upload_part_size)
+    , upload_part_size(request_settings_.min_upload_part_size)
     , schedule(std::move(schedule_))
     , write_settings(write_settings_)
 {
@@ -107,7 +107,7 @@ void WriteBufferFromS3::nextImpl()
         write_settings.remote_throttler->add(offset());
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
-    if (multipart_upload_id.empty() && last_part_size > s3_settings.max_single_part_upload_size)
+    if (multipart_upload_id.empty() && last_part_size > request_settings.max_single_part_upload_size)
         createMultipartUpload();
 
     if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
@@ -122,10 +122,10 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::allocateBuffer()
 {
-    if (total_parts_uploaded != 0 && total_parts_uploaded % s3_settings.upload_part_size_multiply_parts_count_threshold == 0)
+    if (total_parts_uploaded != 0 && total_parts_uploaded % request_settings.upload_part_size_multiply_parts_count_threshold == 0)
     {
-        upload_part_size *= s3_settings.upload_part_size_multiply_factor;
-        upload_part_size = std::min(upload_part_size, s3_settings.max_upload_part_size);
+        upload_part_size *= request_settings.upload_part_size_multiply_factor;
+        upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
     }
 
     temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
@@ -180,7 +180,7 @@ void WriteBufferFromS3::finalizeImpl()
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
 
-    if (s3_settings.check_objects_after_upload)
+    if (request_settings.check_objects_after_upload)
     {
         LOG_TRACE(log, "Checking object {} exists after upload", key);
 
@@ -370,7 +370,7 @@ void WriteBufferFromS3::completeMultipartUpload()
 
     req.SetMultipartUpload(multipart_upload);
 
-    size_t max_retry = std::max(s3_settings.max_unexpected_write_error_retries, 1UL);
+    size_t max_retry = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
     for (size_t i = 0; i < max_retry; ++i)
     {
         ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
@@ -476,7 +476,7 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 
 void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
 {
-    size_t max_retry = std::max(s3_settings.max_unexpected_write_error_retries, 1UL);
+    size_t max_retry = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
     for (size_t i = 0; i < max_retry; ++i)
     {
         ProfileEvents::increment(ProfileEvents::S3PutObject);
