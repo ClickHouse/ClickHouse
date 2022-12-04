@@ -113,8 +113,12 @@ void removeConfigValue(
 ConfigurationPtr createEmptyConfiguration(const std::string & root_name)
 {
     using DocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
+    using ElementPtr = Poco::AutoPtr<Poco::XML::Element>;
+
     DocumentPtr xml_document(new Poco::XML::Document());
-    xml_document->appendChild(xml_document->createElement(root_name));
+    ElementPtr root_element(xml_document->createElement(root_name));
+    xml_document->appendChild(root_element);
+
     ConfigurationPtr config(new Poco::Util::XMLConfiguration(xml_document));
     return config;
 }
