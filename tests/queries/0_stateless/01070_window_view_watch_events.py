@@ -27,31 +27,31 @@ with client(name="client1>", log=log) as client1, client(
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
 
-    client1.send("CREATE DATABASE IF NOT EXISTS 01070_window_view_watch_events")
+    client1.send("CREATE DATABASE IF NOT EXISTS _01070_window_view_watch_events")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01070_window_view_watch_events.mt NO DELAY")
+    client1.send("DROP TABLE IF EXISTS _01070_window_view_watch_events.mt NO DELAY")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01070_window_view_watch_events.wv NO DELAY")
+    client1.send("DROP TABLE IF EXISTS _01070_window_view_watch_events.wv NO DELAY")
     client1.expect(prompt)
 
     client1.send(
-        "CREATE TABLE 01070_window_view_watch_events.mt(a Int32, timestamp DateTime('US/Samoa')) ENGINE=MergeTree ORDER BY tuple()"
+        "CREATE TABLE _01070_window_view_watch_events.mt(a Int32, timestamp DateTime('US/Samoa')) ENGINE=MergeTree ORDER BY tuple()"
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01070_window_view_watch_events.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM 01070_window_view_watch_events.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid"
+        "CREATE WINDOW VIEW _01070_window_view_watch_events.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM _01070_window_view_watch_events.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid"
     )
     client1.expect(prompt)
 
-    client1.send("WATCH 01070_window_view_watch_events.wv EVENTS")
+    client1.send("WATCH _01070_window_view_watch_events.wv EVENTS")
     client1.expect("Query id" + end_of_block)
     client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01070_window_view_watch_events.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
+        "INSERT INTO _01070_window_view_watch_events.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client2.send(
-        "INSERT INTO 01070_window_view_watch_events.mt VALUES (1, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));"
+        "INSERT INTO _01070_window_view_watch_events.mt VALUES (1, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client1.expect("1990-01-01 12:00:05" + end_of_block)
@@ -63,9 +63,9 @@ with client(name="client1>", log=log) as client1, client(
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
-    client1.send("DROP TABLE 01070_window_view_watch_events.wv NO DELAY;")
+    client1.send("DROP TABLE _01070_window_view_watch_events.wv NO DELAY;")
     client1.expect(prompt)
-    client1.send("DROP TABLE 01070_window_view_watch_events.mt;")
+    client1.send("DROP TABLE _01070_window_view_watch_events.mt;")
     client1.expect(prompt)
-    client1.send("DROP DATABASE IF EXISTS 01070_window_view_watch_events;")
+    client1.send("DROP DATABASE IF EXISTS _01070_window_view_watch_events;")
     client1.expect(prompt)

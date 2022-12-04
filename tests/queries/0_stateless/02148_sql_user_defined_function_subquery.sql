@@ -1,35 +1,35 @@
 -- Tags: no-parallel
 
-DROP FUNCTION IF EXISTS 02148_test_function;
-CREATE FUNCTION 02148_test_function AS () -> (SELECT 1);
+DROP FUNCTION IF EXISTS _02148_test_function;
+CREATE FUNCTION _02148_test_function AS () -> (SELECT 1);
 
-SELECT 02148_test_function();
+SELECT _02148_test_function();
 
-CREATE OR REPLACE FUNCTION 02148_test_function AS () -> (SELECT 2);
+CREATE OR REPLACE FUNCTION _02148_test_function AS () -> (SELECT 2);
 
-SELECT 02148_test_function();
+SELECT _02148_test_function();
 
-DROP FUNCTION 02148_test_function;
+DROP FUNCTION _02148_test_function;
 
-CREATE FUNCTION 02148_test_function AS (x) -> (SELECT x + 1);
-SELECT 02148_test_function(1);
+CREATE FUNCTION _02148_test_function AS (x) -> (SELECT x + 1);
+SELECT _02148_test_function(1);
 
-DROP FUNCTION IF EXISTS 02148_test_function_nested;
-CREATE FUNCTION 02148_test_function_nested AS (x) -> 02148_test_function(x + 2);
-SELECT 02148_test_function_nested(1);
+DROP FUNCTION IF EXISTS _02148_test_function_nested;
+CREATE FUNCTION _02148_test_function_nested AS (x) -> _02148_test_function(x + 2);
+SELECT _02148_test_function_nested(1);
 
-DROP FUNCTION 02148_test_function;
-DROP FUNCTION 02148_test_function_nested;
+DROP FUNCTION _02148_test_function;
+DROP FUNCTION _02148_test_function_nested;
 
-DROP TABLE IF EXISTS 02148_test_table;
-CREATE TABLE 02148_test_table (id UInt64, value String) ENGINE=TinyLog;
-INSERT INTO 02148_test_table VALUES (0, 'Value');
+DROP TABLE IF EXISTS _02148_test_table;
+CREATE TABLE _02148_test_table (id UInt64, value String) ENGINE=TinyLog;
+INSERT INTO _02148_test_table VALUES (0, 'Value');
 
-CREATE FUNCTION 02148_test_function AS () -> (SELECT * FROM 02148_test_table LIMIT 1);
-SELECT 02148_test_function();
+CREATE FUNCTION _02148_test_function AS () -> (SELECT * FROM _02148_test_table LIMIT 1);
+SELECT _02148_test_function();
 
-CREATE OR REPLACE FUNCTION 02148_test_function AS () -> (SELECT value FROM 02148_test_table LIMIT 1);
-SELECT 02148_test_function();
+CREATE OR REPLACE FUNCTION _02148_test_function AS () -> (SELECT value FROM _02148_test_table LIMIT 1);
+SELECT _02148_test_function();
 
-DROP FUNCTION 02148_test_function;
-DROP TABLE 02148_test_table;
+DROP FUNCTION _02148_test_function;
+DROP TABLE _02148_test_table;

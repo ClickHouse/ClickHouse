@@ -26,32 +26,32 @@ with client(name="client1>", log=log) as client1, client(
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
 
-    client1.send("CREATE DATABASE IF NOT EXISTS 01082_window_view_watch_limit")
+    client1.send("CREATE DATABASE IF NOT EXISTS _01082_window_view_watch_limit")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01082_window_view_watch_limit.mt")
+    client1.send("DROP TABLE IF EXISTS _01082_window_view_watch_limit.mt")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01082_window_view_watch_limit.wv NO DELAY")
+    client1.send("DROP TABLE IF EXISTS _01082_window_view_watch_limit.wv NO DELAY")
     client1.expect(prompt)
 
     client1.send(
-        "CREATE TABLE 01082_window_view_watch_limit.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
+        "CREATE TABLE _01082_window_view_watch_limit.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01082_window_view_watch_limit.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01082_window_view_watch_limit.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
+        "CREATE WINDOW VIEW _01082_window_view_watch_limit.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM _01082_window_view_watch_limit.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client1.expect("Ok.")
     client1.expect(prompt)
 
-    client1.send("WATCH 01082_window_view_watch_limit.wv LIMIT 1")
+    client1.send("WATCH _01082_window_view_watch_limit.wv LIMIT 1")
     client1.expect("Query id" + end_of_block)
     client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01082_window_view_watch_limit.mt VALUES (1, '1990/01/01 12:00:00');"
+        "INSERT INTO _01082_window_view_watch_limit.mt VALUES (1, '1990/01/01 12:00:00');"
     )
     client2.expect("Ok.")
     client2.send(
-        "INSERT INTO 01082_window_view_watch_limit.mt VALUES (1, '1990/01/01 12:00:05');"
+        "INSERT INTO _01082_window_view_watch_limit.mt VALUES (1, '1990/01/01 12:00:05');"
     )
     client2.expect("Ok.")
     client1.expect("1" + end_of_block)
@@ -59,9 +59,9 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect("1 row" + end_of_block)
     client1.expect(prompt)
 
-    client1.send("DROP TABLE 01082_window_view_watch_limit.wv NO DELAY")
+    client1.send("DROP TABLE _01082_window_view_watch_limit.wv NO DELAY")
     client1.expect(prompt)
-    client1.send("DROP TABLE 01082_window_view_watch_limit.mt")
+    client1.send("DROP TABLE _01082_window_view_watch_limit.mt")
     client1.expect(prompt)
-    client1.send("DROP DATABASE IF EXISTS 01082_window_view_watch_limit")
+    client1.send("DROP DATABASE IF EXISTS _01082_window_view_watch_limit")
     client1.expect(prompt)

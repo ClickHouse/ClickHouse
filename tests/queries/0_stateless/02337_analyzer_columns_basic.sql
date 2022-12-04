@@ -70,32 +70,32 @@ DROP TABLE test_table;
 
 SELECT 'Table access with database and table name qualification';
 
-DROP DATABASE IF EXISTS 02337_db;
-CREATE DATABASE 02337_db;
+DROP DATABASE IF EXISTS _02337_db;
+CREATE DATABASE _02337_db;
 
-DROP TABLE IF EXISTS 02337_db.test_table;
-CREATE TABLE 02337_db.test_table
+DROP TABLE IF EXISTS _02337_db.test_table;
+CREATE TABLE _02337_db.test_table
 (
     id UInt64,
     value String
 ) ENGINE=TinyLog;
 
-INSERT INTO 02337_db.test_table VALUES (0, 'Value');
+INSERT INTO _02337_db.test_table VALUES (0, 'Value');
 
 SELECT '--';
 
-DESCRIBE (SELECT test_table.id, test_table.value FROM 02337_db.test_table);
-SELECT test_table.id, test_table.value FROM 02337_db.test_table;
+DESCRIBE (SELECT test_table.id, test_table.value FROM _02337_db.test_table);
+SELECT test_table.id, test_table.value FROM _02337_db.test_table;
 
 SELECT '--';
 
-DESCRIBE (SELECT 02337_db.test_table.id, 02337_db.test_table.value FROM 02337_db.test_table);
-SELECT 02337_db.test_table.id, 02337_db.test_table.value FROM 02337_db.test_table;
+DESCRIBE (SELECT _02337_db.test_table.id, _02337_db.test_table.value FROM _02337_db.test_table);
+SELECT _02337_db.test_table.id, _02337_db.test_table.value FROM _02337_db.test_table;
 
 SELECT '--';
 
-DESCRIBE (SELECT test_table.id, test_table.value FROM 02337_db.test_table AS test_table);
-SELECT test_table.id, test_table.value FROM 02337_db.test_table AS test_table;
+DESCRIBE (SELECT test_table.id, test_table.value FROM _02337_db.test_table AS test_table);
+SELECT test_table.id, test_table.value FROM _02337_db.test_table AS test_table;
 
-DROP TABLE 02337_db.test_table;
-DROP DATABASE 02337_db;
+DROP TABLE _02337_db.test_table;
+DROP DATABASE _02337_db;
