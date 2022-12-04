@@ -58,13 +58,19 @@ if (NOT LINKER_NAME)
         find_program (LLD_PATH NAMES "ld.lld")
         find_program (GOLD_PATH NAMES "ld.gold")
     elseif (COMPILER_CLANG)
-        find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
+        # llvm lld is a generic driver.
+        # Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-ld (WebAssembly) instead
+        if (OS_LINUX)
+            find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+        elseif (OS_DARWIN)
+            find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld")
+        endif ()
         find_program (GOLD_PATH NAMES "ld.gold" "gold")
     endif ()
 endif()
 
-if (OS_LINUX AND NOT LINKER_NAME)
-    # prefer lld linker over gold or ld on linux
+if ((OS_LINUX OR OS_DARWIN) AND NOT LINKER_NAME)
+    # prefer lld linker over gold or ld on linux and macos
     if (LLD_PATH)
         if (COMPILER_GCC)
             # GCC driver requires one of supported linker names like "lld".

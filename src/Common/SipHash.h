@@ -194,6 +194,13 @@ public:
         finalize();
         return v0 ^ v1 ^ v2 ^ v3;
     }
+
+    UInt128 get128()
+    {
+        UInt128 res;
+        get128(res);
+        return res;
+    }
 };
 
 
@@ -213,9 +220,7 @@ inline UInt128 sipHash128(const char * data, const size_t size)
 {
     SipHash hash;
     hash.update(data, size);
-    UInt128 res;
-    hash.get128(res);
-    return res;
+    return hash.get128();
 }
 
 inline UInt64 sipHash64(const char * data, const size_t size)

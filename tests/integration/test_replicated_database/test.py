@@ -592,58 +592,62 @@ def test_alters_from_different_replicas(started_cluster):
 
 def create_some_tables(db):
     settings = {"distributed_ddl_task_timeout": 0}
-    main_node.query(
-        "CREATE TABLE {}.t1 (n int) ENGINE=Memory".format(db), settings=settings
-    )
+    main_node.query(f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings)
     dummy_node.query(
-        "CREATE TABLE {}.t2 (s String) ENGINE=Memory".format(db), settings=settings
+        f"CREATE TABLE {db}.t2 (s String) ENGINE=Memory", settings=settings
     )
     main_node.query(
-        "CREATE TABLE {}.mt1 (n int) ENGINE=MergeTree order by n".format(db),
+        f"CREATE TABLE {db}.mt1 (n int) ENGINE=MergeTree order by n",
         settings=settings,
     )
     dummy_node.query(
-        "CREATE TABLE {}.mt2 (n int) ENGINE=MergeTree order by n".format(db),
+        f"CREATE TABLE {db}.mt2 (n int) ENGINE=MergeTree order by n",
         settings=settings,
     )
     main_node.query(
-        "CREATE TABLE {}.rmt1 (n int) ENGINE=ReplicatedMergeTree order by n".format(db),
+        f"CREATE TABLE {db}.rmt1 (n int) ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     dummy_node.query(
-        "CREATE TABLE {}.rmt2 (n int) ENGINE=ReplicatedMergeTree order by n".format(db),
+        f"CREATE TABLE {db}.rmt2 (n int) ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     main_node.query(
-        "CREATE TABLE {}.rmt3 (n int) ENGINE=ReplicatedMergeTree order by n".format(db),
+        f"CREATE TABLE {db}.rmt3 (n int) ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     dummy_node.query(
-        "CREATE TABLE {}.rmt5 (n int) ENGINE=ReplicatedMergeTree order by n".format(db),
+        f"CREATE TABLE {db}.rmt5 (n int) ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     main_node.query(
-        "CREATE MATERIALIZED VIEW {}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM recover.rmt1".format(
-            db
-        ),
+        f"CREATE MATERIALIZED VIEW {db}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM recover.rmt1",
         settings=settings,
     )
     dummy_node.query(
-        "CREATE MATERIALIZED VIEW {}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM recover.rmt2".format(
-            db
-        ),
+        f"CREATE MATERIALIZED VIEW {db}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM recover.rmt2",
         settings=settings,
     )
     main_node.query(
-        "CREATE DICTIONARY {}.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+        f"CREATE DICTIONARY {db}.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
-        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())".format(db)
+        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())"
     )
     dummy_node.query(
-        "CREATE DICTIONARY {}.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+        f"CREATE DICTIONARY {db}.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB 'recover')) "
-        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())".format(db)
+        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())"
     )
+
+
+# These tables are used to check that DatabaseReplicated correctly renames all the tables in case when it restores from the lost state
+def create_table_for_exchanges(db):
+    settings = {"distributed_ddl_task_timeout": 0}
+    for table in ["a1", "a2", "a3", "a4", "a5", "a6"]:
+        main_node.query(
+            f"CREATE TABLE {db}.{table} (s String) ENGINE=ReplicatedMergeTree order by s",
+            settings=settings,
+        )
 
 
 def test_recover_staled_replica(started_cluster):
@@ -659,13 +663,20 @@ def test_recover_staled_replica(started_cluster):
 
     settings = {"distributed_ddl_task_timeout": 0}
     create_some_tables("recover")
+    create_table_for_exchanges("recover")
 
     for table in ["t1", "t2", "mt1", "mt2", "rmt1", "rmt2", "rmt3", "rmt5"]:
-        main_node.query("INSERT INTO recover.{} VALUES (42)".format(table))
+        main_node.query(f"INSERT INTO recover.{table} VALUES (42)")
     for table in ["t1", "t2", "mt1", "mt2"]:
-        dummy_node.query("INSERT INTO recover.{} VALUES (42)".format(table))
+        dummy_node.query(f"INSERT INTO recover.{table} VALUES (42)")
+
+    for i, table in enumerate(["a1", "a2", "a3", "a4", "a5", "a6"]):
+        main_node.query(f"INSERT INTO recover.{table} VALUES ('{str(i + 1) * 10}')")
+
     for table in ["rmt1", "rmt2", "rmt3", "rmt5"]:
-        main_node.query("SYSTEM SYNC REPLICA recover.{}".format(table))
+        main_node.query(f"SYSTEM SYNC REPLICA recover.{table}")
+    for table in ["a1", "a2", "a3", "a4", "a5", "a6"]:
+        main_node.query(f"SYSTEM SYNC REPLICA recover.{table}")
 
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
@@ -699,19 +710,15 @@ def test_recover_staled_replica(started_cluster):
             ).strip()
         )
         main_node.query_with_retry(
-            "ALTER TABLE recover.`{}` MODIFY COLUMN n int DEFAULT 42".format(
-                inner_table
-            ),
+            f"ALTER TABLE recover.`{inner_table}` MODIFY COLUMN n int DEFAULT 42",
             settings=settings,
         )
         main_node.query_with_retry(
-            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1".format(
-                inner_table
-            ),
+            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1",
             settings=settings,
         )
         main_node.query_with_retry(
-            "RENAME TABLE recover.mv2 TO recover.mv3".format(inner_table),
+            "RENAME TABLE recover.mv2 TO recover.mv3",
             settings=settings,
         )
 
@@ -726,12 +733,19 @@ def test_recover_staled_replica(started_cluster):
         main_node.query_with_retry(
             "CREATE TABLE recover.tmp AS recover.m1", settings=settings
         )
+
+        main_node.query("EXCHANGE TABLES recover.a1 AND recover.a2", settings=settings)
+        main_node.query("EXCHANGE TABLES recover.a3 AND recover.a4", settings=settings)
+        main_node.query("EXCHANGE TABLES recover.a5 AND recover.a4", settings=settings)
+        main_node.query("EXCHANGE TABLES recover.a6 AND recover.a3", settings=settings)
+        main_node.query("RENAME TABLE recover.a6 TO recover.a7", settings=settings)
+        main_node.query("RENAME TABLE recover.a1 TO recover.a8", settings=settings)
 
     assert (
         main_node.query(
             "SELECT name FROM system.tables WHERE database='recover' AND name NOT LIKE '.inner_id.%' ORDER BY name"
         )
-        == "d1\nd2\nm1\nmt1\nmt2\nmv1\nmv3\nrmt1\nrmt2\nrmt4\nt2\ntmp\n"
+        == "a2\na3\na4\na5\na7\na8\nd1\nd2\nm1\nmt1\nmt2\nmv1\nmv3\nrmt1\nrmt2\nrmt4\nt2\ntmp\n"
     )
     query = (
         "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover' AND name NOT LIKE '.inner_id.%' "
@@ -752,6 +766,12 @@ def test_recover_staled_replica(started_cluster):
         == "2\n"
     )
 
+    # Check that Database Replicated renamed all the tables correctly
+    for i, table in enumerate(["a2", "a8", "a5", "a7", "a4", "a3"]):
+        assert (
+            dummy_node.query(f"SELECT * FROM recover.{table}") == f"{str(i + 1) * 10}\n"
+        )
+
     for table in [
         "m1",
         "t2",
@@ -765,11 +785,11 @@ def test_recover_staled_replica(started_cluster):
         "mv1",
         "mv3",
     ]:
-        assert main_node.query("SELECT (*,).1 FROM recover.{}".format(table)) == "42\n"
+        assert main_node.query(f"SELECT (*,).1 FROM recover.{table}") == "42\n"
     for table in ["t2", "rmt1", "rmt2", "rmt4", "d1", "d2", "mt2", "mv1", "mv3"]:
-        assert dummy_node.query("SELECT (*,).1 FROM recover.{}".format(table)) == "42\n"
+        assert dummy_node.query(f"SELECT (*,).1 FROM recover.{table}") == "42\n"
     for table in ["m1", "mt1"]:
-        assert dummy_node.query("SELECT count() FROM recover.{}".format(table)) == "0\n"
+        assert dummy_node.query(f"SELECT count() FROM recover.{table}") == "0\n"
     global test_recover_staled_replica_run
     assert (
         dummy_node.query(
@@ -784,20 +804,22 @@ def test_recover_staled_replica(started_cluster):
         == f"{test_recover_staled_replica_run}\n"
     )
     test_recover_staled_replica_run += 1
+
+    print(dummy_node.query("SHOW DATABASES"))
+    print(dummy_node.query("SHOW TABLES FROM recover_broken_tables"))
+    print(dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"))
+
     table = dummy_node.query(
-        "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_29_%' LIMIT 1"
+        "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_41_%' LIMIT 1"
     ).strip()
     assert (
-        dummy_node.query("SELECT (*,).1 FROM recover_broken_tables.{}".format(table))
-        == "42\n"
+        dummy_node.query(f"SELECT (*,).1 FROM recover_broken_tables.{table}") == "42\n"
     )
     table = dummy_node.query(
-        "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_29_%' LIMIT 1"
+        "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_41_%' LIMIT 1"
     ).strip()
     assert (
-        dummy_node.query(
-            "SELECT (*,).1 FROM recover_broken_replicated_tables.{}".format(table)
-        )
+        dummy_node.query(f"SELECT (*,).1 FROM recover_broken_replicated_tables.{table}")
         == "42\n"
     )
 
