@@ -23,7 +23,7 @@ namespace
         {
             /// TO target_table (for materialized views)
             if (to_table.database.empty())
-                to_table.database = data.default_database;
+                to_table.database = data.current_database;
             data.dependencies.emplace(to_table);
         }
 
@@ -32,7 +32,7 @@ namespace
         {
             /// AS table_name
             if (as_table.database.empty())
-                as_table.database = data.default_database;
+                as_table.database = data.current_database;
             data.dependencies.emplace(as_table);
         }
     }
@@ -60,7 +60,7 @@ namespace
         if (qualified_name.database.empty())
         {
             /// It can be table/dictionary from default database or XML dictionary, but we cannot distinguish it here.
-            qualified_name.database = data.default_database;
+            qualified_name.database = data.current_database;
         }
 
         data.dependencies.emplace(qualified_name);
@@ -112,7 +112,7 @@ namespace
         if (qualified_name.database.empty())
         {
             /// It can be table/dictionary from default database or XML dictionary, but we cannot distinguish it here.
-            qualified_name.database = data.default_database;
+            qualified_name.database = data.current_database;
         }
         data.dependencies.emplace(std::move(qualified_name));
     }
@@ -141,7 +141,7 @@ namespace
             return;
 
         if (qualified_name.database.empty())
-            qualified_name.database = data.default_database;
+            qualified_name.database = data.current_database;
 
         data.dependencies.emplace(qualified_name);
     }
@@ -181,27 +181,26 @@ namespace
         if (!dictionary.source || dictionary.source->name != "clickhouse" || !dictionary.source->elements)
             return;
 
-        auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
-        auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
+        auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.context);
+        auto info = getInfoIfClickHouseDictionarySource(config, data.context);
 
         if (!info || !info->is_local)
             return;
 
         if (info->table_name.database.empty())
-            info->table_name.database = data.default_database;
+            info->table_name.database = data.current_database;
         data.dependencies.emplace(std::move(info->table_name));
     }
 }
 
 
-TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast)
+TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & context, const QualifiedTableName & table_name, const ASTPtr & ast)
 {
-    assert(global_context == global_context->getGlobalContext());
     DDLDependencyVisitor::Data data;
     data.table_name = table_name;
-    data.default_database = global_context->getCurrentDatabase();
+    data.current_database = context->getCurrentDatabase();
     data.create_query = ast;
-    data.global_context = global_context;
+    data.context = context;
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
     data.dependencies.erase(data.table_name);
