@@ -14,6 +14,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/ThreadPool.h>
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
@@ -463,9 +464,7 @@ public:
 
     void addWarningMessage(const String & msg) const;
 
-    void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
-    void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
-    void setTemporaryStoragePath(const String & path, size_t max_size);
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name, size_t max_size);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 

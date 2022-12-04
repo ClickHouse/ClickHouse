@@ -1,5 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/TraceSender.h>
 
 
 /// Available events. Add something here as you wish.
@@ -523,13 +524,27 @@ const char * getDocumentation(Event event)
     return strings[event];
 }
 
-
 Event end() { return END; }
-
 
 void increment(Event event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().increment(event, amount);
+}
+
+void Counters::increment(Event event, Count amount)
+{
+    Counters * current = this;
+    bool send_to_trace_log = false;
+
+    do
+    {
+        send_to_trace_log |= current->trace_profile_events;
+        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current = current->parent;
+    } while (current != nullptr);
+
+    if (unlikely(send_to_trace_log))
+        DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
