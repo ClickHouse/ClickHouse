@@ -674,6 +674,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
 void RestorerFromBackup::createTables()
 {
     /// We need to create tables considering their dependencies.
+    tables_dependencies.log();
     auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
     for (const auto & table_id : tables_to_create)
     {

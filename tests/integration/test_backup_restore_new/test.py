@@ -1180,6 +1180,8 @@ def test_tables_dependency():
     t4 = random_table_names[3]
     t5 = random_table_names[4]
     t6 = random_table_names[5]
+    t7 = random_table_names[6]
+    t8 = random_table_names[7]
 
     # Create a materialized view and a dictionary with a local table as source.
     instance.query(
@@ -1193,7 +1195,7 @@ def test_tables_dependency():
     instance.query(f"CREATE MATERIALIZED VIEW {t3} TO {t2} AS SELECT x, y FROM {t1}")
 
     instance.query(
-        f"CREATE DICTIONARY {t4} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(0)"
+        f"CREATE DICTIONARY {t4} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(4)"
     )
 
     instance.query(f"CREATE TABLE {t5} AS dictionary({t4})")
@@ -1202,12 +1204,20 @@ def test_tables_dependency():
         f"CREATE TABLE {t6}(x Int64, y String DEFAULT dictGet({t4}, 'y', x)) ENGINE=MergeTree ORDER BY tuple()"
     )
 
+    instance.query(f"CREATE VIEW {t7} AS SELECT sum(x) FROM (SELECT x FROM {t6})")
+
+    instance.query(
+        f"CREATE TABLE {t8} AS {t2} ENGINE = Buffer({t2.split('.')[0]}, {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+    )
+
     # Make backup.
     backup_name = new_backup_name()
     instance.query(f"BACKUP DATABASE test, DATABASE test2 TO {backup_name}")
 
     # Drop everything in reversive order.
     def drop():
+        instance.query(f"DROP TABLE {t8} NO DELAY")
+        instance.query(f"DROP TABLE {t7} NO DELAY")
         instance.query(f"DROP TABLE {t6} NO DELAY")
         instance.query(f"DROP TABLE {t5} NO DELAY")
         instance.query(f"DROP DICTIONARY {t4}")
@@ -1219,11 +1229,35 @@ def test_tables_dependency():
 
     drop()
 
-    # Restore everything and check.
+    # Restore everything.
     instance.query(f"RESTORE ALL FROM {backup_name}")
 
+    # Check everything is restored.
     assert instance.query(
         "SELECT concat(database, '.', name) AS c FROM system.tables WHERE database IN ['test', 'test2'] ORDER BY c"
-    ) == TSV(sorted([t1, t2, t3, t4, t5, t6]))
+    ) == TSV(sorted([t1, t2, t3, t4, t5, t6, t7, t8]))
+
+    # Check logs.
+    instance.query("SYSTEM FLUSH LOGS")
+    expect_in_logs = [
+        f"Table {t1} has no dependencies (level 0)",
+        f"Table {t2} has no dependencies (level 0)",
+        (
+            f"Table {t3} has 2 dependencies: {t1}, {t2} (level 1)",
+            f"Table {t3} has 2 dependencies: {t2}, {t1} (level 1)",
+        ),
+        f"Table {t4} has 1 dependencies: {t1} (level 1)",
+        f"Table {t5} has 1 dependencies: {t4} (level 2)",
+        f"Table {t6} has 1 dependencies: {t4} (level 2)",
+        f"Table {t7} has 1 dependencies: {t6} (level 3)",
+        f"Table {t8} has 1 dependencies: {t2} (level 1)",
+    ]
+    for expect in expect_in_logs:
+        assert any(
+            [
+                instance.contains_in_log(f"RestorerFromBackup: {x}")
+                for x in tuple(expect)
+            ]
+        )
 
     drop()
