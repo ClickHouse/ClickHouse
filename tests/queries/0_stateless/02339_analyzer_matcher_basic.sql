@@ -68,42 +68,42 @@ SELECT test_table.COLUMNS('i'), test_table.COLUMNS('v') FROM test_table;
 
 SELECT 'Database and table qualified matchers';
 
-DROP DATABASE IF EXISTS _02339_db;
-CREATE DATABASE _02339_db;
+DROP DATABASE IF EXISTS 02339_db;
+CREATE DATABASE 02339_db;
 
-DROP TABLE IF EXISTS _02339_db.test_table;
-CREATE TABLE _02339_db.test_table
+DROP TABLE IF EXISTS 02339_db.test_table;
+CREATE TABLE 02339_db.test_table
 (
     id UInt64,
     value String
 ) ENGINE=TinyLog;
 
-INSERT INTO _02339_db.test_table VALUES (0, 'Value');
+INSERT INTO 02339_db.test_table VALUES (0, 'Value');
 
 -- TODO: Qualified COLUMNS where identifier has more than 2 parts are not supported on parser level
 
 -- SELECT '--';
 
--- DESCRIBE (SELECT _02339_db.test_table.* FROM _02339_db.test_table);
--- SELECT _02339_db.test_table.* FROM _02339_db.test_table;
+-- DESCRIBE (SELECT 02339_db.test_table.* FROM 02339_db.test_table);
+-- SELECT 02339_db.test_table.* FROM 02339_db.test_table;
 
 -- SELECT '--';
 
--- DESCRIBE (SELECT _02339_db.test_table.COLUMNS(id) FROM _02339_db.test_table);
--- SELECT _02339_db.test_table.COLUMNS(id) FROM _02339_db.test_table;
+-- DESCRIBE (SELECT 02339_db.test_table.COLUMNS(id) FROM 02339_db.test_table);
+-- SELECT 02339_db.test_table.COLUMNS(id) FROM 02339_db.test_table;
 
 -- SELECT '--';
 
--- DESCRIBE (SELECT _02339_db.test_table.COLUMNS(id), _02339_db.test_table.COLUMNS(value) FROM _02339_db.test_table);
--- SELECT _02339_db.test_table.COLUMNS(id), _02339_db.test_table.COLUMNS(value) FROM _02339_db.test_table;
+-- DESCRIBE (SELECT 02339_db.test_table.COLUMNS(id), 02339_db.test_table.COLUMNS(value) FROM 02339_db.test_table);
+-- SELECT 02339_db.test_table.COLUMNS(id), 02339_db.test_table.COLUMNS(value) FROM 02339_db.test_table;
 
 -- SELECT '--';
 
--- DESCRIBE (SELECT _02339_db.test_table.COLUMNS('i'), _02339_db.test_table.COLUMNS('v') FROM _02339_db.test_table);
--- SELECT _02339_db.test_table.COLUMNS('i'), _02339_db.test_table.COLUMNS('v') FROM _02339_db.test_table;
+-- DESCRIBE (SELECT 02339_db.test_table.COLUMNS('i'), 02339_db.test_table.COLUMNS('v') FROM 02339_db.test_table);
+-- SELECT 02339_db.test_table.COLUMNS('i'), 02339_db.test_table.COLUMNS('v') FROM 02339_db.test_table;
 
-DROP TABLE _02339_db.test_table;
-DROP DATABASE _02339_db;
+DROP TABLE 02339_db.test_table;
+DROP DATABASE 02339_db;
 
 SELECT 'APPLY transformer';
 
