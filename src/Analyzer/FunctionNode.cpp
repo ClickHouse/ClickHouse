@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 FunctionNode::FunctionNode(String function_name_)
     : IQueryTreeNode(children_size)
     , function_name(function_name_)
