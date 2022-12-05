@@ -86,6 +86,16 @@ private:
 struct TableFunctionProperties
 {
     Documentation documentation;
+
+    /** It is determined by the possibility of modifying any data or making requests to arbitrary hostnames.
+      *
+      * If users can make a request to an arbitrary hostname, they can get the info from the internal network
+      * or manipulate internal APIs (say - put some data into Memcached, which is available only in the corporate network).
+      * This is named "SSRF attack".
+      * Or a user can use an open ClickHouse server to amplify DoS attacks.
+      *
+      * In those cases, the table function should not be allowed in readonly mode.
+      */
     bool allow_readonly = false;
 };
 
