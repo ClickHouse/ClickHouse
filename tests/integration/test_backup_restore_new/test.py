@@ -1182,6 +1182,7 @@ def test_tables_dependency():
     t6 = random_table_names[5]
     t7 = random_table_names[6]
     t8 = random_table_names[7]
+    t9 = random_table_names[8]
 
     # Create a materialized view and a dictionary with a local table as source.
     instance.query(
@@ -1210,12 +1211,17 @@ def test_tables_dependency():
         f"CREATE TABLE {t8} AS {t2} ENGINE = Buffer({t2.split('.')[0]}, {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
     )
 
+    instance.query(
+        f"CREATE DICTIONARY {t9} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(9)"
+    )
+
     # Make backup.
     backup_name = new_backup_name()
     instance.query(f"BACKUP DATABASE test, DATABASE test2 TO {backup_name}")
 
     # Drop everything in reversive order.
     def drop():
+        instance.query(f"DROP DICTIONARY {t9}")
         instance.query(f"DROP TABLE {t8} NO DELAY")
         instance.query(f"DROP TABLE {t7} NO DELAY")
         instance.query(f"DROP TABLE {t6} NO DELAY")
@@ -1235,7 +1241,7 @@ def test_tables_dependency():
     # Check everything is restored.
     assert instance.query(
         "SELECT concat(database, '.', name) AS c FROM system.tables WHERE database IN ['test', 'test2'] ORDER BY c"
-    ) == TSV(sorted([t1, t2, t3, t4, t5, t6, t7, t8]))
+    ) == TSV(sorted([t1, t2, t3, t4, t5, t6, t7, t8, t9]))
 
     # Check logs.
     instance.query("SYSTEM FLUSH LOGS")
@@ -1251,6 +1257,7 @@ def test_tables_dependency():
         f"Table {t6} has 1 dependencies: {t4} (level 2)",
         f"Table {t7} has 1 dependencies: {t6} (level 3)",
         f"Table {t8} has 1 dependencies: {t2} (level 1)",
+        f"Table {t9} has 1 dependencies: {t1} (level 1)",
     ]
     for expect in expect_in_logs:
         assert any(
