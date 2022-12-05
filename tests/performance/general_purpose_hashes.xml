@@ -15,7 +15,6 @@
                <value>hiveHash</value>
                <value>xxHash32</value>
                <value>xxHash64</value>
-               <value>xxh3</value>
                <value>CRC32</value>
            </values>
         </substitution>

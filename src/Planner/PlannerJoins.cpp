@@ -20,8 +20,6 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/CastOverloadResolver.h>
 
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/JoinNode.h>
@@ -35,7 +33,6 @@
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/GraceHashJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -79,23 +76,6 @@ void JoinClause::dump(WriteBuffer & buffer) const
 
     if (!right_filter_condition_nodes.empty())
         buffer << " right_condition_nodes: " + dump_dag_nodes(right_filter_condition_nodes);
-
-    if (!asof_conditions.empty())
-    {
-        buffer << " asof_conditions: ";
-        size_t asof_conditions_size = asof_conditions.size();
-
-        for (size_t i = 0; i < asof_conditions_size; ++i)
-        {
-            const auto & asof_condition = asof_conditions[i];
-
-            buffer << " key_index: " << asof_condition.key_index;
-            buffer << " inequality: " << toString(asof_condition.asof_inequality);
-
-            if (i + 1 != asof_conditions_size)
-                buffer << ',';
-        }
-    }
 }
 
 String JoinClause::dump() const
@@ -269,7 +249,9 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
         join_node);
 
     if (!expression_side_optional)
-        expression_side_optional = JoinTableSide::Right;
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "JOIN {} with constants is not supported",
+                join_node.formatASTForErrorMessage());
 
     auto expression_side = *expression_side_optional;
     join_clause.addCondition(expression_side, join_expressions_actions_node);
@@ -295,27 +277,8 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
     for (const auto & node : join_expression_actions_nodes)
         join_expression_dag_input_nodes.insert(&node);
 
-    /** It is possible to have constant value in JOIN ON section, that we need to ignore during DAG construction.
-      * If we do not ignore it, this function will be replaced by underlying constant.
-      * For example ASOF JOIN does not support JOIN with constants, and we should process it like ordinary JOIN.
-      *
-      * Example: SELECT * FROM (SELECT 1 AS id, 1 AS value) AS t1 ASOF LEFT JOIN (SELECT 1 AS id, 1 AS value) AS t2
-      * ON (t1.id = t2.id) AND 1 != 1 AND (t1.value >= t1.value);
-      */
-    auto join_expression = join_node.getJoinExpression();
-    auto * constant_join_expression = join_expression->as<ConstantNode>();
-
-    if (constant_join_expression && constant_join_expression->hasSourceExpression())
-        join_expression = constant_join_expression->getSourceExpression();
-
-    auto * function_node = join_expression->as<FunctionNode>();
-    if (!function_node)
-        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-            "JOIN {} join expression expected function",
-            join_node.formatASTForErrorMessage());
-
     PlannerActionsVisitor join_expression_visitor(planner_context);
-    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(join_expression_actions, join_expression);
+    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(join_expression_actions, join_node.getJoinExpression());
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",
@@ -543,12 +506,12 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     if (!join_node_typed.getJoinExpression())
         return {};
 
-    const auto * constant_node = join_node_typed.getJoinExpression()->as<ConstantNode>();
-    if (!constant_node)
+    auto constant_value = join_node_typed.getJoinExpression()->getConstantValueOrNull();
+    if (!constant_value)
         return {};
 
-    const auto & value = constant_node->getValue();
-    auto constant_type = constant_node->getResultType();
+    const auto & value = constant_value->getValue();
+    auto constant_type = constant_value->getType();
     constant_type = removeNullable(removeLowCardinality(constant_type));
 
     auto which_constant_type = WhichDataType(constant_type);
@@ -665,7 +628,6 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
 std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
-    const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     const PlannerContextPtr & planner_context)
 {
@@ -722,20 +684,6 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     {
         if (FullSortingMergeJoin::isSupported(table_join))
             return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
-    }
-
-    if (table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
-    {
-        if (GraceHashJoin::isSupported(table_join))
-        {
-            auto query_context = planner_context->getQueryContext();
-            return std::make_shared<GraceHashJoin>(
-                query_context,
-                table_join,
-                left_table_expression_header,
-                right_table_expression_header,
-                query_context->getTempDataOnDisk());
-        }
     }
 
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))

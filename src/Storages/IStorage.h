@@ -583,8 +583,7 @@ public:
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
-    /// Returns true if all disks of storage are read-only or write-once.
-    /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
+    /// Returns true if all disks of storage are read-only.
     virtual bool isStaticStorage() const;
 
     virtual bool supportsSubsetOfColumns() const { return false; }

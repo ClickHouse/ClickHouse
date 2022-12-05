@@ -119,7 +119,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
 
     if (query->as<ASTSelectQuery>())
     {
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef().use_analyzer)
             return std::make_unique<InterpreterSelectQueryAnalyzer>(query, options, context);
 
         /// This is internal part of ASTSelectWithUnionQuery.
@@ -130,7 +130,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef().use_analyzer)
             return std::make_unique<InterpreterSelectQueryAnalyzer>(query, options, context);
 
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
