@@ -132,15 +132,15 @@ select _1000 FROM (SELECT 1 AS _1000) FORMAT Null;
 select -_1; -- { serverError UNKNOWN_IDENTIFIER }
 select -_1 FROM (SELECT -1 AS _1) FORMAT Null;
 select +_1; -- { clientError SYNTAX_ERROR }
-select 1__0; -- { clientError SYNTAX_ERROR }
-select 10_; -- { clientError SYNTAX_ERROR }
-select 1_e5; -- { clientError SYNTAX_ERROR }
-select 1e_5; -- { clientError SYNTAX_ERROR }
-select 1e_; -- { clientError SYNTAX_ERROR }
+select 1__0; -- { serverError UNKNOWN_IDENTIFIER }
+select 10_; -- { serverError UNKNOWN_IDENTIFIER }
+select 1_e5; -- { serverError UNKNOWN_IDENTIFIER }
+select 1e_5; -- { serverError UNKNOWN_IDENTIFIER }
+select 1e_; -- { serverError UNKNOWN_IDENTIFIER }
 select 1_.; -- { clientError SYNTAX_ERROR }
-select 1e_1; -- { clientError SYNTAX_ERROR }
-select 0_x2; -- { clientError SYNTAX_ERROR }
-select 0b; -- { clientError SYNTAX_ERROR }
-select 0x; -- { clientError SYNTAX_ERROR }
-select 0x_; -- { clientError SYNTAX_ERROR }
-select 0x_1; -- { clientError SYNTAX_ERROR }
+select 1e_1; -- { serverError UNKNOWN_IDENTIFIER }
+select 0_x2; -- { serverError UNKNOWN_IDENTIFIER }
+select 0b; -- { serverError UNKNOWN_IDENTIFIER }
+select 0x; -- { serverError UNKNOWN_IDENTIFIER }
+select 0x_; -- { serverError UNKNOWN_IDENTIFIER }
+select 0x_1; -- { serverError UNKNOWN_IDENTIFIER }
