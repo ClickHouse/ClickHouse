@@ -41,7 +41,7 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr const char MERGE_TREE_SETTINGS_PREFIX[] = "merge_tree_";
+    constexpr std::string_view MERGE_TREE_SETTINGS_PREFIX = "merge_tree_";
 }
 
 namespace
@@ -110,7 +110,7 @@ public:
     {
         if (Settings::hasBuiltin(setting_name))
             return true;
-        if (setting_name.starts_with(MERGE_TREE_SETTINGS_PREFIX) && MergeTreeSettings::hasBuiltin(setting_name.substr(strlen(MERGE_TREE_SETTINGS_PREFIX))))
+        if (setting_name.starts_with(MERGE_TREE_SETTINGS_PREFIX) && MergeTreeSettings::hasBuiltin(setting_name.substr(MERGE_TREE_SETTINGS_PREFIX.size())))
             return true;
 
         std::lock_guard lock{mutex};
