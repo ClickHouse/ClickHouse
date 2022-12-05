@@ -946,7 +946,10 @@ void Aggregator::executeOnBlockSmall(
     /// How to perform the aggregation?
     if (result.empty())
     {
-        initDataVariantsWithSizeHint(result, method_chosen, params);
+        if (method_chosen != AggregatedDataVariants::Type::without_key)
+            initDataVariantsWithSizeHint(result, method_chosen, params);
+        else
+            result.init(method_chosen);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
     }
