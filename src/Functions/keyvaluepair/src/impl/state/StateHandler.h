@@ -8,10 +8,16 @@ namespace DB
 
 struct StateHandler {
     StateHandler(char escape_character, std::optional<char> enclosing_character);
+    StateHandler(const StateHandler &) = default;
 
-    const char escape_character;
+    virtual ~StateHandler() = default;
+
+    const char escape_character = '\\';
     const std::optional<char> enclosing_character;
 
+    [[nodiscard]] virtual std::string_view get() const = 0;
+
+protected:
     [[nodiscard]] std::string_view createElement(const std::string & file, std::size_t begin, std::size_t end) const;
 };
 

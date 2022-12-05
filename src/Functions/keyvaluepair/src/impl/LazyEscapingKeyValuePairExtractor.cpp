@@ -29,21 +29,21 @@ LazyEscapingKeyValuePairExtractor::Response LazyEscapingKeyValuePairExtractor::e
 NextState LazyEscapingKeyValuePairExtractor::extract(const std::string & file, std::size_t pos, State state) {
     switch (state) {
         case State::WAITING_KEY:
-            return waitKey(file, pos);
+            return key_state_handler.wait(file, pos);
         case State::READING_KEY:
-            return readKey(file, pos);
+            return key_state_handler.read(file, pos);
         case State::READING_ENCLOSED_KEY:
-            return readEnclosedKey(file, pos);
+            return key_state_handler.readEnclosed(file, pos);
         case State::READING_KV_DELIMITER:
-            return readKeyValueDelimiter(file, pos);
+            return key_state_handler.readKeyValueDelimiter(file, pos);
         case State::WAITING_VALUE:
-            return waitValue(file, pos);
+            return value_state_handler.wait(file, pos);
         case State::READING_VALUE:
-            return readValue(file, pos);
+            return value_state_handler.read(file, pos);
         case State::READING_ENCLOSED_VALUE:
-            return readEnclosedValue(file, pos);
+            return value_state_handler.readEnclosed(file, pos);
         case State::READING_EMPTY_VALUE:
-            return readEmptyValue(file, pos);
+            return value_state_handler.readEmpty(file, pos);
         case State::FLUSH_PAIR:
             return flushPair(file, pos);
         case END:
@@ -54,61 +54,8 @@ NextState LazyEscapingKeyValuePairExtractor::extract(const std::string & file, s
     }
 }
 
-
-NextState LazyEscapingKeyValuePairExtractor::waitKey(const std::string & file, size_t pos) const {
-    return key_state_handler.wait(file, pos);
-}
-
-NextState LazyEscapingKeyValuePairExtractor::readKeyValueDelimiter(const std::string &file, size_t pos) const {
-    return key_state_handler.readKeyValueDelimiter(file, pos);
-}
-
-NextState LazyEscapingKeyValuePairExtractor::readKey(const std::string & file, size_t pos) {
-    auto [next_state, next_key] = key_state_handler.read(file, pos);
-
-    key = next_key;
-
-    return next_state;
-}
-
-NextState LazyEscapingKeyValuePairExtractor::readEnclosedKey(const std::string &file, size_t pos) {
-    auto [next_state, next_key] = key_state_handler.readEnclosed(file, pos);
-
-    key = next_key;
-
-    return next_state;
-}
-
-NextState LazyEscapingKeyValuePairExtractor::waitValue(const std::string &file, size_t pos) const {
-    return value_state_handler.wait(file, pos);
-}
-
-NextState LazyEscapingKeyValuePairExtractor::readValue(const std::string &file, size_t pos) {
-    auto [next_state, next_value] = value_state_handler.read(file, pos);
-
-    value = next_value;
-
-    return next_state;
-}
-
-NextState LazyEscapingKeyValuePairExtractor::readEnclosedValue(const std::string &file, size_t pos) {
-    auto [next_state, next_value] = value_state_handler.readEnclosed(file, pos);
-
-    value = next_value;
-
-    return next_state;
-}
-
-NextState LazyEscapingKeyValuePairExtractor::readEmptyValue(const std::string &file, size_t pos) {
-    auto [next_state, next_value] = value_state_handler.readEmpty(file, pos);
-
-    value = next_value;
-
-    return next_state;
-}
-
-NextState LazyEscapingKeyValuePairExtractor::flushPair(const std::string &file, std::size_t pos) {
-    response_views[key] = value;
+NextState LazyEscapingKeyValuePairExtractor::flushPair(const std::string & file, std::size_t pos) {
+    response_views[key_state_handler.get()] = value_state_handler.get();
 
     return {
         pos,
