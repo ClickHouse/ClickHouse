@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 for Engine in Atomic Ordinary; do
-    $CLICKHOUSE_LOCAL --allow_deprecated_database_ordinary=1 --query """
+    $CLICKHOUSE_LOCAL --query """
     CREATE DATABASE foo_$Engine Engine=$Engine;
     DROP DATABASE foo_$Engine;
     """

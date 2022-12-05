@@ -67,7 +67,6 @@ struct DictionaryAttribute final
     const std::string expression;
     const Field null_value;
     const bool hierarchical;
-    const bool bidirectional;
     const bool injective;
     const bool is_object_id;
     const bool is_nullable;
@@ -90,7 +89,7 @@ constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && 
         if (type == other)
             func(DictionaryAttributeType<other>{});
     });
-}
+};
 
 struct DictionarySpecialAttribute final
 {
@@ -127,7 +126,6 @@ struct DictionaryStructure final
     DataTypes getKeyTypes() const;
     void validateKeyTypes(const DataTypes & key_types) const;
 
-    bool hasAttribute(const std::string & attribute_name) const;
     const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
     const DictionaryAttribute & getAttribute(const std::string & attribute_name, const DataTypePtr & type) const;
 

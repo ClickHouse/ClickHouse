@@ -1,0 +1,10 @@
+<clickhouse>
+    <users>
+        <kerberos_user>
+            <kerberos>
+                <realm>EXAMPLE.COM</realm>
+            </kerberos>
+            <access_management>1</access_management>
+        </kerberos_user>
+    </users>
+</clickhouse>

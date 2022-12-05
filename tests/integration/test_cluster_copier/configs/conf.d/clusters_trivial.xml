@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <clickhouse>
     <remote_servers>
         <source_trivial_cluster>

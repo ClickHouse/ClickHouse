@@ -7,7 +7,6 @@
 #include <replxx.hxx>
 
 #include <base/types.h>
-#include <base/defines.h>
 
 class LineReader
 {
@@ -21,8 +20,8 @@ public:
         void addWords(Words && new_words);
 
     private:
-        Words words TSA_GUARDED_BY(mutex);
-        Words words_no_case TSA_GUARDED_BY(mutex);
+        Words words;
+        Words words_no_case;
 
         std::mutex mutex;
     };
@@ -30,7 +29,7 @@ public:
     using Patterns = std::vector<const char *>;
 
     LineReader(const String & history_file_path, bool multiline, Patterns extenders, Patterns delimiters);
-    virtual ~LineReader() = default;
+    virtual ~LineReader() {}
 
     /// Reads the whole line until delimiter (in multiline mode) or until the last line without extender.
     /// If resulting line is empty, it means the user interrupted the input.

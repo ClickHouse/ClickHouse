@@ -98,7 +98,9 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
     {
         const auto & sort_column_description = description[i];
 
-        const IColumn * column = block.getByName(sort_column_description.column_name).column.get();
+        const IColumn * column = !sort_column_description.column_name.empty()
+            ? block.getByName(sort_column_description.column_name).column.get()
+            : block.safeGetByPosition(sort_column_description.column_number).column.get();
 
         if (isCollationRequired(sort_column_description))
         {
