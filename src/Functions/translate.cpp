@@ -27,14 +27,14 @@ struct TranslateImpl
         const std::string & map_to)
     {
         if (map_from.size() != map_to.size())
-            throw Exception("Second and trird arguments must be the same length", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Second and third arguments must be the same length", ErrorCodes::BAD_ARGUMENTS);
 
         std::iota(map.begin(), map.end(), 0);
 
         for (size_t i = 0; i < map_from.size(); ++i)
         {
             if (!isASCII(map_from[i]) || !isASCII(map_to[i]))
-                throw Exception("Second and trird arguments must be ASCII strings", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Second and third arguments must be ASCII strings", ErrorCodes::BAD_ARGUMENTS);
 
             map[map_from[i]] = map_to[i];
         }
@@ -125,7 +125,7 @@ struct TranslateUTF8Impl
         auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
 
         if (map_from_size != map_to_size)
-            throw Exception("Second and trird arguments must be the same length", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Second and third arguments must be the same length", ErrorCodes::BAD_ARGUMENTS);
 
         std::iota(map_ascii.begin(), map_ascii.end(), 0);
 
