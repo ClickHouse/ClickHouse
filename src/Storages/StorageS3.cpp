@@ -204,6 +204,7 @@ private:
             if (block.has("_file"))
                 file_column = block.getByName("_file").column->assumeMutable();
 
+            std::unordered_map<String, S3::ObjectInfo> all_object_infos;
             for (const auto & key_info : result_batch)
             {
                 const String & key = key_info.GetKey();
@@ -211,16 +212,19 @@ private:
                 {
                     String path = fs::path(globbed_uri.bucket) / key;
                     const size_t key_size = key_info.GetSize();
-                    total_size += key_size;
-                    if (object_infos)
-                    {
-                        (*object_infos)[path] = {.size = key_size, .last_modification_time = key_info.GetLastModified().Millis() / 1000};
-                    }
-                    String file = path.substr(path.find_last_of('/') + 1);
+
+                    all_object_infos.emplace(path, S3::ObjectInfo{.size = key_size, .last_modification_time = key_info.GetLastModified().Millis() / 1000});
+
                     if (path_column)
+                    {
                         path_column->insert(path);
+                    }
                     if (file_column)
+                    {
+                        String file = path.substr(path.find_last_of('/') + 1);
                         file_column->insert(file);
+                    }
+
                     key_column->insert(key);
                 }
             }
@@ -230,7 +234,17 @@ private:
             size_t rows = block.rows();
             buffer.reserve(rows);
             for (size_t i = 0; i < rows; ++i)
-                buffer.emplace_back(keys.getDataAt(i).toString());
+            {
+                auto key = keys.getDataAt(i).toString();
+                std::string path = fs::path(globbed_uri.bucket) / key;
+
+                const auto & object_info = all_object_infos.at(path);
+                total_size += object_info.size;
+                if (object_infos)
+                    object_infos->emplace(path, object_info);
+
+                buffer.emplace_back(key);
+            }
         }
         else
         {
@@ -352,24 +366,28 @@ public:
                 if (block.has("_file"))
                     file_column = block.getByName("_file").column->assumeMutable();
 
+                std::unordered_map<String, S3::ObjectInfo> all_object_infos;
                 for (const auto & key : keys)
                 {
                     const String path = fs::path(bucket) / key;
-                    const String file = path.substr(path.find_last_of('/') + 1);
 
                     /// To avoid extra requests update total_size only if object_infos != nullptr
                     /// (which means we eventually need this info anyway, so it should be ok to do it now).
                     if (object_infos_)
                     {
                         auto key_info = S3::getObjectInfo(client_, bucket, key, version_id_, true, false);
-                        (*object_infos_)[path] = {.size = key_info.size, .last_modification_time = key_info.last_modification_time};
-                        total_size += key_info.size;
+                        all_object_infos.emplace(path, S3::ObjectInfo{.size = key_info.size, .last_modification_time = key_info.last_modification_time});
                     }
 
                     if (path_column)
+                    {
                         path_column->insert(path);
+                    }
                     if (file_column)
+                    {
+                        const String file = path.substr(path.find_last_of('/') + 1);
                         file_column->insert(file);
+                    }
                     key_column->insert(key);
                 }
 
@@ -379,7 +397,19 @@ public:
                 Strings filtered_keys;
                 filtered_keys.reserve(rows);
                 for (size_t i = 0; i < rows; ++i)
-                    filtered_keys.emplace_back(keys_col.getDataAt(i).toString());
+                {
+                    auto key = keys_col.getDataAt(i).toString();
+
+                    if (object_infos_)
+                    {
+                        std::string path = fs::path(bucket) / key;
+                        const auto & object_info = all_object_infos.at(path);
+                        total_size += object_info.size;
+                        object_infos_->emplace(path, object_info);
+                    }
+
+                    filtered_keys.emplace_back(key);
+                }
 
                 keys = std::move(filtered_keys);
             }
