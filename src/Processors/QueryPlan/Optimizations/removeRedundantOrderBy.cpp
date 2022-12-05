@@ -7,10 +7,21 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
 {
+const char * stepName(const QueryPlan::Node * node)
+{
+    IQueryPlanStep * current_step = node->step.get();
+    return typeid(*current_step).name();
+}
+
+void printStepName(const char * prefix, const QueryPlan::Node * node)
+{
+    LOG_DEBUG(&Poco::Logger::get("RedundantOrderBy"), "{}: {}: {}", prefix, stepName(node), reinterpret_cast<void *>(node->step.get()));
+}
 
 void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 {
@@ -19,6 +30,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
     {
         QueryPlan::Node * node = nullptr;
         QueryPlan::Node * parent_node = nullptr;
+        size_t next_child = 0;
     };
 
     std::vector<Frame> stack;
@@ -28,88 +40,98 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 
     while (!stack.empty())
     {
-        auto frame = stack.back();
-        stack.pop_back();
+        auto & frame = stack.back();
 
         QueryPlan::Node * current_node = frame.node;
+        QueryPlan::Node * parent_node = frame.parent_node;
         IQueryPlanStep * current_step = frame.node->step.get();
+        printStepName("back", current_node);
 
-        /// if there is parent node which can affect order and current step is sorting
-        /// then check if we can remove the sorting step (and corresponding expression step)
-        if (!steps_affect_order.empty() && typeid_cast<SortingStep *>(current_step))
+        /// top-down visit
+        if (0 == frame.next_child)
         {
-            auto try_to_remove_sorting_step = [&]() -> bool
+            printStepName("visit", current_node);
+            /// if there is parent node which can affect order and current step is sorting
+            /// then check if we can remove the sorting step (and corresponding expression step)
+            if (!steps_affect_order.empty() && typeid_cast<SortingStep *>(current_step))
             {
-                /// if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-                /// if ORDER BY is with FILL WITH, it is non-removable
-                if (typeid_cast<LimitStep *>(steps_affect_order.back()) || typeid_cast<LimitByStep *>(steps_affect_order.back())
-                    || typeid_cast<FillingStep *>(steps_affect_order.back()))
-                    return false;
-
-                bool remove_sorting = false;
-                /// (1) aggregation
-                if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(steps_affect_order.back()); parent_aggr)
+                auto try_to_remove_sorting_step = [&]() -> bool
                 {
-                    /// TODO: check if it contains aggregation functions which depends on order
-                    remove_sorting = true;
-                }
-                /// (2) sorting
-                else if (SortingStep * parent_sorting = typeid_cast<SortingStep *>(steps_affect_order.back()); parent_sorting)
+                    /// if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
+                    /// if ORDER BY is with FILL WITH, it is non-removable
+                    if (typeid_cast<LimitStep *>(steps_affect_order.back()) || typeid_cast<LimitByStep *>(steps_affect_order.back())
+                        || typeid_cast<FillingStep *>(steps_affect_order.back()))
+                        return false;
+
+                    bool remove_sorting = false;
+                    /// (1) aggregation
+                    if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(steps_affect_order.back()); parent_aggr)
+                    {
+                        /// TODO: check if it contains aggregation functions which depends on order
+                        remove_sorting = true;
+                    }
+                    /// (2) sorting
+                    else if (SortingStep * parent_sorting = typeid_cast<SortingStep *>(steps_affect_order.back()); parent_sorting)
+                    {
+                        remove_sorting = true;
+                    }
+
+                    if (remove_sorting)
+                    {
+                        chassert(typeid_cast<ExpressionStep *>(current_node->children.front()->step.get()));
+                        chassert(!current_node->children.front()->children.empty());
+
+                        /// need to remove sorting and its expression from plan
+                        parent_node->children.front() = current_node->children.front()->children.front();
+                    }
+                    return remove_sorting;
+                };
+                if (try_to_remove_sorting_step())
                 {
-                    remove_sorting = true;
+                    LOG_DEBUG(&Poco::Logger::get("RedundantOrderBy"), "Sorting removed");
+
+                    /// mark removed node as visited
+                    frame.next_child = frame.node->children.size();
+
+                    /// current sorting step has been removed from plan, its parent has new children, need to visit them
+                    auto next_frame = Frame{.node = parent_node->children[0], .parent_node = parent_node};
+                    ++frame.next_child;
+                    printStepName("push", next_frame.node);
+                    stack.push_back(next_frame);
+                    continue;
                 }
+            }
 
-                if (remove_sorting)
-                {
-                    /// need to remove sorting and its expression from plan
-                    QueryPlan::Node * parent = frame.parent_node;
-
-                    QueryPlan::Node * next_node = !current_node->children.empty() ? current_node->children.front() : nullptr;
-                    if (next_node && typeid_cast<ExpressionStep *>(next_node->step.get()))
-                        next_node = !current_node->children.empty() ? current_node->children.front() : nullptr;
-
-                    if (next_node)
-                        parent->children[0] = next_node;
-                }
-                return remove_sorting;
-            };
-            if (try_to_remove_sorting_step())
+            if (typeid_cast<LimitStep *>(current_step)
+                || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
+                || typeid_cast<FillingStep *>(current_step) /// (2) if ORDER BY is with FILL WITH, it is non-removable
+                || typeid_cast<SortingStep *>(current_step) /// (3) ORDER BY will change order of previous sorting
+                || typeid_cast<AggregatingStep *>(current_step)) /// (4) aggregation change order
             {
-                /// current sorting step has been removed from plan, its parent has new children, need to visit them
-                for (auto * child : frame.parent_node->children)
-                    stack.push_back({.node = child, .parent_node = frame.parent_node});
-
-                continue;
+                printStepName("steps_affect_order/push", current_node);
+                steps_affect_order.push_back(current_step);
             }
         }
 
-        if (typeid_cast<LimitStep *>(current_step)
-            || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FillingStep *>(current_step) /// (2) if ORDER BY is with FILL WITH, it is non-removable
-            || typeid_cast<SortingStep *>(current_step) /// (3) ORDER BY will change order of previous sorting
-            || typeid_cast<AggregatingStep *>(current_step)) /// (4) aggregation change order
-            steps_affect_order.push_back(current_step);
-
-        /// visit children
-        for (auto * child : current_node->children)
-            stack.push_back({.node = child, .parent_node = current_node});
-
-        /// if all children of a particular parent are visited
-        /// then the parent need to be removed from nodes which affects order, if it's such node
-        if (!steps_affect_order.empty() && frame.parent_node)
+        /// Traverse all children
+        if (frame.next_child < frame.node->children.size())
         {
-            Frame next_frame;
-            if (!stack.empty())
-                next_frame = stack.back();
-
-            /// if next frame node is not child of current node,
-            /// and it doesn't have the same parent as current frame
-            /// then we are visiting last child of the parent.
-            /// So, remove the parent if it's on top of stack with affecting order nodes
-            if (next_frame.parent_node != frame.node && next_frame.parent_node != frame.parent_node
-                && steps_affect_order.back() == frame.parent_node->step.get())
-                steps_affect_order.pop_back();
+            auto next_frame = Frame{.node = current_node->children[frame.next_child], .parent_node = current_node};
+            ++frame.next_child;
+            printStepName("push", next_frame.node);
+            stack.push_back(next_frame);
+            continue;
         }
+
+        /// bottom-up visit
+        if (!steps_affect_order.empty() && steps_affect_order.back() == current_node->step.get())
+        {
+            printStepName("steps_affect_order/pop", current_node);
+            steps_affect_order.pop_back();
+        }
+
+        printStepName("pop", current_node);
+        stack.pop_back();
     }
 }
 }

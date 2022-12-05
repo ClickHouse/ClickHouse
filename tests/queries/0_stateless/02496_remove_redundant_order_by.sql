@@ -1,5 +1,6 @@
 SET allow_experimental_analyzer=1;
 SET optimize_duplicate_order_by_and_distinct=0;
+-- set query_plan_enable_optimizations=0;
 
 SELECT '-- Disable query_plan_remove_redundant_order_by';
 SET query_plan_remove_redundant_order_by=0;
@@ -174,53 +175,53 @@ GROUP BY number;
 -- )
 -- WHERE a > 0;
 
--- SELECT '-- CROSS JOIN with subqueries, nor ORDER BY nor GROUP BY in main query -> only ORDER BY clauses in most inner subqueries will be removed';
--- EXPLAIN
--- SELECT *
--- FROM
--- (
---     SELECT number
---     FROM
---     (
---         SELECT number
---         FROM numbers(3)
---         ORDER BY number DESC
---     )
---     ORDER BY number ASC
--- ) AS t1,
--- (
---     SELECT number
---     FROM
---     (
---         SELECT number
---         FROM numbers(3)
---         ORDER BY number ASC
---     )
---     ORDER BY number DESC
--- ) AS t2;
+SELECT '-- CROSS JOIN with subqueries, nor ORDER BY nor GROUP BY in main query -> only ORDER BY clauses in most inner subqueries will be removed';
+EXPLAIN header=1
+SELECT *
+FROM
+(
+    SELECT number
+    FROM
+    (
+        SELECT number
+        FROM numbers(3)
+        ORDER BY number DESC
+    )
+    ORDER BY number ASC
+) AS t1,
+(
+    SELECT number
+    FROM
+    (
+        SELECT number
+        FROM numbers(3)
+        ORDER BY number ASC
+    )
+    ORDER BY number DESC
+) AS t2;
 
--- SELECT '-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries';
--- EXPLAIN
--- SELECT *
--- FROM
--- (
---     SELECT number
---     FROM
---     (
---         SELECT number
---         FROM numbers(3)
---         ORDER BY number DESC
---     )
---     ORDER BY number ASC
--- ) AS t1,
--- (
---     SELECT number
---     FROM
---     (
---         SELECT number
---         FROM numbers(3)
---         ORDER BY number ASC
---     )
---     ORDER BY number DESC
--- ) AS t2
--- ORDER BY t1.number ASC;
+SELECT '-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries';
+EXPLAIN header=1
+SELECT *
+FROM
+(
+    SELECT number
+    FROM
+    (
+        SELECT number
+        FROM numbers(3)
+        ORDER BY number DESC
+    )
+    ORDER BY number ASC
+) AS t1,
+(
+    SELECT number
+    FROM
+    (
+        SELECT number
+        FROM numbers(3)
+        ORDER BY number ASC
+    )
+    ORDER BY number DESC
+) AS t2
+ORDER BY t1.number ASC;

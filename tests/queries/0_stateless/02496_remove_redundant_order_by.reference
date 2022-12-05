@@ -22,7 +22,7 @@ Expression (Project names)
 Header: number UInt64
   Sorting (Sorting for ORDER BY)
   Header: number_0 UInt64
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))))
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))
     Header: number_0 UInt64
       ReadFromStorage (SystemNumbers)
       Header: number UInt64
@@ -37,7 +37,7 @@ Header: number UInt64
       Header: number_1 UInt64
         Sorting (Sorting for ORDER BY)
         Header: number_1 UInt64
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
           Header: number_1 UInt64
             ReadFromStorage (SystemNumbers)
             Header: number UInt64
@@ -54,7 +54,7 @@ Header: number UInt64
         Header: number_1 UInt64
           Sorting (Sorting for ORDER BY)
           Header: number_1 UInt64
-            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
             Header: number_1 UInt64
               ReadFromStorage (SystemNumbers)
               Header: number UInt64
@@ -63,7 +63,51 @@ Expression ((Project names + Projection))
 Header: number UInt64
   Aggregating
   Header: number_0 UInt64
-    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))))))
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))
     Header: number_0 UInt64
       ReadFromStorage (SystemNumbers)
       Header: number UInt64
+-- CROSS JOIN with subqueries, nor ORDER BY nor GROUP BY in main query -> only ORDER BY clauses in most inner subqueries will be removed
+Expression ((Project names + (Projection + DROP unused columns after JOIN)))
+Header: t1.number UInt64
+        t2.number UInt64
+  Join (JOIN FillRightFirst)
+  Header: t1.number_0 UInt64
+          t2.number_1 UInt64
+    Expression ((Change column names to column identifiers + Project names))
+    Header: t1.number_0 UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number_2 UInt64
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+        Header: number_2 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+    Expression ((Change column names to column identifiers + Project names))
+    Header: t2.number_1 UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number_4 UInt64
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+        Header: number_4 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries
+Expression (Project names)
+Header: t1.number UInt64
+        t2.number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: t1.number_0 UInt64
+          t2.number_1 UInt64
+    Expression ((Before ORDER BY + (Projection + DROP unused columns after JOIN)))
+    Header: t1.number_0 UInt64
+            t2.number_1 UInt64
+      Join (JOIN FillRightFirst)
+      Header: t1.number_0 UInt64
+              t2.number_1 UInt64
+        Expression ((Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))
+        Header: t1.number_0 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+        Expression ((Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))
+        Header: t2.number_1 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
