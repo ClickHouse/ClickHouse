@@ -167,9 +167,7 @@ add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
 add_contrib (morton-nd-cmake morton-nd)
 
-add_contrib (annoy-cmake annoy)
-
-add_contrib (xxHash-cmake xxHash)
+add_contrib(annoy-cmake annoy)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

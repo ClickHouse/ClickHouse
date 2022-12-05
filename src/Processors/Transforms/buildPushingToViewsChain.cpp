@@ -225,13 +225,13 @@ Chain buildPushingToViewsChain(
         disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
     auto table_id = storage->getStorageID();
-    auto views = DatabaseCatalog::instance().getDependentViews(table_id);
+    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
 
     /// We need special context for materialized views insertions
     ContextMutablePtr select_context;
     ContextMutablePtr insert_context;
     ViewsDataPtr views_data;
-    if (!views.empty())
+    if (!dependencies.empty())
     {
         select_context = Context::createCopy(context);
         insert_context = Context::createCopy(context);
@@ -253,10 +253,10 @@ Chain buildPushingToViewsChain(
 
     std::vector<Chain> chains;
 
-    for (const auto & view_id : views)
+    for (const auto & database_table : dependencies)
     {
-        auto view = DatabaseCatalog::instance().getTable(view_id, context);
-        auto view_metadata_snapshot = view->getInMemoryMetadataPtr();
+        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, context);
+        auto dependent_metadata_snapshot = dependent_table->getInMemoryMetadataPtr();
 
         ASTPtr query;
         Chain out;
@@ -275,8 +275,10 @@ Chain buildPushingToViewsChain(
         SCOPE_EXIT({ current_thread = original_thread; });
 
         std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>();
-        /// Copy of a ThreadStatus should be internal.
-        view_thread_status_ptr->setInternalThread();
+        /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
+        /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
+        /// N times more interruptions
+        view_thread_status_ptr->disableProfiling();
         /// view_thread_status_ptr will be moved later (on and on), so need to capture raw pointer.
         view_thread_status_ptr->deleter = [thread_status = view_thread_status_ptr.get(), running_group]
         {
@@ -288,7 +290,7 @@ Chain buildPushingToViewsChain(
         views_data->thread_status_holder->thread_statuses.push_front(std::move(view_thread_status_ptr));
 
         auto runtime_stats = std::make_unique<QueryViewsLogElement::ViewRuntimeStats>();
-        runtime_stats->target_name = view_id.getFullTableName();
+        runtime_stats->target_name = database_table.getFullTableName();
         runtime_stats->thread_status = view_thread_status;
         runtime_stats->event_time = std::chrono::system_clock::now();
         runtime_stats->event_status = QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START;
@@ -297,7 +299,7 @@ Chain buildPushingToViewsChain(
         auto & target_name = runtime_stats->target_name;
         auto * view_counter_ms = &runtime_stats->elapsed_ms;
 
-        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get()))
+        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
             result_chain.addTableLock(materialized_view->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
@@ -305,7 +307,7 @@ Chain buildPushingToViewsChain(
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-            query = view_metadata_snapshot->getSelectQuery().inner_query;
+            query = dependent_metadata_snapshot->getSelectQuery().inner_query;
             target_name = inner_table_id.getFullTableName();
 
             /// Get list of columns we get from select query.
@@ -324,31 +326,31 @@ Chain buildPushingToViewsChain(
 
             InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
             out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms);
-            out.addStorageHolder(view);
+            out.addStorageHolder(dependent_table);
             out.addStorageHolder(inner_table);
         }
-        else if (auto * live_view = dynamic_cast<StorageLiveView *>(view.get()))
+        else if (auto * live_view = dynamic_cast<StorageLiveView *>(dependent_table.get()))
         {
             runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms, storage_header);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms, storage_header);
         }
-        else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
+        else if (auto * window_view = dynamic_cast<StorageWindowView *>(dependent_table.get()))
         {
             runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
             query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms);
         }
         else
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(), false, thread_status_holder, view_counter_ms);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, thread_status_holder, view_counter_ms);
 
         views_data->views.emplace_back(ViewRuntimeData{ //-V614
             std::move(query),
             out.getInputHeader(),
-            view_id,
+            database_table,
             nullptr,
             std::move(runtime_stats)});
 
@@ -367,7 +369,7 @@ Chain buildPushingToViewsChain(
         if (!no_destination)
         {
             context->getQueryContext()->addQueryAccessInfo(
-                backQuoteIfNeed(view_id.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", view_id.getFullTableName());
+                backQuoteIfNeed(database_table.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", database_table.getFullTableName());
         }
     }
 

@@ -102,6 +102,12 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
 
+    if (constant_value)
+    {
+        buffer << ", constant_value: " << constant_value->getValue().dump();
+        buffer << ", constant_value_type: " << constant_value->getType()->getName();
+    }
+
     buffer << ", union_mode: " << toString(union_mode);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
@@ -111,6 +117,12 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const UnionNode &>(rhs);
+    if (constant_value && rhs_typed.constant_value && *constant_value != *rhs_typed.constant_value)
+        return false;
+    else if (constant_value && !rhs_typed.constant_value)
+        return false;
+    else if (!constant_value && rhs_typed.constant_value)
+        return false;
 
     return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name &&
         union_mode == rhs_typed.union_mode;
@@ -125,6 +137,17 @@ void UnionNode::updateTreeHashImpl(HashState & state) const
     state.update(cte_name);
 
     state.update(static_cast<size_t>(union_mode));
+
+    if (constant_value)
+    {
+        auto constant_dump = applyVisitor(FieldVisitorToString(), constant_value->getValue());
+        state.update(constant_dump.size());
+        state.update(constant_dump);
+
+        auto constant_value_type_name = constant_value->getType()->getName();
+        state.update(constant_value_type_name.size());
+        state.update(constant_value_type_name);
+    }
 }
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
@@ -134,6 +157,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;
     result_union_node->cte_name = cte_name;
+    result_union_node->constant_value = constant_value;
 
     return result_union_node;
 }

@@ -595,8 +595,4 @@ inline String getIndexExtension(bool is_compressed_primary_key) { return is_comp
 std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
 
-using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
-
-Strings getPartsNames(const MergeTreeDataPartsVector & parts);
-
 }

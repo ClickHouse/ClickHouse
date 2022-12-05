@@ -413,7 +413,7 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks(/* global_skip_access_check= */ true);
+    registerDisks();
     registerFormats();
 
     processConfig();

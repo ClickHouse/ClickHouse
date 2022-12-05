@@ -306,10 +306,6 @@ void PipelineExecutor::spawnThreads()
         {
             /// ThreadStatus thread_status;
 
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
             setThreadName("QueryPipelineEx");
 
             if (thread_group)

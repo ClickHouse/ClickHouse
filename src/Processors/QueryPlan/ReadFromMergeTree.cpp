@@ -31,7 +31,6 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
@@ -65,8 +64,6 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .checksum_on_read = settings.checksum_on_read,
         .read_in_order = query_info.input_order_info != nullptr,
         .apply_deleted_mask = context->applyDeletedMask(),
-        .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
-            && (settings.max_streams_to_max_threads_ratio > 1 || settings.allow_asynchronous_read_from_io_pool_for_merge_tree),
     };
 }
 
@@ -91,7 +88,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     Poco::Logger * log_,
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading)
-    : ISourceStep(DataStream{.header = IMergeTreeSelectAlgorithm::transformHeader(
+    : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(real_column_names_),
         getPrewhereInfoFromQueryInfo(query_info_),
         data_.getPartitionValueType(),
@@ -126,21 +123,6 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     if (enable_parallel_reading)
         read_task_callback = context->getMergeTreeReadTaskCallback();
-
-    const auto & settings = context->getSettingsRef();
-    if (settings.max_streams_for_merge_tree_reading)
-    {
-        if (settings.allow_asynchronous_read_from_io_pool_for_merge_tree)
-        {
-            /// When async reading is enabled, allow to read using more streams.
-            /// Will add resize to output_streams_limit to reduce memory usage.
-            output_streams_limit = std::min<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
-            requested_num_streams = std::max<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
-        }
-        else
-            /// Just limit requested_num_streams otherwise.
-            requested_num_streams = std::min<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
-    }
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
@@ -228,13 +210,11 @@ Pipe ReadFromMergeTree::readFromPool(
             };
         }
 
-        auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(
+        auto source = std::make_shared<MergeTreeThreadSelectProcessor>(
             i, pool, min_marks_for_concurrent_read, max_block_size,
             settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
             data, storage_snapshot, use_uncompressed_cache,
             prewhere_info, actions_settings, reader_settings, virt_column_names, std::move(extension));
-
-        auto source = std::make_shared<MergeTreeSource>(std::move(algorithm));
 
         /// Set the approximate number of rows for the first source only
         /// In case of parallel processing on replicas do not set approximate rows at all.
@@ -243,17 +223,13 @@ Pipe ReadFromMergeTree::readFromPool(
         if (i == 0 && !client_info.collaborate_with_initiator)
             source->addTotalRowsApprox(total_rows);
 
-
         pipes.emplace_back(std::move(source));
     }
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-    if (output_streams_limit && output_streams_limit < pipe.numOutputPorts())
-        pipe.resize(output_streams_limit);
-    return pipe;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
-template<typename Algorithm>
+template<typename TSource>
 ProcessorPtr ReadFromMergeTree::createSource(
     const RangesInDataPart & part,
     const Names & required_columns,
@@ -284,15 +260,13 @@ ProcessorPtr ReadFromMergeTree::createSource(
     /// because we don't know actual amount of read rows in case when limit is set.
     bool set_rows_approx = !extension.has_value() && !reader_settings.read_in_order;
 
-    auto algorithm = std::make_unique<Algorithm>(
+    auto source = std::make_shared<TSource>(
             data, storage_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache, prewhere_info,
             actions_settings, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block, std::move(extension));
 
-    auto source = std::make_shared<MergeTreeSource>(std::move(algorithm));
-
     if (set_rows_approx)
-        source->addTotalRowsApprox(total_rows);
+        source -> addTotalRowsApprox(total_rows);
 
     return source;
 }
@@ -312,8 +286,8 @@ Pipe ReadFromMergeTree::readInOrder(
     for (const auto & part : parts_with_range)
     {
         auto source = read_type == ReadType::InReverseOrder
-                    ? createSource<MergeTreeReverseSelectAlgorithm>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block)
-                    : createSource<MergeTreeInOrderSelectAlgorithm>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block);
+                    ? createSource<MergeTreeReverseSelectProcessor>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block)
+                    : createSource<MergeTreeInOrderSelectProcessor>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block);
 
         pipes.emplace_back(std::move(source));
     }
@@ -1113,11 +1087,6 @@ void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         query_info.input_order_info = order_info;
 
     reader_settings.read_in_order = true;
-
-    /// In case or read-in-order, don't create too many reading streams.
-    /// Almost always we are reading from a single stream at a time because of merge sort.
-    if (output_streams_limit)
-        requested_num_streams = output_streams_limit;
 
     /// update sort info for output stream
     SortDescription sort_description;

@@ -408,8 +408,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     /* group_by_use_nulls */ false,
                     std::move(group_by_info),
                     std::move(group_by_sort_description),
-                    should_produce_results_in_order_of_bucket_number,
-                    settings.enable_memory_bound_merging_of_aggregation_results);
+                    should_produce_results_in_order_of_bucket_number);
                 query_plan->addStep(std::move(aggregating_step));
             };
 
@@ -1114,10 +1113,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
-                    SCOPE_EXIT_SAFE(
-                        if (thread_group)
-                            CurrentThread::detachQueryIfNotDetached();
-                    );
                     if (thread_group)
                         CurrentThread::attachToIfDetached(thread_group);
 
