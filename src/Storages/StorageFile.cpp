@@ -196,18 +196,10 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         if (0 != fstat(table_fd, &file_stat))
             throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
 
-        try
-        {
+        if (S_ISREG(file_stat.st_mode))
             nested_buffer = std::make_unique<MMapReadBufferFromFileDescriptor>(table_fd, 0);
-        }
-        catch (const ErrnoException &)
-        {
-            /// Fallback if mmap is not supported.
-            if (S_ISREG(file_stat.st_mode))
-                nested_buffer = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
-            else
-                nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
-        }
+        else
+            nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
 
         method = chooseCompressionMethod("", compression_method);
     }
@@ -217,18 +209,10 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         if (0 != stat(current_path.c_str(), &file_stat))
             throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
 
-        try
-        {
+        if (S_ISREG(file_stat.st_mode))
             nested_buffer = std::make_unique<MMapReadBufferFromFile>(current_path, 0);
-        }
-        catch (const ErrnoException &)
-        {
-            /// Fallback if mmap is not supported.
-            if (S_ISREG(file_stat.st_mode))
-                nested_buffer = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
-            else
-                nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
-        }
+        else
+            nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
 
         method = chooseCompressionMethod(current_path, compression_method);
     }
