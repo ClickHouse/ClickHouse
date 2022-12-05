@@ -10,7 +10,7 @@ namespace DB
 
 class KeeperDispatcher;
 
-class TinyContext: public std::enable_shared_from_this<TinyContext>
+class TinyContext : public std::enable_shared_from_this<TinyContext>
 {
 public:
     std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
@@ -30,5 +30,7 @@ private:
 
     ConfigurationPtr config TSA_GUARDED_BY(keeper_dispatcher_mutex);
 };
+
+using TinyContextPtr = std::shared_ptr<TinyContext>;
 
 }
