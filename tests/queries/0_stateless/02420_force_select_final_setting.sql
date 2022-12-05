@@ -36,5 +36,13 @@ select count() from lhs inner join rhs on lhs.x = rhs.x;
 set force_select_final = 1;
 create table if not exists regular_mt_table (x String) engine=MergeTree() ORDER BY x;
 insert into regular_mt_table values ('abc');
+insert into regular_mt_table values ('abc');
 -- expected output is 1, it should silently ignore final modifier
 select count() from regular_mt_table;
+
+-- view test
+create materialized VIEW mv_regular_mt_table TO regular_mt_table AS SELECT * FROM regular_mt_table;
+create view nv_regular_mt_table AS SELECT * FROM mv_regular_mt_table;
+
+set force_select_final=1;
+select count() from nv_regular_mt_table;
