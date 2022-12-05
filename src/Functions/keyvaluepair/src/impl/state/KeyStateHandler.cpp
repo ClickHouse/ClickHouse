@@ -8,7 +8,7 @@ KeyStateHandler::KeyStateHandler(char key_value_delimiter_, char escape_characte
     : StateHandler(escape_character_, enclosing_character_), key_value_delimiter(key_value_delimiter_)
 {}
 
-NextState KeyStateHandler::waitKey(const std::string &file, size_t pos) const {
+NextState KeyStateHandler::wait(const std::string &file, size_t pos) const {
     while (pos < file.size()) {
         const auto current_character = file[pos];
         if (isalpha(current_character)) {
@@ -32,7 +32,7 @@ NextState KeyStateHandler::waitKey(const std::string &file, size_t pos) const {
     };
 }
 
-NextStateWithElement KeyStateHandler::readKey(const std::string &file, size_t pos) const {
+NextStateWithElement KeyStateHandler::read(const std::string &file, size_t pos) const {
     bool escape = false;
 
     auto start_index = pos;
@@ -73,7 +73,7 @@ NextStateWithElement KeyStateHandler::readKey(const std::string &file, size_t po
     };
 }
 
-NextStateWithElement KeyStateHandler::readEnclosedKey(const std::string &file, size_t pos) const {
+NextStateWithElement KeyStateHandler::readEnclosed(const std::string &file, size_t pos) const {
     auto start_index = pos;
 
     while (pos < file.size()) {

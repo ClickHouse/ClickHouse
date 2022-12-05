@@ -10,7 +10,7 @@ ValueStateHandler::ValueStateHandler(char escape_character_, char item_delimiter
     special_character_allowlist(std::move(special_character_allowlist_))
 {}
 
-NextState ValueStateHandler::waitValue(const std::string &file, size_t pos) const {
+NextState ValueStateHandler::wait(const std::string &file, size_t pos) const {
     while (pos < file.size()) {
         const auto current_character = file[pos];
 
@@ -40,7 +40,7 @@ NextState ValueStateHandler::waitValue(const std::string &file, size_t pos) cons
     };
 }
 
-NextStateWithElement ValueStateHandler::readValue(const std::string &file, size_t pos) const {
+NextStateWithElement ValueStateHandler::read(const std::string &file, size_t pos) const {
     bool escape = false;
 
     auto start_index = pos;
@@ -73,7 +73,7 @@ NextStateWithElement ValueStateHandler::readValue(const std::string &file, size_
     };
 }
 
-NextStateWithElement ValueStateHandler::readEnclosedValue(const std::string &file, size_t pos) const {
+NextStateWithElement ValueStateHandler::readEnclosed(const std::string &file, size_t pos) const {
     auto start_index = pos;
 
     while (pos < file.size()) {
@@ -100,7 +100,7 @@ NextStateWithElement ValueStateHandler::readEnclosedValue(const std::string &fil
     };
 }
 
-NextStateWithElement ValueStateHandler::readEmptyValue(const std::string &, size_t pos) const {
+NextStateWithElement ValueStateHandler::readEmpty(const std::string &, size_t pos) const {
     return {
         {
             pos + 1,

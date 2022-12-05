@@ -56,7 +56,7 @@ NextState LazyEscapingKeyValuePairExtractor::extract(const std::string & file, s
 
 
 NextState LazyEscapingKeyValuePairExtractor::waitKey(const std::string & file, size_t pos) const {
-    return key_state_handler.waitKey(file, pos);
+    return key_state_handler.wait(file, pos);
 }
 
 NextState LazyEscapingKeyValuePairExtractor::readKeyValueDelimiter(const std::string &file, size_t pos) const {
@@ -64,7 +64,7 @@ NextState LazyEscapingKeyValuePairExtractor::readKeyValueDelimiter(const std::st
 }
 
 NextState LazyEscapingKeyValuePairExtractor::readKey(const std::string & file, size_t pos) {
-    auto [next_state, next_key] = key_state_handler.readKey(file, pos);
+    auto [next_state, next_key] = key_state_handler.read(file, pos);
 
     key = next_key;
 
@@ -72,7 +72,7 @@ NextState LazyEscapingKeyValuePairExtractor::readKey(const std::string & file, s
 }
 
 NextState LazyEscapingKeyValuePairExtractor::readEnclosedKey(const std::string &file, size_t pos) {
-    auto [next_state, next_key] = key_state_handler.readEnclosedKey(file, pos);
+    auto [next_state, next_key] = key_state_handler.readEnclosed(file, pos);
 
     key = next_key;
 
@@ -80,11 +80,11 @@ NextState LazyEscapingKeyValuePairExtractor::readEnclosedKey(const std::string &
 }
 
 NextState LazyEscapingKeyValuePairExtractor::waitValue(const std::string &file, size_t pos) const {
-    return value_state_handler.waitValue(file, pos);
+    return value_state_handler.wait(file, pos);
 }
 
 NextState LazyEscapingKeyValuePairExtractor::readValue(const std::string &file, size_t pos) {
-    auto [next_state, next_value] = value_state_handler.readValue(file, pos);
+    auto [next_state, next_value] = value_state_handler.read(file, pos);
 
     value = next_value;
 
@@ -92,7 +92,7 @@ NextState LazyEscapingKeyValuePairExtractor::readValue(const std::string &file, 
 }
 
 NextState LazyEscapingKeyValuePairExtractor::readEnclosedValue(const std::string &file, size_t pos) {
-    auto [next_state, next_value] = value_state_handler.readEnclosedValue(file, pos);
+    auto [next_state, next_value] = value_state_handler.readEnclosed(file, pos);
 
     value = next_value;
 
@@ -100,7 +100,7 @@ NextState LazyEscapingKeyValuePairExtractor::readEnclosedValue(const std::string
 }
 
 NextState LazyEscapingKeyValuePairExtractor::readEmptyValue(const std::string &file, size_t pos) {
-    auto [next_state, next_value] = value_state_handler.readEmptyValue(file, pos);
+    auto [next_state, next_value] = value_state_handler.readEmpty(file, pos);
 
     value = next_value;
 
