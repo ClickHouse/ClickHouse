@@ -93,15 +93,17 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 static void addPathToVirtualColumns(Block & block, const String & path, size_t idx)
 {
-    auto pos = path.find_last_of('/');
-    assert(pos != std::string::npos);
-
-    auto file = path.substr(pos + 1);
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
 
     if (block.has("_file"))
+    {
+        auto pos = path.find_last_of('/');
+        assert(pos != std::string::npos);
+
+        auto file = path.substr(pos + 1);
         block.getByName("_file").column->assumeMutableRef().insert(file);
+    }
 
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
@@ -127,7 +129,7 @@ public:
         , read_keys(read_keys_)
         , request_settings(request_settings_)
         , list_objects_pool(1)
-        , list_objects_scheduler(threadPoolCallbackRunner<Aws::S3::Model::ListObjectsV2Outcome>(list_objects_pool, "ListObjects"))
+        , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
             throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -165,6 +167,8 @@ public:
     }
 
 private:
+    using ListObjectsOutcome = Aws::S3::Model::ListObjectsV2Outcome;
+
     KeyWithInfo nextAssumeLocked()
     {
         if (buffer_iter != buffer.end())
@@ -233,16 +237,19 @@ private:
             return;
         }
 
-        if (!filter_ast.has_value())
+        if (!is_initialized)
+        {
             createFilterAST(temp_buffer.front().key);
+            is_initialized = true;
+        }
 
-        if (*filter_ast)
+        if (filter_ast)
         {
             auto block = virtual_header.cloneEmpty();
             for (size_t i = 0; i < temp_buffer.size(); ++i)
                 addPathToVirtualColumns(block, fs::path(globbed_uri.bucket) / temp_buffer[i].key, i);
 
-            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), *filter_ast);
+            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
             const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
 
             buffer.reserve(block.rows());
@@ -268,10 +275,7 @@ private:
     void createFilterAST(const String & any_key)
     {
         if (!query || !virtual_header)
-        {
-            filter_ast = nullptr;
             return;
-        }
 
         /// Create a virtual block with one row to construct filter
         /// Append "idx" column as the filter result
@@ -279,10 +283,10 @@ private:
 
         auto block = virtual_header.cloneEmpty();
         addPathToVirtualColumns(block, fs::path(globbed_uri.bucket) / any_key, 0);
-        VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast.emplace());
+        VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
     }
 
-    std::future<Aws::S3::Model::ListObjectsV2Outcome> listObjectsAsync()
+    std::future<ListObjectsOutcome> listObjectsAsync()
     {
         return list_objects_scheduler([this]
         {
@@ -306,7 +310,8 @@ private:
     S3::URI globbed_uri;
     ASTPtr query;
     Block virtual_header;
-    std::optional<ASTPtr> filter_ast;
+    bool is_initialized{false};
+    ASTPtr filter_ast;
     std::unique_ptr<re2::RE2> matcher;
     bool recursive{false};
     bool is_finished{false};
@@ -317,8 +322,8 @@ private:
     S3Settings::RequestSettings request_settings;
 
     ThreadPool list_objects_pool;
-    ThreadPoolCallbackRunner<Aws::S3::Model::ListObjectsV2Outcome> list_objects_scheduler;
-    std::future<Aws::S3::Model::ListObjectsV2Outcome> outcome_future;
+    ThreadPoolCallbackRunner<ListObjectsOutcome> list_objects_scheduler;
+    std::future<ListObjectsOutcome> outcome_future;
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(

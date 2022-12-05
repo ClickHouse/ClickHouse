@@ -909,7 +909,7 @@ namespace S3
 
         throw S3Exception(error.GetErrorType(),
             "Failed to check existence of key {} in bucket {}: {}",
-            bucket, key, error.GetMessage());
+            key, bucket, error.GetMessage());
     }
 }
 
