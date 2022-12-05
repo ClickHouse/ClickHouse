@@ -201,6 +201,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
             });
+    factory.markFormatSupportsSubcolumns("Parquet");
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
 
