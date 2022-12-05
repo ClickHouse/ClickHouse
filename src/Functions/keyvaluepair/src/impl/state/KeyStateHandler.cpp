@@ -32,10 +32,12 @@ NextState KeyStateHandler::wait(const std::string &file, size_t pos) const {
     };
 }
 
-NextStateWithElement KeyStateHandler::read(const std::string &file, size_t pos) const {
+NextState KeyStateHandler::read(const std::string &file, size_t pos) {
     bool escape = false;
 
     auto start_index = pos;
+
+    key = {};
 
     while (pos < file.size()) {
         const auto current_character = file[pos++];
@@ -46,35 +48,28 @@ NextStateWithElement KeyStateHandler::read(const std::string &file, size_t pos) 
         } else if (current_character == key_value_delimiter) {
             // not checking for empty key because with current waitKey implementation
             // there is no way this piece of code will be reached for the very first key character
+            key = createElement(file, start_index, pos - 1);
             return {
-                {
-                    pos,
-                    State::WAITING_VALUE
-                },
-                createElement(file, start_index, pos - 1)
+                pos,
+                State::WAITING_VALUE
             };
         } else if (!std::isalnum(current_character) && current_character != '_') {
             return {
-                {
-                    pos,
-                    State::WAITING_KEY
-                },
-                {}
+                pos,
+                State::WAITING_KEY
             };
         }
     }
 
     return {
-        {
-            pos,
-            State::END
-        },
-        {}
+        pos,
+        State::END
     };
 }
 
-NextStateWithElement KeyStateHandler::readEnclosed(const std::string &file, size_t pos) const {
+NextState KeyStateHandler::readEnclosed(const std::string &file, size_t pos) {
     auto start_index = pos;
+    key = {};
 
     while (pos < file.size()) {
         const auto current_character = file[pos++];
@@ -84,30 +79,22 @@ NextStateWithElement KeyStateHandler::readEnclosed(const std::string &file, size
 
             if (is_key_empty) {
                 return {
-                    {
-                        pos,
-                        State::WAITING_KEY
-                    },
-                    {}
+                    pos,
+                    State::WAITING_KEY
                 };
             }
 
+            key = createElement(file, start_index, pos - 1);
             return {
-                {
-                    pos,
-                    State::READING_KV_DELIMITER
-                },
-                createElement(file, start_index, pos - 1)
+                pos,
+                State::READING_KV_DELIMITER
             };
         }
     }
 
     return {
-        {
-            pos,
-            State::END
-        },
-        {}
+        pos,
+        State::END
     };
 }
 
@@ -124,6 +111,10 @@ NextState KeyStateHandler::readKeyValueDelimiter(const std::string &file, size_t
             current_character == key_value_delimiter ? State::WAITING_VALUE : State::WAITING_KEY
         };
     }
+}
+
+std::string_view KeyStateHandler::get() const {
+    return key;
 }
 
 }

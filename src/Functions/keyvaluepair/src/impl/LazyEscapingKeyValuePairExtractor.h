@@ -29,26 +29,13 @@ public:
 private:
     NextState extract(const std::string & file, std::size_t pos, State state);
 
-    NextState waitKey(const std::string & file, size_t pos) const;
-    NextState readKey(const std::string & file, size_t pos);
-    NextState readEnclosedKey(const std::string  &file, size_t pos);
-    NextState readKeyValueDelimiter(const std::string & file, size_t pos) const;
-
-    NextState waitValue(const std::string & file, size_t pos) const;
-    NextState readValue(const std::string & file, size_t pos);
-    NextState readEnclosedValue(const std::string & file, size_t pos);
-    NextState readEmptyValue(const std::string & file, size_t pos);
-
     NextState flushPair(const std::string & file, std::size_t pos);
 
     KeyStateHandler key_state_handler;
     ValueStateHandler value_state_handler;
     KeyValuePairEscapingProcessor escaping_processor;
 
-    std::string_view key;
-    std::string_view value;
     std::unordered_map<std::string_view, std::string_view> response_views;
-
 };
 
 }
