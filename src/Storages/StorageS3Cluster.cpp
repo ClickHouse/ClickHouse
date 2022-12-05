@@ -14,6 +14,8 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -102,8 +104,7 @@ Pipe StorageS3Cluster::read(
         *s3_configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-    Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+    auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
 
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
@@ -111,16 +112,24 @@ Pipe StorageS3Cluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
-    ASTPtr query_to_send = query_info.original_query->clone();
+    ASTPtr query_to_send = interpreter.getQueryInfo().query->clone();
     if (add_columns_structure_to_query)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
 
-    RemoteQueryExecutor::Extension extension;
-    extension.task_iterator = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next(); });
+    RestoreQualifiedNamesVisitor::Data data;
+    data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
+    data.remote_table.database = context->getCurrentDatabase();
+    data.remote_table.table = getName();
+    RestoreQualifiedNamesVisitor(data).visit(query_to_send);
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
+        /* only_replace_current_database_function_= */false,
+        /* only_replace_in_join_= */true);
+    visitor.visit(query_to_send);
 
     const auto & current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+    RemoteQueryExecutor::Extension extension;
     for (const auto & shard_info : cluster->getShardsInfo())
     {
         auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
@@ -130,7 +139,7 @@ Pipe StorageS3Cluster::read(
                     shard_info.pool,
                     std::vector<IConnectionPool::Entry>{try_result},
                     queryToString(query_to_send),
-                    header,
+                    interpreter.getSampleBlock(),
                     context,
                     /*throttler=*/nullptr,
                     scalars,
