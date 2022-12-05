@@ -11,6 +11,21 @@
 namespace DB
 {
 
+/*
+ * In order to leverage DB::ReplaceStringImpl for a better performance, the default escaping processor needs
+ * to be overriden by a no-op escaping processor. DB::ReplaceStringImpl does in-place replacing and leverages the
+ * Volnitsky searcher.
+ * */
+struct NoOpEscapingProcessor : KeyValuePairEscapingProcessor<ParseKeyValue::EscapingProcessorOutput>
+{
+    NoOpEscapingProcessor(char) {}
+
+    Response process(const ResponseViews & response_views) const override
+    {
+        return response_views;
+    }
+};
+
 ParseKeyValue::ParseKeyValue()
 : return_type(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()))
 {
@@ -137,11 +152,11 @@ ParseKeyValue::ParsedArguments ParseKeyValue::parseArguments(const ColumnsWithTy
     };
 }
 
-std::shared_ptr<KeyValuePairExtractor> ParseKeyValue::getExtractor(
+std::shared_ptr<KeyValuePairExtractor<ParseKeyValue::EscapingProcessorOutput>> ParseKeyValue::getExtractor(
     CharArgument escape_character, CharArgument key_value_pair_delimiter, CharArgument item_delimiter,
     CharArgument enclosing_character, SetArgument value_special_characters_allow_list) const
 {
-    auto builder = KeyValuePairExtractorBuilder();
+    auto builder = KeyValuePairExtractorBuilder<ParseKeyValue::EscapingProcessorOutput>();
 
     if (escape_character) {
         builder.withEscapeCharacter(escape_character.value());
@@ -159,12 +174,12 @@ std::shared_ptr<KeyValuePairExtractor> ParseKeyValue::getExtractor(
         builder.withEnclosingCharacter(enclosing_character.value());
     }
 
-    builder.withValueSpecialCharacterAllowList(value_special_characters_allow_list);
+    builder.withEscapingProcessor<NoOpEscapingProcessor>().withValueSpecialCharacterAllowList(value_special_characters_allow_list);
 
     return builder.build();
 }
 
-ColumnPtr ParseKeyValue::parse(std::shared_ptr<KeyValuePairExtractor> extractor, ColumnPtr data_column) const
+ColumnPtr ParseKeyValue::parse(std::shared_ptr<KeyValuePairExtractor<ParseKeyValue::EscapingProcessorOutput>> extractor, ColumnPtr data_column) const
 {
     auto offsets = ColumnUInt64::create();
 
