@@ -101,13 +101,12 @@ size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t num
     else
         to_mark = position - marks_rows_partial_sums.begin();
 
-    /// This is a heuristic to respect min_marks_to_read which is igored by MergeTreeReadPool in case of remote disk.
+    /// This is a heuristic to respect min_marks_to_read which is ignored by MergeTreeReadPool in case of remote disk.
     /// See comment in IMergeTreeSelectAlgorithm.
     if (min_marks_to_read && from_mark + 2 * min_marks_to_read <= to_mark)
         to_mark = from_mark + min_marks_to_read;
 
     return getRowsCountInRange(from_mark, std::max(1UL, to_mark)) - offset_in_rows;
-
 }
 
 void MergeTreeIndexGranularity::resizeWithFixedGranularity(size_t size, size_t fixed_granularity)
