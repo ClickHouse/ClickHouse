@@ -171,6 +171,8 @@ The function is named “injective” if it always returns different result for 
         Documentation::Examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')"}},
         Documentation::Categories{"String"}});
 
+    /// Compatibility with Spark:
+    factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::CaseInsensitive);
 }
 
 }
