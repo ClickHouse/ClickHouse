@@ -10,9 +10,9 @@ DELETE all
 id	UInt64					
 data	Tuple(k1 String, k2 String)					
 0
-0
+1
 id	UInt64					
-data	Tuple(_dummy UInt8)					
+data	Tuple(k1 String, k2 String)					
 TTL
 1
 1
@@ -20,7 +20,7 @@ id	UInt64
 d	Date					
 data	Tuple(k1 String, k2 String)					
 0
-0
+1
 id	UInt64					
 d	Date					
-data	Tuple(_dummy UInt8)					
+data	Tuple(k1 String, k2 String)					
