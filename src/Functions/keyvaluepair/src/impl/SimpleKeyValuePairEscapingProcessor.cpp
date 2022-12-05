@@ -1,13 +1,13 @@
-#include "KeyValuePairEscapingProcessor.h"
+#include "SimpleKeyValuePairEscapingProcessor.h"
 
 namespace DB
 {
 
-KeyValuePairEscapingProcessor::KeyValuePairEscapingProcessor(char escape_character_)
-: escape_character(escape_character_)
+SimpleKeyValuePairEscapingProcessor::SimpleKeyValuePairEscapingProcessor(char escape_character_)
+: KeyValuePairEscapingProcessor<std::unordered_map<std::string, std::string>>(), escape_character(escape_character_)
 {}
 
-KeyValuePairEscapingProcessor::Response KeyValuePairEscapingProcessor::process(const ResponseViews & response_views) const {
+SimpleKeyValuePairEscapingProcessor::Response SimpleKeyValuePairEscapingProcessor::process(const ResponseViews & response_views) const {
     Response response;
 
     response.reserve(response_views.size());
@@ -19,7 +19,7 @@ KeyValuePairEscapingProcessor::Response KeyValuePairEscapingProcessor::process(c
     return response;
 }
 
-std::string KeyValuePairEscapingProcessor::escape(std::string_view element_view) const {
+std::string SimpleKeyValuePairEscapingProcessor::escape(std::string_view element_view) const {
     [[maybe_unused]] bool escape = false;
     std::string element;
 

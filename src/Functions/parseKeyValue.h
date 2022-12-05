@@ -25,6 +25,9 @@ class ParseKeyValue : public IFunction
     };
 
 public:
+
+    using EscapingProcessorOutput = std::unordered_map<std::string_view, std::string_view>;
+
     ParseKeyValue();
 
     static constexpr auto name = "parseKeyValue";
@@ -52,11 +55,13 @@ private:
 
     ParsedArguments parseArguments(const ColumnsWithTypeAndName & arguments) const;
 
-    std::shared_ptr<KeyValuePairExtractor> getExtractor(CharArgument escape_character, CharArgument key_value_pair_delimiter,
-                                                        CharArgument item_delimiter, CharArgument enclosing_character,
-                                                        SetArgument value_special_characters_allow_list) const;
+    std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> getExtractor(CharArgument escape_character,
+                                                                                 CharArgument key_value_pair_delimiter,
+                                                                                 CharArgument item_delimiter,
+                                                                                 CharArgument enclosing_character,
+                                                                                 SetArgument value_special_characters_allow_list) const;
 
-    ColumnPtr parse(std::shared_ptr<KeyValuePairExtractor> extractor, ColumnPtr data_column) const;
+    ColumnPtr parse(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const;
 };
 
 }

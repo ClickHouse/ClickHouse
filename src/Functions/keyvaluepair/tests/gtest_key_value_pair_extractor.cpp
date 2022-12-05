@@ -7,7 +7,7 @@ namespace DB
 struct LazyKeyValuePairExtractorTestCase {
     std::string input;
     std::unordered_map<std::string, std::string> expected_output;
-    std::shared_ptr<KeyValuePairExtractor> extractor;
+    std::shared_ptr<KeyValuePairExtractor<>> extractor;
 };
 
 std::ostream & operator<<(std::ostream & ostr, const LazyKeyValuePairExtractorTestCase & test_case)
@@ -36,7 +36,7 @@ INSTANTIATE_TEST_SUITE_P(
             {
                 {"age", ""}
             },
-            KeyValuePairExtractorBuilder().build()
+            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         },
         {
             "name: neymar, favorite_movie:,favorite_song:",
@@ -45,7 +45,7 @@ INSTANTIATE_TEST_SUITE_P(
                 {"favorite_movie", ""},
                 {"favorite_song", ""},
             },
-            KeyValuePairExtractorBuilder().build()
+            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         }
     })
 );
@@ -63,14 +63,14 @@ INSTANTIATE_TEST_SUITE_P(
                 {"school", "lupe picasso"},
                 {"team", "psg"}
             },
-            KeyValuePairExtractorBuilder().withValueSpecialCharacterAllowList({'.'}).build()
+            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().withValueSpecialCharacterAllowList({'.'}).build()
         },
         {
             "XNFHGSSF_RHRUZHVBS_KWBT: F,",
             {
                 {"XNFHGSSF_RHRUZHVBS_KWBT", "F"}
             },
-            KeyValuePairExtractorBuilder().build()
+            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         },
     }
                         )
@@ -85,14 +85,14 @@ INSTANTIATE_TEST_SUITE_P(
             {
                 {"age", "30"}
             },
-            KeyValuePairExtractorBuilder().build()
+            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         },
         {
             "na$me,: neymar, age:30",
             {
                 {"age", "30"}
             },
-            KeyValuePairExtractorBuilder().build()
+            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         },
         {
             R"(name: neymar, favorite_quote: Premature\ optimization\ is\ the\ r\$\$t\ of\ all\ evil, age:30)",
@@ -101,7 +101,7 @@ INSTANTIATE_TEST_SUITE_P(
                 {"favorite_quote", R"(Premature optimization is the r$$t of all evil)"},
                 {"age", "30"}
             },
-            KeyValuePairExtractorBuilder().withEnclosingCharacter('"').build()
+            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().withEnclosingCharacter('"').build()
         }
     })
 );
@@ -119,7 +119,7 @@ INSTANTIATE_TEST_SUITE_P(
                 {"favorite_movie", ""},
                 {"height", "1.75"}
             },
-            KeyValuePairExtractorBuilder().withValueSpecialCharacterAllowList({'.'}).withEnclosingCharacter('"').build()
+            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().withValueSpecialCharacterAllowList({'.'}).withEnclosingCharacter('"').build()
         }
     })
 );
