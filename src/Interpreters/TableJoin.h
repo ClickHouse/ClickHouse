@@ -346,7 +346,7 @@ public:
     void setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
 
-    std::shared_ptr<StorageJoin> getStorageJoin() { return right_storage_join; }
+    std::shared_ptr<StorageJoin> getStorageJoin() const { return right_storage_join; }
 
     bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
