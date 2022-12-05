@@ -128,8 +128,8 @@ ConfigurationPtr createConfiguration(const std::string & root_name, const Settin
     namespace Configuration = NamedCollectionConfiguration;
 
     auto config = Configuration::createEmptyConfiguration(root_name);
-    for (const auto & [name, value] : settings)
-        Configuration::setConfigValue<String>(*config, name, convertFieldToString(value));
+    for (const auto & setting : settings)
+        Configuration::setConfigValue<String>(*config, setting.getName(), convertFieldToString(setting.getFieldValue()));
 
     return config;
 }
