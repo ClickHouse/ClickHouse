@@ -45,7 +45,7 @@ show create table macros format TSVRaw;
 show create table merge_tree_settings format TSVRaw;
 show create table merges format TSVRaw;
 show create table metrics format TSVRaw;
-show create table moves format TSVRaw;
+show create table models format TSVRaw;
 show create table mutations format TSVRaw;
 show create table numbers format TSVRaw;
 show create table numbers_mt format TSVRaw;

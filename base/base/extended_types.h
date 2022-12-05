@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <base/wide_integer.h>
 
+
 using Int128 = wide::integer<128, signed>;
 using UInt128 = wide::integer<128, unsigned>;
 using Int256 = wide::integer<256, signed>;
@@ -17,7 +18,7 @@ static_assert(sizeof(UInt256) == 32);
 /// (std::common_type), are "set in stone". Attempting to specialize them causes undefined behavior.
 /// So instead of using the std type_traits, we use our own version which allows extension.
 template <typename T>
-struct is_signed // NOLINT(readability-identifier-naming)
+struct is_signed
 {
     static constexpr bool value = std::is_signed_v<T>;
 };
@@ -29,7 +30,7 @@ template <typename T>
 inline constexpr bool is_signed_v = is_signed<T>::value;
 
 template <typename T>
-struct is_unsigned // NOLINT(readability-identifier-naming)
+struct is_unsigned
 {
     static constexpr bool value = std::is_unsigned_v<T>;
 };
@@ -50,7 +51,7 @@ template <class T> concept is_integer =
 template <class T> concept is_floating_point = std::is_floating_point_v<T>;
 
 template <typename T>
-struct is_arithmetic // NOLINT(readability-identifier-naming)
+struct is_arithmetic
 {
     static constexpr bool value = std::is_arithmetic_v<T>;
 };
@@ -65,9 +66,9 @@ template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
 
 template <typename T>
-struct make_unsigned // NOLINT(readability-identifier-naming)
+struct make_unsigned
 {
-    using type = std::make_unsigned_t<T>;
+    typedef std::make_unsigned_t<T> type;
 };
 
 template <> struct make_unsigned<Int128> { using type = UInt128; };
@@ -78,9 +79,9 @@ template <> struct make_unsigned<UInt256> { using type = UInt256; };
 template <typename T> using make_unsigned_t = typename make_unsigned<T>::type;
 
 template <typename T>
-struct make_signed // NOLINT(readability-identifier-naming)
+struct make_signed
 {
-    using type = std::make_signed_t<T>;
+    typedef std::make_signed_t<T> type;
 };
 
 template <> struct make_signed<Int128>  { using type = Int128; };
@@ -91,7 +92,7 @@ template <> struct make_signed<UInt256> { using type = Int256; };
 template <typename T> using make_signed_t = typename make_signed<T>::type;
 
 template <typename T>
-struct is_big_int // NOLINT(readability-identifier-naming)
+struct is_big_int
 {
     static constexpr bool value = false;
 };
@@ -103,3 +104,4 @@ template <> struct is_big_int<UInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_big_int_v = is_big_int<T>::value;
+

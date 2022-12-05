@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/special-data-types/
 sidebar_label: Special Data Types
 sidebar_position: 55
 ---

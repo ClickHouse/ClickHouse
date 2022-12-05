@@ -48,8 +48,6 @@ struct SortColumnDescription
     bool with_fill;
     FillColumnDescription fill_description;
 
-    SortColumnDescription() = default;
-
     explicit SortColumnDescription(
         const std::string & column_name_,
         int direction_ = 1,
@@ -124,9 +122,6 @@ public:
 
     bool hasPrefix(const SortDescription & prefix) const;
 };
-
-/// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.
-SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs);
 
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.

@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/select/distinct
 sidebar_label: DISTINCT
 ---
 

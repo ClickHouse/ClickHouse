@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SSL
 #include <Disks/IDisk.h>
@@ -33,7 +33,7 @@ public:
     DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
     DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_);
 
-    const String & getName() const override { return encrypted_name; }
+    const String & getName() const override { return name; }
     const String & getPath() const override { return disk_absolute_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
@@ -234,13 +234,7 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        auto delegate_description = delegate->getDataSourceDescription();
-        delegate_description.is_encrypted = true;
-        return delegate_description;
-    }
-
+    DiskType getType() const override { return DiskType::Encrypted; }
     bool isRemote() const override { return delegate->isRemote(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
@@ -261,7 +255,7 @@ private:
         return disk_path + path;
     }
 
-    const String encrypted_name;
+    const String name;
     const String disk_path;
     const String disk_absolute_path;
     MultiVersion<DiskEncryptedSettings> current_settings;

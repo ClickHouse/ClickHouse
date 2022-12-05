@@ -230,7 +230,7 @@ private:
         if constexpr (is_decimal<B>)
             y = b.value;
         else
-            y = static_cast<CompareInt>(b);
+            y = b;
 
         if constexpr (_check_overflow)
         {

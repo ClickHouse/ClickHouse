@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/table-functions/generate
 sidebar_position: 47
 sidebar_label: generateRandom
 ---
