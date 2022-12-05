@@ -1159,14 +1159,14 @@ If s is empty, the result is 0. If the first character is not an ASCII character
 
 
 
-## concatWs
+## concatWithSeparator
 
 Returns the concatenation strings separated by string separator. If any of the argument values is `NULL`, the function returns `NULL`.
 
 **Syntax**
 
 ``` sql
-concatWs(sep, expr1, expr2, expr3...)
+concatWithSeparator(sep, expr1, expr2, expr3...)
 ```
 
 **Arguments**
@@ -1181,18 +1181,18 @@ concatWs(sep, expr1, expr2, expr3...)
 Query:
 
 ``` sql
-SELECT concatWs('a', '1', '2', '3', '4')
+SELECT concatWithSeparator('a', '1', '2', '3', '4')
 ```
 
 Result:
 
 ``` text
-┌─concatWs('a', '1', '2', '3', '4')─┐
+┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
 │ 1a2a3a4                           │
 └───────────────────────────────────┘
 ```
 
-## concatWsAssumeInjective
-Same as concatWs, the difference is that you need to ensure that concatWs(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
+## concatWithSeparatorAssumeInjective
+Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
 The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
