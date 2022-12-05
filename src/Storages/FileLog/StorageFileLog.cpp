@@ -547,23 +547,23 @@ size_t StorageFileLog::getPollTimeoutMillisecond() const
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (dependencies.empty())
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
         return true;
 
-    for (const auto & storage : dependencies)
+    for (const auto & view_id : view_ids)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(storage, getContext());
-        if (!table)
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
+        if (!view)
             return false;
 
         // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(storage))
+        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -574,7 +574,7 @@ size_t StorageFileLog::getTableDependentCount() const
 {
     auto table_id = getStorageID();
     // Check if at least one direct dependency is attached
-    return DatabaseCatalog::instance().getDependencies(table_id).size();
+    return DatabaseCatalog::instance().getDependentViews(table_id).size();
 }
 
 void StorageFileLog::threadFunc()
