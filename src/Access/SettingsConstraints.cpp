@@ -1,3 +1,4 @@
+#include <string_view>
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
@@ -7,7 +8,6 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <boost/range/algorithm_ext/erase.hpp>
-
 
 namespace DB
 {
@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr const char MERGE_TREE_SETTINGS_PREFIX[] = "merge_tree_";
+    constexpr std::string_view MERGE_TREE_SETTINGS_PREFIX = "merge_tree_";
 }
 
 
@@ -44,10 +44,21 @@ void SettingsConstraints::clear()
 void SettingsConstraints::set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability)
 {
     auto & constraint = constraints[setting_name];
-    if (!min_value.isNull())
-        constraint.min_value = Settings::castValueUtil(setting_name, min_value);
-    if (!max_value.isNull())
-        constraint.max_value = Settings::castValueUtil(setting_name, max_value);
+    if (setting_name.starts_with(MERGE_TREE_SETTINGS_PREFIX))
+    {
+        std::string_view name = static_cast<std::string_view>(setting_name).substr(MERGE_TREE_SETTINGS_PREFIX.size());
+        if (!min_value.isNull())
+            constraint.min_value = MergeTreeSettings::castValueUtil(name, min_value);
+        if (!max_value.isNull())
+            constraint.max_value = MergeTreeSettings::castValueUtil(name, max_value);
+    }
+    else
+    {
+        if (!min_value.isNull())
+            constraint.min_value = Settings::castValueUtil(setting_name, min_value);
+        if (!max_value.isNull())
+            constraint.max_value = Settings::castValueUtil(setting_name, max_value);
+    }
     constraint.writability = writability;
 }
 
@@ -124,32 +135,41 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
         });
 }
 
+template <class T>
+bool getNewValueToCheck(const T & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
+{
+    Field current_value;
+    bool has_current_value = current_settings.tryGet(change.name, current_value);
+
+    /// Setting isn't checked if value has not changed.
+    if (has_current_value && change.value == current_value)
+        return false;
+
+    if (throw_on_failure)
+        new_value = T::castValueUtil(change.name, change.value);
+
+    try
+    {
+        new_value = T::castValueUtil(change.name, change.value);
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    /// Setting isn't checked if value has not changed.
+    if (has_current_value && new_value == current_value)
+        return false;
+
+    return true;
+}
+
 bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
     const String & setting_name = change.name;
 
     if (setting_name == "profile")
         return true;
-
-    bool cannot_cast;
-    auto cast_value = [&](const Field & x) -> Field
-    {
-        cannot_cast = false;
-        if (reaction == THROW_ON_VIOLATION)
-            return Settings::castValueUtil(setting_name, x);
-        else
-        {
-            try
-            {
-                return Settings::castValueUtil(setting_name, x);
-            }
-            catch (...)
-            {
-                cannot_cast = true;
-                return {};
-            }
-        }
-    };
 
     if (reaction == THROW_ON_VIOLATION)
     {
@@ -172,74 +192,26 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field current_value, new_value;
-    if (current_settings.tryGet(setting_name, current_value))
-    {
-        /// Setting isn't checked if value has not changed.
-        if (change.value == current_value)
-            return false;
-
-        new_value = cast_value(change.value);
-        if ((new_value == current_value) || cannot_cast)
-            return false;
-    }
-    else
-    {
-        new_value = cast_value(change.value);
-        if (cannot_cast)
-            return false;
-    }
+    Field new_value;
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
+        return false;
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
-    const String & setting_name = change.name;
-    String prefixed_name = MERGE_TREE_SETTINGS_PREFIX + setting_name;
-
-    bool cannot_cast;
-    auto cast_value = [&](const Field & x) -> Field
-    {
-        cannot_cast = false;
-        if (reaction == THROW_ON_VIOLATION)
-            return MergeTreeSettings::castValueUtil(setting_name, x);
-        else
-        {
-            try
-            {
-                return MergeTreeSettings::castValueUtil(setting_name, x);
-            }
-            catch (...)
-            {
-                cannot_cast = true;
-                return {};
-            }
-        }
-    };
+    String prefixed_name(MERGE_TREE_SETTINGS_PREFIX);
+    prefixed_name += change.name; // Just because you cannot concatenate `std::string_view` and `std::string` using operator+ in C++20 yet
 
     if (reaction == THROW_ON_VIOLATION)
         access_control->checkSettingNameIsAllowed(prefixed_name);
     else if (!access_control->isSettingNameAllowed(prefixed_name))
         return false;
 
-    Field current_value, new_value;
-    if (current_settings.tryGet(setting_name, current_value))
-    {
-        /// Setting isn't checked if value has not changed.
-        if (change.value == current_value)
-            return false;
-
-        new_value = cast_value(change.value);
-        if ((new_value == current_value) || cannot_cast)
-            return false;
-    }
-    else
-    {
-        new_value = cast_value(change.value);
-        if (cannot_cast)
-            return false;
-    }
+    Field new_value;
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
+        return false;
 
     return getMergeTreeChecker(prefixed_name).check(change, new_value, reaction);
 }
