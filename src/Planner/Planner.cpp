@@ -495,7 +495,8 @@ void Planner::buildQueryPlanIfNeeded()
             settings.group_by_use_nulls,
             std::move(input_order_info),
             std::move(group_by_sort_description),
-            should_produce_results_in_order_of_bucket_number);
+            should_produce_results_in_order_of_bucket_number,
+            settings.enable_memory_bound_merging_of_aggregation_results);
         query_plan.addStep(std::move(aggregating_step));
 
         if (query_node.isGroupByWithTotals())
@@ -599,7 +600,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_node.hasOffset())
     {
         /// Constness of offset is validated during query analysis stage
-        limit_offset = query_node.getOffset()->getConstantValue().getValue().safeGet<UInt64>();
+        limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     }
 
     UInt64 limit_length = 0;
@@ -607,7 +608,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_node.hasLimit())
     {
         /// Constness of limit is validated during query analysis stage
-        limit_length = query_node.getLimit()->getConstantValue().getValue().safeGet<UInt64>();
+        limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     }
 
     if (query_node.isDistinct())
@@ -779,13 +780,13 @@ void Planner::buildQueryPlanIfNeeded()
         query_plan.addStep(std::move(expression_step_before_limit_by));
 
         /// Constness of LIMIT BY limit is validated during query analysis stage
-        UInt64 limit_by_limit = query_node.getLimitByLimit()->getConstantValue().getValue().safeGet<UInt64>();
+        UInt64 limit_by_limit = query_node.getLimitByLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         UInt64 limit_by_offset = 0;
 
         if (query_node.hasLimitByOffset())
         {
             /// Constness of LIMIT BY offset is validated during query analysis stage
-            limit_by_offset = query_node.getLimitByOffset()->getConstantValue().getValue().safeGet<UInt64>();
+            limit_by_offset = query_node.getLimitByOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         }
 
         auto limit_by_step = std::make_unique<LimitByStep>(query_plan.getCurrentDataStream(),
