@@ -194,6 +194,7 @@ private:
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
+    bool forceSelectFinalOnSelectQuery(ASTSelectQuery & select_query);
 
     enum class Modificator
     {

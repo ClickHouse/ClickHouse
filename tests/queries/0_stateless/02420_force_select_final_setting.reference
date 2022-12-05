@@ -26,3 +26,10 @@ set force_select_final = 1;
 -- expected output is 1 because force_select_final == 1
 select count() from lhs inner join rhs on lhs.x = rhs.x;
 1
+-- regular non final table
+set force_select_final = 1;
+create table if not exists regular_mt_table (x String) engine=MergeTree() ORDER BY x;
+insert into regular_mt_table values ('abc');
+-- expected output is 1, it should silently ignore final modifier
+select count() from regular_mt_table;
+1
