@@ -863,7 +863,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return try_read_float(pos->begin, pos->end);
     }
 
-    if (pos->type != TokenType::Number) {
+    if (pos->type != TokenType::Number)
+    {
         expected.add(pos, "number");
         return false;
     }
@@ -876,10 +877,12 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     char buf[MAX_LENGTH_OF_NUMBER + 1];
 
     size_t buf_size = 0;
-    for (auto it = pos->begin; it != pos->end; ++it) {
+    for (auto it = pos->begin; it != pos->end; ++it)
+    {
         if (*it != '_')
         buf[buf_size++] = *it;
-        if (unlikely(buf_size > MAX_LENGTH_OF_NUMBER)) {
+        if (unlikely(buf_size > MAX_LENGTH_OF_NUMBER))
+        {
             expected.add(pos, "number");
             return false;
         }
