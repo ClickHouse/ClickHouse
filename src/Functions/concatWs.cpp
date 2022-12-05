@@ -22,13 +22,13 @@ namespace ErrorCodes
 namespace
 {
 template <typename Name, bool is_injective>
-class ConcatWsImpl : public IFunction
+class ConcatWithSeparatorImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    explicit ConcatWsImpl(ContextPtr context_) : context(context_) {}
+    explicit ConcatWithSeparatorImpl(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatWsImpl>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatWithSeparatorImpl>(context); }
 
     String getName() const override { return name; }
 
@@ -140,35 +140,35 @@ private:
     ContextWeakPtr context;
 };
 
-struct NameConcatWs
+struct NameConcatWithSeparator
 {
-    static constexpr auto name = "concatWs";
+    static constexpr auto name = "concatWithSeparator";
 };
-struct NameConcatWsAssumeInjective
+struct NameConcatWithSeparatorAssumeInjective
 {
-    static constexpr auto name = "concatWsAssumeInjective";
+    static constexpr auto name = "concatWithSeparatorAssumeInjective";
 };
 
-using FunctionConcatWs = ConcatWsImpl<NameConcatWs, false>;
-using FunctionConcatWsAssumeInjective = ConcatWsImpl<NameConcatWsAssumeInjective, true>;
+using FunctionConcatWithSeparator = ConcatWithSeparatorImpl<NameConcatWithSeparator, false>;
+using FunctionConcatWithSeparatorAssumeInjective = ConcatWithSeparatorImpl<NameConcatWithSeparatorAssumeInjective, true>;
 }
 
-REGISTER_FUNCTION(ConcatWs)
+REGISTER_FUNCTION(ConcatWithSeparator)
 {
-    factory.registerFunction<FunctionConcatWs>({
+    factory.registerFunction<FunctionConcatWithSeparator>({
         R"(
-Returns the concatenation strings separated by string separator. Syntax: concatWs(sep, expr1, expr2, expr3...)
+Returns the concatenation strings separated by string separator. Syntax: concatWithSeparator(sep, expr1, expr2, expr3...)
         )",
-        Documentation::Examples{{"concatWs", "SELECT concatWs('a', '1', '2', '3')"}},
+        Documentation::Examples{{"concatWithSeparator", "SELECT concatWithSeparator('a', '1', '2', '3')"}},
         Documentation::Categories{"String"}});
 
-    factory.registerFunction<FunctionConcatWsAssumeInjective>({
+    factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>({
         R"(
-Same as concatWs, the difference is that you need to ensure that concatWs(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
+Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
 The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
         )",
-        Documentation::Examples{{"concatWsAssumeInjective", "SELECT concatWsAssumeInjective('a', '1', '2', '3')"}},
+        Documentation::Examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')"}},
         Documentation::Categories{"String"}});
 
 }
