@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/castColumn.h>
 
@@ -150,7 +149,7 @@ struct MakeDateTraits
 {
     static constexpr auto name = "makeDate";
     using ReturnDataType = DataTypeDate;
-    using ReturnColumnType = ColumnDate;
+    using ReturnColumnType = ColumnUInt16;
 
     static constexpr auto MIN_YEAR = 1970;
     static constexpr auto MAX_YEAR = 2149;
@@ -163,7 +162,7 @@ struct MakeDate32Traits
 {
     static constexpr auto name = "makeDate32";
     using ReturnDataType = DataTypeDate32;
-    using ReturnColumnType = ColumnDate32;
+    using ReturnColumnType = ColumnInt32;
 
     static constexpr auto MIN_YEAR = 1900;
     static constexpr auto MAX_YEAR = 2299;
@@ -268,7 +267,7 @@ public:
         Columns converted_arguments;
         convertRequiredArguments(arguments, converted_arguments);
 
-        auto res_column = ColumnDateTime::create(input_rows_count);
+        auto res_column = ColumnUInt32::create(input_rows_count);
         auto & result_data = res_column->getData();
 
         const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
@@ -295,7 +294,7 @@ public:
             else if (unlikely(date_time > 0x0ffffffffll))
                 date_time = 0x0ffffffffll;
 
-            result_data[i] = static_cast<UInt32>(date_time);
+            result_data[i] = date_time;
         }
 
         return res_column;
@@ -366,7 +365,7 @@ public:
             fraction_data = &typeid_cast<const ColumnFloat64 &>(*converted_arguments[6]).getData();
         }
 
-        auto res_column = ColumnDateTime64::create(input_rows_count, static_cast<UInt32>(precision));
+        auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, precision);
         auto & result_data = res_column->getData();
 
         const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
@@ -412,10 +411,7 @@ public:
                     fraction = max_fraction;
             }
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(
-                date_time,
-                static_cast<Int64>(fraction),
-                static_cast<UInt32>(precision));
+            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, static_cast<Int64>(fraction), precision);
         }
 
         return res_column;

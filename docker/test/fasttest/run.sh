@@ -117,7 +117,8 @@ function clone_submodules
             contrib/cctz
             contrib/libcpuid
             contrib/double-conversion
-            contrib/llvm-project
+            contrib/libcxx
+            contrib/libcxxabi
             contrib/lz4
             contrib/zstd
             contrib/fastops
@@ -135,8 +136,6 @@ function clone_submodules
             contrib/wyhash
             contrib/hashidsxx
             contrib/c-ares
-            contrib/morton-nd
-            contrib/xxHash
         )
 
         git submodule sync
@@ -158,6 +157,7 @@ function run_cmake
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
         "-DENABLE_JEMALLOC=1"
+        "-DENABLE_REPLXX=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"

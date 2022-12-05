@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_YAML_CPP
 #include "gtest_helper_functions.h"

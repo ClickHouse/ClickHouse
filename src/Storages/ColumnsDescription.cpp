@@ -490,7 +490,7 @@ static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
         case ColumnDefaultKind::Ephemeral:
             return GetColumnsOptions::Ephemeral;
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const

@@ -24,10 +24,6 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    bool isPreliminary() const { return pre_distinct; }
-
-    UInt64 getLimitHint() const { return limit_hint; }
-
 private:
     void updateOutputStream() override;
 

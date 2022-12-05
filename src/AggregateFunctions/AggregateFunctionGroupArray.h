@@ -56,7 +56,7 @@ static constexpr const char * getNameByTrait()
         return "groupArraySample";
     // else if (Trait::sampler == Sampler::DETERMINATOR) // TODO
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 template <typename T>

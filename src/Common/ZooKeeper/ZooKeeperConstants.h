@@ -31,7 +31,6 @@ enum class OpNum : int32_t
     List = 12,
     Check = 13,
     Multi = 14,
-    MultiRead = 22,
     Auth = 100,
 
     // CH Keeper specific operations

@@ -25,7 +25,6 @@ public:
 
     static void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif);
     static void optimizeCountConstantAndSumOne(ASTPtr & query);
-    static void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query);
 };
 
 }

@@ -156,11 +156,6 @@ public:
         nested_func->insertResultInto(place, to, arena);
     }
 
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        nested_func->insertMergeResultInto(place, to, arena);
-    }
-
     bool allocatesMemoryInArena() const override
     {
         return nested_func->allocatesMemoryInArena();
