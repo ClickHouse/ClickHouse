@@ -499,9 +499,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
-
-    // query.tables() is required because not all queries have tables in it, it could be a function.
-    if (context->getSettingsRef().force_select_final && !query.final() && query.tables())
+    if (forceSelectFinalOnSelectQuery(query))
     {
         query.setFinal();
     }
@@ -2916,6 +2914,15 @@ void InterpreterSelectQuery::ignoreWithTotals()
     getSelectQuery().group_by_with_totals = false;
 }
 
+bool InterpreterSelectQuery::forceSelectFinalOnSelectQuery(ASTSelectQuery & query)
+{
+    // query.tables() is required because not all queries have tables in it, it could be a function.
+    auto isFinalSupported = storage && storage->supportsFinal() && query.tables();
+    auto isForceSelectFinalSettingOn = context->getSettingsRef().force_select_final;
+    auto isQueryAlreadyFinal = query.final();
+
+    return isForceSelectFinalSettingOn && !isQueryAlreadyFinal && isFinalSupported;
+}
 
 void InterpreterSelectQuery::initSettings()
 {
