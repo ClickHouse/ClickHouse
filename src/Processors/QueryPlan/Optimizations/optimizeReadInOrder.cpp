@@ -709,7 +709,7 @@ AggregationInputOrder buildInputOrderInfo(
     MatchedTrees::Matches matches;
     FixedColumns fixed_key_columns;
 
-    /// For every column in PK find any macth from GROUP BY key.
+    /// For every column in PK find any match from GROUP BY key.
     using ReverseMatches = std::unordered_map<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
     ReverseMatches reverse_matches;
 
@@ -719,8 +719,6 @@ AggregationInputOrder buildInputOrderInfo(
 
         for (const auto & [node, match] : matches)
         {
-            //std::cerr << "------- matching " << static_cast<const void *>(node) << " " << node->result_name
-            //    << " to " << static_cast<const void *>(match.node) << " " << (match.node ? match.node->result_name : "") << std::endl;
             if (!match.monotonicity || match.monotonicity->strict)
             {
                 if (match.node && fixed_columns.contains(node))
