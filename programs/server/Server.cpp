@@ -735,6 +735,13 @@ try
     }
 #endif
 
+    String principal_keytab = config().getString("kerberos.keytab", "");
+    if (!principal_keytab.empty() && std::filesystem::exists(principal_keytab))
+    {
+        setenv("KRB5_CLIENT_KTNAME", principal_keytab.c_str(), true /* overwrite */); // NOLINT
+        setenv("KRB5_KTNAME", principal_keytab.c_str(), true /* overwrite */); // NOLINT
+    }
+
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
