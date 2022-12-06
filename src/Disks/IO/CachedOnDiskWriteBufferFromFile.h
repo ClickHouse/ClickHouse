@@ -42,7 +42,7 @@ public:
      *
      * Returns size of written data.
      */
-    size_t tryWrite(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind = FileSegmentKind::Regular, bool strict = false);
+    size_t tryWrite(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind);
 
     /// Same as `write/tryWrite`, but doesn't write anything, just reserves some space in cache
     bool reserve(size_t size, size_t offset);
@@ -61,12 +61,21 @@ private:
 
     void completeFileSegment(FileSegment & file_segment, std::optional<FileSegment::State> state = {});
 
-    /* Writes data to current file segment as much as possible and returns size of written data, do not allocate new file segments
+    /* Writes data to (or reserves space in) the current file segment as much as possible and returns size of written data, do not allocate new file segments
      * In `strict` mode it will write all data or nothing, otherwise it will write as much as possible
      * If returned non zero value, then we can try to write again to next file segment.
      * If no space is available, returns zero.
      */
-    size_t tryWriteImpl(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind, bool strict);
+    size_t writeImpl(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind, bool strict);
+    size_t reserveImpl(size_t size, size_t offset, FileSegmentKind segment_kind, bool strict);
+
+    /// Reserves space avaliable in the current segment.
+    /// Allocated new segment if it is full, otherwise reserves the rest of avaliable space in the current.
+    size_t reserveInCurrentSegment(size_t size, size_t offset, FileSegmentKind segment_kind, bool strict);
+
+    /// Write data to file segment
+    /// It should be reseved by reserveInCurrentSegment in advance.
+    void writeCurrentSegment(const char * data, size_t size, size_t offset);
 
     FileCache * cache;
     FileSegment::Key key;

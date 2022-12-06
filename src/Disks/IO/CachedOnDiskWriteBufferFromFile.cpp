@@ -53,31 +53,95 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
 
 bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
 {
-    size_t written_size = tryWrite(data, size, offset, segment_kind, true);
+    size_t written_size = writeImpl(data, size, offset, segment_kind, true);
     return written_size == size;
 }
 
-size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind, bool strict)
+size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
+{
+    return writeImpl(data, size, offset, segment_kind, false);
+}
+
+size_t FileSegmentRangeWriter::writeImpl(const char * data, size_t total_size, size_t offset, FileSegmentKind segment_kind, bool strict)
 {
     size_t total_written_size = 0;
-    while (size > 0)
+    while (total_size > 0)
     {
-        size_t written_size = tryWriteImpl(data, size, offset, segment_kind, strict);
-        chassert(written_size <= size);
-        if (written_size == 0)
+        size_t reserved_size = reserveInCurrentSegment(total_size, offset, segment_kind, strict);
+        chassert(reserved_size <= total_size);
+
+        writeCurrentSegment(data, reserved_size, offset);
+        if (reserved_size == 0)
             break;
 
-        if (data)
-            data += written_size;
+        data += reserved_size;
 
-        size -= written_size;
-        offset += written_size;
-        total_written_size += written_size;
+        total_size -= reserved_size;
+        offset += reserved_size;
+        total_written_size += reserved_size;
     }
     return total_written_size;
 }
 
-size_t FileSegmentRangeWriter::tryWriteImpl(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind, bool strict)
+size_t FileSegmentRangeWriter::reserveImpl(size_t total_size, size_t offset, FileSegmentKind segment_kind, bool strict)
+{
+    size_t total_reserved_size = 0;
+    while (total_size > 0)
+    {
+        size_t reserved_size = reserveInCurrentSegment(total_size, offset, segment_kind, strict);
+        chassert(reserved_size <= total_size);
+        if (reserved_size == 0)
+            break;
+
+        auto file_segment = *current_file_segment_it;
+        file_segment->setDownloadedSize(reserved_size);
+        file_segment->completePartAndResetDownloader();
+        current_file_segment_write_offset += reserved_size;
+
+        total_size -= reserved_size;
+        offset += reserved_size;
+        total_reserved_size += reserved_size;
+    }
+    return total_reserved_size;
+}
+
+bool FileSegmentRangeWriter::reserve(size_t size, size_t offset)
+{
+    return reserveImpl(size, offset, FileSegmentKind::Temporary, true);
+}
+
+size_t FileSegmentRangeWriter::tryReserve(size_t size, size_t offset)
+{
+    return reserveImpl(size, offset, FileSegmentKind::Temporary, false);
+}
+
+void FileSegmentRangeWriter::writeCurrentSegment(const char * data, size_t size, size_t offset)
+{
+    if (current_file_segment_it == file_segments_holder.file_segments.end())
+        throw Exception("No current file segment", ErrorCodes::LOGICAL_ERROR);
+
+    auto file_segment = *current_file_segment_it;
+    if (!size)
+    {
+        file_segment->completePartAndResetDownloader();
+        return;
+    }
+
+    try
+    {
+        file_segment->write(data, size, offset);
+    }
+    catch (...)
+    {
+        file_segment->completePartAndResetDownloader();
+        throw;
+    }
+
+    file_segment->completePartAndResetDownloader();
+    current_file_segment_write_offset += size;
+}
+
+size_t FileSegmentRangeWriter::reserveInCurrentSegment(size_t size, size_t offset, FileSegmentKind segment_kind, bool strict)
 {
     if (finalized)
         return 0;
@@ -114,11 +178,6 @@ size_t FileSegmentRangeWriter::tryWriteImpl(const char * data, size_t size, size
     if (downloader != FileSegment::getCallerId())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set a downloader. ({})", file_segment->getInfoForLog());
 
-    SCOPE_EXIT({
-        if (file_segment->isDownloader())
-            file_segment->completePartAndResetDownloader();
-    });
-
     size_t reserved_size = file_segment->tryReserve(size, strict);
     if (reserved_size == 0 || (strict && reserved_size != size))
     {
@@ -137,32 +196,7 @@ size_t FileSegmentRangeWriter::tryWriteImpl(const char * data, size_t size, size
     }
 
     /// Shrink to reserved size, because we can't write more than reserved
-    size = reserved_size;
-
-    try
-    {
-        file_segment->write(data, size, offset);
-    }
-    catch (...)
-    {
-        file_segment->completePartAndResetDownloader();
-        throw;
-    }
-
-    file_segment->completePartAndResetDownloader();
-    current_file_segment_write_offset += size;
-
-    return size;
-}
-
-bool FileSegmentRangeWriter::reserve(size_t size, size_t offset)
-{
-    return write(nullptr, size, offset, FileSegmentKind::Temporary);
-}
-
-size_t FileSegmentRangeWriter::tryReserve(size_t size, size_t offset)
-{
-    return tryWrite(nullptr, size, offset, FileSegmentKind::Temporary);
+    return reserved_size;
 }
 
 void FileSegmentRangeWriter::finalize()

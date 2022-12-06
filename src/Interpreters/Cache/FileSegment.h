@@ -221,9 +221,9 @@ public:
     /// Returns true if reservation was successful, false otherwise.
     bool reserve(size_t size_to_reserve);
 
-    /// Try to reserve at max `size` bytes.
-    /// Returns actual size reserved.
-    /// In strict mode throws an error on attempt to reserve space too much space
+    /// Try to reserve at max `size_to_reserve` bytes.
+    /// Returns actual size reserved. It can be less than size_to_reserve in non strict mode.
+    /// In strict mode throws an error on attempt to reserve space too much space.
     size_t tryReserve(size_t size_to_reserve, bool strict = false);
 
     /// Write data into reserved space.
@@ -247,6 +247,8 @@ public:
 
     void resetRemoteFileReader();
 
+    void setDownloadedSize(size_t delta);
+
 private:
     size_t getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     size_t getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
@@ -262,6 +264,7 @@ private:
 
     void setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock);
     void setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    void setDownloadedSizeUnlocked(std::unique_lock<std::mutex> & /* download_lock */, size_t delta);
 
     bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
