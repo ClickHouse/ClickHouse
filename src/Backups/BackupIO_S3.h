@@ -39,8 +39,8 @@ public:
 private:
     S3::URI s3_uri;
     std::shared_ptr<Aws::S3::S3Client> client;
+    UInt64 max_single_read_retries;
     ReadSettings read_settings;
-    S3Settings::RequestSettings request_settings;
 };
 
 
@@ -61,6 +61,7 @@ public:
     void copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to) override;
 
 private:
+
     Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
 
     void copyObjectImpl(
@@ -68,22 +69,22 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        const Aws::S3::Model::HeadObjectResult & head,
-        const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
     void copyObjectMultipartImpl(
         const String & src_bucket,
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        const Aws::S3::Model::HeadObjectResult & head,
-        const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
     S3::URI s3_uri;
     std::shared_ptr<Aws::S3::S3Client> client;
+    UInt64 max_single_read_retries;
     ReadSettings read_settings;
-    S3Settings::RequestSettings request_settings;
-    Poco::Logger * log;
+    S3Settings::ReadWriteSettings rw_settings;
 };
 
 }

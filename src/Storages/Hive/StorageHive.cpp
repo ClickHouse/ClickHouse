@@ -773,6 +773,7 @@ Pipe StorageHive::read(
     sources_info->partition_name_types = partition_name_types;
 
     const auto header_block = storage_snapshot->metadata->getSampleBlock();
+    bool support_subset_columns = supportsSubcolumns();
 
     auto settings = context_->getSettingsRef();
     auto case_insensitive_matching = [&]() -> bool
@@ -792,14 +793,15 @@ Pipe StorageHive::read(
             sample_block.insert(header_block.getByName(column));
             continue;
         }
-
-        auto subset_column = nested_columns_extractor.extractColumn(column);
-        if (subset_column)
+        else if (support_subset_columns)
         {
-            sample_block.insert(std::move(*subset_column));
-            continue;
+            auto subset_column = nested_columns_extractor.extractColumn(column);
+            if (subset_column)
+            {
+                sample_block.insert(std::move(*subset_column));
+                continue;
+            }
         }
-
         if (column == "_path")
             sources_info->need_path_column = true;
         if (column == "_file")

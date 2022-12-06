@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 class WriteBuffer;
@@ -81,6 +82,14 @@ public:
         return toString(getNodeType());
     }
 
+    /** Get name of query tree node that can be used as part of expression.
+      * TODO: Projection name, expression name must be refactored in better interface.
+      */
+    virtual String getName() const
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getName is not supported for {} query node", getNodeTypeName());
+    }
+
     /** Get result type of query tree node that can be used as part of expression.
       * If node does not support this method exception is thrown.
       * TODO: Maybe this can be a part of ExpressionQueryTreeNode.
@@ -88,6 +97,30 @@ public:
     virtual DataTypePtr getResultType() const
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
+    }
+
+    /// Returns true if node has constant value
+    bool hasConstantValue() const
+    {
+        return getConstantValueOrNull() != nullptr;
+    }
+
+    /** Returns constant value with type if node has constant value, and can be replaced with it.
+      * Examples: scalar subquery, function with constant arguments.
+      */
+    virtual const ConstantValue & getConstantValue() const
+    {
+        auto constant_value = getConstantValueOrNull();
+        if (!constant_value)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node does not have constant value");
+
+        return *constant_value;
+    }
+
+    /// Returns constant value with type if node has constant value or null otherwise
+    virtual ConstantValuePtr getConstantValueOrNull() const
+    {
+        return {};
     }
 
     /** Is tree equal to other tree with node root.

@@ -964,16 +964,15 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         components.whole = components.whole / common::exp10_i32(scale);
     }
 
-    bool is_ok = true;
     if constexpr (std::is_same_v<ReturnType, void>)
         datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
     else
-        is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
+        DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
 
     datetime64 *= negative_multiplier;
 
 
-    return ReturnType(is_ok);
+    return ReturnType(true);
 }
 
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
@@ -1448,8 +1447,6 @@ void skipToCarriageReturnOrEOF(ReadBuffer & buf);
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
-/// Skip to next character after next \0. If no \0 in stream, skip to end.
-void skipNullTerminated(ReadBuffer & buf);
 
 /** This function just copies the data from buffer's internal position (in.position())
   * to current position (from arguments) into memory.
