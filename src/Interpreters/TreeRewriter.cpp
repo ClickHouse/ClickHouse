@@ -40,6 +40,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
@@ -324,6 +325,39 @@ struct ExistsExpressionData
 };
 
 using ExistsExpressionVisitor = InDepthNodeVisitor<OneTypeMatcher<ExistsExpressionData>, false>;
+
+struct ReplacePositionalArgumentsData
+{
+    using TypeToVisit = ASTSelectQuery;
+    ContextPtr context;
+
+    void visit(ASTSelectQuery & select_query, ASTPtr &) const
+    {
+        if (context->getSettingsRef().enable_positional_arguments)
+        {
+            if (select_query.groupBy())
+            {
+                for (auto & expr : select_query.groupBy()->children)
+                    replaceForPositionalArguments(expr, &select_query, ASTSelectQuery::Expression::GROUP_BY);
+            }
+            if (select_query.orderBy())
+            {
+                for (auto & expr : select_query.orderBy()->children)
+                {
+                    auto & elem = assert_cast<ASTOrderByElement &>(*expr).children.at(0);
+                    replaceForPositionalArguments(elem, &select_query, ASTSelectQuery::Expression::ORDER_BY);
+                }
+            }
+            if (select_query.limitBy())
+            {
+                for (auto & expr : select_query.limitBy()->children)
+                    replaceForPositionalArguments(expr, &select_query, ASTSelectQuery::Expression::LIMIT_BY);
+            }
+        }
+    }
+};
+
+using ReplacePositionalArgumentsVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplacePositionalArgumentsData>, false>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -1316,25 +1350,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             all_source_columns_set.insert(name);
     }
 
-    if (getContext()->getSettingsRef().enable_positional_arguments)
-    {
-        if (select_query->groupBy())
-        {
-            for (auto & expr : select_query->groupBy()->children)
-                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::GROUP_BY);
-        }
-        if (select_query->orderBy())
-        {
-            for (auto & expr : select_query->orderBy()->children)
-                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::ORDER_BY);
-        }
-        if (select_query->limitBy())
-        {
-            for (auto & expr : select_query->limitBy()->children)
-                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
-        }
-    }
-
     normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
 
     // expand GROUP BY ALL
@@ -1492,6 +1507,9 @@ void TreeRewriter::normalize(
 
     ExistsExpressionVisitor::Data exists;
     ExistsExpressionVisitor(exists).visit(query);
+
+    ReplacePositionalArgumentsVisitor::Data data_replace_positional_arguments{context_};
+    ReplacePositionalArgumentsVisitor(data_replace_positional_arguments).visit(query);
 
     if (settings.transform_null_in)
     {
