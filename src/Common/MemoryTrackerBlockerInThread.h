@@ -28,5 +28,5 @@ public:
     }
 
     friend class MemoryTracker;
-    friend class AllocationTrace;
+    friend struct AllocationTrace;
 };
