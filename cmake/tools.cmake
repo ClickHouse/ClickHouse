@@ -21,7 +21,6 @@ set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
 set (GCC_MINIMUM_VERSION 11)
 
 if (COMPILER_GCC)
-    // ClickHouse really does not support GCC. 
     message (FATAL_ERROR "Compilation with GCC is unsupported. Please use Clang instead.")
 
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION})
@@ -84,7 +83,7 @@ if ((OS_LINUX OR OS_DARWIN) AND NOT LINKER_NAME)
 
     if (NOT LINKER_NAME)
         if (GOLD_PATH)
-            message (FATAL_ERROR "Linking with gold is not recommended. Please use lld.")
+            message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
             if (COMPILER_GCC)
                 set (LINKER_NAME "gold")
             else ()
