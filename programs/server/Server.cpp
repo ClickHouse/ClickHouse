@@ -737,8 +737,8 @@ try
 
 #if USE_OPENSSL_INTREE
     /// When building openssl into clickhouse, clickhouse owns the configuration
-    /// Therefor, the clickhouse openssl configuration should be kept seperate from
-    /// the OS. Default to the one in the standard config directory, unless overridden 
+    /// Therefore, the clickhouse openssl configuration should be kept separate from
+    /// the OS. Default to the one in the standard config directory, unless overridden
     /// by a key in the config.
     if (config().has("opensslconf"))
     {
