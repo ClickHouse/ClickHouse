@@ -95,7 +95,10 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                         out << ",";
                 }
             }
-            out << "\ncleanup: " << cleanup;
+
+            if (cleanup)
+                out << "\ncleanup: " << cleanup;
+
             break;
 
         case DROP_RANGE:

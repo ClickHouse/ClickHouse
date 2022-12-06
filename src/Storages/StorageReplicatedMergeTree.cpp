@@ -4575,7 +4575,6 @@ bool StorageReplicatedMergeTree::optimize(
 
     auto try_assign_merge = [&](const String & partition_id) -> bool
     {
-        LOG_INFO(log, "## -- try_assign_merge --\n");
         constexpr size_t max_retries = 10;
         size_t try_no = 0;
         for (; try_no < max_retries; ++try_no)
@@ -4620,14 +4619,10 @@ bool StorageReplicatedMergeTree::optimize(
 
             /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
             if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
-            {
-                LOG_INFO(log, "## select_decision == SelectPartsDecision::NOTHING_TO_MERGE\n");
                 return false;
-            }
 
             if (select_decision != SelectPartsDecision::SELECTED)
             {
-                LOG_INFO(log, "## select_decision != SelectPartsDecision::SELECTED\n");
                 constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
                 assert(disable_reason != unknown_disable_reason);
                 if (!partition_id.empty())
@@ -4635,7 +4630,6 @@ bool StorageReplicatedMergeTree::optimize(
                 return handle_noop(message_fmt, disable_reason);
             }
 
-            LOG_INFO(log, "## ----------------------------\n");
             ReplicatedMergeTreeLogEntryData merge_entry;
             CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                 zookeeper, future_merged_part->parts,
@@ -4646,18 +4640,12 @@ bool StorageReplicatedMergeTree::optimize(
 
             if (create_result == CreateMergeEntryResult::MissingPart)
             {
-                LOG_INFO(log, "## create_result == CreateMergeEntryResult::MissingPart\n");
-
                 static constexpr const char * message_fmt = "Can't create merge queue node in ZooKeeper, because some parts are missing";
                 return handle_noop(message_fmt);
             }
 
             if (create_result == CreateMergeEntryResult::LogUpdated)
-            {
-                LOG_INFO(log, "## create_result == CreateMergeEntryResult::LogUpdated\n");
                 continue;
-            }
-            LOG_INFO(log, "## merge_entries.push_back\n");
 
             merge_entries.push_back(std::move(merge_entry));
             return true;

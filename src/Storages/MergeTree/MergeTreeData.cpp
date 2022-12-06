@@ -784,12 +784,13 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
             if (is_optional)
                 return;
 
-            throw Exception("Logical error: is_deleted (" + is_deleted_column + ") column for storage " + storage + " is empty", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: is_deleted ({}) column for storage {} is empty", is_deleted_column, storage);
         }
         else
         {
             if (version_column.empty() && !is_optional)
-                throw Exception("Logical error: Version column (" + version_column + ") for storage " + storage + " is empty while is_deleted (" + is_deleted_column + ") is not", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Version column ({}) for storage {} is empty while is_deleted ({}) is not.",
+                                version_column, storage, is_deleted_column);
 
             bool miss_is_deleted_column = true;
             for (const auto & column : columns)
@@ -797,15 +798,15 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                 if (column.name == is_deleted_column)
                 {
                     if (!typeid_cast<const DataTypeUInt8 *>(column.type.get()))
-                        throw Exception("is_deleted column (" + is_deleted_column + ") for storage " + storage + " must have type Int8."
-                                " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+                        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "is_deleted column ({}) for storage {} must have type UInt8. Provided column of type {}.",
+                                        is_deleted_column, storage, column.type->getName());
                     miss_is_deleted_column = false;
                     break;
                 }
             }
 
             if (miss_is_deleted_column)
-                throw Exception("is_deleted column " + is_deleted_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "is_deleted column {} does not exist in table declaration.", is_deleted_column);
         }
     };
 

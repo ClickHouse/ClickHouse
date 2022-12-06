@@ -118,9 +118,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->future_part->parts.back()->name,
         global_ctx->future_part->type.toString());
 
-    if (global_ctx->cleanup)
-        LOG_DEBUG(ctx->log, "CLEANUP enabled");
-
     if (global_ctx->deduplicate)
     {
         if (global_ctx->deduplicate_by_columns.empty())

@@ -37,6 +37,12 @@ d2	1	0
 d3	1	0
 d4	3	0
 d5	1	0
+d6	2	1
+d1	5	0
+d2	1	0
+d3	1	0
+d4	3	0
+d5	1	0
 == Test of the SETTINGS clean_deleted_rows as Never ==
 d1	5	0
 d2	1	0
@@ -50,3 +56,9 @@ d4	1	0
 == (Replicas) Test settings ==
 c2	1	0
 c4	1	0
+== Check cleanup & settings for other merge trees ==
+d1	1	1
+d1	1	1
+d1	1	1
+d1	1	1	1
+d1	1	1	1
