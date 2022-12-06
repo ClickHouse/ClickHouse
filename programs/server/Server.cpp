@@ -1799,9 +1799,7 @@ try
 #if defined(OS_LINUX)
         /// Tell the service manager that service startup is finished.
         /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
-        /// the child process notifies 'READY=1'. So there is a possibility of a race condition but the chances should be low
-        /// because the parent process does 'MAINPID=...' straight away after fork() and the child process does the actual
-        /// initialization and only then sends 'READY=1'.
+        /// the child process notifies 'READY=1'.
         systemdNotify("READY=1\n");
 #endif
 
