@@ -140,6 +140,17 @@ size_t FileSegment::getDownloadedSizeUnlocked(std::unique_lock<std::mutex> & /* 
     return downloaded_size;
 }
 
+void FileSegment::setDownloadedSize(size_t delta)
+{
+    std::unique_lock download_lock(download_mutex);
+    setDownloadedSizeUnlocked(download_lock, delta);
+}
+
+void FileSegment::setDownloadedSizeUnlocked(std::unique_lock<std::mutex> & /* download_lock */, size_t delta)
+{
+    downloaded_size += delta;
+}
+
 bool FileSegment::isDownloaded() const
 {
     std::lock_guard segment_lock(mutex);
@@ -324,7 +335,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         if (current_downloaded_size == range().size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
-        if (!cache_writer && from != nullptr)
+        if (!cache_writer)
         {
             if (current_downloaded_size > 0)
                 throw Exception(
@@ -339,14 +350,11 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
     try
     {
-        /// if `from` is nullptr, then we just allocate and hold space by current segment and it was (or would) be written outside
-        if (cache_writer && from != nullptr)
-            cache_writer->write(from, size);
+        cache_writer->write(from, size);
 
         std::unique_lock download_lock(download_mutex);
 
-        if (cache_writer && from != nullptr)
-            cache_writer->next();
+        cache_writer->next();
 
         downloaded_size += size;
 
@@ -427,6 +435,7 @@ size_t FileSegment::tryReserve(size_t size_to_reserve, bool strict)
                     "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
                     size_to_reserve, range().toString(), downloaded_size);
             }
+            /// shrink size_to_reserve to the available space in the segment
             size_to_reserve = range().size() - expected_downloaded_size;
         }
 

@@ -568,17 +568,17 @@ TEST_F(FileCacheTest, rangeWriter)
     for (const size_t size : {3, 5, 8, 1, 1, 3})
     {
         total_written += size;
-        ASSERT_EQ(writer.tryWrite(data.data(), size, writer.currentOffset()), size);
+        ASSERT_EQ(writer.tryWrite(data.data(), size, writer.currentOffset(), FileSegmentKind::Temporary), size);
     }
     ASSERT_LT(total_written, settings.max_size);
 
     size_t offset_before_unsuccessful_write = writer.currentOffset();
     size_t space_left = settings.max_size - total_written;
-    ASSERT_EQ(writer.tryWrite(data.data(), space_left + 1, writer.currentOffset()), 0);
+    ASSERT_EQ(writer.tryWrite(data.data(), space_left + 1, writer.currentOffset(), FileSegmentKind::Temporary), 0);
 
     ASSERT_EQ(writer.currentOffset(), offset_before_unsuccessful_write);
 
-    ASSERT_EQ(writer.tryWrite(data.data(), space_left, writer.currentOffset()), space_left);
+    ASSERT_EQ(writer.tryWrite(data.data(), space_left, writer.currentOffset(), FileSegmentKind::Temporary), space_left);
 
     writer.finalize();
 }
