@@ -679,6 +679,210 @@ InputOrderInfoPtr buildInputOrderInfo(
     return std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
 }
 
+/// We really need three different sort descriptions here.
+/// For example:
+///
+///   create table tab (a Int32, b Int32, c Int32, d Int32) engine = MergeTree order by (a, b, c);
+///   select a, any(b), c, d from tab where b = 1 group by a, c, d order by c, d;
+///
+/// We would like to have:
+/// (a, b, c) - a sort description for reading from table (it's into input_order)
+/// (a, c) - a sort description for merging (an input of AggregatingInOrderTransfrom is sorted by this GROUP BY keys)
+/// (a, c, d) - a group by soer description (an input of FinishAggregatingInOrderTransform is sorted by all GROUP BY keys)
+///
+/// Sort description from input_order is not actually used. ReadFromMergeTree reads only PK prefix size.
+/// We should remove it later.
+struct AggregationInputOrder
+{
+    InputOrderInfoPtr input_order;
+    SortDescription sort_description_for_merging;
+    SortDescription group_by_sort_description;
+};
+
+AggregationInputOrder buildInputOrderInfo(
+    const FixedColumns & fixed_columns,
+    const ActionsDAGPtr & dag,
+    const Names & group_by_keys,
+    const ActionsDAG & sorting_key_dag,
+    const Names & sorting_key_columns)
+{
+    MatchedTrees::Matches matches;
+    FixedColumns fixed_key_columns;
+
+    /// For every column in PK find any match from GROUP BY key.
+    using ReverseMatches = std::unordered_map<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
+    ReverseMatches reverse_matches;
+
+    if (dag)
+    {
+        matches = matchTrees(sorting_key_dag, *dag);
+
+        for (const auto & [node, match] : matches)
+        {
+            if (!match.monotonicity || match.monotonicity->strict)
+            {
+                if (match.node && fixed_columns.contains(node))
+                    fixed_key_columns.insert(match.node);
+            }
+        }
+
+        enreachFixedColumns(sorting_key_dag, fixed_key_columns);
+
+        for (auto it = matches.cbegin(); it != matches.cend(); ++it)
+        {
+            const MatchedTrees::Match * match = &it->second;
+            if (match->node)
+            {
+                auto [jt, inserted] = reverse_matches.emplace(match->node, it);
+                if (!inserted)
+                {
+                    /// Find the best match for PK node.
+                    /// Direct match > strict monotonic > monotonic.
+                    const MatchedTrees::Match * prev_match = &jt->second->second;
+                    bool is_better = prev_match->monotonicity && !match->monotonicity;
+                    if (!is_better)
+                    {
+                        bool both_monotionic = prev_match->monotonicity && match->monotonicity;
+                        is_better = both_monotionic && match->monotonicity->strict && !prev_match->monotonicity->strict;
+                    }
+
+                    if (is_better)
+                        jt->second = it;
+                }
+            }
+        }
+    }
+
+    /// This is a result direction we will read from MergeTree
+    ///  1 - in order,
+    /// -1 - in reverse order,
+    ///  0 - usual read, don't apply optimization
+    ///
+    /// So far, 0 means any direction is possible. It is ok for constant prefix.
+    int read_direction = 0;
+    size_t next_sort_key = 0;
+    std::unordered_set<std::string_view> not_matched_group_by_keys(group_by_keys.begin(), group_by_keys.end());
+
+    SortDescription group_by_sort_description;
+    group_by_sort_description.reserve(group_by_keys.size());
+
+    SortDescription order_key_prefix_descr;
+    order_key_prefix_descr.reserve(sorting_key_columns.size());
+
+    while (!not_matched_group_by_keys.empty() && next_sort_key < sorting_key_columns.size())
+    {
+        const auto & sorting_key_column = sorting_key_columns[next_sort_key];
+
+        /// Direction for current sort key.
+        int current_direction = 0;
+        bool strict_monotonic = true;
+        std::unordered_set<std::string_view>::iterator group_by_key_it;
+
+        const ActionsDAG::Node * sort_column_node = sorting_key_dag.tryFindInOutputs(sorting_key_column);
+        /// This should not happen.
+        if (!sort_column_node)
+            break;
+
+        if (!dag)
+        {
+            /// This is possible if there were no Expression or Filter steps in Plan.
+            /// Example: SELECT * FROM tab ORDER BY a, b
+
+            if (sort_column_node->type != ActionsDAG::ActionType::INPUT)
+                break;
+
+            group_by_key_it = not_matched_group_by_keys.find(sorting_key_column);
+            if (group_by_key_it == not_matched_group_by_keys.end())
+                break;
+
+            current_direction = 1;
+
+            //std::cerr << "====== (no dag) Found direct match" << std::endl;
+            ++next_sort_key;
+        }
+        else
+        {
+            const MatchedTrees::Match * match = nullptr;
+            const ActionsDAG::Node * group_by_key_node = nullptr;
+            if (const auto match_it = reverse_matches.find(sort_column_node); match_it != reverse_matches.end())
+            {
+                group_by_key_node = match_it->second->first;
+                match = &match_it->second->second;
+            }
+
+            //std::cerr << "====== Finding match for " << sort_column_node->result_name << ' ' << static_cast<const void *>(sort_column_node) << std::endl;
+
+            if (match && match->node)
+                group_by_key_it = not_matched_group_by_keys.find(group_by_key_node->result_name);
+
+            if (match && match->node && group_by_key_it != not_matched_group_by_keys.end())
+            {
+                //std::cerr << "====== Found direct match" << std::endl;
+
+                current_direction = 1;
+                if (match->monotonicity)
+                {
+                    current_direction *= match->monotonicity->direction;
+                    strict_monotonic = match->monotonicity->strict;
+                }
+
+                ++next_sort_key;
+            }
+            else if (fixed_key_columns.contains(sort_column_node))
+            {
+                //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
+                ++next_sort_key;
+            }
+            else
+                break;
+        }
+
+        /// read_direction == 0 means we can choose any global direction.
+        /// current_direction == 0 means current key if fixed and any direction is possible for it.
+        if (current_direction && read_direction && current_direction != read_direction)
+            break;
+
+        if (read_direction == 0 && current_direction != 0)
+            read_direction = current_direction;
+
+        if (current_direction)
+        {
+            /// Aggregation in order will always read in table order.
+            /// Here, current_direction is a direction which will be applied to every key.
+            /// Example:
+            ///   CREATE TABLE t (x, y, z) ENGINE = MergeTree ORDER BY (x, y)
+            ///   SELECT ... FROM t GROUP BY negate(y), negate(x), z
+            /// Here, current_direction will be -1 cause negate() is negative montonic,
+            /// Prefix sort description for reading will be (negate(y) DESC, negate(x) DESC),
+            /// Sort description for GROUP BY will be (negate(y) DESC, negate(x) DESC, z).
+            //std::cerr << "---- adding " << std::string(*group_by_key_it) << std::endl;
+            group_by_sort_description.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction));
+            order_key_prefix_descr.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction));
+            not_matched_group_by_keys.erase(group_by_key_it);
+        }
+        else
+        {
+            /// If column is fixed, will read it in table order as well.
+            //std::cerr << "---- adding " << sorting_key_column << std::endl;
+            order_key_prefix_descr.emplace_back(SortColumnDescription(sorting_key_column, 1));
+        }
+
+        if (current_direction && !strict_monotonic)
+            break;
+    }
+
+    if (read_direction == 0 || group_by_sort_description.empty())
+        return {};
+
+    SortDescription sort_description_for_merging = group_by_sort_description;
+
+    for (const auto & key : not_matched_group_by_keys)
+        group_by_sort_description.emplace_back(SortColumnDescription(std::string(key)));
+
+    auto input_order = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, /*read_direction*/ 1, /* limit */ 0);
+    return { std::move(input_order), std::move(sort_description_for_merging), std::move(group_by_sort_description) };
+}
+
 InputOrderInfoPtr buildInputOrderInfo(
     ReadFromMergeTree * reading,
     const FixedColumns & fixed_columns,
@@ -733,6 +937,56 @@ InputOrderInfoPtr buildInputOrderInfo(
     return order_info;
 }
 
+AggregationInputOrder buildInputOrderInfo(
+    ReadFromMergeTree * reading,
+    const FixedColumns & fixed_columns,
+    const ActionsDAGPtr & dag,
+    const Names & group_by_keys)
+{
+    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & sorting_key_columns = sorting_key.column_names;
+
+    return buildInputOrderInfo(
+        fixed_columns,
+        dag, group_by_keys,
+        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+}
+
+AggregationInputOrder buildInputOrderInfo(
+    ReadFromMerge * merge,
+    const FixedColumns & fixed_columns,
+    const ActionsDAGPtr & dag,
+    const Names & group_by_keys)
+{
+    const auto & tables = merge->getSelectedTables();
+
+    AggregationInputOrder order_info;
+    for (const auto & table : tables)
+    {
+        auto storage = std::get<StoragePtr>(table);
+        const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+        const auto & sorting_key_columns = sorting_key.column_names;
+
+        if (sorting_key_columns.empty())
+            return {};
+
+        auto table_order_info = buildInputOrderInfo(
+            fixed_columns,
+            dag, group_by_keys,
+            sorting_key.expression->getActionsDAG(), sorting_key_columns);
+
+        if (!table_order_info.input_order)
+            return {};
+
+        if (!order_info.input_order)
+            order_info = table_order_info;
+        else if (*order_info.input_order != *table_order_info.input_order)
+            return {};
+    }
+
+    return order_info;
+}
+
 InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node)
 {
     QueryPlan::Node * reading_node = findReadingStep(node);
@@ -779,6 +1033,53 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
     }
 
     return nullptr;
+}
+
+AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node)
+{
+    QueryPlan::Node * reading_node = findReadingStep(node);
+    if (!reading_node)
+        return {};
+
+    const auto & keys = aggregating.getParams().keys;
+    size_t limit = 0;
+
+    ActionsDAGPtr dag;
+    FixedColumns fixed_columns;
+    buildSortingDAG(node, dag, fixed_columns, limit);
+
+    if (dag && !fixed_columns.empty())
+        enreachFixedColumns(*dag, fixed_columns);
+
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+    {
+        auto order_info = buildInputOrderInfo(
+            reading,
+            fixed_columns,
+            dag, keys);
+
+        if (order_info.input_order)
+            reading->requestReadingInOrder(
+                order_info.input_order->used_prefix_of_sorting_key_size,
+                order_info.input_order->direction,
+                order_info.input_order->limit);
+
+        return order_info;
+    }
+    else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+    {
+        auto order_info = buildInputOrderInfo(
+            merge,
+            fixed_columns,
+            dag, keys);
+
+        if (order_info.input_order)
+            merge->requestReadingInOrder(order_info.input_order);
+
+        return order_info;
+    }
+
+    return {};
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
@@ -857,6 +1158,25 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front()))
     {
         sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+    }
+}
+
+void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
+{
+    if (node.children.size() != 1)
+        return;
+
+    auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
+    if (!aggregating)
+        return;
+
+    if (aggregating->inOrder() || aggregating->isGroupingSets())
+        return;
+
+    /// TODO: maybe add support for UNION later.
+    if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front()); order_info.input_order)
+    {
+        aggregating->applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
     }
 }
 

@@ -38,7 +38,8 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
      {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
      {"direct",               JoinAlgorithm::DIRECT},
-     {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE}})
+     {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
+     {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,

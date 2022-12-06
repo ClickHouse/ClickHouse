@@ -1680,9 +1680,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
-    if (node->hasConstantValue())
-        return;
-
     auto subquery_context = Context::createCopy(context);
 
     Settings subquery_settings = context->getSettings();
@@ -1721,12 +1718,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
         }
 
         auto constant_value = std::make_shared<ConstantValue>(Null(), std::move(type));
-
-        if (query_node)
-            query_node->performConstantFolding(std::move(constant_value));
-        else if (union_node)
-            union_node->performConstantFolding(std::move(constant_value));
-
+        node = std::make_shared<ConstantNode>(std::move(constant_value), node);
         return;
     }
 
@@ -1771,10 +1763,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     }
 
     auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
-    if (query_node)
-        query_node->performConstantFolding(std::move(constant_value));
-    else if (union_node)
-        union_node->performConstantFolding(std::move(constant_value));
+    node = std::make_shared<ConstantNode>(std::move(constant_value), node);
 }
 
 void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope)
@@ -1867,15 +1856,15 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
 
 void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
 {
-    const auto limit_offset_constant_value = expression_node->getConstantValueOrNull();
-    if (!limit_offset_constant_value || !isNativeNumber(removeNullable(limit_offset_constant_value->getType())))
+    const auto * limit_offset_constant_node = expression_node->as<ConstantNode>();
+    if (!limit_offset_constant_node || !isNativeNumber(removeNullable(limit_offset_constant_node->getResultType())))
         throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
             "{} expression must be constant with numeric type. Actual {}. In scope {}",
             expression_description,
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-    Field converted = convertFieldToType(limit_offset_constant_value->getValue(), DataTypeUInt64());
+    Field converted = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
     if (converted.isNull())
         throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
             "{} numeric constant expression is not representable as UInt64",
@@ -2465,22 +2454,18 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
                 result_column = it->second;
         }
 
-        QueryTreeNodePtr result_expression;
+        QueryTreeNodePtr result_expression = result_column;
         bool clone_is_needed = true;
 
         String table_expression_source = table_expression_data.table_expression_description;
         if (!table_expression_data.table_expression_name.empty())
             table_expression_source += " with name " + table_expression_data.table_expression_name;
 
-        if (!match_full_identifier && compound_identifier)
+        if (result_column && !match_full_identifier && compound_identifier)
         {
             size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
             result_expression = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, identifier_bind_size, result_column, table_expression_source, scope);
             clone_is_needed = false;
-        }
-        else
-        {
-            result_expression = result_column;
         }
 
         if (!result_expression)
@@ -2858,6 +2843,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         }
     }
 
+    /** Nested subqueries cannot access outer subqueries table expressions from JOIN tree because
+      * that can prevent resolution of table expression from CTE.
+      *
+      * Example: WITH a AS (SELECT number FROM numbers(1)), b AS (SELECT number FROM a) SELECT * FROM a as l, b as r;
+      */
+    if (identifier_lookup.isTableExpressionLookup())
+        identifier_resolve_settings.allow_to_check_join_tree = false;
+
     while (scope_to_check != nullptr)
     {
         auto lookup_result = tryResolveIdentifier(identifier_lookup, *scope_to_check, identifier_resolve_settings);
@@ -2882,9 +2875,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
             {
                 return lookup_result;
             }
-            else if (const auto constant_value = resolved_identifier->getConstantValueOrNull())
+            else if (resolved_identifier->as<ConstantNode>())
             {
-                lookup_result.resolved_identifier = std::make_shared<ConstantNode>(constant_value);
+                lookup_result.resolved_identifier = resolved_identifier;
                 return lookup_result;
             }
 
@@ -3790,14 +3783,14 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             false /*allow_lambda_expression*/,
             false /*allow_table_expression*/);
 
-        const auto window_frame_begin_constant_value = window_node.getFrameBeginOffsetNode()->getConstantValueOrNull();
-        if (!window_frame_begin_constant_value || !isNativeNumber(removeNullable(window_frame_begin_constant_value->getType())))
+        const auto * window_frame_begin_constant_node = window_node.getFrameBeginOffsetNode()->as<ConstantNode>();
+        if (!window_frame_begin_constant_node || !isNativeNumber(removeNullable(window_frame_begin_constant_node->getResultType())))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Window frame begin OFFSET expression must be constant with numeric type. Actual {}. In scope {}",
                 window_node.getFrameBeginOffsetNode()->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        window_node.getWindowFrame().begin_offset = window_frame_begin_constant_value->getValue();
+        window_node.getWindowFrame().begin_offset = window_frame_begin_constant_node->getValue();
         if (frame_begin_offset_projection_names.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Window FRAME begin offset expected 1 projection name. Actual {}",
@@ -3811,14 +3804,14 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             false /*allow_lambda_expression*/,
             false /*allow_table_expression*/);
 
-        const auto window_frame_end_constant_value = window_node.getFrameEndOffsetNode()->getConstantValueOrNull();
-        if (!window_frame_end_constant_value || !isNativeNumber(removeNullable(window_frame_end_constant_value->getType())))
+        const auto * window_frame_end_constant_node = window_node.getFrameEndOffsetNode()->as<ConstantNode>();
+        if (!window_frame_end_constant_node || !isNativeNumber(removeNullable(window_frame_end_constant_node->getResultType())))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Window frame begin OFFSET expression must be constant with numeric type. Actual {}. In scope {}",
                 window_node.getFrameEndOffsetNode()->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        window_node.getWindowFrame().end_offset = window_frame_end_constant_value->getValue();
+        window_node.getWindowFrame().end_offset = window_frame_end_constant_node->getValue();
         if (frame_end_offset_projection_names.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Window FRAME begin offset expected 1 projection name. Actual {}",
@@ -3980,16 +3973,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     for (auto & parameter_node : parameters_nodes)
     {
-        auto constant_value = parameter_node->getConstantValueOrNull();
-
-        if (!constant_value)
+        const auto * constant_node = parameter_node->as<ConstantNode>();
+        if (!constant_node)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Parameter for function {} expected to have constant value. Actual {}. In scope {}",
             function_name,
             parameter_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-        parameters.push_back(constant_value->getValue());
+        parameters.push_back(constant_node->getValue());
     }
 
     //// If function node is not window function try to lookup function node name as lambda identifier.
@@ -4146,14 +4138,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto & function_argument = function_arguments[function_argument_index];
 
         ColumnWithTypeAndName argument_column;
-        bool argument_is_lambda = false;
 
         /** If function argument is lambda, save lambda argument index and initialize argument type as DataTypeFunction
           * where function argument types are initialized with empty array of lambda arguments size.
           */
         if (const auto * lambda_node = function_argument->as<const LambdaNode>())
         {
-            argument_is_lambda = true;
             size_t lambda_arguments_size = lambda_node->getArguments().getNodes().size();
             argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr);
             function_lambda_arguments_indexes.push_back(function_argument_index);
@@ -4176,11 +4166,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_node.getFunctionName(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        const auto constant_value = function_argument->getConstantValueOrNull();
-        if (!argument_is_lambda && constant_value)
+        const auto * constant_node = function_argument->as<ConstantNode>();
+        if (constant_node)
         {
-            argument_column.column = constant_value->getType()->createColumnConst(1, constant_value->getValue());
-            argument_column.type = constant_value->getType();
+            argument_column.column = constant_node->getResultType()->createColumnConst(1, constant_node->getValue());
+            argument_column.type = constant_node->getResultType();
         }
         else
         {
@@ -4496,24 +4486,30 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       *
       * Example: SELECT * FROM test_table LIMIT 1 IN 1;
       */
-    if (is_special_function_in &&
-        function_arguments.at(0)->hasConstantValue() &&
-        function_arguments.at(1)->hasConstantValue())
+    if (is_special_function_in)
     {
-        const auto & first_argument_constant_value = function_arguments[0]->getConstantValue();
-        const auto & second_argument_constant_value = function_arguments[1]->getConstantValue();
+        const auto * first_argument_constant_node = function_arguments[0]->as<ConstantNode>();
+        const auto * second_argument_constant_node = function_arguments[1]->as<ConstantNode>();
 
-        const auto & first_argument_constant_type = first_argument_constant_value.getType();
-        const auto & second_argument_constant_literal = second_argument_constant_value.getValue();
-        const auto & second_argument_constant_type = second_argument_constant_value.getType();
+        if (first_argument_constant_node && second_argument_constant_node)
+        {
+            const auto & first_argument_constant_type = first_argument_constant_node->getResultType();
+            const auto & second_argument_constant_literal = second_argument_constant_node->getValue();
+            const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
-        auto set = makeSetForConstantValue(first_argument_constant_type, second_argument_constant_literal, second_argument_constant_type, scope.context->getSettingsRef());
+            auto set = makeSetForConstantValue(first_argument_constant_type,
+                second_argument_constant_literal,
+                second_argument_constant_type,
+                scope.context->getSettingsRef());
 
-        /// Create constant set column for constant folding
+            /// Create constant set column for constant folding
 
-        auto column_set = ColumnSet::create(1, std::move(set));
-        argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
+            auto column_set = ColumnSet::create(1, std::move(set));
+            argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
+        }
     }
+
+    std::shared_ptr<ConstantValue> constant_value;
 
     DataTypePtr result_type;
 
@@ -4545,10 +4541,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (column && isColumnConst(*column))
             {
                 /// Replace function node with result constant node
-                Field constant_value;
-                column->get(0, constant_value);
-
-                function_node.performConstantFolding(std::make_shared<ConstantValue>(std::move(constant_value), result_type));
+                Field column_constant_value;
+                column->get(0, column_constant_value);
+                constant_value = std::make_shared<ConstantValue>(std::move(column_constant_value), result_type);
             }
         }
     }
@@ -4559,6 +4554,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     function_node.resolveAsFunction(std::move(function), std::move(result_type));
+
+    if (constant_value)
+        node = std::make_shared<ConstantNode>(std::move(constant_value), node);
 
     return result_projection_names;
 }
@@ -4980,8 +4978,8 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
         {
             fill_from_expression_projection_names = resolveExpressionNode(sort_node.getFillFrom(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-            const auto constant_value = sort_node.getFillFrom()->getConstantValueOrNull();
-            if (!constant_value || !isColumnedAsNumber(constant_value->getType()))
+            const auto * constant_node = sort_node.getFillFrom()->as<ConstantNode>();
+            if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "Sort FILL FROM expression must be constant with numeric type. Actual {}. In scope {}",
                     sort_node.getFillFrom()->formatASTForErrorMessage(),
@@ -4998,8 +4996,8 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
         {
             fill_to_expression_projection_names = resolveExpressionNode(sort_node.getFillTo(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-            const auto constant_value = sort_node.getFillTo()->getConstantValueOrNull();
-            if (!constant_value || !isColumnedAsNumber(constant_value->getType()))
+            const auto * constant_node = sort_node.getFillTo()->as<ConstantNode>();
+            if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "Sort FILL TO expression must be constant with numeric type. Actual {}. In scope {}",
                     sort_node.getFillFrom()->formatASTForErrorMessage(),
@@ -5016,15 +5014,15 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
         {
             fill_step_expression_projection_names = resolveExpressionNode(sort_node.getFillStep(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-            const auto constant_value = sort_node.getFillStep()->getConstantValueOrNull();
-            if (!constant_value)
+            const auto * constant_node = sort_node.getFillStep()->as<ConstantNode>();
+            if (!constant_node)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "Sort FILL STEP expression must be constant with numeric or interval type. Actual {}. In scope {}",
                     sort_node.getFillStep()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
-            bool is_number = isColumnedAsNumber(constant_value->getType());
-            bool is_interval = WhichDataType(constant_value->getType()).isInterval();
+            bool is_number = isColumnedAsNumber(constant_node->getResultType());
+            bool is_interval = WhichDataType(constant_node->getResultType()).isInterval();
             if (!is_number && !is_interval)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "Sort FILL STEP expression must be constant with numeric or interval type. Actual {}. In scope {}",
@@ -6134,7 +6132,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto & grouping_set_keys = node->as<ListNode &>();
             for (auto & grouping_set_key : grouping_set_keys.getNodes())
             {
-                if (grouping_set_key->hasConstantValue())
+                if (grouping_set_key->as<ConstantNode>())
                     continue;
 
                 group_by_keys_nodes.push_back(grouping_set_key);
@@ -6142,7 +6140,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         }
         else
         {
-            if (node->hasConstantValue())
+            if (node->as<ConstantNode>())
                 continue;
 
             group_by_keys_nodes.push_back(node);
