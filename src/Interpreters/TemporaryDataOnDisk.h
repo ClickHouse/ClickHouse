@@ -41,13 +41,8 @@ public:
         std::atomic<size_t> uncompressed_size;
     };
 
-    explicit TemporaryDataOnDiskScope(VolumePtr volume_, FileCache * cache_, size_t limit_)
-        : volume(std::move(volume_)), cache(cache_), limit(limit_)
-    {}
-
-    explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, size_t limit_)
-        : parent(std::move(parent_)), volume(parent->volume), cache(parent->cache), limit(limit_)
-    {}
+    explicit TemporaryDataOnDiskScope(VolumePtr volume_, FileCache * cache_, size_t limit_);
+    explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, size_t limit_);
 
     /// TODO: remove
     /// Refactor all code that uses volume directly to use TemporaryDataOnDisk.
@@ -94,7 +89,6 @@ public:
     bool empty() const;
 
     const StatAtomic & getStat() const { return stat; }
-    CurrentMetrics::Value getMetricScope() const { return current_metric_scope; }
 
 private:
     mutable std::mutex mutex;
@@ -119,9 +113,6 @@ public:
         size_t uncompressed_size = 0;
         size_t num_rows = 0;
     };
-
-    static TemporaryFileStreamPtr create(const VolumePtr & volume, const Block & header, size_t max_file_size, TemporaryDataOnDisk * parent_);
-    static TemporaryFileStreamPtr create(FileCache * cache, const Block & header, size_t max_file_size, TemporaryDataOnDisk * parent_);
 
     TemporaryFileStream(TemporaryFileHolder file_, const Block & header_, std::unique_ptr<ISpacePlaceholder> space_holder, TemporaryDataOnDisk * parent_);
 
