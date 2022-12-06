@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 
 namespace DB
@@ -47,11 +48,11 @@ public:
             if (function_node_arguments_nodes.size() != 2)
                 return;
 
-            auto constant_value = function_node_arguments_nodes[0]->getConstantValueOrNull();
-            if (!constant_value)
+            const auto * constant_node = function_node_arguments_nodes[0]->as<ConstantNode>();
+            if (!constant_node)
                 return;
 
-            const auto & constant_value_literal = constant_value->getValue();
+            const auto & constant_value_literal = constant_node->getValue();
             if (!isInt64OrUInt64FieldType(constant_value_literal.getType()))
                 return;
 
@@ -80,14 +81,14 @@ public:
         if (nested_if_function_arguments_nodes.size() != 3)
             return;
 
-        auto if_true_condition_constant_value = nested_if_function_arguments_nodes[1]->getConstantValueOrNull();
-        auto if_false_condition_constant_value = nested_if_function_arguments_nodes[2]->getConstantValueOrNull();
+        const auto * if_true_condition_constant_node = nested_if_function_arguments_nodes[1]->as<ConstantNode>();
+        const auto * if_false_condition_constant_node = nested_if_function_arguments_nodes[2]->as<ConstantNode>();
 
-        if (!if_true_condition_constant_value || !if_false_condition_constant_value)
+        if (!if_true_condition_constant_node || !if_false_condition_constant_node)
             return;
 
-        const auto & if_true_condition_constant_value_literal = if_true_condition_constant_value->getValue();
-        const auto & if_false_condition_constant_value_literal = if_false_condition_constant_value->getValue();
+        const auto & if_true_condition_constant_value_literal = if_true_condition_constant_node->getValue();
+        const auto & if_false_condition_constant_value_literal = if_false_condition_constant_node->getValue();
 
         if (!isInt64OrUInt64FieldType(if_true_condition_constant_value_literal.getType()) ||
             !isInt64OrUInt64FieldType(if_false_condition_constant_value_literal.getType()))

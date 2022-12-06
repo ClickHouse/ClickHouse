@@ -36,6 +36,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -2233,6 +2234,10 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
     auto converter = [&](size_t thread_id, ThreadGroupStatusPtr thread_group)
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
 
@@ -2950,6 +2955,10 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
             if (thread_group)
                 CurrentThread::attachToIfDetached(thread_group);
 
