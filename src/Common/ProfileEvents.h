@@ -25,10 +25,12 @@ namespace ProfileEvents
 
     class Counters
     {
+    private:
         Counter * counters = nullptr;
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
         Counters * parent = nullptr;
+        bool trace_profile_events = false;
 
     public:
 
@@ -51,15 +53,7 @@ namespace ProfileEvents
             return counters[event];
         }
 
-        inline void increment(Event event, Count amount = 1)
-        {
-            Counters * current = this;
-            do
-            {
-                current->counters[event].fetch_add(amount, std::memory_order_relaxed);
-                current = current->parent;
-            } while (current != nullptr);
-        }
+        void increment(Event event, Count amount = 1);
 
         struct Snapshot
         {
@@ -95,6 +89,11 @@ namespace ProfileEvents
         void setParent(Counters * parent_)
         {
             parent = parent_;
+        }
+
+        void setTraceProfileEvents(bool value)
+        {
+            trace_profile_events = value;
         }
 
         /// Set all counters to zero

@@ -73,6 +73,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Common/scope_guard_safe.h>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -1137,6 +1138,10 @@ void MergeTreeData::loadDataPartsFromDisk(
         {
             pool.scheduleOrThrowOnError([&, thread, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
 
@@ -1964,6 +1969,10 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         {
             pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
 
@@ -4682,7 +4691,7 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
     [[maybe_unused]] size_t visible_size = maybe_visible_parts.size();
 
     LOG_TEST(log, "Got {} parts (of {}) visible in snapshot {} (TID {}): {}",
-             visible_size, total_size, snapshot_version, current_tid, fmt::join(getPartsNamesWithStates(maybe_visible_parts), ", "));
+             visible_size, total_size, snapshot_version, current_tid, fmt::join(getPartsNames(maybe_visible_parts), ", "));
 }
 
 
@@ -4713,6 +4722,22 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
     }
 
     return affected_partition_ids;
+}
+
+std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
+{
+    auto lock = lockParts();
+    std::unordered_set<String> res;
+    std::string_view prev_id;
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+    {
+        if (prev_id == part->info.partition_id)
+            continue;
+
+        res.insert(part->info.partition_id);
+        prev_id = part->info.partition_id;
+    }
+    return res;
 }
 
 
@@ -6412,7 +6437,25 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             if (!files_to_copy_instead_of_hardlinks.contains(it->name())
                 && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
                 && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+            {
                 hardlinked_files->hardlinks_from_source_part.insert(it->name());
+            }
+        }
+
+        auto projections = src_part->getProjectionParts();
+        for (const auto & [name, projection_part] : projections)
+        {
+            const auto & projection_storage = projection_part->getDataPartStorage();
+            for (auto it = projection_storage.iterate(); it->isValid(); it->next())
+            {
+                auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
+                if (!files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
+                    && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
+                    && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+                {
+                    hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
+                }
+            }
         }
     }
 
