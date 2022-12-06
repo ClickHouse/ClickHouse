@@ -9,6 +9,8 @@
 #include <IO/Operators.h>
 #include <filesystem>
 
+#include <magic_enum.hpp>
+
 namespace CurrentMetrics
 {
 extern const Metric CacheDetachedFileSegments;
@@ -25,15 +27,7 @@ namespace ErrorCodes
 
 String toString(FileSegmentKind type)
 {
-    switch (type)
-    {
-        case FileSegmentKind::Regular:
-            return "Regular";
-        case FileSegmentKind::Persistent:
-            return "Persistent";
-        case FileSegmentKind::Temporary:
-            return "Temporary";
-    }
+    return String(magic_enum::enum_name(type));
 }
 
 FileSegment::FileSegment(
