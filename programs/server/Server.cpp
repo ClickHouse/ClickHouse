@@ -46,7 +46,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -60,7 +60,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Storages/NamedCollections.h>
+#include <Storages/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -782,7 +782,7 @@ try
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
-    NamedCollectionFactory::instance().initialize(config());
+    NamedCollectionUtils::loadFromConfig(config());
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -803,7 +803,7 @@ try
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
-    AsynchronousMetrics async_metrics(
+    ServerAsynchronousMetrics async_metrics(
         global_context,
         config().getUInt("asynchronous_metrics_update_period_s", 1),
         config().getUInt("asynchronous_heavy_metrics_update_period_s", 120),
@@ -1168,6 +1168,8 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
+    NamedCollectionUtils::loadFromSQL(global_context);
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         include_from_path,
@@ -1336,7 +1338,8 @@ try
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
-            NamedCollectionFactory::instance().reload(*config);
+            NamedCollectionUtils::reloadFromConfig(*config);
+
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -1947,15 +1950,15 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
             );
         if (type == "prometheus")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
             );
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -1994,6 +1997,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     }
 
     return stack;
+}
+
+HTTPContextPtr Server::httpContext() const
+{
+    return std::make_shared<HTTPContext>(context());
 }
 
 void Server::createServers(
@@ -2078,7 +2086,7 @@ void Server::createServers(
                 port_name,
                 "http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
         });
 
         /// HTTPS
@@ -2095,7 +2103,7 @@ void Server::createServers(
                 port_name,
                 "https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 #else
             UNUSED(port);
             throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -2220,7 +2228,7 @@ void Server::createServers(
                 port_name,
                 "Prometheus: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
 
@@ -2240,7 +2248,7 @@ void Server::createServers(
                 port_name,
                 "replica communication (interserver): http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(),
+                    httpContext(),
                     createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
@@ -2260,7 +2268,7 @@ void Server::createServers(
                 port_name,
                 "secure replica communication (interserver): https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(),
+                    httpContext(),
                     createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                     server_pool,
                     socket,

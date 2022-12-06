@@ -3,7 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/VariableContext.h>
-#include <Interpreters/TraceCollector.h>
+#include <Common/TraceSender.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -117,7 +117,7 @@ void AllocationTrace::onAlloc(void * ptr, size_t size) const
         return;
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-    DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size, ptr);
+    DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = Int64(size), .ptr = ptr});
 }
 
 void AllocationTrace::onFree(void * ptr, size_t size) const
@@ -129,7 +129,7 @@ void AllocationTrace::onFree(void * ptr, size_t size) const
         return;
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-    DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -Int64(size), ptr);
+    DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = -Int64(size), .ptr = ptr});
 }
 
 namespace ProfileEvents
@@ -231,7 +231,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size, nullptr);
+        DB::TraceSender::send(DB::TraceType::Memory, StackTrace(), {.size = size});
         setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
         allocation_traced = true;
     }
@@ -350,7 +350,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     if (peak_updated && allocation_traced)
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemoryPeak, StackTrace(), will_be, nullptr);
+        DB::TraceSender::send(DB::TraceType::MemoryPeak, StackTrace(), {.size = will_be});
     }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
