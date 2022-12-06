@@ -438,6 +438,27 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
     return FileSegmentsHolder(std::move(file_segments));
 }
 
+FileSegmentsHolder FileCache::set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
+{
+    std::lock_guard cache_lock(mutex);
+
+    auto it = files.find(key);
+    if (it != files.end())
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "File {} already exists", key.toString());
+
+    if (settings.unbounded)
+    {
+        /// If the file is unbounded, we can create a single cell for it.
+        FileSegments file_segments;
+        if (auto * cell = addCell(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock))
+            file_segments.push_back(cell->file_segment);
+        else
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cannot add cell for file {}", key.toString());
+        return FileSegmentsHolder(std::move(file_segments));
+    }
+    return FileSegmentsHolder(splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock));
+}
+
 FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
 {
     std::lock_guard cache_lock(mutex);
@@ -556,7 +577,7 @@ FileSegmentPtr FileCache::createFileSegmentForDownload(
     assertCacheCorrectness(key, cache_lock);
 #endif
 
-    if (size > max_file_segment_size)
+    if (!settings.unbounded && size > max_file_segment_size)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Requested size exceeds max file segment size");
 
     auto * cell = getCell(key, offset, cache_lock);

@@ -17,7 +17,9 @@
 #include <thread>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Poco/ConsoleChannel.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
+#include <Interpreters/Cache/WriteBufferToFileSegment.h>
 
 namespace fs = std::filesystem;
 using namespace DB;
@@ -549,39 +551,59 @@ TEST_F(FileCacheTest, get)
 
 }
 
-TEST_F(FileCacheTest, rangeWriter)
+TEST_F(FileCacheTest, writeBuffer)
 {
     DB::FileCacheSettings settings;
-    settings.max_size = 25;
+    settings.max_size = 100;
     settings.max_elements = 5;
-    settings.max_file_segment_size = 10;
+    settings.max_file_segment_size = 5;
 
     DB::FileCache cache(cache_base_path, settings);
     cache.initialize();
-    auto key = cache.hash("key1");
 
-    DB::FileSegmentRangeWriter writer(&cache, key, nullptr, "", "key1");
-
-    std::string data(100, '\xf0');
-
-    size_t total_written = 0;
-    for (const size_t size : {3, 5, 8, 1, 1, 3})
+    auto write_to_cache = [&cache](const String & key, const Strings & data)
     {
-        total_written += size;
-        ASSERT_EQ(writer.tryWrite(data.data(), size, writer.currentOffset(), FileSegmentKind::Temporary), size);
+        CreateFileSegmentSettings segment_settings;
+        segment_settings.kind = FileSegmentKind::Temporary;
+        segment_settings.unbounded = true;
+
+        auto holder = cache.set(cache.hash(key), 0, 3, segment_settings);
+        EXPECT_EQ(holder.file_segments.size(), 1);
+        auto & segment = holder.file_segments.front();
+        WriteBufferToFileSegment out(segment->detachWriter(), segment.get());
+        for (const auto & s : data)
+            out.write(s.data(), s.size());
+        return holder;
+    };
+
+    std::vector<fs::path> file_segment_paths;
+    {
+        auto holder = write_to_cache("key1", {"abc", "defg"});
+        file_segment_paths.emplace_back(holder.file_segments.front()->getPathInLocalCache());
+
+        ASSERT_EQ(fs::file_size(file_segment_paths.back()), 7);
+        ASSERT_TRUE(holder.file_segments.front()->range() == FileSegment::Range(0, 7));
+        ASSERT_EQ(cache.getUsedCacheSize(), 7);
+
+        {
+            auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"});
+            file_segment_paths.emplace_back(holder2.file_segments.front()->getPathInLocalCache());
+
+            ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);
+            ASSERT_TRUE(holder2.file_segments.front()->range() == FileSegment::Range(0, 15));
+            ASSERT_EQ(cache.getUsedCacheSize(), 22);
+        }
+        ASSERT_FALSE(fs::exists(file_segment_paths.back()));
+        ASSERT_EQ(cache.getUsedCacheSize(), 7);
     }
-    ASSERT_LT(total_written, settings.max_size);
 
-    size_t offset_before_unsuccessful_write = writer.currentOffset();
-    size_t space_left = settings.max_size - total_written;
-    ASSERT_EQ(writer.tryWrite(data.data(), space_left + 1, writer.currentOffset(), FileSegmentKind::Temporary), 0);
-
-    ASSERT_EQ(writer.currentOffset(), offset_before_unsuccessful_write);
-
-    ASSERT_EQ(writer.tryWrite(data.data(), space_left, writer.currentOffset(), FileSegmentKind::Temporary), space_left);
-
-    writer.finalize();
+    for (const auto & file_segment_path : file_segment_paths)
+    {
+        ASSERT_FALSE(fs::exists(file_segment_path));
+    }
+    ASSERT_EQ(cache.getUsedCacheSize(), 0);
 }
+
 
 static Block generateBlock(size_t size = 0)
 {
@@ -598,8 +620,6 @@ static Block generateBlock(size_t size = 0)
     }
 
     block.insert(column);
-
-    LOG_DEBUG(&Poco::Logger::get("FileCacheTest"), "generated block {} bytes", block.bytes());
     return block;
 }
 
@@ -618,15 +638,15 @@ static size_t readAllTemporaryData(TemporaryFileStream & stream)
 TEST_F(FileCacheTest, temporaryData)
 {
     DB::FileCacheSettings settings;
-    settings.max_size = 10240;
-    settings.max_file_segment_size = 1024;
+    settings.max_size = 10_KiB;
+    settings.max_file_segment_size = 1_KiB;
 
     DB::FileCache file_cache(cache_base_path, settings);
     file_cache.initialize();
 
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
 
-    auto some_data_holder = file_cache.getOrSet(file_cache.hash("some_data"), 0, 1024 * 5, CreateFileSegmentSettings{});
+    auto some_data_holder = file_cache.getOrSet(file_cache.hash("some_data"), 0, 5_KiB, CreateFileSegmentSettings{});
 
     {
         auto segments = fromHolder(some_data_holder);
@@ -654,35 +674,47 @@ TEST_F(FileCacheTest, temporaryData)
 
         ASSERT_GT(stream.write(generateBlock(100)), 0);
 
-        EXPECT_GT(file_cache.getUsedCacheSize(), 0);
-        EXPECT_GT(file_cache.getFileSegmentsNum(), 0);
+        ASSERT_GT(file_cache.getUsedCacheSize(), 0);
+        ASSERT_GT(file_cache.getFileSegmentsNum(), 0);
 
         size_t used_size_before_attempt = file_cache.getUsedCacheSize();
         /// data can't be evicted because it is still held by `some_data_holder`
-        ASSERT_THROW(stream.write(generateBlock(1000)), DB::Exception);
+        ASSERT_THROW({
+            stream.write(generateBlock(2000));
+            stream.flush();
+        }, DB::Exception);
 
         ASSERT_EQ(file_cache.getUsedCacheSize(), used_size_before_attempt);
+    }
+    {
+        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+        auto & stream = tmp_data->createStream(generateBlock());
+
+        ASSERT_GT(stream.write(generateBlock(100)), 0);
 
         some_data_holder.reset();
 
-        stream.write(generateBlock(1011));
+        stream.write(generateBlock(2000));
 
         auto stat = stream.finishWriting();
 
-        EXPECT_EQ(stat.num_rows, 1111);
-        EXPECT_EQ(readAllTemporaryData(stream), 1111);
+        ASSERT_TRUE(fs::exists(stream.getPath()));
+        ASSERT_GT(fs::file_size(stream.getPath()), 100);
+
+        ASSERT_EQ(stat.num_rows, 2100);
+        ASSERT_EQ(readAllTemporaryData(stream), 2100);
 
         size_used_with_temporary_data = file_cache.getUsedCacheSize();
         segments_used_with_temporary_data = file_cache.getFileSegmentsNum();
-        EXPECT_GT(size_used_with_temporary_data, 0);
-        EXPECT_GT(segments_used_with_temporary_data, 0);
+        ASSERT_GT(size_used_with_temporary_data, 0);
+        ASSERT_GT(segments_used_with_temporary_data, 0);
     }
 
     /// All temp data should be evicted after removing temporary files
-    EXPECT_LE(file_cache.getUsedCacheSize(), size_used_with_temporary_data);
-    EXPECT_LE(file_cache.getFileSegmentsNum(), segments_used_with_temporary_data);
+    ASSERT_LE(file_cache.getUsedCacheSize(), size_used_with_temporary_data);
+    ASSERT_LE(file_cache.getFileSegmentsNum(), segments_used_with_temporary_data);
 
     /// Some segments reserved by `some_data_holder` was eviced by temporary data
-    EXPECT_LE(file_cache.getUsedCacheSize(), size_used_before_temporary_data);
-    EXPECT_LE(file_cache.getFileSegmentsNum(), segments_used_before_temporary_data);
+    ASSERT_LE(file_cache.getUsedCacheSize(), size_used_before_temporary_data);
+    ASSERT_LE(file_cache.getFileSegmentsNum(), segments_used_before_temporary_data);
 }

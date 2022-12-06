@@ -25,9 +25,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-String toString(FileSegmentKind type)
+String toString(FileSegmentKind kind)
 {
-    return String(magic_enum::enum_name(type));
+    return String(magic_enum::enum_name(kind));
 }
 
 FileSegment::FileSegment(
@@ -46,7 +46,8 @@ FileSegment::FileSegment(
 #else
     , log(&Poco::Logger::get("FileSegment"))
 #endif
-    , segment_kind(settings.type)
+    , segment_kind(settings.kind)
+    , is_unbound(settings.unbounded)
 {
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (download_state)
@@ -294,6 +295,22 @@ void FileSegment::resetRemoteFileReader()
     remote_file_reader.reset();
 }
 
+std::unique_ptr<WriteBufferFromFile> FileSegment::detachWriter()
+{
+    std::unique_lock segment_lock(mutex);
+
+    if (!cache_writer)
+    {
+        if (detached_writer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Writer is already detached");
+
+        auto download_path = getPathInLocalCache();
+        cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
+    }
+    detached_writer = true;
+    return std::move(cache_writer);
+}
+
 void FileSegment::write(const char * from, size_t size, size_t offset)
 {
     if (!size)
@@ -336,6 +353,9 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
                     ErrorCodes::LOGICAL_ERROR,
                     "Cache writer was finalized (downloaded size: {}, state: {})",
                     current_downloaded_size, stateToString(download_state));
+
+            if (detached_writer)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer was detached");
 
             auto download_path = getPathInLocalCache();
             cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
@@ -400,37 +420,28 @@ FileSegment::State FileSegment::wait()
 
 bool FileSegment::reserve(size_t size_to_reserve)
 {
-    size_t reserved = tryReserve(size_to_reserve, true);
-    assert(reserved == 0 || reserved == size_to_reserve);
-    return reserved == size_to_reserve;
-}
-
-size_t FileSegment::tryReserve(size_t size_to_reserve, bool strict)
-{
     if (!size_to_reserve)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
 
     size_t expected_downloaded_size;
 
+    bool is_file_segment_size_exceeded;
     {
         std::unique_lock segment_lock(mutex);
+
 
         assertNotDetachedUnlocked(segment_lock);
         assertIsDownloaderUnlocked("reserve", segment_lock);
 
         expected_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
 
-        if (expected_downloaded_size + size_to_reserve > range().size())
+        is_file_segment_size_exceeded = expected_downloaded_size + size_to_reserve > range().size();
+        if (is_file_segment_size_exceeded && !is_unbound)
         {
-            if (strict)
-            {
-                throw Exception(
-                    ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                    "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
-                    size_to_reserve, range().toString(), downloaded_size);
-            }
-            /// shrink size_to_reserve to the available space in the segment
-            size_to_reserve = range().size() - expected_downloaded_size;
+            throw Exception(
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
+                size_to_reserve, range().toString(), downloaded_size);
         }
 
         chassert(reserved_size >= expected_downloaded_size);
@@ -448,17 +459,22 @@ size_t FileSegment::tryReserve(size_t size_to_reserve, bool strict)
     if (!reserved)
     {
         std::lock_guard cache_lock(cache->mutex);
-
-        size_t need_to_reserve = size_to_reserve - already_reserved_size;
-        reserved = cache->tryReserve(key(), offset(), need_to_reserve, cache_lock);
-
-        if (!reserved)
-            return 0;
-
         std::lock_guard segment_lock(mutex);
-        reserved_size += need_to_reserve;
+
+        size_to_reserve = size_to_reserve - already_reserved_size;
+
+        if (is_unbound && is_file_segment_size_exceeded)
+        {
+            segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
+        }
+
+        reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
+
+        if (reserved)
+            reserved_size += size_to_reserve;
     }
-    return size_to_reserve;
+
+    return reserved;
 }
 
 void FileSegment::setDownloadedUnlocked([[maybe_unused]] std::unique_lock<std::mutex> & segment_lock)
@@ -817,11 +833,15 @@ FileSegment::~FileSegment()
         CurrentMetrics::sub(CurrentMetrics::CacheDetachedFileSegments);
 }
 
-FileSegmentsHolder::~FileSegmentsHolder()
+void FileSegmentsHolder::reset()
 {
     /// In CacheableReadBufferFromRemoteFS file segment's downloader removes file segments from
     /// FileSegmentsHolder right after calling file_segment->complete(), so on destruction here
     /// remain only uncompleted file segments.
+
+    SCOPE_EXIT({
+        file_segments.clear();
+    });
 
     FileCache * cache = nullptr;
 
@@ -867,6 +887,11 @@ FileSegmentsHolder::~FileSegmentsHolder()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+FileSegmentsHolder::~FileSegmentsHolder()
+{
+    reset();
 }
 
 String FileSegmentsHolder::toString()

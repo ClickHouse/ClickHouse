@@ -51,16 +51,17 @@ enum class FileSegmentKind
     Temporary,
 };
 
-String toString(FileSegmentKind type);
+String toString(FileSegmentKind kind);
 
 struct CreateFileSegmentSettings
 {
-    FileSegmentKind type = FileSegmentKind::Regular;
+    FileSegmentKind kind = FileSegmentKind::Regular;
+    bool unbounded = false;
 
     CreateFileSegmentSettings() = default;
 
-    explicit CreateFileSegmentSettings(FileSegmentKind type_)
-        : type(type_)
+    explicit CreateFileSegmentSettings(FileSegmentKind kind_, bool unbounded_ = false)
+        : kind(kind_), unbounded(unbounded_)
     {}
 };
 
@@ -249,6 +250,8 @@ public:
 
     void setDownloadedSize(size_t delta);
 
+    LocalCacheWriterPtr detachWriter();
+
 private:
     size_t getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     size_t getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
@@ -300,7 +303,9 @@ private:
 
     RemoteFileReaderPtr remote_file_reader;
     LocalCacheWriterPtr cache_writer;
+    bool detached_writer = false;
 
+    /// downloaded_size should always be less or equal to reserved_size
     size_t downloaded_size = 0;
     size_t reserved_size = 0;
 
@@ -335,6 +340,9 @@ private:
 
     FileSegmentKind segment_kind;
 
+    /// Size of the segment is not known until it is downloaded and can be bigger than max_file_segment_size.
+    bool is_unbound = false;
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
@@ -346,7 +354,8 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
 
-    void reset() { file_segments.clear(); }
+    void reset();
+    bool empty() const { return file_segments.empty(); }
 
     ~FileSegmentsHolder();
 

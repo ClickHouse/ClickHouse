@@ -66,7 +66,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
                 "max_bytes_before_external_sort": "4M",
             },
         )
-    assert "Cannot reserve space in file cache" in str(exc.value)
+    assert "Failed to reserve space for the file cache" in str(exc.value)
 
     # Some data evicted from cache by temporary data
     cache_size_after_eviction = qi("SELECT sum(size) FROM system.filesystem_cache")
