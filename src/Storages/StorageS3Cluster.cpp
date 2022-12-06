@@ -19,6 +19,8 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
@@ -108,14 +110,25 @@ Pipe StorageS3Cluster::read(
     auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String { return iterator->next(); });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-    Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+    auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
 
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
     Pipes pipes;
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
+
+    ASTPtr query_to_send = interpreter.getQueryInfo().query->clone();
+
+    RestoreQualifiedNamesVisitor::Data data;
+    data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
+    data.remote_table.database = context->getCurrentDatabase();
+    data.remote_table.table = getName();
+    RestoreQualifiedNamesVisitor(data).visit(query_to_send);
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
+        /* only_replace_current_database_function_= */false,
+        /* only_replace_in_join_= */true);
+    visitor.visit(query_to_send);
 
     for (const auto & replicas : cluster->getShardsAddresses())
     {
@@ -136,7 +149,7 @@ Pipe StorageS3Cluster::read(
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 connection,
                 queryToString(query_info.original_query),
-                header,
+                interpreter.getSampleBlock(),
                 context,
                 /*throttler=*/nullptr,
                 scalars,
