@@ -15,7 +15,7 @@ namespace DB
 
 
 /* ISpacePlaceholder is a base class for all classes that need to reserve space in some storage.
- * You should resrve space with call reserveCapacity() before writing to it.
+ * You should reserve space with call reserveCapacity() before writing to it.
  * After writing you should call setUsed() to let ISpacePlaceholder know how much space was used.
  * It can be different because in some cases you don't know exact size of data you will write (because of compression, for example).
  * It's better to reserve more space in advance not to overuse space.
@@ -55,7 +55,8 @@ private:
 
     /// On each reserveImpl() call we create new FileSegmentRangeWriter that would be hold space
     /// It's required to easily release already reserved space on unsuccessful attempt
-    std::vector<std::unique_ptr<FileSegmentRangeWriter>> cache_writers;
+    using CacheWriterPtr = std::unique_ptr<FileSegmentRangeWriter>;
+    std::vector<CacheWriterPtr> cache_writers;
 };
 
 }
