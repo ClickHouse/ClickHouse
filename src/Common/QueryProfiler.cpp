@@ -1,7 +1,7 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <Interpreters/TraceCollector.h>
+#include <Common/TraceSender.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
@@ -66,7 +66,7 @@ namespace
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        TraceCollector::collect(trace_type, stack_trace, 0, nullptr);
+        TraceSender::send(trace_type, stack_trace, {});
         ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;
