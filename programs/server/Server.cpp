@@ -978,7 +978,7 @@ try
         size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
         global_context->setTemporaryStoragePolicy(temporary_policy, max_size);
     }
-    else if (auto temporary_cache = config().getString("tmp_cache", ""); !temporary_cache.empty())
+    else if (auto temporary_cache = config().getString("temporary_data_in_cache", ""); !temporary_cache.empty())
     {
         size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
         global_context->setTemporaryStorageInCache(temporary_cache, max_size);

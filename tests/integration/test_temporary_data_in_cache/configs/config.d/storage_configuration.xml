@@ -35,5 +35,5 @@
         </policies>
     </storage_configuration>
 
-    <tmp_cache>tiny_local_cache</tmp_cache>
+    <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
 </clickhouse>
