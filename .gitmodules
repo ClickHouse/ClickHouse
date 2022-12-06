@@ -287,3 +287,7 @@
 [submodule "contrib/xxHash"]
 	path = contrib/xxHash
 	url = https://github.com/Cyan4973/xxHash.git
+[submodule "contrib/openssl"]
+	path = contrib/openssl
+	url = https://github.com/openssl/openssl
+	branch = openssl-3.0
