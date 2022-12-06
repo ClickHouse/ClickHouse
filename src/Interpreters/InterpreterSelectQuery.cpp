@@ -2917,11 +2917,11 @@ void InterpreterSelectQuery::ignoreWithTotals()
 bool InterpreterSelectQuery::forceSelectFinalOnSelectQuery(ASTSelectQuery & query)
 {
     // query.tables() is required because not all queries have tables in it, it could be a function.
-    auto isFinalSupported = storage && storage->supportsFinal() && query.tables();
-    auto isForceSelectFinalSettingOn = context->getSettingsRef().force_select_final;
-    auto isQueryAlreadyFinal = query.final();
+    auto is_force_select_final_setting_on = context->getSettingsRef().force_select_final;
+    auto is_final_supported = storage && storage->supportsFinal() && !storage->isRemote() && query.tables();
+    auto is_query_already_final = query.final();
 
-    return isForceSelectFinalSettingOn && !isQueryAlreadyFinal && isFinalSupported;
+    return is_force_select_final_setting_on && !is_query_already_final && is_final_supported;
 }
 
 void InterpreterSelectQuery::initSettings()
