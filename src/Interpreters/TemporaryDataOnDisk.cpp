@@ -7,7 +7,8 @@
 #include <Formats/NativeWriter.h>
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
-#include <Disks/TemporaryFileInPath.h>
+#include <Disks/SingleDiskVolume.h>
+#include <Disks/DiskLocal.h>
 
 #include <Common/logger_useful.h>
 
@@ -20,6 +21,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
 }
+
+static VolumePtr createLocalSingleDiskVolume(const std::string & path)
+{
+    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0);
+    VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
+    return volume;
+}
+
+TemporaryDataOnDiskScope::TemporaryDataOnDiskScope(VolumePtr volume_, FileCache * cache_, size_t limit_)
+    : volume(volume_), cache(cache_), limit(limit_)
+{
+    if (!volume)
+    {
+        if (!cache)
+            throw Exception("Volume and cache are not specified", ErrorCodes::LOGICAL_ERROR);
+
+        volume = createLocalSingleDiskVolume(cache->getBasePath());
+    }
+}
+
+TemporaryDataOnDiskScope::TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, size_t limit_)
+    : parent(parent_), volume(parent->volume), cache(parent->cache), limit(limit_)
+{}
 
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
@@ -52,12 +76,33 @@ VolumePtr TemporaryDataOnDiskScope::getVolume() const
 
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
-    TemporaryFileStreamPtr tmp_stream;
-    if (cache)
-        tmp_stream = TemporaryFileStream::create(cache, header, max_file_size, this);
-    else
-        tmp_stream = TemporaryFileStream::create(volume, header, max_file_size, this);
+    if (!volume)
+        throw Exception("TemporaryDataOnDiskScope has no volume", ErrorCodes::LOGICAL_ERROR);
 
+    DiskPtr disk;
+    /// If cache is not passed reserve space directly in disk
+    /// Otherwise use FileCachePlaceholder that will reserve space in cache on top of this disk
+    if (max_file_size > 0 && !cache)
+    {
+        auto reservation = volume->reserve(max_file_size);
+        if (!reservation)
+            throw Exception("Not enough space on temporary disk", ErrorCodes::NOT_ENOUGH_SPACE);
+        disk = reservation->getDisk();
+    }
+    else
+    {
+        disk = volume->getDisk();
+    }
+
+    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, current_metric_scope);
+    std::unique_ptr<ISpacePlaceholder> cache_placeholder = nullptr;
+    if (cache)
+    {
+        cache_placeholder = std::make_unique<FileCachePlaceholder>(cache, tmp_file->getPath());
+        cache_placeholder->reserveCapacity(max_file_size);
+    }
+
+    auto tmp_stream = std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, std::move(cache_placeholder), this);
     std::lock_guard lock(mutex);
     return *streams.emplace_back(std::move(tmp_stream));
 }
@@ -153,38 +198,6 @@ struct TemporaryFileStream::InputReader
     CompressedReadBuffer in_compressed_buf;
     NativeReader in_reader;
 };
-
-TemporaryFileStreamPtr TemporaryFileStream::create(const VolumePtr & volume, const Block & header, size_t max_file_size, TemporaryDataOnDisk * parent_)
-{
-    if (!volume)
-        throw Exception("TemporaryDataOnDiskScope has no volume", ErrorCodes::LOGICAL_ERROR);
-
-    DiskPtr disk;
-    if (max_file_size > 0)
-    {
-        auto reservation = volume->reserve(max_file_size);
-        if (!reservation)
-            throw Exception("Not enough space on temporary disk", ErrorCodes::NOT_ENOUGH_SPACE);
-        disk = reservation->getDisk();
-    }
-    else
-    {
-        disk = volume->getDisk();
-    }
-
-    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, parent_->getMetricScope());
-    return std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, /* cache_placeholder */ nullptr, /* parent */ parent_);
-}
-
-TemporaryFileStreamPtr TemporaryFileStream::create(FileCache * cache, const Block & header, size_t max_file_size, TemporaryDataOnDisk * parent_)
-{
-    auto tmp_file = std::make_unique<TemporaryFileInPath>(fs::path(cache->getBasePath()) / "tmp");
-
-    auto cache_placeholder = std::make_unique<FileCachePlaceholder>(cache, tmp_file->getPath());
-    cache_placeholder->reserveCapacity(max_file_size);
-
-    return std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, std::move(cache_placeholder), parent_);
-}
 
 TemporaryFileStream::TemporaryFileStream(
     TemporaryFileHolder file_,
