@@ -246,11 +246,7 @@ MergeTreeData::MergeTreeData(
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (!attach)
-    {
-        const auto & changes = metadata_.settings_changes->as<const ASTSetQuery &>().changes;
-        getContext()->checkMergeTreeSettingsConstraints(getContext()->getMergeTreeSettings(), changes);
         settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
-    }
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
@@ -2669,7 +2665,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        getContext()->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
+        getContext()->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes); // TODO(serxa): use LocalContext() instead
 
         for (const auto & changed_setting : new_changes)
         {
@@ -2828,7 +2824,7 @@ void MergeTreeData::changeSettings(
         bool has_storage_policy_changed = false;
 
         const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
-        getContext()->checkMergeTreeSettingsConstraints(*getSettings(), new_changes);
+        getContext()->checkMergeTreeSettingsConstraints(*getSettings(), new_changes); // TODO(serxa): use LocalContext() instead
 
         for (const auto & change : new_changes)
         {

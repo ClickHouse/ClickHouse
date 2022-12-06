@@ -16,6 +16,7 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
+#include <Access/resolveSetting.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
@@ -37,11 +38,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
-}
-
-namespace
-{
-    constexpr std::string_view MERGE_TREE_SETTINGS_PREFIX = "merge_tree_";
 }
 
 namespace
@@ -108,9 +104,7 @@ public:
 
     bool isSettingNameAllowed(std::string_view setting_name) const
     {
-        if (Settings::hasBuiltin(setting_name))
-            return true;
-        if (setting_name.starts_with(MERGE_TREE_SETTINGS_PREFIX) && MergeTreeSettings::hasBuiltin(setting_name.substr(MERGE_TREE_SETTINGS_PREFIX.size())))
+        if (settingIsBuiltin(setting_name))
             return true;
 
         std::lock_guard lock{mutex};

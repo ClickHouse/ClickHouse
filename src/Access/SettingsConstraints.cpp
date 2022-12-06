@@ -1,5 +1,6 @@
 #include <string_view>
 #include <Access/SettingsConstraints.h>
+#include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -19,12 +20,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-namespace
-{
-    constexpr std::string_view MERGE_TREE_SETTINGS_PREFIX = "merge_tree_";
-}
-
-
 SettingsConstraints::SettingsConstraints(const AccessControl & access_control_) : access_control(&access_control_)
 {
 }
@@ -41,30 +36,28 @@ void SettingsConstraints::clear()
     constraints.clear();
 }
 
-void SettingsConstraints::set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability)
+void SettingsConstraints::set(const String & full_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability)
 {
-    auto & constraint = constraints[setting_name];
-    if (setting_name.starts_with(MERGE_TREE_SETTINGS_PREFIX))
-    {
-        std::string_view name = static_cast<std::string_view>(setting_name).substr(MERGE_TREE_SETTINGS_PREFIX.size());
-        if (!min_value.isNull())
-            constraint.min_value = MergeTreeSettings::castValueUtil(name, min_value);
-        if (!max_value.isNull())
-            constraint.max_value = MergeTreeSettings::castValueUtil(name, max_value);
-    }
-    else
-    {
-        if (!min_value.isNull())
-            constraint.min_value = Settings::castValueUtil(setting_name, min_value);
-        if (!max_value.isNull())
-            constraint.max_value = Settings::castValueUtil(setting_name, max_value);
-    }
+    auto & constraint = constraints[full_name];
+    if (!min_value.isNull())
+        constraint.min_value = settingCastValueUtil(full_name, min_value);
+    if (!max_value.isNull())
+        constraint.max_value = settingCastValueUtil(full_name, max_value);
     constraint.writability = writability;
 }
 
-void SettingsConstraints::get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const
+void SettingsConstraints::get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const
 {
-    auto checker = getChecker(current_settings, setting_name);
+    // NOTE: for `Settings` short name is equal to full name
+    auto checker = getChecker(current_settings, short_name);
+    min_value = checker.constraint.min_value;
+    max_value = checker.constraint.max_value;
+    writability = checker.constraint.writability;
+}
+
+void SettingsConstraints::get(const MergeTreeSettings &, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const
+{
+    auto checker = getMergeTreeChecker(short_name);
     min_value = checker.constraint.min_value;
     max_value = checker.constraint.max_value;
     writability = checker.constraint.writability;
@@ -201,19 +194,10 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
-    String prefixed_name(MERGE_TREE_SETTINGS_PREFIX);
-    prefixed_name += change.name; // Just because you cannot concatenate `std::string_view` and `std::string` using operator+ in C++20 yet
-
-    if (reaction == THROW_ON_VIOLATION)
-        access_control->checkSettingNameIsAllowed(prefixed_name);
-    else if (!access_control->isSettingNameAllowed(prefixed_name))
-        return false;
-
     Field new_value;
     if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
-
-    return getMergeTreeChecker(prefixed_name).check(change, new_value, reaction);
+    return getMergeTreeChecker(change.name).check(change, new_value, reaction);
 }
 
 bool SettingsConstraints::Checker::check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const
@@ -224,16 +208,13 @@ bool SettingsConstraints::Checker::check(SettingChange & change, const Field & n
     {
         if (reaction == THROW_ON_VIOLATION)
             return applyVisitor(FieldVisitorAccurateLess{}, left, right);
-        else
+        try
         {
-            try
-            {
-                return applyVisitor(FieldVisitorAccurateLess{}, left, right);
-            }
-            catch (...)
-            {
-                return true;
-            }
+            return applyVisitor(FieldVisitorAccurateLess{}, left, right);
+        }
+        catch (...)
+        {
+            return true;
         }
     };
 
@@ -319,9 +300,12 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     return Checker(it->second);
 }
 
-SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view setting_name) const
+SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const
 {
-    auto it = constraints.find(setting_name);
+    String full_name(MERGE_TREE_SETTINGS_PREFIX);
+    full_name += short_name; // Just because you cannot concatenate `std::string_view` and `std::string` using operator+ in C++20 yet
+
+    auto it = constraints.find(full_name);
     if (it == constraints.end())
         return Checker(); // Allowed
     return Checker(it->second);
