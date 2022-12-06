@@ -1118,6 +1118,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
+                    SCOPE_EXIT_SAFE(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
+                    );
                     if (thread_group)
                         CurrentThread::attachToIfDetached(thread_group);
 

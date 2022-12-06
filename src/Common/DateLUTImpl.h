@@ -1204,6 +1204,11 @@ public:
         return res;
     }
 
+    template <typename DateOrTime>
+    inline DateTimeComponents toDateTimeComponents(DateOrTime v) const
+    {
+        return toDateTimeComponents(lut[toLUTIndex(v)].date);
+    }
 
     inline UInt64 toNumYYYYMMDDhhmmss(Time t) const
     {
