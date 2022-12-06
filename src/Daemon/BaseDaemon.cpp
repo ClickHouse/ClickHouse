@@ -30,6 +30,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
+#include <Poco/Pipe.h>
 
 #include <Common/ErrorHandlers.h>
 #include <base/argsToConfig.h>
@@ -998,6 +999,10 @@ void BaseDaemon::setupWatchdog()
 
     while (true)
     {
+        /// This pipe is used to synchronize notifications to the service manager from the child process
+        /// to be sent after the notifications from the parent process.
+        Poco::Pipe notify_sync;
+
         static pid_t pid = -1;
         pid = fork();
 
@@ -1011,6 +1016,15 @@ void BaseDaemon::setupWatchdog()
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
                 logger().warning("Cannot do prctl to ask termination with parent.");
 #endif
+            {
+                notify_sync.close(Poco::Pipe::CLOSE_WRITE);
+                /// Read from the pipe will block until the pipe is closed.
+                /// This way we synchronize with the parent process.
+                char buf[1];
+                if (0 != notify_sync.readBytes(buf, sizeof(buf)))
+                    throw Poco::Exception("Unexpected result while waiting for watchdog synchronization pipe to close.");
+            }
+
             return;
         }
 
@@ -1018,10 +1032,14 @@ void BaseDaemon::setupWatchdog()
         /// Tell the service manager the actual main process is not this one but the forked process
         /// because it is going to be serving the requests and it is going to send "READY=1" notification
         /// when it is fully started.
-        /// NOTE: we do this right after fork() to minimize chances that the child process finishes initialization
-        /// and sends "READY=1" before we send "MAINPID=..."
+        /// NOTE: we do this right after fork() and then notify the child process to "unblock" so that it finishes initialization
+        /// and sends "READY=1" after we have sent "MAINPID=..."
         systemdNotify(fmt::format("MAINPID={}\n", pid));
 #endif
+
+        /// Close the pipe after notifying the service manager.
+        /// The child process is waiting for the pipe to be closed.
+        notify_sync.close();
 
         /// Change short thread name and process name.
         setThreadName("clckhouse-watch");   /// 15 characters
