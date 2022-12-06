@@ -647,6 +647,11 @@ struct IdentifierResolveScope
             subquery_depth = parent_scope->subquery_depth;
             context = parent_scope->context;
         }
+
+        if (auto * union_node = scope_node->as<UnionNode>())
+            context = union_node->getContext();
+        else if (auto * query_node = scope_node->as<QueryNode>())
+            context = query_node->getContext();
     }
 
     QueryTreeNodePtr scope_node;
@@ -974,7 +979,9 @@ public:
     void resolve(QueryTreeNodePtr node, const QueryTreeNodePtr & table_expression, ContextPtr context)
     {
         IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
-        scope.context = context;
+
+        if (!scope.context)
+            scope.context = context;
 
         auto node_type = node->getNodeType();
 
@@ -4042,7 +4049,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto constant_data_type = std::make_shared<DataTypeUInt64>();
 
-        auto in_subquery = std::make_shared<QueryNode>();
+        auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
         in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
         in_subquery->getJoinTree() = exists_subquery_argument;
         in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
@@ -4095,7 +4102,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 projection_columns.emplace_back(column.name, column.type);
             }
 
-            auto in_second_argument_query_node = std::make_shared<QueryNode>();
+            auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(scope.context));
             in_second_argument_query_node->setIsSubquery(true);
             in_second_argument_query_node->getProjectionNode() = std::move(column_nodes_to_select);
             in_second_argument_query_node->getJoinTree() = std::move(in_second_argument);
@@ -5756,14 +5763,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             max_subquery_depth);
 
     auto & query_node_typed = query_node->as<QueryNode &>();
-
-    if (query_node_typed.hasSettingsChanges())
-    {
-        auto updated_scope_context = Context::createCopy(scope.context);
-        updated_scope_context->applySettingsChanges(query_node_typed.getSettingsChanges());
-        scope.context = std::move(updated_scope_context);
-    }
-
     const auto & settings = scope.context->getSettingsRef();
 
     if (settings.group_by_use_nulls)
