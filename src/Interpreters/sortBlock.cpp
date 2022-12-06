@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Functions/FunctionHelpers.h>
+#include "Columns/IColumn.h"
 
 
 namespace DB
@@ -115,7 +116,7 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
     return result;
 }
 
-void getBlockSortPermutationImpl(const Block & block, const SortDescription & description, IColumn::PermutationSortStability stability, UInt64 limit, IColumn::Permutation & permutation)
+void getBlockSortPermutationImpl(const Block & block, const SortDescription & description, IColumn::PermutationSortStability stability, UInt64 limit, IColumn::Permutation & permutation, EqualRanges ranges = {})
 {
     if (!block)
         return;
@@ -160,8 +161,9 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
         if (limit >= size)
             limit = 0;
 
-        EqualRanges ranges;
-        ranges.emplace_back(0, permutation.size());
+        // EqualRanges ranges;
+        if (ranges.empty())
+            ranges.emplace_back(0, permutation.size());
 
         for (const auto & column_with_sort_description : columns_with_sort_descriptions)
         {
@@ -194,10 +196,10 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
 
 }
 
-void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit, EqualRanges ranges)
 {
     IColumn::Permutation permutation;
-    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Unstable, limit, permutation);
+    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Unstable, limit, permutation, std::move(ranges));
 
     if (permutation.empty())
         return;

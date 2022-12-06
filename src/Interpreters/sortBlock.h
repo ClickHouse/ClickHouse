@@ -2,13 +2,14 @@
 
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include "Columns/IColumn.h"
 
 
 namespace DB
 {
 
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
-void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0);
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0, EqualRanges ranges = {});
 
 /** Used only in StorageMergeTree to sort the data with INSERT.
   * Sorting is stable. This is important for keeping the order of rows in the CollapsingMergeTree engine
