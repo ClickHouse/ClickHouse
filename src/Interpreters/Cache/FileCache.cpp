@@ -556,6 +556,9 @@ FileSegmentPtr FileCache::createFileSegmentForDownload(
     assertCacheCorrectness(key, cache_lock);
 #endif
 
+    if (size > max_file_segment_size)
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Requested size exceeds max file segment size");
+
     auto * cell = getCell(key, offset, cache_lock);
     if (cell)
         throw Exception(
