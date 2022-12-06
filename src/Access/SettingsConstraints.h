@@ -66,8 +66,9 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability);
-    void get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
+    void set(const String & full_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability);
+    void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
+    void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -76,7 +77,7 @@ public:
     void check(const Settings & current_settings, const SettingsChanges & changes) const;
     void check(const Settings & current_settings, SettingsChanges & changes) const;
 
-    /// Checks whether `change` with added "merge_tree_" name prefix violates these constraints and throws an exception if so.
+    /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
