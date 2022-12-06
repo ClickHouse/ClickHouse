@@ -1049,7 +1049,10 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
                     if (offset_with_suffix.substr(delim_pos+1) == "persistent")
                         segment_kind = FileSegmentKind::Persistent;
                     if (offset_with_suffix.substr(delim_pos+1) == "temporary")
-                        segment_kind = FileSegmentKind::Temporary;
+                    {
+                        fs::remove(offset_it->path());
+                        continue;
+                    }
                 }
 
                 if (!parsed)

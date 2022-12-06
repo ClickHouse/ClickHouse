@@ -45,7 +45,7 @@ enum class FileSegmentKind
      */
     Persistent,
 
-    /* `Temporary` file segment is removed right after relesing.
+    /* `Temporary` file segment is removed right after releasing.
      * Also corresponding files are removed during cache loading (if any).
      */
     Temporary,
