@@ -297,3 +297,6 @@
 [submodule "contrib/libdivide"]
 	path = contrib/libdivide
 	url = https://github.com/ridiculousfish/libdivide.git
+[submodule "contrib/crc32-s390x"]
+	path = contrib/crc32-s390x
+	url = https://github.com/linux-on-ibm-z/crc32-s390x.git

@@ -171,6 +171,9 @@ add_contrib (annoy-cmake annoy)
 add_contrib (xxHash-cmake xxHash)
 
 add_contrib (google-benchmark-cmake google-benchmark)
+if (ARCH_S390X)
+    add_contrib(crc32-s390x-cmake crc32-s390x)
+endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
