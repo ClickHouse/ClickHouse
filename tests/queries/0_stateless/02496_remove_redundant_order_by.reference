@@ -58,15 +58,6 @@ Header: number UInt64
             Header: number_1 UInt64
               ReadFromStorage (SystemNumbers)
               Header: number UInt64
--- GROUP BY removes ORDER BY in _all_ subqueries
-Expression ((Project names + Projection))
-Header: number UInt64
-  Aggregating
-  Header: number_0 UInt64
-    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))
-    Header: number_0 UInt64
-      ReadFromStorage (SystemNumbers)
-      Header: number UInt64
 -- CROSS JOIN with subqueries, nor ORDER BY nor GROUP BY in main query -> only ORDER BY clauses in most inner subqueries will be removed
 Expression ((Project names + (Projection + DROP unused columns after JOIN)))
 Header: t1.number UInt64
@@ -111,3 +102,76 @@ Header: t1.number UInt64
         Header: t2.number_1 UInt64
           ReadFromStorage (SystemNumbers)
           Header: number UInt64
+-- GROUP BY with aggregation function which does NOT depend on order -> eliminate ORDER BY(s) in _all_ subqueries
+Expression ((Project names + Projection))
+Header: sum(number) UInt64
+  Aggregating
+  Header: number_0 UInt64
+          sum(number_0) UInt64
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))
+    Header: number_0 UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64
+-- GROUP BY with aggregation function which depends on order -> keep ORDER BY in first subquery, and eliminate in second subquery
+Expression ((Project names + Projection))
+Header: any(number) UInt64
+  Aggregating
+  Header: number_0 UInt64
+          any(number_0) UInt64
+    Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+    Header: number_0 UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number_1 UInt64
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+        Header: number_1 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+-- check that optimization is applied recursively to subqueries as well
+-- GROUP BY with aggregation function which does NOT depend on order -> eliminate ORDER BY in most inner subquery here
+Expression (Project names)
+Header: a UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: a_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Header: a_0 UInt64
+      Aggregating
+      Header: number_1 UInt64
+              sum(number_1) UInt64
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        Header: number_1 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+-- GROUP BY with aggregation function which depends on order -> ORDER BY in subquery is kept due to the aggregation function
+Expression (Project names)
+Header: a UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: a_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Header: a_0 UInt64
+      Aggregating
+      Header: number_1 UInt64
+              any(number_1) UInt64
+        Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+        Header: number_1 UInt64
+          Sorting (Sorting for ORDER BY)
+          Header: number_2 UInt64
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            Header: number_2 UInt64
+              ReadFromStorage (SystemNumbers)
+              Header: number UInt64
+-- Check that optimization works for subqueries as well, - main query have neither ORDER BY nor GROUP BY
+Expression ((Project names + Projection))
+Header: a UInt64
+  Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
+  Header: a_0 UInt64
+    Aggregating
+    Header: number_1 UInt64
+            any(number_1) UInt64
+      Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+      Header: number_1 UInt64
+        Sorting (Sorting for ORDER BY)
+        Header: number_2 UInt64
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+          Header: number_2 UInt64
+            ReadFromStorage (SystemNumbers)
+            Header: number UInt64

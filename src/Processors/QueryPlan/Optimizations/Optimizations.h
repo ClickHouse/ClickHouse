@@ -59,7 +59,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 size_t tryDistinctReadInOrder(QueryPlan::Node * node);
 
 /// Remove redundant ORDER BY clauses in subqueries
-void tryRemoveRedundantOrderBy(QueryPlan::Node * parent_node);
+void tryRemoveRedundantOrderBy(QueryPlan::Node * root);
 
 /// Put some steps under union, so that plan optimisation could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
