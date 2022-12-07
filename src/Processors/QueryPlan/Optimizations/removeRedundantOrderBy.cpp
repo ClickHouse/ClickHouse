@@ -1,3 +1,4 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -25,7 +26,6 @@ void printStepName(const char * prefix, const QueryPlan::Node * node)
 
 void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 {
-    // do top down find first order by or group by
     struct Frame
     {
         QueryPlan::Node * node = nullptr;
@@ -36,7 +36,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
     std::vector<Frame> stack;
     stack.push_back({.node = root});
 
-    std::vector<IQueryPlanStep *> steps_affect_order;
+    std::vector<QueryPlan::Node *> nodes_affect_order;
 
     while (!stack.empty())
     {
@@ -53,25 +53,35 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
             printStepName("visit", current_node);
             /// if there is parent node which can affect order and current step is sorting
             /// then check if we can remove the sorting step (and corresponding expression step)
-            if (!steps_affect_order.empty() && typeid_cast<SortingStep *>(current_step))
+            if (!nodes_affect_order.empty() && typeid_cast<SortingStep *>(current_step))
             {
                 auto try_to_remove_sorting_step = [&]() -> bool
                 {
+                    QueryPlan::Node * node_affect_order = nodes_affect_order.back();
+                    IQueryPlanStep * step_affect_order = node_affect_order->step.get();
                     /// if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
                     /// if ORDER BY is with FILL WITH, it is non-removable
-                    if (typeid_cast<LimitStep *>(steps_affect_order.back()) || typeid_cast<LimitByStep *>(steps_affect_order.back())
-                        || typeid_cast<FillingStep *>(steps_affect_order.back()))
+                    if (typeid_cast<LimitStep *>(step_affect_order) || typeid_cast<LimitByStep *>(step_affect_order)
+                        || typeid_cast<FillingStep *>(step_affect_order))
                         return false;
 
                     bool remove_sorting = false;
+                    /// TODO: (0) check stateful functions
                     /// (1) aggregation
-                    if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(steps_affect_order.back()); parent_aggr)
+                    if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(step_affect_order); parent_aggr)
                     {
-                        /// TODO: check if it contains aggregation functions which depends on order
+                        auto const & aggregates = parent_aggr->getParams().aggregates;
+                        for (const auto & aggregate : aggregates)
+                        {
+                            auto aggregate_function_properties
+                                = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName());
+                            if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
+                                return false;
+                        }
                         remove_sorting = true;
                     }
                     /// (2) sorting
-                    else if (SortingStep * parent_sorting = typeid_cast<SortingStep *>(steps_affect_order.back()); parent_sorting)
+                    else if (typeid_cast<SortingStep *>(step_affect_order))
                     {
                         remove_sorting = true;
                     }
@@ -109,7 +119,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
                 || typeid_cast<AggregatingStep *>(current_step)) /// (4) aggregation change order
             {
                 printStepName("steps_affect_order/push", current_node);
-                steps_affect_order.push_back(current_step);
+                nodes_affect_order.push_back(current_node);
             }
         }
 
@@ -124,10 +134,12 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
         }
 
         /// bottom-up visit
-        if (!steps_affect_order.empty() && steps_affect_order.back() == current_node->step.get())
+        /// we come here when all children of current_node are visited,
+        /// so it's a node which affect order, remove it from the corresponding stack
+        if (!nodes_affect_order.empty() && nodes_affect_order.back() == current_node)
         {
-            printStepName("steps_affect_order/pop", current_node);
-            steps_affect_order.pop_back();
+            printStepName("node_affect_order/pop", current_node);
+            nodes_affect_order.pop_back();
         }
 
         printStepName("pop", current_node);
