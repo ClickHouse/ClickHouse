@@ -59,17 +59,15 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         {
             if constexpr (async_insert)
             {
-                for (size_t i = 0; i < deduplication_path.size(); i++)
+                auto failed_idx = zkutil::getFailedOpIndex(Coordination::Error::ZNODEEXISTS, responses);
+                if (failed_idx < deduplication_path.size() * 2)
                 {
-                    if (responses[i*2]->error == Coordination::Error::ZNODEEXISTS)
-                    {
-                        const String & failed_op_path = deduplication_path[i];
-                        LOG_DEBUG(
-                            &Poco::Logger::get("createEphemeralLockInZooKeeper"),
-                            "Deduplication path already exists: deduplication_path={}",
-                            failed_op_path);
-                        return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
-                    }
+                    const String & failed_op_path = deduplication_path[failed_idx / 2];
+                    LOG_DEBUG(
+                        &Poco::Logger::get("createEphemeralLockInZooKeeper"),
+                        "Deduplication path already exists: deduplication_path={}",
+                        failed_op_path);
+                    return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
                 }
             }
             else if (responses[0]->error == Coordination::Error::ZNODEEXISTS)

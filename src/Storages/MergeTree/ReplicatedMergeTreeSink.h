@@ -29,10 +29,10 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 /// identify different async inserts inside the same part. It will remove the duplicate inserts
 /// when it encounters lock and retries.
 template<bool async_insert>
-class ReplicatedMergeTreeSink : public SinkToStorage
+class ReplicatedMergeTreeSinkImpl : public SinkToStorage
 {
 public:
-    ReplicatedMergeTreeSink(
+    ReplicatedMergeTreeSinkImpl(
         StorageReplicatedMergeTree & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         size_t quorum_,
@@ -46,7 +46,7 @@ public:
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false);
 
-    ~ReplicatedMergeTreeSink() override;
+    ~ReplicatedMergeTreeSinkImpl() override;
 
     void onStart() override;
     void consume(Chunk chunk) override;
@@ -133,5 +133,8 @@ private:
 
     void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 };
+
+using ReplicatedMergeTreeSinkWithAsyncDeduplicate = ReplicatedMergeTreeSinkImpl<true>;
+using ReplicatedMergeTreeSink = ReplicatedMergeTreeSinkImpl<false>;
 
 }
