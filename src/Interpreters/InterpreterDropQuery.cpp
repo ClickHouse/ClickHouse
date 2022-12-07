@@ -7,12 +7,13 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
@@ -120,6 +121,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
                                              : DatabaseCatalog::instance().getDatabaseAndTable(table_id, context_);
 
+    checkStorageSupportsTransactionsIfNeeded(table, context_);
+
     if (database && table)
     {
         auto & ast_drop_query = query.as<ASTDropQuery &>();
@@ -185,8 +188,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             if (query.permanently)
             {
                 /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
-                DatabaseCatalog::instance().tryRemoveLoadingDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
-                                                                         is_drop_or_detach_database);
+                DatabaseCatalog::instance().removeDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
+                                                               is_drop_or_detach_database);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
             }
@@ -207,18 +210,15 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             table->checkTableCanBeDropped();
 
-            TableExclusiveLockHolder table_lock;
-            /// We don't need this lock for ReplicatedMergeTree
-            if (!table->supportsReplication())
-            {
-                /// And for simple MergeTree we can stop merges before acquiring the lock
-                auto merges_blocker = table->getActionLock(ActionLocks::PartsMerge);
-                auto table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
-            }
+            TableExclusiveLockHolder table_excl_lock;
+            /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
+            /// For the rest of tables types exclusive lock is needed
+            if (!std::dynamic_pointer_cast<MergeTreeData>(table))
+                table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
-            table->truncate(query_ptr, metadata_snapshot, context_, table_lock);
+            table->truncate(query_ptr, metadata_snapshot, context_, table_excl_lock);
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -233,14 +233,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             else
                 table->checkTableCanBeDropped();
 
+            /// Check dependencies before shutting table down
+            if (context_->getSettingsRef().check_table_dependencies)
+                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, is_drop_or_detach_database);
+
             table->flushAndShutdown();
 
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
 
-            DatabaseCatalog::instance().tryRemoveLoadingDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
-                                                                     is_drop_or_detach_database);
+            DatabaseCatalog::instance().removeDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
+                                                           is_drop_or_detach_database);
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to drop mmapio cache when dropping table from Ordinary database
@@ -458,6 +462,18 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
         drop_interpreter.execute();
     }
+}
+
+bool InterpreterDropQuery::supportsTransactions() const
+{
+    /// Enable only for truncate table with MergeTreeData engine
+
+    auto & drop = query_ptr->as<ASTDropQuery &>();
+
+    return drop.cluster.empty()
+            && !drop.temporary
+            && drop.kind == ASTDropQuery::Kind::Truncate
+            && drop.table;
 }
 
 }

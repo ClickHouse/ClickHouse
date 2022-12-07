@@ -296,7 +296,14 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ## javaHash
 
-Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
+Calculates JavaHash from a [string](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452), 
+[Byte](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Byte.java#l405), 
+[Short](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Short.java#l410), 
+[Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959), 
+[Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060). 
+This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
+
+Note that Java only support calculating signed integers hash, so if you want to calculate unsigned integers hash you must cast it to proper signed ClickHouse types.
 
 **Syntax**
 
@@ -309,6 +316,20 @@ SELECT javaHash('')
 A `Int32` data type hash value.
 
 **Example**
+
+Query:
+
+```sql
+SELECT javaHash(toInt32(123));
+```
+
+Result:
+
+```response
+┌─javaHash(toInt32(123))─┐
+│               123      │
+└────────────────────────┘
+```
 
 Query:
 

@@ -8,7 +8,7 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/config.h>
+#include "config.h"
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <IO/ReadHelpers.h>
@@ -236,7 +236,7 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
 
     auto server = HTTPServer(
-        context,
+        std::make_shared<HTTPContext>(context),
         getHandlerFactoryPtr(context),
         server_pool,
         socket,

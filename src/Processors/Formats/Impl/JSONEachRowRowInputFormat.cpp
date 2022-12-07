@@ -37,25 +37,25 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     Params params_,
     const FormatSettings & format_settings_,
     bool yield_strings_)
-    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns()), yield_strings(yield_strings_)
+    : IRowInputFormat(header_, in_, std::move(params_))
+    , format_settings(format_settings_)
+    , prev_positions(header_.columns())
+    , yield_strings(yield_strings_)
 {
-    size_t num_columns = getPort().getHeader().columns();
-    for (size_t i = 0; i < num_columns; ++i)
+    name_map = getPort().getHeader().getNamesToIndexesMap();
+    if (format_settings_.import_nested_json)
     {
-        const String & column_name = columnName(i);
-        name_map[column_name] = i;        /// NOTE You could place names more cache-locally.
-        if (format_settings_.import_nested_json)
+        for (size_t i = 0; i != header_.columns(); ++i)
         {
-            const auto split = Nested::splitName(column_name);
+            const StringRef column_name = header_.getByPosition(i).name;
+            const auto split = Nested::splitName(column_name.toView());
             if (!split.second.empty())
             {
-                const StringRef table_name(column_name.data(), split.first.size());
+                const StringRef table_name(column_name.data, split.first.size());
                 name_map[table_name] = NESTED_FIELD;
             }
         }
     }
-
-    prev_positions.resize(num_columns);
 }
 
 const String & JSONEachRowRowInputFormat::columnName(size_t i) const
@@ -117,14 +117,6 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     return current_column_name;
 }
 
-
-static inline void skipColonDelimeter(ReadBuffer & istr)
-{
-    skipWhitespaceIfAny(istr);
-    assertChar(':', istr);
-    skipWhitespaceIfAny(istr);
-}
-
 void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 {
     if (!format_settings.skip_unknown_fields)
@@ -157,10 +149,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     }
 
     if (key_index > 0)
-    {
-        assertChar(',', *in);
-        skipWhitespaceIfAny(*in);
-    }
+        JSONUtils::skipComma(*in);
     return true;
 }
 
@@ -182,7 +171,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             current_column_name.assign(name_ref.data, name_ref.size);
             name_ref = StringRef(current_column_name);
 
-            skipColonDelimeter(*in);
+            JSONUtils::skipColon(*in);
 
             if (column_index == UNKNOWN_FIELD)
                 skipUnknownField(name_ref);
@@ -193,7 +182,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
         }
         else
         {
-            skipColonDelimeter(*in);
+            JSONUtils::skipColon(*in);
             readField(column_index, columns);
         }
     }
@@ -215,32 +204,8 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
     skipWhitespaceIfAny(*in);
 
-    /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
-    /// The reason is that if we want an exact number of rows read with LIMIT x
-    /// from a streaming table engine with text data format, like File or Kafka
-    /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
-
-    /// Semicolon is added for convenience as it could be used at end of INSERT query.
     bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
-    if (!in->eof())
-    {
-        /// There may be optional ',' (but not before the first row)
-        if (!is_first_row && *in->position() == ',')
-            ++in->position();
-        else if (!data_in_square_brackets && *in->position() == ';')
-        {
-            /// ';' means the end of query (but it cannot be before ']')
-            return allow_new_rows = false;
-        }
-        else if (data_in_square_brackets && *in->position() == ']')
-        {
-            /// ']' means the end of query
-            return allow_new_rows = false;
-        }
-    }
-
-    skipWhitespaceIfAny(*in);
-    if (in->eof())
+    if (checkEndOfData(is_first_row))
         return false;
 
     size_t num_columns = columns.size();
@@ -249,6 +214,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     seen_columns.assign(num_columns, false);
 
     nested_prefix_length = 0;
+    readRowStart(columns);
     readJSONObject(columns);
 
     const auto & header = getPort().getHeader();
@@ -265,6 +231,37 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         ext.read_columns.assign(read_columns.size(), true);
 
     return true;
+}
+
+bool JSONEachRowRowInputFormat::checkEndOfData(bool is_first_row)
+{
+    /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
+    /// The reason is that if we want an exact number of rows read with LIMIT x
+    /// from a streaming table engine with text data format, like File or Kafka
+    /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
+
+    /// Semicolon is added for convenience as it could be used at end of INSERT query.
+    if (!in->eof())
+    {
+        /// There may be optional ',' (but not before the first row)
+        if (!is_first_row && *in->position() == ',')
+            ++in->position();
+        else if (!data_in_square_brackets && *in->position() == ';')
+        {
+            /// ';' means the end of query (but it cannot be before ']')
+            allow_new_rows = false;
+            return true;
+        }
+        else if (data_in_square_brackets && *in->position() == ']')
+        {
+            /// ']' means the end of query
+            allow_new_rows = false;
+            return true;
+        }
+    }
+
+    skipWhitespaceIfAny(*in);
+    return in->eof();
 }
 
 
@@ -286,19 +283,15 @@ void JSONEachRowRowInputFormat::readPrefix()
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(*in);
-
-    skipWhitespaceIfAny(*in);
-    data_in_square_brackets = checkChar('[', *in);
+    data_in_square_brackets = JSONUtils::checkAndSkipArrayStart(*in);
 }
 
 void JSONEachRowRowInputFormat::readSuffix()
 {
     skipWhitespaceIfAny(*in);
     if (data_in_square_brackets)
-    {
-        assertChar(']', *in);
-        skipWhitespaceIfAny(*in);
-    }
+        JSONUtils::skipArrayEnd(*in);
+
     if (!in->eof() && *in->position() == ';')
     {
         ++in->position();
@@ -318,9 +311,7 @@ NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
     if (first_row)
     {
         skipBOMIfExists(in);
-        skipWhitespaceIfAny(in);
-        if (checkChar('[', in))
-            data_in_square_brackets = true;
+        data_in_square_brackets = JSONUtils::checkAndSkipArrayStart(in);
         first_row = false;
     }
     else

@@ -61,13 +61,16 @@ public:
     using ReadCallback = std::function<void()>;
 
     /** Fast reading data from buffer and save result to memory.
-      * Reads at least min_chunk_bytes and some more until the end of the chunk, depends on the format.
+      * Reads at least `min_bytes` and some more until the end of the chunk, depends on the format.
+      * If `max_rows` is non-zero the function also stops after reading the `max_rows` number of rows
+      * (even if the `min_bytes` boundary isn't reached yet).
       * Used in ParallelParsingInputFormat.
       */
     using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
         DB::Memory<Allocator<false>> & memory,
-        size_t min_chunk_bytes)>;
+        size_t min_bytes,
+        size_t max_rows)>;
 
     /// This callback allows to perform some additional actions after writing a single row.
     /// It's initial purpose was to flush Kafka message for each row.
@@ -115,6 +118,7 @@ private:
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
+        bool supports_subcolumns{false};
         bool supports_subset_of_columns{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
@@ -202,8 +206,10 @@ public:
     void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
+    void markFormatSupportsSubcolumns(const String & name);
     void markFormatSupportsSubsetOfColumns(const String & name);
 
+    bool checkIfFormatSupportsSubcolumns(const String & name) const;
     bool checkIfFormatSupportsSubsetOfColumns(const String & name) const;
 
     bool checkIfFormatHasSchemaReader(const String & name) const;

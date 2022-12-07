@@ -35,11 +35,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+
+#include "config_version.h"
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -211,7 +212,7 @@ StorageKafka::StorageKafka(
     , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
-    , semaphore(0, num_consumers)
+    , semaphore(0, static_cast<int>(num_consumers))
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
@@ -290,7 +291,7 @@ Pipe StorageKafka::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
-    unsigned /* num_streams */)
+    size_t /* num_streams */)
 {
     if (num_created_consumers == 0)
         return {};
@@ -583,24 +584,24 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (dependencies.empty())
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
         return true;
 
     // Check the dependencies are ready?
-    for (const auto & db_tab : dependencies)
+    for (const auto & view_id : view_ids)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
-        if (!table)
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
+        if (!view)
             return false;
 
         // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(db_tab))
+        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -615,8 +616,8 @@ void StorageKafka::threadFunc(size_t idx)
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
-        if (dependencies_count)
+        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+        if (num_views)
         {
             auto start_time = std::chrono::steady_clock::now();
 
@@ -628,7 +629,7 @@ void StorageKafka::threadFunc(size_t idx)
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 // Exit the loop & reschedule if some stream stalled
                 auto some_stream_is_stalled = streamToViews();

@@ -131,7 +131,7 @@ namespace
                 return createAggregateFunctionWithHashType<20>(use_64_bit_hash, argument_types, params);
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
 }

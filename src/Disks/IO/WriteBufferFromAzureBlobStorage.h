@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -13,20 +13,25 @@
 #include <azure/core/io/body_stream.hpp>
 
 
+namespace Poco
+{
+class Logger;
+}
+
 namespace DB
 {
 
 class WriteBufferFromAzureBlobStorage : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
+    using AzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
 
     WriteBufferFromAzureBlobStorage(
-        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+        AzureClientPtr blob_container_client_,
         const String & blob_path_,
         size_t max_single_part_upload_size_,
         size_t buf_size_,
-        const WriteSettings & write_settings_,
-        std::optional<std::map<std::string, std::string>> attributes_ = {});
+        const WriteSettings & write_settings_);
 
     ~WriteBufferFromAzureBlobStorage() override;
 
@@ -34,12 +39,23 @@ public:
 
 private:
     void finalizeImpl() override;
+    void execWithRetry(std::function<void()> func, size_t num_tries);
+    void uploadBlock(const char * data, size_t size);
 
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
-    size_t max_single_part_upload_size;
-    const String blob_path;
-    WriteSettings write_settings;
-    std::optional<std::map<std::string, std::string>> attributes;
+    Poco::Logger * log;
+
+    const size_t max_single_part_upload_size;
+    const std::string blob_path;
+    const WriteSettings write_settings;
+
+    AzureClientPtr blob_container_client;
+    std::vector<std::string> block_ids;
+
+    using MemoryBufferPtr = std::unique_ptr<Memory<>>;
+    MemoryBufferPtr tmp_buffer;
+    size_t tmp_buffer_write_offset = 0;
+
+    MemoryBufferPtr allocateBuffer() const;
 };
 
 }

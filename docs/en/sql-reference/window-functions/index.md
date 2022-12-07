@@ -430,9 +430,9 @@ FROM
 ### Cumulative sum.
 
 ```sql
-CREATE TABLE events
+CREATE TABLE warehouse
 (
-    `metric` String,
+    `item` String,
     `ts` DateTime,
     `value` Float
 )
@@ -587,3 +587,8 @@ ORDER BY
 │ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
+
+## Related Content
+
+- [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
+- [Getting Data Into ClickHouse - Part 3 - Using S3](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)

@@ -16,7 +16,7 @@ namespace DB
 class AsynchronousReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
-    AsynchronousReaderPtr reader;
+    IAsynchronousReader & reader;
     Int32 priority;
 
     Memory<> prefetch_buffer;
@@ -36,7 +36,7 @@ protected:
 
 public:
     AsynchronousReadBufferFromFileDescriptor(
-        AsynchronousReaderPtr reader_,
+        IAsynchronousReader & reader_,
         Int32 priority_,
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,

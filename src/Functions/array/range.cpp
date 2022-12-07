@@ -97,7 +97,7 @@ private:
             for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
             {
                 for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
-                    out_data[offset + elem_idx] = elem_idx;
+                    out_data[offset + elem_idx] = static_cast<T>(elem_idx);
 
                 offset += in_data[row_idx];
                 out_offsets[row_idx] = offset;
@@ -153,7 +153,7 @@ private:
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step)
             {
-                out_data[offset++] = st;
+                out_data[offset++] = static_cast<T>(st);
 
                 if (st > st + step)
                     throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
@@ -212,7 +212,7 @@ private:
         {
             for (size_t st = start_data[row_idx], ed = end_data[row_idx]; st < ed; st += step)
             {
-                out_data[offset++] = st;
+                out_data[offset++] = static_cast<T>(st);
 
                 if (st > st + step)
                     throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
@@ -271,7 +271,7 @@ private:
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step_data[row_idx])
             {
-                out_data[offset++] = st;
+                out_data[offset++] = static_cast<T>(st);
 
                 if (st > st + step_data[row_idx])
                     throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
@@ -333,7 +333,7 @@ private:
         {
             for (size_t st = start_data[row_idx], ed = end_start[row_idx]; st < ed; st += step_data[row_idx])
             {
-                out_data[offset++] = st;
+                out_data[offset++] = static_cast<T>(st);
 
                 if (st > st + step_data[row_idx])
                     throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
@@ -407,7 +407,7 @@ private:
 
             if ((res = executeConstStartStep<UInt8>(column_ptrs[1], start, step, input_rows_count)) ||
                 (res = executeConstStartStep<UInt16>(column_ptrs[1], start, step, input_rows_count)) ||
-                (res = executeConstStartStep<UInt32>(column_ptrs[1], start, step, input_rows_count)) ||
+                (res = executeConstStartStep<UInt32>(column_ptrs[1], static_cast<UInt32>(start), static_cast<UInt32>(step), input_rows_count)) ||
                 (res = executeConstStartStep<UInt64>(column_ptrs[1], start, step, input_rows_count)))
             {
             }
@@ -418,7 +418,7 @@ private:
 
             if ((res = executeConstStart<UInt8>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
                 (res = executeConstStart<UInt16>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
-                (res = executeConstStart<UInt32>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
+                (res = executeConstStart<UInt32>(column_ptrs[1], column_ptrs[2], static_cast<UInt32>(start), input_rows_count)) ||
                 (res = executeConstStart<UInt64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
             {
             }
@@ -429,7 +429,7 @@ private:
 
             if ((res = executeConstStep<UInt8>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
                 (res = executeConstStep<UInt16>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
-                (res = executeConstStep<UInt32>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
+                (res = executeConstStep<UInt32>(column_ptrs[0], column_ptrs[1], static_cast<UInt32>(step), input_rows_count)) ||
                 (res = executeConstStep<UInt64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
             {
             }

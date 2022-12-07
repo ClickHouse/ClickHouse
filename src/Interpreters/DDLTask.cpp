@@ -8,10 +8,11 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -50,21 +51,26 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 
 void DDLLogEntry::assertVersion() const
 {
-    constexpr UInt64 max_version = 2;
-    if (version == 0 || max_version < version)
+    if (version == 0
+    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be such version
+    || version == NORMALIZE_CREATE_ON_INITIATOR_VERSION
+    || version > DDL_ENTRY_FORMAT_MAX_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}."
-                                                            "Maximum supported version is {}", version, max_version);
+                                                            "Maximum supported version is {}", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 }
 
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
     version = context->getSettingsRef().distributed_ddl_entry_format_version;
+    if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
+                                                            "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
     if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         version = SETTINGS_IN_ZK_VERSION;
 
-    if (version == SETTINGS_IN_ZK_VERSION)
+    if (version >= SETTINGS_IN_ZK_VERSION)
         settings.emplace(context->getSettingsRef().changes());
 }
 
@@ -94,6 +100,9 @@ String DDLLogEntry::toString() const
         wb << "settings: " << serializeAST(ast) << "\n";
     }
 
+    if (version >= OPENTELEMETRY_ENABLED_VERSION)
+        wb << "tracing: " << this->tracing_context;
+
     return wb.str();
 }
 
@@ -106,7 +115,7 @@ void DDLLogEntry::parse(const String & data)
 
     Strings host_id_strings;
     rb >> "query: " >> escape >> query >> "\n";
-    if (version == 1)
+    if (version == OLDEST_VERSION)
     {
         rb >> "hosts: " >> host_id_strings >> "\n";
 
@@ -115,9 +124,8 @@ void DDLLogEntry::parse(const String & data)
         else
             initiator.clear();
     }
-    else if (version == 2)
+    else if (version >= SETTINGS_IN_ZK_VERSION)
     {
-
         if (!rb.eof() && *rb.position() == 'h')
             rb >> "hosts: " >> host_id_strings >> "\n";
         if (!rb.eof() && *rb.position() == 'i')
@@ -132,6 +140,12 @@ void DDLLogEntry::parse(const String & data)
             ASTPtr settings_ast = parseQuery(parser, settings_str, max_size, max_depth);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
+    }
+
+    if (version >= OPENTELEMETRY_ENABLED_VERSION)
+    {
+        if (!rb.eof() && *rb.position() == 't')
+            rb >> "tracing: " >> this->tracing_context;
     }
 
     assertEOF(rb);
@@ -153,6 +167,13 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
     query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
+}
+
+void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
+{
+    /// Convert rewritten AST back to string.
+    query_str = queryToString(*query);
+    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
@@ -252,6 +273,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
+    /// Rewrite AST without ON CLUSTER.
     WithoutOnClusterASTRewriteParams params;
     params.default_database = address_in_cluster.default_database;
     params.host_id = address_in_cluster.toString();
@@ -392,6 +414,7 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
+    formatRewrittenQuery(context);
 }
 
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)

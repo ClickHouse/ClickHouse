@@ -1,10 +1,10 @@
 ---
 slug: /en/operations/update
-sidebar_position: 47
-sidebar_label: ClickHouse Upgrade
 ---
 
-# ClickHouse Upgrade
+# Update
+
+## Self-managed ClickHouse Upgrade
 
 If ClickHouse was installed from `deb` packages, execute the following commands on the server:
 

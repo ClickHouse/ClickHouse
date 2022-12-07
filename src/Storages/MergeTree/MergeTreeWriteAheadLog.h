@@ -71,6 +71,8 @@ public:
     static std::optional<MinMaxBlockNumber> tryParseMinMaxBlockNumber(const String & filename);
     void shutdown();
 
+    /// Drop all write ahead logs from disk. Useful during table drop.
+    static void dropAllWriteAheadLogs(DiskPtr disk_to_drop, std::string relative_data_path);
 private:
     void init();
     void rotate(const std::unique_lock<std::mutex> & lock);

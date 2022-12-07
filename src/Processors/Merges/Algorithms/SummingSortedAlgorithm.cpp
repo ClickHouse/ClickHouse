@@ -23,10 +23,6 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
-SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
-SummingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
-
 /// Stores numbers of key-columns and value-columns.
 struct SummingSortedAlgorithm::MapDescription
 {
@@ -266,17 +262,17 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 desc.is_agg_func_type = is_agg_func;
                 desc.column_numbers = {i};
 
+                desc.real_type = column.type;
+                desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
+                if (desc.real_type.get() == desc.nested_type.get())
+                    desc.nested_type = nullptr;
+
                 if (simple)
                 {
                     // simple aggregate function
                     desc.init(simple->getFunction(), true);
                     if (desc.function->allocatesMemoryInArena())
                         def.allocates_memory_in_arena = true;
-
-                    desc.real_type = column.type;
-                    desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
-                    if (desc.real_type.get() == desc.nested_type.get())
-                        desc.nested_type = nullptr;
                 }
                 else if (!is_agg_func)
                 {
@@ -395,14 +391,11 @@ static MutableColumns getMergedDataColumns(
 
             columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
         }
-        else if (desc.is_simple_agg_func_type)
+        else
         {
-            const auto & type = desc.nested_type ? desc.nested_type
-                                                 : desc.real_type;
+            const auto & type = desc.nested_type ? desc.nested_type : desc.real_type;
             columns.emplace_back(type->createColumn());
         }
-        else
-            columns.emplace_back(header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty());
     }
 
     for (const auto & column_number : def.column_numbers_not_to_aggregate)
@@ -421,7 +414,7 @@ static void preprocessChunk(Chunk & chunk, const SummingSortedAlgorithm::Columns
 
     for (const auto & desc : def.columns_to_aggregate)
     {
-        if (desc.is_simple_agg_func_type && desc.nested_type)
+        if (desc.nested_type)
         {
             auto & col = columns[desc.column_numbers[0]];
             col = recursiveRemoveLowCardinality(col);
@@ -453,7 +446,7 @@ static void postprocessChunk(
             for (size_t i = 0; i < tuple_size; ++i)
                 res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
         }
-        else if (desc.is_simple_agg_func_type && desc.nested_type)
+        else if (desc.nested_type)
         {
             const auto & from_type = desc.nested_type;
             const auto & to_type = desc.real_type;
@@ -779,5 +772,9 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
     last_chunk_sort_columns.clear();
     return Status(merged_data.pull(), true);
 }
+
+SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
+SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
+SummingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
 
 }

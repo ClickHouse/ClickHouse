@@ -7,13 +7,13 @@ title: "External Disks for Storing Data"
 
 Data, processed in ClickHouse, is usually stored in the local file system — on the same machine with the ClickHouse server. That requires large-capacity disks, which can be expensive enough. To avoid that you can store the data remotely — on [Amazon S3](https://aws.amazon.com/s3/) disks or in the Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)).
 
-To work with data stored on `Amazon S3` disks use [S3](../engines/table-engines/integrations/s3.md) table engine, and to work with data in the Hadoop Distributed File System — [HDFS](../engines/table-engines/integrations/hdfs.md) table engine.
+To work with data stored on `Amazon S3` disks use [S3](/docs/en/engines/table-engines/integrations/s3.md) table engine, and to work with data in the Hadoop Distributed File System — [HDFS](/docs/en/engines/table-engines/integrations/hdfs.md) table engine.
 
 To load data from a web server with static files use a disk with type [web](#storing-data-on-webserver).
 
 ## Configuring HDFS {#configuring-hdfs}
 
-[MergeTree](../engines/table-engines/mergetree-family/mergetree.md) and [Log](../engines/table-engines/log-family/log.md) family table engines can store data to HDFS using a disk with type `HDFS`.
+[MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) family table engines can store data to HDFS using a disk with type `HDFS`.
 
 Configuration markup:
 
@@ -53,7 +53,7 @@ Optional parameters:
 
 ## Using Virtual File System for Data Encryption {#encrypted-virtual-file-system}
 
-You can encrypt the data stored on [S3](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3), or [HDFS](#configuring-hdfs) external disks, or on a local disk. To turn on the encryption mode, in the configuration file you must define a disk with the type `encrypted` and choose a disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
+You can encrypt the data stored on [S3](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3), or [HDFS](#configuring-hdfs) external disks, or on a local disk. To turn on the encryption mode, in the configuration file you must define a disk with the type `encrypted` and choose a disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
 
 Example of disk configuration:
 
@@ -80,14 +80,14 @@ Required parameters:
 
 -   `type` — `encrypted`. Otherwise the encrypted disk is not created.
 -   `disk` — Type of disk for data storage.
--   `key` — The key for encryption and decryption. Type: [Uint64](../sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encrypt in hexadecimal form.
+-   `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encrypt in hexadecimal form.
     You can specify multiple keys using the `id` attribute (see example above).
 
 Optional parameters:
 
 -   `path` — Path to the location on the disk where the data will be saved. If not specified, the data will be saved in the root directory.
 -   `current_key_id` — The key used for encryption. All the specified keys can be used for decryption, and you can always switch to another key while maintaining access to previously encrypted data.
--   `algorithm` — [Algorithm](../sql-reference/statements/create/table.md#create-query-encryption-codecs) for encryption. Possible values: `AES_128_CTR`, `AES_192_CTR` or `AES_256_CTR`. Default value: `AES_128_CTR`. The key length depends on the algorithm: `AES_128_CTR` — 16 bytes, `AES_192_CTR` — 24 bytes, `AES_256_CTR` — 32 bytes.
+-   `algorithm` — [Algorithm](/docs/en/sql-reference/statements/create/table.md/#create-query-encryption-codecs) for encryption. Possible values: `AES_128_CTR`, `AES_192_CTR` or `AES_256_CTR`. Default value: `AES_128_CTR`. The key length depends on the algorithm: `AES_128_CTR` — 16 bytes, `AES_192_CTR` — 24 bytes, `AES_256_CTR` — 32 bytes.
 
 Example of disk configuration:
 
@@ -131,7 +131,7 @@ Example of configuration for versions later or equal to 22.8:
                 <type>cache</type>
                 <disk>s3</disk>
                 <path>/s3_cache/</path>
-                <max_size>10000000</max_size>
+                <max_size>10Gi</max_size>
             </cache>
         </disks>
         <policies>
@@ -155,7 +155,7 @@ Example of configuration for versions earlier than 22.8:
                 <endpoint>...</endpoint>
                 ... s3 configuration ...
                 <data_cache_enabled>1</data_cache_enabled>
-                <data_cache_max_size>10000000</data_cache_max_size>
+                <data_cache_max_size>10737418240</data_cache_max_size>
             </s3>
         </disks>
         <policies>
@@ -172,7 +172,7 @@ Cache **configuration settings**:
 
 - `path` - path to the directory with cache. Default: None, this setting is obligatory.
 
-- `max_size` - maximum size of the cache in bytes. When the limit is reached, cache files are evicted according to the cache eviction policy. Default: None, this setting is obligatory.
+- `max_size` - maximum size of the cache in bytes or in readable format, e.g. `ki, Mi, Gi, etc`, example `10Gi` (such format works starting from `22.10` version). When the limit is reached, cache files are evicted according to the cache eviction policy. Default: None, this setting is obligatory.
 
 - `cache_on_write_operations` - allow to turn on `write-through` cache (caching data on any write operations: `INSERT` queries, background merges). Default: `false`. The `write-through` cache can be disabled per query using setting `enable_filesystem_cache_on_write_operations` (data is cached only if both cache config settings and corresponding query setting are enabled).
 
@@ -182,7 +182,7 @@ Cache **configuration settings**:
 
 - `do_not_evict_index_and_mark_files` - do not evict small frequently used files according to cache policy. Default: `false`. This setting was added in version 22.8. If you used filesystem cache before this version, then it will not work on versions starting from 22.8 if this setting is set to `true`. If you want to use this setting, clear old cache created before version 22.8 before upgrading.
 
-- `max_file_segment_size` - a maximum size of a single cache file. Default: `104857600` (100 Mb).
+- `max_file_segment_size` - a maximum size of a single cache file in bytes or in readable format (`ki, Mi, Gi, etc`, example `10Gi`). Default: `104857600` (`100Mi`).
 
 - `max_elements` - a limit for a number of cache files. Default: `1048576`.
 
@@ -213,9 +213,31 @@ Cache **commands**:
 
 - `SYSTEM DROP FILESYSTEM CACHE (<path>) (ON CLUSTER)`
 
-- `SHOW CACHES` -- show list of caches which were configured on the server.
+- `SHOW FILESYSTEM CACHES` -- show list of filesystem caches which were configured on the server. (For versions <= `22.8` the command is named `SHOW CACHES`)
 
-- `DESCRIBE CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW CACHES` command.
+```sql
+SHOW FILESYSTEM CACHES
+```
+
+Result:
+
+``` text
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
+```
+
+- `DESCRIBE CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW CACHES` command. (For versions <= `22.8` the command is named `DESCRIBE CACHE`)
+
+```sql
+DESCRIBE CACHE 's3_cache'
+```
+
+``` text
+┌────max_size─┬─max_elements─┬─max_file_segment_size─┬─cache_on_write_operations─┬─enable_cache_hits_threshold─┬─current_size─┬─current_elements─┬─path────────┬─do_not_evict_index_and_mark_files─┐
+│ 10000000000 │      1048576 │             104857600 │                         1 │                           0 │         3276 │               54 │ /s3_cache/  │                                 1 │
+└─────────────┴──────────────┴───────────────────────┴───────────────────────────┴─────────────────────────────┴──────────────┴──────────────────┴─────────────┴───────────────────────────────────┘
+```
 
 Cache current metrics:
 
@@ -243,9 +265,9 @@ Cache profile events:
 
 There is a tool `clickhouse-static-files-uploader`, which prepares a data directory for a given table (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`). For each table you need, you get a directory of files. These files can be uploaded to, for example, a web server with static files. After this preparation, you can load this table into any ClickHouse server via `DiskWeb`.
 
-This is a read-only disk. Its data is only read and never modified. A new table is loaded to this disk via `ATTACH TABLE` query (see example below). Local disk is not actually used, each `SELECT` query will result in a `http` request to fetch required data. All modification of the table data will result in an exception, i.e. the following types of queries are not allowed: [CREATE TABLE](../sql-reference/statements/create/table.md), [ALTER TABLE](../sql-reference/statements/alter/index.md), [RENAME TABLE](../sql-reference/statements/rename.md#misc_operations-rename_table), [DETACH TABLE](../sql-reference/statements/detach.md) and [TRUNCATE TABLE](../sql-reference/statements/truncate.md).
+This is a read-only disk. Its data is only read and never modified. A new table is loaded to this disk via `ATTACH TABLE` query (see example below). Local disk is not actually used, each `SELECT` query will result in a `http` request to fetch required data. All modification of the table data will result in an exception, i.e. the following types of queries are not allowed: [CREATE TABLE](/docs/en/sql-reference/statements/create/table.md), [ALTER TABLE](/docs/en/sql-reference/statements/alter/index.md), [RENAME TABLE](/docs/en/sql-reference/statements/rename.md/#misc_operations-rename_table), [DETACH TABLE](/docs/en/sql-reference/statements/detach.md) and [TRUNCATE TABLE](/docs/en/sql-reference/statements/truncate.md).
 
-Web server storage is supported only for the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) and [Log](../engines/table-engines/log-family/log.md) engine families. To access the data stored on a `web` disk, use the [storage_policy](../engines/table-engines/mergetree-family/mergetree.md#terms) setting when executing the query. For example, `ATTACH TABLE table_web UUID '{}' (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'`.
+Web server storage is supported only for the [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) engine families. To access the data stored on a `web` disk, use the [storage_policy](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#terms) setting when executing the query. For example, `ATTACH TABLE table_web UUID '{}' (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'`.
 
 A ready test case. You need to add this configuration to config:
 
@@ -429,7 +451,7 @@ Optional parameters:
 -   `remote_fs_read_backoff_threashold` — The maximum wait time when trying to read data for remote disk. Default value: `10000` seconds.
 -   `remote_fs_read_backoff_max_tries` — The maximum number of attempts to read with backoff. Default value: `5`.
 
-If a query fails with an exception `DB:Exception Unreachable URL`, then you can try to adjust the settings: [http_connection_timeout](../operations/settings/settings.md#http_connection_timeout), [http_receive_timeout](../operations/settings/settings.md#http_receive_timeout), [keep_alive_timeout](../operations/server-configuration-parameters/settings.md#keep-alive-timeout).
+If a query fails with an exception `DB:Exception Unreachable URL`, then you can try to adjust the settings: [http_connection_timeout](/docs/en/operations/settings/settings.md/#http_connection_timeout), [http_receive_timeout](/docs/en/operations/settings/settings.md/#http_receive_timeout), [keep_alive_timeout](/docs/en/operations/server-configuration-parameters/settings.md/#keep-alive-timeout).
 
 To get files for upload run:
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` can be found in query `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
@@ -438,7 +460,7 @@ When loading files by `endpoint`, they must be loaded into `<endpoint>/store/` p
 
 If URL is not reachable on disk load when the server is starting up tables, then all errors are caught. If in this case there were errors, tables can be reloaded (become visible) via `DETACH TABLE table_name` -> `ATTACH TABLE table_name`. If metadata was successfully loaded at server startup, then tables are available straight away.
 
-Use [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries) setting to limit the maximum number of retries during a single HTTP read.
+Use [http_max_single_read_retries](/docs/en/operations/settings/settings.md/#http-max-single-read-retries) setting to limit the maximum number of retries during a single HTTP read.
 
 
 ## Zero-copy Replication (not ready for production) {#zero-copy}

@@ -5,7 +5,7 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #include <memory>
 
@@ -265,9 +265,10 @@ public:
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
-        bool is_monotonic = false;    /// Is the function monotonous (non-decreasing or non-increasing).
-        bool is_positive = true;    /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
+        bool is_monotonic = false;   /// Is the function monotonous (non-decreasing or non-increasing).
+        bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
+        bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
@@ -381,7 +382,7 @@ protected:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
-    // /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
+    /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
 private:

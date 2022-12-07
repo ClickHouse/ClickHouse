@@ -33,8 +33,8 @@
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 
-#include <Common/config_version.h>
-#include <Common/config.h>
+#include "config_version.h"
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -148,7 +148,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
-        if (timeouts.tcp_keep_alive_timeout.totalSeconds())
+        int tcp_keep_alive_timeout_in_sec = timeouts.tcp_keep_alive_timeout.totalSeconds();
+        if (tcp_keep_alive_timeout_in_sec)
         {
             socket->setKeepAlive(true);
             socket->setOption(IPPROTO_TCP,
@@ -157,7 +158,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 #else
                 TCP_KEEPIDLE  // __APPLE__
 #endif
-                , timeouts.tcp_keep_alive_timeout);
+                , tcp_keep_alive_timeout_in_sec);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
@@ -179,12 +180,18 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
+
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
         throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (Poco::TimeoutException & e)
     {
         disconnect();
+
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.

@@ -390,7 +390,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
     };
 
     RelativePathsWithSize children;
-    source_object_storage->listPrefix(restore_information.source_path, children);
+    source_object_storage->findAllFiles(restore_information.source_path, children, /* max_keys= */ 0);
 
     restore_files(children);
 
@@ -540,7 +540,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
     };
 
     RelativePathsWithSize children;
-    source_object_storage->listPrefix(restore_information.source_path + "operations/", children);
+    source_object_storage->findAllFiles(restore_information.source_path + "operations/", children, /* max_keys= */ 0);
     restore_file_operations(children);
 
     if (restore_information.detached)

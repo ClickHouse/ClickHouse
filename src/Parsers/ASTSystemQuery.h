@@ -3,7 +3,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 
-#include "config_core.h"
+#include "config.h"
 
 
 namespace DB
@@ -47,6 +47,7 @@ public:
         RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
+        RELOAD_USERS,
         RELOAD_SYMBOLS,
         RESTART_DISK,
         STOP_MERGES,

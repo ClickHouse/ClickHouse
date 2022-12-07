@@ -816,7 +816,6 @@ class ClickHouseCluster:
             env_variables[f"keeper_config_dir{i}"] = configs_dir
             env_variables[f"keeper_db_dir{i}"] = coordination_dir
             self.zookeeper_dirs_to_create += [logs_dir, configs_dir, coordination_dir]
-        logging.debug(f"DEBUG KEEPER: {self.zookeeper_dirs_to_create}")
 
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", keeper_docker_compose_path])
@@ -2071,10 +2070,12 @@ class ClickHouseCluster:
                 logging.debug("All instances of ZooKeeper started")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to ZooKeeper " + str(ex))
+                logging.debug(f"Can't connect to ZooKeeper {instance}: {ex}")
                 time.sleep(0.5)
 
-        raise Exception("Cannot wait ZooKeeper container")
+        raise Exception(
+            "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
+        )
 
     def make_hdfs_api(self, timeout=180, kerberized=False):
         if kerberized:
@@ -2679,7 +2680,9 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                if instance.contains_in_log(SANITIZER_SIGN, from_host=True):
+                if instance.contains_in_log(
+                    SANITIZER_SIGN, from_host=True, filename="stderr.log"
+                ):
                     sanitizer_assert_instance = instance.grep_in_log(
                         SANITIZER_SIGN, from_host=True, filename="stderr.log"
                     )
@@ -3329,7 +3332,7 @@ class ClickHouseInstance:
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
-    def start_clickhouse(self, start_wait_sec=60):
+    def start_clickhouse(self, start_wait_sec=60, retry_start=True):
         if not self.stay_alive:
             raise Exception(
                 "ClickHouse can be started again only with stay_alive=True instance"
@@ -3361,6 +3364,8 @@ class ClickHouseInstance:
                     self.exec_in_container(
                         ["bash", "-c", f"kill -9 {pid}"], user="root", nothrow=True
                     )
+                    if not retry_start:
+                        raise
                     time.sleep(time_to_sleep)
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
@@ -4108,6 +4113,9 @@ class ClickHouseInstance:
     def get_backuped_s3_objects(self, disk, backup_name):
         path = f"/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store"
         self.wait_for_path_exists(path, 10)
+        return self.get_s3_objects(path)
+
+    def get_s3_objects(self, path):
         command = [
             "find",
             path,
@@ -4120,7 +4128,44 @@ class ClickHouseInstance:
             "{}",
             ";",
         ]
+
         return self.exec_in_container(command).split("\n")
+
+    def get_s3_data_objects(self, path):
+        command = [
+            "find",
+            path,
+            "-type",
+            "f",
+            "-name",
+            "*.bin",
+            "-exec",
+            "grep",
+            "-o",
+            "r[01]\\{64\\}-file-[[:lower:]]\\{32\\}",
+            "{}",
+            ";",
+        ]
+        return self.exec_in_container(command).split("\n")
+
+    def get_table_objects(self, table, database=None):
+        objects = []
+        database_query = ""
+        if database:
+            database_query = f"AND database='{database}'"
+        data_paths = self.query(
+            f"""
+            SELECT arrayJoin(data_paths)
+            FROM system.tables
+            WHERE name='{table}'
+            {database_query}
+            """
+        )
+        paths = data_paths.split("\n")
+        for path in paths:
+            if path:
+                objects = objects + self.get_s3_data_objects(path)
+        return objects
 
 
 class ClickHouseKiller(object):

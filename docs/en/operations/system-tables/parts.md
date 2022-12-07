@@ -75,7 +75,7 @@ Columns:
 
 -   `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values.
 
--   `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
+-   `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md/#alter_freeze-partition)
 
 -   `database` ([String](../../sql-reference/data-types/string.md)) – Name of the database.
 
@@ -87,25 +87,25 @@ Columns:
 
 -   `disk_name` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
 
--   `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md#hash_functions-siphash128) of compressed files.
+-   `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash128) of compressed files.
 
--   `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
+-   `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
 
--   `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
+-   `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
 
--   `delete_ttl_info_min` ([DateTime](../../sql-reference/data-types/datetime.md)) — The minimum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+-   `delete_ttl_info_min` ([DateTime](../../sql-reference/data-types/datetime.md)) — The minimum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 
--   `delete_ttl_info_max` ([DateTime](../../sql-reference/data-types/datetime.md)) — The maximum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+-   `delete_ttl_info_max` ([DateTime](../../sql-reference/data-types/datetime.md)) — The maximum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 
--   `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of expressions. Each expression defines a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+-   `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of expressions. Each expression defines a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 
 :::warning
 The `move_ttl_info.expression` array is kept mostly for backward compatibility, now the simpliest way to check `TTL MOVE` rule is to use the `move_ttl_info.min` and `move_ttl_info.max` fields.
 :::
 
--   `move_ttl_info.min` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Array of date and time values. Each element describes the minimum key value for a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+-   `move_ttl_info.min` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Array of date and time values. Each element describes the minimum key value for a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 
--   `move_ttl_info.max` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Array of date and time values. Each element describes the maximum key value for a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+-   `move_ttl_info.max` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Array of date and time values. Each element describes the maximum key value for a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 
 -   `bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Alias for `bytes_on_disk`.
 
@@ -166,6 +166,6 @@ move_ttl_info.max:                     []
 **See Also**
 
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
--   [TTL for Columns and Tables](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
+-   [TTL for Columns and Tables](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl)
 
 [Original article](https://clickhouse.com/docs/en/operations/system-tables/parts) <!--hide-->

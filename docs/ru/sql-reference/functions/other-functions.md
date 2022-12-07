@@ -568,7 +568,7 @@ ORDER BY c DESC
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -1721,12 +1721,6 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 │                                                0 │
 └──────────────────────────────────────────────────┘
 ```
-
-## modelEvaluate(model_name, …) {#function-modelevaluate}
-
-Оценивает внешнюю модель.
-
-Принимает на вход имя и аргументы модели. Возвращает Float64.
 
 ## throwIf(x\[, message\[, error_code\]\]) {#throwifx-custom-message}
 

@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/hex.h>
 #include <Core/Settings.h>
-#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -224,6 +224,30 @@ String TracingContext::composeTraceparentHeader() const
         // This cast is needed because fmt is being weird and complaining that
         // "mixing character types is not allowed".
         static_cast<uint8_t>(trace_flags));
+}
+
+void TracingContext::deserialize(ReadBuffer & buf)
+{
+    buf >> this->trace_id
+        >> "\n"
+        >> this->span_id
+        >> "\n"
+        >> this->tracestate
+        >> "\n"
+        >> this->trace_flags
+        >> "\n";
+}
+
+void TracingContext::serialize(WriteBuffer & buf) const
+{
+    buf << this->trace_id
+        << "\n"
+        << this->span_id
+        << "\n"
+        << this->tracestate
+        << "\n"
+        << this->trace_flags
+        << "\n";
 }
 
 const TracingContextOnThread & CurrentContext()

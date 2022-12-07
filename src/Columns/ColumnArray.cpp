@@ -277,13 +277,13 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
     {
         /// This row improves hash a little bit according to integration tests.
         /// It is the same as to use previous hash value as the first element of array.
-        hash_data[i] = intHashCRC32(hash_data[i]);
+        hash_data[i] = static_cast<UInt32>(intHashCRC32(hash_data[i]));
 
         for (size_t row = prev_offset; row < offsets_data[i]; ++row)
             /// It is probably not the best way to combine hashes.
             /// But much better then xor which lead to similar hash for arrays like [1], [1, 1, 1], [1, 1, 1, 1, 1], ...
             /// Much better implementation - to add offsets as an optional argument to updateWeakHash32.
-            hash_data[i] = intHashCRC32(internal_hash_data[row], hash_data[i]);
+            hash_data[i] = static_cast<UInt32>(intHashCRC32(internal_hash_data[row], hash_data[i]));
 
         prev_offset = offsets_data[i];
     }
@@ -524,11 +524,13 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
 
+    Offsets & cur_offsets = getOffsets();
+    /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
+    cur_offsets.reserve(cur_offsets.size() + length);
+
     getData().insertRangeFrom(src_concrete.getData(), nested_offset, nested_length);
 
-    Offsets & cur_offsets = getOffsets();
     const Offsets & src_offsets = src_concrete.getOffsets();
-
     if (start == 0 && cur_offsets.empty())
     {
         cur_offsets.assign(src_offsets.begin(), src_offsets.begin() + length);
@@ -569,8 +571,8 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < offsets_data.size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
-    int index = mask.size() - 1;
-    int from = offsets_data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    ssize_t from = offsets_data.size() - 1;
     offsets_data.resize(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)

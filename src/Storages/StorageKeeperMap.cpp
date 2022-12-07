@@ -111,7 +111,7 @@ public:
             size_t idx = 0;
             for (const auto & elem : block)
             {
-                elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value);
+                elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value, {});
                 ++idx;
             }
 
@@ -123,8 +123,6 @@ public:
     void onFinish() override
     {
         auto zookeeper = storage.getClient();
-
-        Coordination::Requests requests;
 
         auto keys_limit = storage.keysLimit();
 
@@ -140,23 +138,25 @@ public:
             current_keys_num = data_stat.numChildren;
         }
 
-        std::vector<std::pair<const std::string *, std::future<Coordination::ExistsResponse>>> exist_responses;
-        for (const auto & [key, value] : new_values)
-        {
-            auto path = storage.fullPathForKey(key);
+        std::vector<std::string> key_paths;
+        key_paths.reserve(new_values.size());
+        for (const auto & [key, _] : new_values)
+            key_paths.push_back(storage.fullPathForKey(key));
 
-            exist_responses.push_back({&key, zookeeper->asyncExists(path)});
-        }
+        auto results = zookeeper->exists(key_paths);
 
-        for (auto & [key, response] : exist_responses)
+        Coordination::Requests requests;
+        requests.reserve(key_paths.size());
+        for (size_t i = 0; i < key_paths.size(); ++i)
         {
-            if (response.get().error == Coordination::Error::ZOK)
+            auto key = fs::path(key_paths[i]).filename();
+            if (results[i].error == Coordination::Error::ZOK)
             {
-                requests.push_back(zkutil::makeSetRequest(storage.fullPathForKey(*key), new_values[*key], -1));
+                requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
             }
             else
             {
-                requests.push_back(zkutil::makeCreateRequest(storage.fullPathForKey(*key), new_values[*key], zkutil::CreateMode::Persistent));
+                requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[key], zkutil::CreateMode::Persistent));
                 ++new_keys_num;
             }
         }
@@ -316,6 +316,36 @@ StorageKeeperMap::StorageKeeperMap(
 
     for (size_t i = 0; i < 1000; ++i)
     {
+        std::string stored_metadata_string;
+        auto exists = client->tryGet(metadata_path, stored_metadata_string);
+
+        if (exists)
+        {
+            // this requires same name for columns
+            // maybe we can do a smarter comparison for columns and primary key expression
+            if (stored_metadata_string != metadata_string)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Path {} is already used but the stored table definition doesn't match. Stored metadata: {}",
+                    root_path,
+                    stored_metadata_string);
+
+            auto code = client->tryCreate(table_path, "", zkutil::CreateMode::Persistent);
+
+            // tables_path was removed with drop
+            if (code == Coordination::Error::ZNONODE)
+            {
+                LOG_INFO(log, "Metadata nodes were removed by another server, will retry");
+                continue;
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
+                throw zkutil::KeeperException(code, "Failed to create table on path {} because a table with same UUID already exists", root_path);
+            }
+
+            return;
+        }
+
         if (client->exists(dropped_path))
         {
             LOG_INFO(log, "Removing leftover nodes");
@@ -342,45 +372,29 @@ StorageKeeperMap::StorageKeeperMap(
             }
         }
 
-        std::string stored_metadata_string;
-        auto exists = client->tryGet(metadata_path, stored_metadata_string);
+        Coordination::Requests create_requests
+        {
+            zkutil::makeCreateRequest(metadata_path, metadata_string, zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest(data_path, metadata_string, zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest(tables_path, "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest(table_path, "", zkutil::CreateMode::Persistent),
+        };
 
-        if (exists)
+        Coordination::Responses create_responses;
+        auto code = client->tryMulti(create_requests, create_responses);
+        if (code == Coordination::Error::ZNODEEXISTS)
         {
-            // this requires same name for columns
-            // maybe we can do a smarter comparison for columns and primary key expression
-            if (stored_metadata_string != metadata_string)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Path {} is already used but the stored table definition doesn't match. Stored metadata: {}",
-                    root_path,
-                    stored_metadata_string);
+            LOG_INFO(log, "It looks like a table on path {} was created by another server at the same moment, will retry", root_path);
+            continue;
         }
-        else
+        else if (code != Coordination::Error::ZOK)
         {
-            auto code = client->tryCreate(metadata_path, metadata_string, zkutil::CreateMode::Persistent);
-            if (code == Coordination::Error::ZNODEEXISTS)
-                continue;
-            else if (code != Coordination::Error::ZOK)
-                throw Coordination::Exception(code, metadata_path);
+            zkutil::KeeperMultiException::check(code, create_requests, create_responses);
         }
 
-        client->createIfNotExists(tables_path, "");
 
-        auto code = client->tryCreate(table_path, "", zkutil::CreateMode::Persistent);
-
-        if (code == Coordination::Error::ZOK)
-        {
-            // metadata now should be guaranteed to exist because we added our UUID to the tables_path
-            client->createIfNotExists(data_path, "");
-            table_is_valid = true;
-            return;
-        }
-
-        if (code == Coordination::Error::ZNONODE)
-            LOG_INFO(log, "Metadata nodes were deleted in background, will retry");
-        else
-            throw Coordination::Exception(code, table_path);
+        table_is_valid = true;
+        return;
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create metadata for table, because it is removed concurrently or because of wrong root_path ({})", root_path);
@@ -394,7 +408,7 @@ Pipe StorageKeeperMap::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     checkTable<true>();
     storage_snapshot->check(column_names);
@@ -494,9 +508,18 @@ void StorageKeeperMap::drop()
     checkTable<true>();
     auto client = getClient();
 
-    client->remove(table_path);
+    // we allow ZNONODE in case we got hardware error on previous drop
+    if (auto code = client->tryRemove(table_path); code == Coordination::Error::ZNOTEMPTY)
+    {
+        throw zkutil::KeeperException(
+            code, "{} contains children which shouldn't happen. Please DETACH the table if you want to delete it", table_path);
+    }
 
-    if (!client->getChildren(tables_path).empty())
+    std::vector<std::string> children;
+    // if the tables_path is not found, some other table removed it
+    // if there are children, some other tables are still using this path as storage
+    if (auto code = client->tryGetChildren(tables_path, children);
+        code != Coordination::Error::ZOK || !children.empty())
         return;
 
     Coordination::Requests ops;
@@ -659,24 +682,20 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
 
     auto client = getClient();
 
-    std::vector<std::future<Coordination::GetResponse>> values;
-    values.reserve(keys.size());
+    Strings full_key_paths;
+    full_key_paths.reserve(keys.size());
 
     for (const auto & key : keys)
     {
-        const auto full_path = fullPathForKey(key);
-        values.emplace_back(client->asyncTryGet(full_path));
+        full_key_paths.emplace_back(fullPathForKey(key));
     }
 
-    auto wait_until = std::chrono::system_clock::now() + std::chrono::milliseconds(Coordination::DEFAULT_OPERATION_TIMEOUT_MS);
+    auto values = client->tryGet(full_key_paths);
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
-        auto & value = values[i];
-        if (value.wait_until(wait_until) != std::future_status::ready)
-            throw DB::Exception(ErrorCodes::KEEPER_EXCEPTION, "Failed to fetch values: timeout");
+        auto response = values[i];
 
-        auto response = value.get();
         Coordination::Error code = response.error;
 
         if (code == Coordination::Error::ZOK)

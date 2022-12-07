@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Tags: no-debug
+
+# no-debug: Query is canceled by timeout after max_execution_time,
+#           but sending an exception to the client may hang
+#           for more than MAX_PROCESS_WAIT seconds in a slow debug build,
+#           and test will fail.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

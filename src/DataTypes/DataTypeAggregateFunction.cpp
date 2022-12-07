@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -239,6 +240,23 @@ static DataTypePtr create(const ASTPtr & arguments)
     AggregateFunctionProperties properties;
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
+}
+
+void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+{
+    auto callback = [revision, if_empty](DataTypePtr & column_type)
+    {
+        const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
+        if (aggregate_function_type && aggregate_function_type->isVersioned())
+        {
+            if (revision)
+                aggregate_function_type->updateVersionFromRevision(*revision, if_empty);
+            else
+                aggregate_function_type->setVersion(0, if_empty);
+        }
+    };
+
+    callOnNestedSimpleTypes(type, callback);
 }
 
 

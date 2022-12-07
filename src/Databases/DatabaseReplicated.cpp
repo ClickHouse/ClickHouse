@@ -8,6 +8,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -29,6 +30,8 @@
 #include <Common/Macros.h>
 #include <base/chrono_io.h>
 
+#include <utility>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -36,7 +39,7 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int REPLICA_IS_ALREADY_EXIST;
+    extern const int REPLICA_ALREADY_EXISTS;
     extern const int DATABASE_REPLICATION_FAILED;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
@@ -294,7 +297,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             if (is_create_query || replica_host_id != host_id)
             {
                 throw Exception(
-                    ErrorCodes::REPLICA_IS_ALREADY_EXIST,
+                    ErrorCodes::REPLICA_ALREADY_EXISTS,
                     "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
                     replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
             }
@@ -354,8 +357,7 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
 
     /// Other codes are unexpected, will throw
     zkutil::KeeperMultiException::check(res, ops, responses);
-    chassert(false);
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path)
@@ -366,7 +368,7 @@ bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & cu
         return false;
     if (maybe_database_mark.starts_with(REPLICATED_DATABASE_MARK))
         return true;
-    if (maybe_database_mark.empty())
+    if (!maybe_database_mark.empty())
         return false;
 
     /// Old versions did not have REPLICATED_DATABASE_MARK. Check specific nodes exist and add mark.
@@ -642,6 +644,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.query = queryToString(query);
     entry.initiator = ddl_worker->getCommonHostID();
     entry.setSettingsIfRequired(query_context);
+    entry.tracing_context = OpenTelemetry::CurrentContext();
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
@@ -699,7 +702,18 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     /// We will drop or move tables which exist only in local metadata
     Strings tables_to_detach;
-    std::vector<std::pair<String, String>> replicated_tables_to_rename;
+
+    struct RenameEdge
+    {
+        String from;
+        String intermediate;
+        String to;
+    };
+
+    /// This is needed to generate intermediate name
+    String salt = toString(thread_local_rng());
+
+    std::vector<RenameEdge> replicated_tables_to_rename;
     size_t total_tables = 0;
     std::vector<UUID> replicated_ids;
     for (auto existing_tables_it = getTablesIterator(getContext(), {}); existing_tables_it->isValid();
@@ -716,8 +730,15 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             {
                 if (name != it->second)
                 {
+                    String intermediate_name;
+                    /// Possibly we failed to rename it on previous iteration
+                    /// And this table was already renamed to an intermediate name
+                    if (startsWith(name, ".rename-") && !startsWith(it->second, ".rename-"))
+                        intermediate_name = name;
+                    else
+                        intermediate_name = fmt::format(".rename-{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
                     /// Need just update table name
-                    replicated_tables_to_rename.emplace_back(name, it->second);
+                    replicated_tables_to_rename.push_back({name, intermediate_name, it->second});
                 }
                 continue;
             }
@@ -837,13 +858,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                     tables_to_detach.size(), dropped_dictionaries, dropped_tables.size() - dropped_dictionaries, moved_tables);
 
     /// Now database is cleared from outdated tables, let's rename ReplicatedMergeTree tables to actual names
-    for (const auto & old_to_new : replicated_tables_to_rename)
+    /// We have to take into account that tables names could be changed with two general queries
+    /// 1) RENAME TABLE. There could be multiple pairs of tables (e.g. RENAME b TO c, a TO b, c TO d)
+    /// But it is equal to multiple subsequent RENAMEs each of which operates only with two tables
+    /// 2) EXCHANGE TABLE. This query swaps two names atomically and could not be represented with two separate RENAMEs
+    auto rename_table = [&](String from, String to)
     {
-        const String & from = old_to_new.first;
-        const String & to = old_to_new.second;
-
         LOG_DEBUG(log, "Will RENAME TABLE {} TO {}", backQuoteIfNeed(from), backQuoteIfNeed(to));
-        /// TODO Maybe we should do it in two steps: rename all tables to temporary names and then rename them to actual names?
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
         DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
 
@@ -855,12 +876,40 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
         tables_metadata_digest = new_digest;
         assert(checkDigestValid(getContext()));
+    };
+
+    LOG_DEBUG(log, "Starting first stage of renaming process. Will rename tables to intermediate names");
+    for (auto & [from, intermediate, _] : replicated_tables_to_rename)
+    {
+        /// Due to some unknown failures there could be tables
+        /// which are already in an intermediate state
+        /// For them we skip the first stage
+        if (from == intermediate)
+            continue;
+        rename_table(from, intermediate);
     }
+    LOG_DEBUG(log, "Starting second stage of renaming process. Will rename tables from intermediate to desired names");
+    for (auto & [_, intermediate, to] : replicated_tables_to_rename)
+        rename_table(intermediate, to);
+
+    LOG_DEBUG(log, "Renames completed succesessfully");
 
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
 
-    for (const auto & name_and_meta : table_name_to_metadata)
+    /// FIXME: Use proper dependency calculation instead of just moving MV to the end
+    using NameToMetadata = std::pair<String, String>;
+    std::vector<NameToMetadata> table_name_to_metadata_sorted;
+    table_name_to_metadata_sorted.reserve(table_name_to_metadata.size());
+    std::move(table_name_to_metadata.begin(), table_name_to_metadata.end(), std::back_inserter(table_name_to_metadata_sorted));
+    std::sort(table_name_to_metadata_sorted.begin(), table_name_to_metadata_sorted.end(), [](const NameToMetadata & lhs, const NameToMetadata & rhs) -> bool
+    {
+        const bool is_materialized_view_lhs = lhs.second.find("MATERIALIZED VIEW") != std::string::npos;
+        const bool is_materialized_view_rhs = rhs.second.find("MATERIALIZED VIEW") != std::string::npos;
+        return is_materialized_view_lhs < is_materialized_view_rhs;
+    });
+
+    for (const auto & name_and_meta : table_name_to_metadata_sorted)
     {
         if (isTableExist(name_and_meta.first, getContext()))
         {
@@ -1199,6 +1248,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
         String table_name = unescapeForFileName(escaped_table_name);
         if (!filter(table_name))
             continue;
+
         String zk_metadata;
         if (!zookeeper->tryGet(zookeeper_path + "/metadata/" + escaped_table_name, zk_metadata))
             throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Metadata for table {} was not found in ZooKeeper", table_name);
@@ -1218,6 +1268,10 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
             if (storage)
                 storage->adjustCreateQueryForBackup(create_table_query);
         }
+
+        /// `storage` is allowed to be null here. In this case it means that this storage exists on other replicas
+        /// but it has not been created on this replica yet.
+
         res.emplace_back(create_table_query, storage);
     }
 

@@ -198,10 +198,6 @@ public:
     Subcolumns & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
 
-    /// Finalizes all subcolumns.
-    void finalize();
-    bool isFinalized() const;
-
     /// Part of interface
 
     const char * getFamilyName() const override { return "Object"; }
@@ -210,8 +206,8 @@ public:
     size_t size() const override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
-    void forEachSubcolumn(ColumnCallback callback) override;
-    void forEachSubcolumnRecursively(ColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     void insert(const Field & field) override;
     void insertDefault() override;
     void insertFrom(const IColumn & src, size_t n) override;
@@ -219,11 +215,16 @@ public:
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumnPtr cloneResized(size_t new_size) const override;
+
+    /// Finalizes all subcolumns.
+    void finalize() override;
+    bool isFinalized() const override;
 
     /// Order of rows in ColumnObject is undefined.
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
@@ -264,9 +265,7 @@ private:
     template <typename Func>
     MutableColumnPtr applyForSubcolumns(Func && func) const;
 
-    /// For given subcolumn return subcolumn from the same Nested type.
     /// It's used to get shared sized of Nested to insert correct default values.
     const Subcolumns::Node * getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const;
 };
-
 }
