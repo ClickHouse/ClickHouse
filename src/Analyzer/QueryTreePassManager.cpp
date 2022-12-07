@@ -23,7 +23,6 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/Exception.h>
-#include "Analyzer/Passes/IfTransformStringsToEnumPass.h"
 
 namespace DB
 {

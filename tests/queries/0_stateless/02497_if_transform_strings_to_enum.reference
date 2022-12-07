@@ -21,16 +21,16 @@ QUERY id: 0
           LIST id: 3, nodes: 4
             COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
             CONSTANT id: 6, constant_value: Array_[UInt64_2, UInt64_4, UInt64_6], constant_value_type: Array(UInt8)
-            FUNCTION id: 7, function_name: _CAST, function_type: ordinary, result_type: Array(Enum16(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
+            FUNCTION id: 7, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
               ARGUMENTS
                 LIST id: 8, nodes: 2
                   CONSTANT id: 9, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
-                  CONSTANT id: 10, constant_value: \'Array(Enum16(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
-            FUNCTION id: 11, function_name: _CAST, function_type: ordinary, result_type: Enum16(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+                  CONSTANT id: 10, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
+            FUNCTION id: 11, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
               ARGUMENTS
                 LIST id: 12, nodes: 2
                   CONSTANT id: 13, constant_value: \'other\', constant_value_type: String
-                  CONSTANT id: 14, constant_value: \'Enum16(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
+                  CONSTANT id: 14, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
   JOIN TREE
     TABLE id: 5, table_name: system.numbers
   LIMIT
@@ -61,16 +61,16 @@ QUERY id: 0
                 LIST id: 5, nodes: 2
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
                   CONSTANT id: 8, constant_value: UInt64_5, constant_value_type: UInt8
-            FUNCTION id: 9, function_name: _CAST, function_type: ordinary, result_type: Enum16(\'censor.net\' = 1, \'google\' = 2)
+            FUNCTION id: 9, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
               ARGUMENTS
                 LIST id: 10, nodes: 2
                   CONSTANT id: 11, constant_value: \'censor.net\', constant_value_type: String
-                  CONSTANT id: 12, constant_value: \'Enum16(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
-            FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum16(\'censor.net\' = 1, \'google\' = 2)
+                  CONSTANT id: 12, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+            FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
               ARGUMENTS
                 LIST id: 14, nodes: 2
                   CONSTANT id: 15, constant_value: \'google\', constant_value_type: String
-                  CONSTANT id: 12, constant_value: \'Enum16(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+                  CONSTANT id: 12, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
   JOIN TREE
     TABLE id: 7, table_name: system.numbers
   LIMIT
