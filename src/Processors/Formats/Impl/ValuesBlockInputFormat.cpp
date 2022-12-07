@@ -599,7 +599,7 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
         }
 
         readQuotedField(value, buf);
-        auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
+        auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
     }
 

@@ -45,9 +45,13 @@ public:
     bool needContext() const override { return !hints_str.empty(); }
     void setContext(ContextPtr & context) override;
 
+    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
+
 protected:
     void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
     size_t getNumRowsRead() const override { return rows_read; }
+
+    virtual void transformFinalTypeIfNeeded(DataTypePtr &) {}
 
     size_t max_rows_to_read;
     size_t rows_read = 0;
@@ -82,7 +86,7 @@ protected:
 
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
 
-    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t index);
+    size_t field_index;
 
 private:
     DataTypePtr getDefaultType(size_t column) const;
@@ -110,8 +114,6 @@ protected:
     /// If it's impossible to determine the type for some column, return nullptr for it.
     /// Set eof = true if can't read more data.
     virtual NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) = 0;
-
-    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
 };
 
 /// Base class for schema inference for formats that don't need any data to
@@ -125,16 +127,17 @@ public:
     virtual ~IExternalSchemaReader() = default;
 };
 
+template <class SchemaReader>
 void chooseResultColumnType(
+    SchemaReader & schema_reader,
     DataTypePtr & type,
     DataTypePtr & new_type,
-    std::function<void(DataTypePtr &, DataTypePtr &)> transform_types_if_needed,
     const DataTypePtr & default_type,
     const String & column_name,
     size_t row);
 
 void checkResultColumnTypeAndAppend(
-    NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t rows_read);
+    NamesAndTypesList & result, DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read);
 
 Strings splitColumnNames(const String & column_names_str);
 

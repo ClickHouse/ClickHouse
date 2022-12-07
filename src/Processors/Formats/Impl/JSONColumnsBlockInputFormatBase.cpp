@@ -2,6 +2,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
 
@@ -175,14 +176,9 @@ JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
 {
 }
 
-void JSONColumnsSchemaReaderBase::chooseResulType(DataTypePtr & type, DataTypePtr & new_type, const String & column_name, size_t row) const
+void JSONColumnsSchemaReaderBase::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    auto convert_types_if_needed = [&](DataTypePtr & first, DataTypePtr & second)
-    {
-        DataTypes types = {first, second};
-        transformInferredJSONTypesIfNeeded(types, format_settings);
-    };
-    chooseResultColumnType(type, new_type, convert_types_if_needed, nullptr, column_name, row);
+    transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
 }
 
 NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
@@ -222,7 +218,8 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
 
             rows_in_block = 0;
             auto column_type = readColumnAndGetDataType(column_name, rows_in_block, format_settings.max_rows_to_read_for_schema_inference - total_rows_read);
-            chooseResulType(names_to_types[column_name], column_type, column_name, total_rows_read + 1);
+            chooseResultColumnType(*this, names_to_types[column_name], column_type, nullptr, column_name, total_rows_read + 1);
+
             ++iteration;
         }
         while (!reader->checkChunkEndOrSkipColumnDelimiter());
@@ -237,8 +234,9 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
     for (auto & name : names_order)
     {
         auto & type = names_to_types[name];
+        transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
         /// Check that we could determine the type of this column.
-        checkResultColumnTypeAndAppend(result, type, name, nullptr, format_settings.max_rows_to_read_for_schema_inference);
+        checkResultColumnTypeAndAppend(result, type, name, format_settings, nullptr, format_settings.max_rows_to_read_for_schema_inference);
     }
 
     return result;
@@ -262,8 +260,8 @@ DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String &
         }
 
         readJSONField(field, in);
-        DataTypePtr field_type = JSONUtils::getDataTypeFromField(field, format_settings);
-        chooseResulType(column_type, field_type, column_name, rows_read);
+        DataTypePtr field_type = tryInferDataTypeForSingleJSONField(field, format_settings, &inference_info);
+        chooseResultColumnType(*this, column_type, field_type, nullptr, column_name, rows_read);
         ++rows_read;
     }
     while (!reader->checkColumnEndOrSkipFieldDelimiter());

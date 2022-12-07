@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Formats/ParsedTemplateFormatString.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
@@ -98,11 +99,12 @@ public:
 private:
     DataTypes readRowAndGetDataTypes() override;
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;
     CustomSeparatedFormatReader reader;
     bool first_row = true;
+    JSONInferenceInfo json_inference_info;
 };
 
 }

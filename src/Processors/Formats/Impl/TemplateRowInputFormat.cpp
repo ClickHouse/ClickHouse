@@ -2,6 +2,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/Operators.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -493,16 +494,16 @@ DataTypes TemplateSchemaReader::readRowAndGetDataTypes()
             format_settings.csv.delimiter = row_format.delimiters[i + 1].empty() ? format_settings.csv.delimiter : row_format.delimiters[i + 1].front();
 
         field = readFieldByEscapingRule(buf, row_format.escaping_rules[i], format_settings);
-        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i]));
+        data_types.push_back(tryInferDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i], &json_inference_info));
     }
 
     format_reader.skipRowEndDelimiter();
     return data_types;
 }
 
-void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t column_idx)
+void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredTypesIfNeeded(type, new_type, format_settings, row_format.escaping_rules[column_idx]);
+    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, row_format.escaping_rules[field_index], &json_inference_info);
 }
 
 static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & settings)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
@@ -76,18 +77,18 @@ class JSONColumnsSchemaReaderBase : public ISchemaReader
 public:
     JSONColumnsSchemaReaderBase(ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
+
 private:
     NamesAndTypesList readSchema() override;
 
     /// Read whole column in the block (up to max_rows_to_read rows) and extract the data type.
     DataTypePtr readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read);
 
-    /// Choose result type for column from two inferred types from different rows.
-    void chooseResulType(DataTypePtr & type, DataTypePtr & new_type, const String & column_name, size_t row) const;
-
     const FormatSettings format_settings;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     Names column_names_from_settings;
+    JSONInferenceInfo inference_info;
 };
 
 }

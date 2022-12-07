@@ -47,6 +47,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
         bool have_tuple = false;
         bool all_tuples = true;
         size_t tuple_size = 0;
+        bool sizes_are_equal = true;
 
         std::vector<DataTypes> nested_types;
 
@@ -62,7 +63,10 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
                         nested_types[elem_idx].reserve(types.size());
                 }
                 else if (tuple_size != type_tuple->getElements().size())
-                    return;
+                {
+                    sizes_are_equal = false;
+                    break;
+                }
 
                 have_tuple = true;
 
@@ -75,7 +79,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
 
         if (have_tuple)
         {
-            if (all_tuples)
+            if (all_tuples && sizes_are_equal)
             {
                 std::vector<DataTypes> transposed_nested_types(types.size());
                 for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
@@ -167,6 +171,9 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
                 else
                     types[i] = nested_types[i];
             }
+
+            if (transform_complex_types)
+                transform_complex_types(types);
 
             return;
         }

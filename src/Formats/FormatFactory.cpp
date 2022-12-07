@@ -168,6 +168,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.schema_inference_hints = settings.schema_inference_hints;
+    format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
     format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
