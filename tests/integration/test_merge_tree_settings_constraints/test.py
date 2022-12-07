@@ -20,6 +20,11 @@ def start_cluster():
 
 
 def test_merge_tree_settings_constraints():
+
+    assert "Setting storage_policy should not be changed" in instance.query_and_get_error(
+        f"CREATE TABLE wrong_table (number Int64) engine = MergeTree() ORDER BY number SETTINGS storage_policy = 'secret_policy'"
+    )
+
     expected_error = "Setting min_bytes_for_wide_part should"
 
     assert expected_error in instance.query_and_get_error(
