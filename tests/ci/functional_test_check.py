@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import atexit
+from typing import List, Tuple
 
 from github import Github
 
@@ -122,8 +123,11 @@ def get_tests_to_run(pr_info):
     return list(result)
 
 
-def process_results(result_folder, server_log_path):
-    test_results = []
+def process_results(
+    result_folder: str,
+    server_log_path: str,
+) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
+    test_results = []  # type: List[Tuple[str, str]]
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content of result_folder.
@@ -166,7 +170,7 @@ def process_results(result_folder, server_log_path):
         return "error", "Not found test_results.tsv", test_results, additional_files
 
     with open(results_path, "r", encoding="utf-8") as results_file:
-        test_results = list(csv.reader(results_file, delimiter="\t"))
+        test_results = list(csv.reader(results_file, delimiter="\t"))  # type: ignore
     if len(test_results) == 0:
         return "error", "Empty test_results.tsv", test_results, additional_files
 
@@ -232,8 +236,8 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if "RUN_BY_HASH_NUM" in os.environ:
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM"))
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL"))
+        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
         check_name_with_group = (
             check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
         )
