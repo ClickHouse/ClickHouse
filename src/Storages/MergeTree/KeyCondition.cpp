@@ -29,6 +29,8 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 
+#include <base/defines.h>
+
 #include <algorithm>
 #include <cassert>
 #include <stack>
@@ -654,7 +656,8 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 return func;
             }
 
-            res = &inverted_dag.addFunction(FunctionFactory::instance().get(node.function_base->getName(), context), children, "");
+            res = &inverted_dag.addFunction(node.function_base, children, "");
+            chassert(res.result_type == node.result_type);
         }
     }
 
