@@ -1,6 +1,5 @@
 #include <Processors/Formats/ISchemaReader.h>
-#include <Formats/ReadSchemaUtils.h>
-#include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <boost/algorithm/string.hpp>
@@ -17,10 +16,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+template <class SchemaReader>
 void chooseResultColumnType(
+    SchemaReader & schema_reader,
     DataTypePtr & type,
     DataTypePtr & new_type,
-    std::function<void(DataTypePtr &, DataTypePtr &)> transform_types_if_needed,
     const DataTypePtr & default_type,
     const String & column_name,
     size_t row)
@@ -34,7 +34,7 @@ void chooseResultColumnType(
     if (!new_type || type->equals(*new_type))
         return;
 
-    transform_types_if_needed(type, new_type);
+    schema_reader.transformTypesIfNeeded(type, new_type);
     if (type->equals(*new_type))
         return;
 
@@ -55,9 +55,9 @@ void chooseResultColumnType(
     }
 }
 
-void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t rows_read)
+void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read)
 {
-    if (!type)
+    if (!checkIfTypeIsComplete(type))
     {
         if (!default_type)
             throw Exception(
@@ -69,6 +69,10 @@ void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & ty
 
         type = default_type;
     }
+
+    if (settings.schema_inference_make_columns_nullable)
+        type = makeNullableRecursively(type);
+
     result.emplace_back(name, type);
 }
 
@@ -86,6 +90,11 @@ void IIRowSchemaReader::setContext(ContextPtr & context)
         for (const auto & [name, type] : columns.getAll())
             hints[name] = type;
     }
+}
+
+void IIRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -160,23 +169,23 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         if (new_data_types.size() != data_types.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Rows have different amount of values");
 
-        for (size_t i = 0; i != data_types.size(); ++i)
+        for (field_index = 0; field_index != data_types.size(); ++field_index)
         {
             /// Check if we couldn't determine the type of this column in a new row
             /// or the type for this column was taken from hints.
-            if (!new_data_types[i] || hints.contains(column_names[i]))
+            if (!new_data_types[field_index] || hints.contains(column_names[field_index]))
                 continue;
 
-            auto transform_types_if_needed = [&](DataTypePtr & type, DataTypePtr & new_type){ transformTypesIfNeeded(type, new_type, i); };
-            chooseResultColumnType(data_types[i], new_data_types[i], transform_types_if_needed, getDefaultType(i), std::to_string(i + 1), rows_read);
+            chooseResultColumnType(*this, data_types[field_index], new_data_types[field_index], getDefaultType(field_index), std::to_string(field_index + 1), rows_read);
         }
     }
 
     NamesAndTypesList result;
-    for (size_t i = 0; i != data_types.size(); ++i)
+    for (field_index = 0; field_index != data_types.size(); ++field_index)
     {
+        transformFinalTypeIfNeeded(data_types[field_index]);
         /// Check that we could determine the type of this column.
-        checkResultColumnTypeAndAppend(result, data_types[i], column_names[i], getDefaultType(i), rows_read);
+        checkResultColumnTypeAndAppend(result, data_types[field_index], column_names[field_index], format_settings, getDefaultType(field_index), rows_read);
     }
 
     return result;
@@ -206,11 +215,6 @@ DataTypePtr IRowSchemaReader::getDefaultType(size_t column) const
     if (column < default_types.size() && default_types[column])
         return default_types[column];
     return nullptr;
-}
-
-void IRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
@@ -245,7 +249,6 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         names_order.push_back(name);
     }
 
-    auto transform_types_if_needed = [&](DataTypePtr & type, DataTypePtr & new_type){ transformTypesIfNeeded(type, new_type); };
     for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
     {
         auto new_names_and_types = readRowAndGetNamesAndDataTypes(eof);
@@ -277,7 +280,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
                 continue;
 
             auto & type = it->second;
-            chooseResultColumnType(type, new_type, transform_types_if_needed, default_type, name, rows_read);
+            chooseResultColumnType(*this, type, new_type, default_type, name, rows_read);
         }
     }
 
@@ -289,16 +292,12 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     for (auto & name : names_order)
     {
         auto & type = names_to_types[name];
+        transformFinalTypeIfNeeded(type);
         /// Check that we could determine the type of this column.
-        checkResultColumnTypeAndAppend(result, type, name, default_type, rows_read);
+        checkResultColumnTypeAndAppend(result, type, name, format_settings, default_type, rows_read);
     }
 
     return result;
-}
-
-void IRowWithNamesSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 }

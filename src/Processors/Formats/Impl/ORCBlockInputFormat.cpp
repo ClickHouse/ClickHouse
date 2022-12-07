@@ -3,7 +3,7 @@
 #if USE_ORC
 
 #include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>

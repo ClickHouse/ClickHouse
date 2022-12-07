@@ -71,6 +71,8 @@ struct FormatSettings
         Raw
     };
 
+    bool schema_inference_make_columns_nullable = true;
+
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
     bool input_format_ipv4_default_on_conversion_error = false;

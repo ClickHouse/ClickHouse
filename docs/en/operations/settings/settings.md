@@ -3434,6 +3434,13 @@ Use schema from cache for URL with last modification time validation (for urls w
 
 Default value: `true`.
 
+## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
+
+Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
+The inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+
+Default value: `false`.
+
 ## use_structure_from_insertion_table_in_table_functions {use_structure_from_insertion_table_in_table_functions}
 
 Use structure from insertion table instead of schema inference from data.

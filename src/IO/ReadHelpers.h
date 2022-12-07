@@ -605,6 +605,9 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
     return readJSONStringInto<Vector, bool>(s, buf);
 }
 
+template <typename Vector>
+bool tryReadQuotedStringInto(Vector & s, ReadBuffer & buf);
+
 /// Reads chunk of data between {} in that way,
 /// that it has balanced parentheses sequence of {}.
 /// So, it may form a JSON object, but it can be incorrenct.
