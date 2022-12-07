@@ -2843,6 +2843,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         }
     }
 
+    /** Nested subqueries cannot access outer subqueries table expressions from JOIN tree because
+      * that can prevent resolution of table expression from CTE.
+      *
+      * Example: WITH a AS (SELECT number FROM numbers(1)), b AS (SELECT number FROM a) SELECT * FROM a as l, b as r;
+      */
+    if (identifier_lookup.isTableExpressionLookup())
+        identifier_resolve_settings.allow_to_check_join_tree = false;
+
     while (scope_to_check != nullptr)
     {
         auto lookup_result = tryResolveIdentifier(identifier_lookup, *scope_to_check, identifier_resolve_settings);
