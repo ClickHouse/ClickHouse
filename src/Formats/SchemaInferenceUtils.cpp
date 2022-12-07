@@ -520,7 +520,7 @@ static DataTypePtr tryInferArray(ReadBuffer & buf, const FormatSettings & settin
         /// we can't determine which one it is. But we will be able to do it later
         /// when we will have types from other rows for this column.
         /// For example, if in the next row we will have types [Nullable(Nothing), String, Float64],
-        /// we can determine the type for this colum as Tuple(Nullable(Float64), Nullable(String), Float64).
+        /// we can determine the type for this column as Tuple(Nullable(Float64), Nullable(String), Float64).
         for (const auto & type : nested_types)
         {
             if (!checkIfTypeIsComplete(type))
