@@ -147,6 +147,8 @@ select 0x2_p2; -- { serverError UNKNOWN_IDENTIFIER }
 select 0x2p_2; -- { serverError UNKNOWN_IDENTIFIER }
 select 0x2p2_; -- { serverError UNKNOWN_IDENTIFIER }
 select 0b; -- { serverError UNKNOWN_IDENTIFIER }
+select 0b ; -- { serverError UNKNOWN_IDENTIFIER }
 select 0x; -- { serverError UNKNOWN_IDENTIFIER }
+select 0x ; -- { serverError UNKNOWN_IDENTIFIER }
 select 0x_; -- { serverError UNKNOWN_IDENTIFIER }
 select 0x_1; -- { serverError UNKNOWN_IDENTIFIER }

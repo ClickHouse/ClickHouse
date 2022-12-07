@@ -113,12 +113,26 @@ Token Lexer::nextTokenImpl()
                 bool start_of_block = false;
                 /// 0x, 0b
                 bool hex = false;
-                if (pos + 2 < end && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b' || pos[1] == 'X' || pos[1] == 'B') && pos[2] != ';')
+                if (pos + 2 < end && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b' || pos[1] == 'X' || pos[1] == 'B'))
                 {
+                    bool is_valid = false;
                     if (pos[1] == 'x' || pos[1] == 'X')
-                        hex = true;
-                    pos += 2;
-                    start_of_block = true;
+                    {
+                        if (isHexDigit(pos[2]))
+                        {
+                            hex = true;
+                            is_valid = true; // hex
+                        }
+                    }
+                    else if (pos[2] == '0' || pos[2] == '1')
+                        is_valid = true; // bin
+                    if (is_valid)
+                    {
+                        pos += 2;
+                        start_of_block = true;
+                    }
+                    else
+                        ++pos; // consume the leading zero - could be an identifier
                 }
                 else
                     ++pos;
