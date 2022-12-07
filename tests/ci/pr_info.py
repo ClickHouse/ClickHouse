@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
-from typing import Set
+from typing import Dict, List, Set
 
 from unidiff import PatchSet  # type: ignore
 
@@ -42,15 +42,22 @@ def get_pr_for_commit(sha, ref):
     try:
         response = get_with_retries(try_get_pr_url, sleep=RETRY_SLEEP)
         data = response.json()
+        our_prs = []  # type: List[Dict]
         if len(data) > 1:
             print("Got more than one pr for commit", sha)
         for pr in data:
+            # We need to check if the PR is created in our repo, because
+            # https://github.com/kaynewu/ClickHouse/pull/2
+            # has broke our PR search once in a while
+            if pr["base"]["repo"]["full_name"] != GITHUB_REPOSITORY:
+                continue
             # refs for pushes looks like refs/head/XX
             # refs for RPs looks like XX
             if pr["head"]["ref"] in ref:
                 return pr
+            our_prs.append(pr)
         print("Cannot find PR with required ref", ref, "returning first one")
-        first_pr = data[0]
+        first_pr = our_prs[0]
         return first_pr
     except Exception as ex:
         print("Cannot fetch PR info from commit", ex)
