@@ -78,7 +78,7 @@ struct HexImpl
         }
         else
         {
-            auto start_pos = pos;
+            const auto * start_pos = pos;
             pos = end - 1;
             while (pos >= start_pos)
             {
@@ -212,7 +212,7 @@ struct BinImpl
         }
         else
         {
-            auto start_pos = pos;
+            const auto * start_pos = pos;
             pos = end - 1;
             while (pos >= start_pos)
             {
