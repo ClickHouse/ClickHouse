@@ -32,7 +32,7 @@ public:
     {
     }
 
-    bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & /* child */)
+    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & /* child */)
     {
         return parent->getNodeType() != QueryTreeNodeType::FUNCTION;
     }
@@ -198,7 +198,7 @@ public:
     {
     }
 
-    bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & /* child */)
+    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & /* child */)
     {
         return parent->getNodeType() != QueryTreeNodeType::FUNCTION;
     }
