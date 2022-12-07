@@ -186,11 +186,11 @@ protected:
     template <typename ... TAllocatorParams>
     void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
-        if (unlikely(empty()))
+        if (empty())
         {
             // The allocated memory should be multiplication of ELEMENT_SIZE to hold the element, otherwise,
             // memory issue such as corruption could appear in edge case.
-            alloc(std::max(integerRoundUp(initial_bytes, ELEMENT_SIZE),
+            realloc(std::max(integerRoundUp(initial_bytes, ELEMENT_SIZE),
                              minimum_memory_for_elements(1)),
                     std::forward<TAllocatorParams>(allocator_params)...);
         }
