@@ -1,7 +1,8 @@
 -- Tags: long, zookeeper, no-replicated-database
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 
-DROP TABLE IF EXISTS partitioned_table;
+SET insert_keeper_fault_injection_probability=0;
+DROP TABLE IF EXISTS partitioned_table SYNC;
 
 CREATE TABLE partitioned_table (
     key UInt64,
@@ -47,4 +48,4 @@ SELECT partition_id, name FROM system.parts WHERE table = 'partitioned_table' AN
 
 SELECT substring(name, 1, 2), value FROM system.zookeeper WHERE path='/clickhouse/' || currentDatabase() || '/01650_drop_part_and_deduplication_partitioned_table/blocks/' ORDER BY value;
 
-DROP TABLE IF EXISTS partitioned_table;
+DROP TABLE IF EXISTS partitioned_table SYNC;

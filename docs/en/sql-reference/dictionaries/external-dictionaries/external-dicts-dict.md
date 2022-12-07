@@ -1,10 +1,13 @@
 ---
 slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict
 sidebar_position: 40
-sidebar_label: Configuring an External Dictionary
+sidebar_label: Configuring a Dictionary
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
-# Configuring an External Dictionary
+# Configuring a Dictionary
+
+<CloudDetails />
 
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 

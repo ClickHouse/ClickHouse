@@ -455,6 +455,7 @@ void Planner::buildQueryPlanIfNeeded()
         );
 
         SortDescription group_by_sort_description;
+        SortDescription sort_description_for_merging;
 
         auto merge_threads = settings.max_threads;
         auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -477,7 +478,6 @@ void Planner::buildQueryPlanIfNeeded()
         const bool should_produce_results_in_order_of_bucket_number
             = select_query_options.to_stage == QueryProcessingStage::WithMergeableState && settings.distributed_aggregation_memory_efficient;
 
-        InputOrderInfoPtr input_order_info;
         bool aggregate_final =
             select_query_options.to_stage > QueryProcessingStage::WithMergeableState &&
             !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
@@ -493,21 +493,11 @@ void Planner::buildQueryPlanIfNeeded()
             temporary_data_merge_threads,
             storage_has_evenly_distributed_read,
             settings.group_by_use_nulls,
-            std::move(input_order_info),
+            std::move(sort_description_for_merging),
             std::move(group_by_sort_description),
-            should_produce_results_in_order_of_bucket_number);
+            should_produce_results_in_order_of_bucket_number,
+            settings.enable_memory_bound_merging_of_aggregation_results);
         query_plan.addStep(std::move(aggregating_step));
-
-        if (query_node.isGroupByWithRollup())
-        {
-            auto rollup_step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
-            query_plan.addStep(std::move(rollup_step));
-        }
-        else if (query_node.isGroupByWithCube())
-        {
-            auto cube_step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
-            query_plan.addStep(std::move(cube_step));
-        }
 
         if (query_node.isGroupByWithTotals())
         {
@@ -527,6 +517,17 @@ void Planner::buildQueryPlanIfNeeded()
                 final);
 
             query_plan.addStep(std::move(totals_having_step));
+        }
+
+        if (query_node.isGroupByWithRollup())
+        {
+            auto rollup_step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
+            query_plan.addStep(std::move(rollup_step));
+        }
+        else if (query_node.isGroupByWithCube())
+        {
+            auto cube_step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
+            query_plan.addStep(std::move(cube_step));
         }
     }
 
@@ -571,17 +572,13 @@ void Planner::buildQueryPlanIfNeeded()
             if (!window_description.full_sort_description.empty() &&
                 (i == 0 || !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)))
             {
+                SortingStep::Settings sort_settings(*query_context);
+
                 auto sorting_step = std::make_unique<SortingStep>(
                     query_plan.getCurrentDataStream(),
                     window_description.full_sort_description,
-                    settings.max_block_size,
                     0 /*limit*/,
-                    SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-                    settings.max_bytes_before_remerge_sort,
-                    settings.remerge_sort_lowered_memory_bytes_ratio,
-                    settings.max_bytes_before_external_sort,
-                    query_context->getTempDataOnDisk(),
-                    settings.min_free_disk_space_for_temporary_data,
+                    sort_settings,
                     settings.optimize_sorting_by_input_stream_properties);
 
                 sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'");
@@ -603,7 +600,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_node.hasOffset())
     {
         /// Constness of offset is validated during query analysis stage
-        limit_offset = query_node.getOffset()->getConstantValue().getValue().safeGet<UInt64>();
+        limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     }
 
     UInt64 limit_length = 0;
@@ -611,7 +608,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_node.hasLimit())
     {
         /// Constness of limit is validated during query analysis stage
-        limit_length = query_node.getLimit()->getConstantValue().getValue().safeGet<UInt64>();
+        limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     }
 
     if (query_node.isDistinct())
@@ -673,18 +670,14 @@ void Planner::buildQueryPlanIfNeeded()
 
         const Settings & settings = query_context->getSettingsRef();
 
+        SortingStep::Settings sort_settings(*query_context);
+
         /// Merge the sorted blocks
         auto sorting_step = std::make_unique<SortingStep>(
             query_plan.getCurrentDataStream(),
             sort_description,
-            settings.max_block_size,
             partial_sorting_limit,
-            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-            settings.max_bytes_before_remerge_sort,
-            settings.remerge_sort_lowered_memory_bytes_ratio,
-            settings.max_bytes_before_external_sort,
-            query_context->getTempDataOnDisk(),
-            settings.min_free_disk_space_for_temporary_data,
+            sort_settings,
             settings.optimize_sorting_by_input_stream_properties);
 
         sorting_step->setStepDescription("Sorting for ORDER BY");
@@ -787,13 +780,13 @@ void Planner::buildQueryPlanIfNeeded()
         query_plan.addStep(std::move(expression_step_before_limit_by));
 
         /// Constness of LIMIT BY limit is validated during query analysis stage
-        UInt64 limit_by_limit = query_node.getLimitByLimit()->getConstantValue().getValue().safeGet<UInt64>();
+        UInt64 limit_by_limit = query_node.getLimitByLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         UInt64 limit_by_offset = 0;
 
         if (query_node.hasLimitByOffset())
         {
             /// Constness of LIMIT BY offset is validated during query analysis stage
-            limit_by_offset = query_node.getLimitByOffset()->getConstantValue().getValue().safeGet<UInt64>();
+            limit_by_offset = query_node.getLimitByOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         }
 
         auto limit_by_step = std::make_unique<LimitByStep>(query_plan.getCurrentDataStream(),

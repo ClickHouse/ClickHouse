@@ -195,3 +195,32 @@ def test_ambiguous_join(started_cluster):
     """
     )
     assert "AMBIGUOUS_COLUMN_NAME" not in result
+
+
+def test_skip_unavailable_shards(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    result = node.query(
+        """
+    SELECT count(*) from s3Cluster(
+        'cluster_non_existent_port',
+        'http://minio1:9001/root/data/clickhouse/part1.csv', 
+        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    SETTINGS skip_unavailable_shards = 1
+    """
+    )
+
+    assert result == "10\n"
+
+
+def test_unskip_unavailable_shards(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    error = node.query_and_get_error(
+        """
+    SELECT count(*) from s3Cluster(
+        'cluster_non_existent_port',
+        'http://minio1:9001/root/data/clickhouse/part1.csv', 
+        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    """
+    )
+
+    assert "NETWORK_ERROR" in error

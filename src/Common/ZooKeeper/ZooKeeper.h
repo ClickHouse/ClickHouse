@@ -156,7 +156,7 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
     using ErrorsList = std::initializer_list<Coordination::Error>;
 
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /** Config of the form:
         <zookeeper>

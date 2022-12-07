@@ -146,10 +146,14 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
+bool TableFunctionS3::supportsReadingSubsetOfColumns()
+{
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+}
+
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    Poco::URI uri (configuration.url);
-    S3::URI s3_uri (uri);
+    S3::URI s3_uri (configuration.url);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
@@ -181,6 +185,11 @@ void registerTableFunctionS3(TableFunctionFactory & factory)
 void registerTableFunctionCOS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionCOS>();
+}
+
+void registerTableFunctionOSS(TableFunctionFactory & factory)
+{
+    factory.registerFunction<TableFunctionOSS>();
 }
 
 }

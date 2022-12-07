@@ -178,4 +178,32 @@ struct ModuloLegacyImpl : ModuloImpl<A, B>
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
 };
 
+template <typename A, typename B>
+struct PositiveModuloImpl : ModuloImpl<A, B>
+{
+    using OriginResultType = typename ModuloImpl<A, B>::ResultType;
+    using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
+    {
+        auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);
+        if constexpr (is_signed_v<A>)
+        {
+            if (res < 0)
+            {
+                if constexpr (is_unsigned_v<B>)
+                    res += static_cast<OriginResultType>(b);
+                else
+                {
+                    if (b == std::numeric_limits<B>::lowest())
+                        throw Exception("Division by the most negative number", ErrorCodes::ILLEGAL_DIVISION);
+                    res += b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b);
+                }
+            }
+        }
+        return static_cast<ResultType>(res);
+    }
+};
+
 }
