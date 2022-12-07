@@ -10,7 +10,7 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -47,6 +47,7 @@ Union
 
 -  `AST` — Abstract syntax tree.
 -  `SYNTAX` — Query text after AST-level optimizations.
+-  `QUERY TREE` — Query tree after Query Tree level optimizations.
 -  `PLAN` — Query execution plan.
 -  `PIPELINE` — Query execution pipeline.
 
@@ -108,6 +109,32 @@ FROM
     CROSS JOIN system.numbers AS b
 ) AS `--.s`
 CROSS JOIN system.numbers AS c
+```
+
+### EXPLAIN QUERY TREE
+
+Settings:
+
+-   `run_passes` — Run all query tree passes before dumping the query tree. Defaul: `1`.
+-   `dump_passes` — Dump information about used passes before dumping the query tree. Default: `0`.
+-   `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
+
+Example:
+```sql
+EXPLAIN QUERY TREE SELECT id, value FROM test_table;
+```
+
+```
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt64
+    value String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+      COLUMN id: 4, column_name: value, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.test_table
 ```
 
 ### EXPLAIN PLAN

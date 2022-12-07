@@ -5,7 +5,7 @@ import logging
 import os
 import re
 from collections import namedtuple
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import download_build_with_progress
@@ -14,7 +14,7 @@ from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
 
 # Necessary ENV variables
-def getenv(name: str, default: str = None):
+def getenv(name: str, default: Optional[str] = None) -> str:
     env = os.getenv(name, default)
     if env is not None:
         return env
@@ -62,7 +62,7 @@ class Packages:
             raise ValueError(f"{deb_pkg} not in {self.deb}")
         return removesuffix(deb_pkg, ".deb").split("_")[-1]
 
-    def replace_with_fallback(self, name: str):
+    def replace_with_fallback(self, name: str) -> None:
         if name.endswith(".deb"):
             suffix = self.deb.pop(name)
             self.deb[self.fallback_to_all(name)] = self.fallback_to_all(suffix)
@@ -80,7 +80,7 @@ class Packages:
         return os.path.join(TEMP_PATH, package_file)
 
     @staticmethod
-    def fallback_to_all(url_or_name: str):
+    def fallback_to_all(url_or_name: str) -> str:
         """Until July 2022 we had clickhouse-server and clickhouse-client with
         arch 'all'"""
         # deb
@@ -111,7 +111,7 @@ class S3:
         self.force_download = force_download
         self.packages = Packages(version)
 
-    def download_package(self, package_file: str, s3_path_suffix: str):
+    def download_package(self, package_file: str, s3_path_suffix: str) -> None:
         path = Packages.path(package_file)
         fallback_path = Packages.fallback_to_all(path)
         if not self.force_download and (
@@ -186,7 +186,12 @@ class Release:
 
 class Artifactory:
     def __init__(
-        self, url: str, release: str, deb_repo="deb", rpm_repo="rpm", tgz_repo="tgz"
+        self,
+        url: str,
+        release: str,
+        deb_repo: str = "deb",
+        rpm_repo: str = "rpm",
+        tgz_repo: str = "tgz",
     ):
         self._url = url
         self._release = release
@@ -196,7 +201,7 @@ class Artifactory:
         # check the credentials ENVs for early exit
         self.__path_helper("_deb", "")
 
-    def deploy_deb(self, packages: Packages):
+    def deploy_deb(self, packages: Packages) -> None:
         for package_file in packages.deb:
             path = packages.path(package_file)
             dist = self._release
@@ -212,13 +217,13 @@ class Artifactory:
             )
             self.deb_path(package_file).deploy_deb(path, dist, comp, arch)
 
-    def deploy_rpm(self, packages: Packages):
+    def deploy_rpm(self, packages: Packages) -> None:
         for package_file in packages.rpm:
             path = packages.path(package_file)
             logging.info("Deploy %s to artifactory", path)
             self.rpm_path(package_file).deploy_file(path)
 
-    def deploy_tgz(self, packages: Packages):
+    def deploy_tgz(self, packages: Packages) -> None:
         for package_file in packages.tgz:
             path = packages.path(package_file)
             logging.info("Deploy %s to artifactory", path)
@@ -316,19 +321,19 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def process_deb(s3: S3, art_clients: List[Artifactory]):
+def process_deb(s3: S3, art_clients: List[Artifactory]) -> None:
     s3.download_deb()
     for art_client in art_clients:
         art_client.deploy_deb(s3.packages)
 
 
-def process_rpm(s3: S3, art_clients: List[Artifactory]):
+def process_rpm(s3: S3, art_clients: List[Artifactory]) -> None:
     s3.download_rpm()
     for art_client in art_clients:
         art_client.deploy_rpm(s3.packages)
 
 
-def process_tgz(s3: S3, art_clients: List[Artifactory]):
+def process_tgz(s3: S3, art_clients: List[Artifactory]) -> None:
     s3.download_tgz()
     for art_client in art_clients:
         art_client.deploy_tgz(s3.packages)

@@ -1,14 +1,12 @@
 #pragma once
-
 #include <Interpreters/Context.h>
-#include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/NamedCollections_fwd.h>
+#include <Storages/NamedCollectionUtils.h>
 
+namespace Poco { namespace Util { class AbstractConfiguration; } }
 
 namespace DB
 {
-
-class NamedCollection;
-using NamedCollectionPtr = std::shared_ptr<const NamedCollection>;
 
 /**
  * Class to represent arbitrary-structured named collection object.
@@ -22,40 +20,58 @@ using NamedCollectionPtr = std::shared_ptr<const NamedCollection>;
  */
 class NamedCollection
 {
-private:
-    class Impl;
-    using ImplPtr = std::unique_ptr<Impl>;
-
-    ImplPtr pimpl;
-
 public:
     using Key = std::string;
     using Keys = std::set<Key>;
+    using SourceId = NamedCollectionUtils::SourceId;
 
-    static NamedCollectionPtr create(
+    static MutableNamedCollectionPtr create(
         const Poco::Util::AbstractConfiguration & config,
-        const std::string & collection_name);
-
-    NamedCollection(
-        const Poco::Util::AbstractConfiguration & config,
+        const std::string & collection_name,
         const std::string & collection_path,
-        const Keys & keys);
-
-    explicit NamedCollection(ImplPtr pimpl_);
+        const Keys & keys,
+        SourceId source_id_,
+        bool is_mutable_);
 
     template <typename T> T get(const Key & key) const;
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
 
-    template <typename T> void set(const Key & key, const T & value, bool update_if_exists = false);
+    std::unique_lock<std::mutex> lock();
 
-    void remove(const Key & key);
+    template <typename T, bool locked = false> void set(const Key & key, const T & value);
 
-    std::shared_ptr<NamedCollection> duplicate() const;
+    template <typename T, bool locked = false> void setOrUpdate(const Key & key, const T & value);
+
+    template <bool locked = false> void remove(const Key & key);
+
+    MutableNamedCollectionPtr duplicate() const;
 
     Keys getKeys() const;
 
     std::string dumpStructure() const;
+
+    bool isMutable() const { return is_mutable; }
+
+    SourceId getSourceId() const { return source_id; }
+
+private:
+    class Impl;
+    using ImplPtr = std::unique_ptr<Impl>;
+
+    NamedCollection(
+        ImplPtr pimpl_,
+        const std::string & collection_name,
+        SourceId source_id,
+        bool is_mutable);
+
+    void assertMutable() const;
+
+    ImplPtr pimpl;
+    const std::string collection_name;
+    const SourceId source_id;
+    const bool is_mutable;
+    mutable std::mutex mutex;
 };
 
 /**
@@ -66,42 +82,51 @@ class NamedCollectionFactory : boost::noncopyable
 public:
     static NamedCollectionFactory & instance();
 
-    void initialize(const Poco::Util::AbstractConfiguration & config_);
-
-    void reload(const Poco::Util::AbstractConfiguration & config_);
-
     bool exists(const std::string & collection_name) const;
 
     NamedCollectionPtr get(const std::string & collection_name) const;
 
     NamedCollectionPtr tryGet(const std::string & collection_name) const;
 
-    void add(
-        const std::string & collection_name,
-        NamedCollectionPtr collection);
+    MutableNamedCollectionPtr getMutable(const std::string & collection_name) const;
+
+    void add(const std::string & collection_name, MutableNamedCollectionPtr collection);
+
+    void add(NamedCollectionsMap collections);
+
+    void update(NamedCollectionsMap collections);
 
     void remove(const std::string & collection_name);
 
-    using NamedCollections = std::unordered_map<std::string, NamedCollectionPtr>;
-    NamedCollections getAll() const;
+    void removeIfExists(const std::string & collection_name);
+
+    void removeById(NamedCollectionUtils::SourceId id);
+
+    NamedCollectionsMap getAll() const;
 
 private:
-    void assertInitialized(std::lock_guard<std::mutex> & lock) const;
-
-    NamedCollectionPtr getImpl(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock) const;
-
     bool existsUnlocked(
         const std::string & collection_name,
         std::lock_guard<std::mutex> & lock) const;
 
-    mutable NamedCollections loaded_named_collections;
+    MutableNamedCollectionPtr tryGetUnlocked(
+        const std::string & collection_name,
+        std::lock_guard<std::mutex> & lock) const;
 
-    const Poco::Util::AbstractConfiguration * config;
+    void addUnlocked(
+        const std::string & collection_name,
+        MutableNamedCollectionPtr collection,
+        std::lock_guard<std::mutex> & lock);
 
-    bool is_initialized = false;
+    bool removeIfExistsUnlocked(
+        const std::string & collection_name,
+        std::lock_guard<std::mutex> & lock);
+
+    mutable NamedCollectionsMap loaded_named_collections;
+
     mutable std::mutex mutex;
+    bool is_initialized = false;
 };
+
 
 }
