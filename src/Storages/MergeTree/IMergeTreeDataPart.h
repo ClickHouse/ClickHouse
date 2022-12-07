@@ -598,7 +598,6 @@ bool isCompressedFromIndexExtension(const String & index_extension);
 
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
 
-Strings getPartsNamesWithStates(const MergeTreeDataPartsVector & parts);
 Strings getPartsNames(const MergeTreeDataPartsVector & parts);
 
 }

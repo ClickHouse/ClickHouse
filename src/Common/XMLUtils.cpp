@@ -42,15 +42,15 @@ public:
         return s;
     }
 
-    template <typename ValueType, typename ParseFunction>
+    template <typename ValueType, bool ReturnDefault, typename ParseFunction>
     static ValueType getValue(const Node * node, const std::string & path,
-        const std::optional<ValueType> & default_value, const ParseFunction & parse_function)
+        const ValueType & default_value, const ParseFunction & parse_function)
     {
         const auto * value_node = node->getNodeByPath(path);
         if (!value_node)
         {
-            if (default_value)
-                return *default_value;
+            if constexpr (ReturnDefault)
+                return default_value;
             else
                 throw Poco::NotFoundException(path);
         }
@@ -59,34 +59,64 @@ public:
 };
 
 
-std::string getString(const Node * node, const std::string & path, const std::optional<std::string> & default_value)
+std::string getString(const Node * node, const std::string & path)
 {
-    return ParseHelper::getValue<std::string>(node, path, default_value, ParseHelper::parseString);
+    return ParseHelper::getValue<std::string, false>(node, path, {}, ParseHelper::parseString);
 }
 
-Int64 getInt64(const Node * node, const std::string & path, const std::optional<Int64> & default_value)
+std::string getString(const Node * node, const std::string & path, const std::string & default_value)
 {
-    return ParseHelper::getValue<Int64>(node, path, default_value, ParseHelper::parseInt64);
+    return ParseHelper::getValue<std::string, true>(node, path, default_value, ParseHelper::parseString);
 }
 
-UInt64 getUInt64(const Node * node, const std::string & path, const std::optional<UInt64> & default_value)
+Int64 getInt64(const Node * node, const std::string & path)
 {
-    return ParseHelper::getValue<UInt64>(node, path, default_value, ParseHelper::parseUInt64);
+    return ParseHelper::getValue<Int64, false>(node, path, {}, ParseHelper::parseInt64);
 }
 
-int getInt(const Node * node, const std::string & path, const std::optional<int> & default_value)
+Int64 getInt64(const Node * node, const std::string & path, Int64 default_value)
 {
-    return ParseHelper::getValue<int>(node, path, default_value, ParseHelper::parseInt);
+    return ParseHelper::getValue<Int64, true>(node, path, default_value, ParseHelper::parseInt64);
 }
 
-unsigned getUInt(const Node * node, const std::string & path, const std::optional<unsigned> & default_value)
+UInt64 getUInt64(const Node * node, const std::string & path)
 {
-    return ParseHelper::getValue<unsigned>(node, path, default_value, ParseHelper::parseUInt);
+    return ParseHelper::getValue<UInt64, false>(node, path, {}, ParseHelper::parseUInt64);
 }
 
-bool getBool(const Node * node, const std::string & path, const std::optional<bool> & default_value)
+UInt64 getUInt64(const Node * node, const std::string & path, UInt64 default_value)
 {
-    return ParseHelper::getValue<bool>(node, path, default_value, ParseHelper::parseBool);
+    return ParseHelper::getValue<UInt64, true>(node, path, default_value, ParseHelper::parseUInt64);
+}
+
+int getInt(const Node * node, const std::string & path)
+{
+    return ParseHelper::getValue<int, false>(node, path, {}, ParseHelper::parseInt);
+}
+
+int getInt(const Node * node, const std::string & path, int default_value)
+{
+    return ParseHelper::getValue<int, true>(node, path, default_value, ParseHelper::parseInt);
+}
+
+unsigned getUInt(const Node * node, const std::string & path)
+{
+    return ParseHelper::getValue<unsigned, false>(node, path, {}, ParseHelper::parseUInt);
+}
+
+unsigned getUInt(const Node * node, const std::string & path, unsigned default_value)
+{
+    return ParseHelper::getValue<unsigned, true>(node, path, default_value, ParseHelper::parseUInt);
+}
+
+bool getBool(const Node * node, const std::string & path)
+{
+    return ParseHelper::getValue<bool, false>(node, path, {}, ParseHelper::parseBool);
+}
+
+bool getBool(const Node * node, const std::string & path, bool default_value)
+{
+    return ParseHelper::getValue<bool, true>(node, path, default_value, ParseHelper::parseBool);
 }
 
 }

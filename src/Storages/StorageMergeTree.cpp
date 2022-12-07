@@ -1543,7 +1543,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
         LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
                  future_parts.size(), parts.size(),
-                 fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNamesWithStates(parts), ", "),
+                 fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
                  transaction.getTID());
 
         captureTmpDirectoryHolders(*this, future_parts);
