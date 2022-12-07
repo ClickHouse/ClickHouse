@@ -1,5 +1,6 @@
 #include <Storages/ReadFromStorageProgress.h>
 #include <Processors/ISource.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 namespace DB
 {
@@ -16,6 +17,21 @@ void updateRowsProgressApprox(
         return;
 
     const size_t num_rows = chunk.getNumRows();
+
+    if (!num_rows)
+        return;
+
+    const auto progress = source.getReadProgress();
+    if (progress && !progress->limits.empty())
+    {
+        for (const auto & limit : progress->limits)
+        {
+            if (limit.leaf_limits.max_rows || limit.leaf_limits.max_bytes
+                || limit.local_limits.size_limits.max_rows || limit.local_limits.size_limits.max_bytes)
+                return;
+        }
+    }
+
     const auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
     size_t total_rows_approx = static_cast<size_t>(std::ceil(static_cast<double>(total_result_size) / bytes_per_row));
     total_rows_approx_accumulated += total_rows_approx;
