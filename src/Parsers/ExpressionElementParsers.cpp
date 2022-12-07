@@ -877,10 +877,10 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     char buf[MAX_LENGTH_OF_NUMBER + 1];
 
     size_t buf_size = 0;
-    for (auto it = pos->begin; it != pos->end; ++it)
+    for (const auto * it = pos->begin; it != pos->end; ++it)
     {
         if (*it != '_')
-        buf[buf_size++] = *it;
+            buf[buf_size++] = *it;
         if (unlikely(buf_size > MAX_LENGTH_OF_NUMBER))
         {
             expected.add(pos, "number");
