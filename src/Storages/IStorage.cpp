@@ -232,16 +232,16 @@ Names IStorage::getAllRegisteredNames() const
 NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
-    auto dependencies = DatabaseCatalog::instance().getDependencies(storage_id);
-    for (const auto & depend_id : dependencies)
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_id);
+    for (const auto & view_id : view_ids)
     {
-        auto depend_table = DatabaseCatalog::instance().getTable(depend_id, context);
-        if (depend_table->getInMemoryMetadataPtr()->select.inner_query)
+        auto view = DatabaseCatalog::instance().getTable(view_id, context);
+        if (view->getInMemoryMetadataPtr()->select.inner_query)
         {
-            const auto & select_query = depend_table->getInMemoryMetadataPtr()->select.inner_query;
+            const auto & select_query = view->getInMemoryMetadataPtr()->select.inner_query;
             auto required_columns = InterpreterSelectQuery(select_query, context, SelectQueryOptions{}.noModify()).getRequiredColumns();
             for (const auto & col_name : required_columns)
-                name_deps[col_name].push_back(depend_id.table_name);
+                name_deps[col_name].push_back(view_id.table_name);
         }
     }
     return name_deps;

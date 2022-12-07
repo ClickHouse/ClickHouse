@@ -16,31 +16,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
 
-using namespace DB;
-
-namespace
-{
-
-/// We determine output stream sort properties by a local plan (local because otherwise table could be unknown).
-/// If no local shard exist for this cluster, no sort properties will be provided, c'est la vie.
-auto getRemoteShardsOutputStreamSortingProperties(const std::vector<QueryPlanPtr> & plans, ContextMutablePtr context)
-{
-    SortDescription sort_description;
-    DataStream::SortScope sort_scope = DataStream::SortScope::None;
-    if (!plans.empty())
-    {
-        if (const auto * step = dynamic_cast<const ITransformingStep *>(plans.front()->getRootNode()->step.get());
-            step && step->getDataStreamTraits().can_enforce_sorting_properties_in_distributed_query)
-        {
-            step->adjustSettingsToEnforceSortingPropertiesInDistributedQuery(context);
-            sort_description = step->getOutputStream().sort_description;
-            sort_scope = step->getOutputStream().sort_scope;
-        }
-    }
-    return std::make_pair(sort_description, sort_scope);
-}
-}
-
 namespace DB
 {
 
@@ -216,8 +191,6 @@ void executeQuery(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
 
-        auto && [sort_description, sort_scope] = getRemoteShardsOutputStreamSortingProperties(plans, new_context);
-
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
             std::move(remote_shards),
@@ -231,9 +204,7 @@ void executeQuery(
             std::move(external_tables),
             log,
             shards,
-            query_info.storage_limits,
-            std::move(sort_description),
-            std::move(sort_scope));
+            query_info.storage_limits);
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
@@ -329,7 +300,6 @@ void executeQueryWithParallelReplicas(
     if (!remote_shards.empty())
     {
         auto new_context = Context::createCopy(context);
-        auto && [sort_description, sort_scope] = getRemoteShardsOutputStreamSortingProperties(plans, new_context);
 
         for (const auto & shard : remote_shards)
         {
@@ -345,9 +315,7 @@ void executeQueryWithParallelReplicas(
                 scalars,
                 external_tables,
                 &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-                query_info.storage_limits,
-                sort_description,
-                sort_scope);
+                query_info.storage_limits);
 
             auto remote_plan = std::make_unique<QueryPlan>();
             remote_plan->addStep(std::move(read_from_remote));

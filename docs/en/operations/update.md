@@ -1,5 +1,8 @@
+---
+slug: /en/operations/update
+---
 
-[//]: # (This file is included in Manage > Updates)
+# Update
 
 ## Self-managed ClickHouse Upgrade
 

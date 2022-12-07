@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
@@ -55,17 +54,15 @@ struct ProtocolServerMetrics
   * All the values are either gauge type (like the total number of tables, the current memory usage).
   * Or delta-counters representing some accumulation during the interval of time.
   */
-class AsynchronousMetrics : WithContext
+class AsynchronousMetrics
 {
 public:
     using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
     AsynchronousMetrics(
-        ContextPtr global_context_,
         int update_period_seconds,
-        int heavy_metrics_update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
-    ~AsynchronousMetrics();
+    virtual ~AsynchronousMetrics();
 
     /// Separate method allows to initialize the `servers` variable beforehand.
     void start();
@@ -75,32 +72,28 @@ public:
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
 
-private:
+protected:
     using Duration = std::chrono::seconds;
     using TimePoint = std::chrono::system_clock::time_point;
 
     const Duration update_period;
-    const Duration heavy_metric_update_period;
+
+    /// Some values are incremental and we have to calculate the difference.
+    /// On first run we will only collect the values to subtract later.
+    bool first_run = true;
+    TimePoint previous_update_time;
+
+    Poco::Logger * log;
+private:
+    virtual void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) = 0;
+    virtual void logImpl(AsynchronousMetricValues &) {}
+
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
     mutable std::mutex mutex;
     std::condition_variable wait_cond;
     bool quit {false};
     AsynchronousMetricValues values;
-
-    /// Some values are incremental and we have to calculate the difference.
-    /// On first run we will only collect the values to subtract later.
-    bool first_run = true;
-    TimePoint previous_update_time;
-    TimePoint heavy_metric_previous_update_time;
-
-    struct DetachedPartsStats
-    {
-        size_t count;
-        size_t detached_by_user;
-    };
-
-    DetachedPartsStats detached_parts_stats{};
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat;
@@ -212,11 +205,6 @@ private:
 
     void run();
     void update(TimePoint update_time);
-
-    void updateDetachedPartsStats();
-    void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values);
-
-    Poco::Logger * log;
 };
 
 }
