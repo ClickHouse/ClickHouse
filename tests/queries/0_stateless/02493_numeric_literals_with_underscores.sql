@@ -133,13 +133,19 @@ select -_1; -- { serverError UNKNOWN_IDENTIFIER }
 select -_1 FROM (SELECT -1 AS _1) FORMAT Null;
 select +_1; -- { clientError SYNTAX_ERROR }
 select 1__0; -- { serverError UNKNOWN_IDENTIFIER }
+select 1_; -- { serverError UNKNOWN_IDENTIFIER }
+select 1_ ; -- { serverError UNKNOWN_IDENTIFIER }
 select 10_; -- { serverError UNKNOWN_IDENTIFIER }
 select 1_e5; -- { serverError UNKNOWN_IDENTIFIER }
 select 1e_5; -- { serverError UNKNOWN_IDENTIFIER }
+select 1e5_; -- { serverError UNKNOWN_IDENTIFIER }
 select 1e_; -- { serverError UNKNOWN_IDENTIFIER }
 select 1_.; -- { clientError SYNTAX_ERROR }
 select 1e_1; -- { serverError UNKNOWN_IDENTIFIER }
 select 0_x2; -- { serverError UNKNOWN_IDENTIFIER }
+select 0x2_p2; -- { serverError UNKNOWN_IDENTIFIER }
+select 0x2p_2; -- { serverError UNKNOWN_IDENTIFIER }
+select 0x2p2_; -- { serverError UNKNOWN_IDENTIFIER }
 select 0b; -- { serverError UNKNOWN_IDENTIFIER }
 select 0x; -- { serverError UNKNOWN_IDENTIFIER }
 select 0x_; -- { serverError UNKNOWN_IDENTIFIER }
