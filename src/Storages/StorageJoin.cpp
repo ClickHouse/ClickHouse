@@ -174,8 +174,12 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
             "Table {} needs the same join_use_nulls setting as present in LEFT or FULL JOIN",
             getStorageID().getNameForLogs());
 
-    const auto & key_names_right = analyzed_join->getOnlyClause().key_names_right;
-    const auto & key_names_left = analyzed_join->getOnlyClause().key_names_left;
+    const auto & join_on = analyzed_join->getOnlyClause();
+    if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "ON section of JOIN with filter conditions is not implemented");
+
+    const auto & key_names_right = join_on.key_names_right;
+    const auto & key_names_left = join_on.key_names_left;
     if (key_names.size() != key_names_right.size() || key_names.size() != key_names_left.size())
         throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
             "Number of keys in JOIN ON section ({}) doesn't match number of keys in Join engine ({})",

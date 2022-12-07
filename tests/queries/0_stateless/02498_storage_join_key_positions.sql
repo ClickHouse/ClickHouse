@@ -22,9 +22,11 @@ SELECT * FROM (SELECT key3 AS c, key1 AS a, key2 AS b FROM t1) AS t1 ALL INNER J
 SELECT * FROM (SELECT key3 AS c, key1 AS a, key2 AS b FROM t1) AS t1 ALL INNER JOIN tj ON t1.a = tj.key1 AND t1.b = tj.key2 AND t1.c = tj.key3 ORDER BY t1.a;
 SELECT * FROM (SELECT key3 AS c, key1 AS a, key2 AS b FROM t1) AS t1 ALL INNER JOIN tj ON t1.c = tj.key3 AND t1.a = tj.key1 AND t1.b = tj.key2 ORDER BY t1.a;
 
-SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key2 = tj.key2 AND t1.key3 = tj.key3 AND 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key2 = tj.key2 AND t1.key3 = tj.key3 AND 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key2 = tj.key2 AND t1.key3 = tj.key3 AND NULL; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t1 ALL INNER JOIN tj ON 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t1 ALL INNER JOIN tj ON 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t1 ALL INNER JOIN tj ON NULL; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t1 ALL INNER JOIN tj ON 1 == 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t1 ALL INNER JOIN tj ON 1 != 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 
 SELECT * FROM t1 ALL INNER JOIN tj USING (key2, key3); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, attr); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
