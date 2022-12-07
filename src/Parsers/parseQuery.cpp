@@ -138,7 +138,6 @@ void writeCommonErrorMessage(
     if (!query_description.empty())
         out << " (" << query_description << ")";
 
-    out << std::string(begin, end - begin) << '\n';
     out << ": failed at position " << (last_token.begin - begin + 1);
 
     if (last_token.type == TokenType::EndOfStream || last_token.type == TokenType::Semicolon)
