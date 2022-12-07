@@ -210,6 +210,8 @@ public:
 
     DataTypePtr getResultType() const override
     {
+        if (!function)
+            return {};
         return function->getResultType();
     }
 
