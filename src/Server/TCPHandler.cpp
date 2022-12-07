@@ -736,14 +736,20 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     auto & pipeline = state.io.pipeline;
 
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+    {
+        std::lock_guard lock(task_callback_mutex);
         sendPartUUIDs();
+    }
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
         const auto & header = pipeline.getHeader();
 
         if (header)
+        {
+            std::lock_guard lock(task_callback_mutex);
             sendData(header);
+        }
     }
 
     {
