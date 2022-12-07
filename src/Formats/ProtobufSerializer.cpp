@@ -1648,12 +1648,11 @@ namespace
         String text_buffer;
     };
 
-    /// Serializes a ColumnVector<IPv4> containing IPv4s to a field of type TYPE_STRING or TYPE_BYTES.
-    template <typename IPv>
-    class ProtobufSerializerIP : public ProtobufSerializerSingleValue
+    /// Serializes a ColumnVector<IPv6> containing IPv6s to a field of type TYPE_STRING or TYPE_BYTES.
+    class ProtobufSerializerIPv6 : public ProtobufSerializerSingleValue
     {
     public:
-        ProtobufSerializerIP(
+        ProtobufSerializerIPv6(
             std::string_view column_name_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
@@ -1664,14 +1663,14 @@ namespace
 
         void writeRow(size_t row_num) override
         {
-            const auto & column_vector = assert_cast<const ColumnVector<IPv> &>(*column);
+            const auto & column_vector = assert_cast<const ColumnVector<IPv6> &>(*column);
             write_function(column_vector.getElement(row_num));
         }
 
         void readRow(size_t row_num) override
         {
-            IPv value = read_function();
-            auto & column_vector = assert_cast<ColumnVector<IPv> &>(column->assumeMutableRef());
+            IPv6 value = read_function();
+            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -1680,7 +1679,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnVector<IPv> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertDefault();
@@ -1688,7 +1687,7 @@ namespace
 
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
-            writeIndent(out, indent) << "ProtobufSerializer" << TypeName<IPv> << ": column " << quoteString(column_name) << " -> field "
+            writeIndent(out, indent) << "ProtobufSerializer" << TypeName<IPv6> << ": column " << quoteString(column_name) << " -> field "
                                      << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
         }
 
@@ -1696,37 +1695,36 @@ namespace
         void setFunctions()
         {
             if ((field_typeid != FieldTypeId::TYPE_STRING) && (field_typeid != FieldTypeId::TYPE_BYTES))
-                incompatibleColumnType(TypeName<IPv>);
+                incompatibleColumnType(TypeName<IPv6>);
 
-            write_function = [this](IPv value)
+            write_function = [this](IPv6 value)
             {
                 ipToString(value, text_buffer);
                 writeStr(text_buffer);
             };
 
-            read_function = [this]() -> IPv
+            read_function = [this]() -> IPv6
             {
                 readStr(text_buffer);
-                return parse<IPv>(text_buffer);
+                return parse<IPv6>(text_buffer);
             };
 
-            default_function = [this]() -> IPv { return parse<IPv>(field_descriptor.default_value_string()); };
+            default_function = [this]() -> IPv6 { return parse<IPv6>(field_descriptor.default_value_string()); };
         }
 
-        static void ipToString(const IPv & ip, String & str)
+        static void ipToString(const IPv6 & ip, String & str)
         {
             WriteBufferFromString buf{str};
             writeText(ip, buf);
         }
 
-        std::function<void(IPv)> write_function;
-        std::function<IPv()> read_function;
-        std::function<IPv()> default_function;
+        std::function<void(IPv6)> write_function;
+        std::function<IPv6()> read_function;
+        std::function<IPv6()> default_function;
         String text_buffer;
     };
 
-    using ProtobufSerializerIPv4 = ProtobufSerializerIP<IPv4>;
-    using ProtobufSerializerIPv6 = ProtobufSerializerIP<IPv6>;
+    using ProtobufSerializerIPv4 = ProtobufSerializerNumber<UInt32>;
 
     using ProtobufSerializerInterval = ProtobufSerializerNumber<Int64>;
 
