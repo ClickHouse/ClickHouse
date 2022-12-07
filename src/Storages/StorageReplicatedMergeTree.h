@@ -357,7 +357,7 @@ private:
     void clearOldPartsAndRemoveFromZK();
 
     template<bool async_insert>
-    friend class ReplicatedMergeTreeSink;
+    friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;

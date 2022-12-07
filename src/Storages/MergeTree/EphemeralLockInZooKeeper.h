@@ -67,6 +67,8 @@ public:
         return path;
     }
 
+    // In case of async inserts, we try to get locks for multiple inserts and need to know which insert is conflicted.
+    // That's why we need this function.
     String getConflictPath() const
     {
         return conflict_path;
