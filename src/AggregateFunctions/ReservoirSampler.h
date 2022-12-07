@@ -106,7 +106,7 @@ public:
     {
         if (samples.empty())
         {
-            [[maybe_unused]] auto nan = onEmpty<T>();
+            [[maybe_unused]] auto nan = onEmpty<double>();
             if constexpr (DB::is_decimal<T>)
                 return 0;
             else
