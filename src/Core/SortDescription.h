@@ -51,13 +51,13 @@ struct SortColumnDescription
     SortColumnDescription() = default;
 
     explicit SortColumnDescription(
-        const std::string & column_name_,
+        std::string column_name_,
         int direction_ = 1,
         int nulls_direction_ = 1,
         const std::shared_ptr<Collator> & collator_ = nullptr,
         bool with_fill_ = false,
         const FillColumnDescription & fill_description_ = {})
-        : column_name(column_name_)
+        : column_name(std::move(column_name_))
         , direction(direction_)
         , nulls_direction(nulls_direction_)
         , collator(collator_)

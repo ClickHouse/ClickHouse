@@ -535,24 +535,24 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (dependencies.empty())
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
         return true;
 
     // Check the dependencies are ready?
-    for (const auto & db_tab : dependencies)
+    for (const auto & view_id : view_ids)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
-        if (!table)
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
+        if (!view)
             return false;
 
         // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(db_tab))
+        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -568,10 +568,10 @@ void StorageNATS::streamingToViewsFunc()
         auto table_id = getStorageID();
 
         // Check if at least one direct dependency is attached
-        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         bool nats_connected = connection->isConnected() || connection->reconnect();
 
-        if (dependencies_count && nats_connected)
+        if (num_views && nats_connected)
         {
             auto start_time = std::chrono::steady_clock::now();
 
@@ -583,7 +583,7 @@ void StorageNATS::streamingToViewsFunc()
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 if (streamToViews())
                 {
