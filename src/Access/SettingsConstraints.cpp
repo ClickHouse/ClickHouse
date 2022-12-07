@@ -140,14 +140,16 @@ bool getNewValueToCheck(const T & current_settings, SettingChange & change, Fiel
 
     if (throw_on_failure)
         new_value = T::castValueUtil(change.name, change.value);
-
-    try
+    else
     {
-        new_value = T::castValueUtil(change.name, change.value);
-    }
-    catch (...)
-    {
-        return false;
+        try
+        {
+            new_value = T::castValueUtil(change.name, change.value);
+        }
+        catch (...)
+        {
+            return false;
+        }
     }
 
     /// Setting isn't checked if value has not changed.
