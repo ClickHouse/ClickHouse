@@ -35,9 +35,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -652,6 +653,9 @@ void TableJoin::setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage)
 
 void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
 {
+    if (clauses.empty())
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+            "StorageJoin keys should match JOIN keys, expected  JOIN ON [{}]", fmt::join(storage->getKeyNames(), ", "));
     right_storage_join = storage;
 }
 
