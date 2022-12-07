@@ -653,9 +653,6 @@ void TableJoin::setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage)
 
 void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
 {
-    if (clauses.empty())
-        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
-            "StorageJoin keys should match JOIN keys, expected  JOIN ON [{}]", fmt::join(storage->getKeyNames(), ", "));
     right_storage_join = storage;
 }
 
