@@ -168,7 +168,7 @@ public:
     /// Is function node window function
     bool isWindowFunction() const
     {
-        return kind == FunctionKind::WINDOW;
+        return hasWindow();
     }
 
     /// Is function node aggregate function
