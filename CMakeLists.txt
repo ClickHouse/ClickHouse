@@ -498,12 +498,7 @@ enable_testing() # Enable for tests without binary
 
 option(ENABLE_OPENSSL "This option is to use in-tree OpenSSL." OFF)
 
-option(ENABLE_OPENSSL_DYNAMIC "This option is to use dynamic linking OpenSSL." ON)
-
-# if (ENABLE_OPENSSL_DYNAMIC)
-#     find_package(OpenSSL 3.0 REQUIRED)
-# endif ()
-
+option(ENABLE_OPENSSL_DYNAMIC "This option is to use dynamic linking OpenSSL." OFF)
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
