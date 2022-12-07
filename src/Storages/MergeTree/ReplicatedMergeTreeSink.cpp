@@ -151,7 +151,7 @@ namespace
         auto cols = partition.block_with_partition.block.getColumns();
         for (auto & col : cols)
         {
-            col = col -> filter(vec, rows - remove_count);
+            col = col->filter(vec, rows - remove_count);
         }
         partition.block_with_partition.block.setColumns(cols);
 
