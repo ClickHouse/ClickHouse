@@ -170,6 +170,7 @@ public:
         , bit_set_width_in_bytes(calculateBitSetWidthInBytes(num_fields))
         , field_offsets(num_fields)
         , support_raw_datas(num_fields)
+        , is_big_endians_in_spark_row(num_fields)
         , fixed_length_data_readers(num_fields)
         , variable_length_data_readers(num_fields)
     {
@@ -178,6 +179,7 @@ public:
             const auto type_without_nullable = removeNullable(field_types[ordinal]);
             field_offsets[ordinal] = bit_set_width_in_bytes + ordinal * 8L;
             support_raw_datas[ordinal] = BackingDataLengthCalculator::isDataTypeSupportRawData(type_without_nullable);
+            is_big_endians_in_spark_row[ordinal] = BackingDataLengthCalculator::isBigEndianInSparkRow(type_without_nullable);
             if (BackingDataLengthCalculator::isFixedLengthDataType(type_without_nullable))
                 fixed_length_data_readers[ordinal] = std::make_shared<FixedLengthDataReader>(field_types[ordinal]);
             else if (BackingDataLengthCalculator::isVariableLengthDataType(type_without_nullable))
@@ -196,6 +198,12 @@ public:
     {
         assertIndexIsValid(ordinal);
         return support_raw_datas[ordinal];
+    }
+
+    bool isBigEndianInSparkRow(int ordinal) const
+    {
+        assertIndexIsValid(ordinal);
+        return is_big_endians_in_spark_row[ordinal];
     }
 
     std::shared_ptr<FixedLengthDataReader> getFixedLengthDataReader(int ordinal) const
@@ -361,6 +369,7 @@ private:
     const int32_t bit_set_width_in_bytes;
     std::vector<int64_t> field_offsets;
     std::vector<bool> support_raw_datas;
+    std::vector<bool> is_big_endians_in_spark_row;
     std::vector<std::shared_ptr<FixedLengthDataReader>> fixed_length_data_readers;
     std::vector<std::shared_ptr<VariableLengthDataReader>> variable_length_data_readers;
 

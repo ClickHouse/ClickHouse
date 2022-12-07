@@ -509,6 +509,7 @@ DataTypePtr SerializedPlanParser::parseType(const substrait::Type & substrait_ty
     {
         UInt32 precision = substrait_type.decimal().precision();
         UInt32 scale = substrait_type.decimal().scale();
+        /*
         if (precision <= DataTypeDecimal32::maxPrecision())
             ch_type = std::make_shared<DataTypeDecimal32>(precision, scale);
         else if (precision <= DataTypeDecimal64::maxPrecision())
@@ -516,8 +517,10 @@ DataTypePtr SerializedPlanParser::parseType(const substrait::Type & substrait_ty
         else if (precision <= DataTypeDecimal128::maxPrecision())
             ch_type = std::make_shared<DataTypeDecimal128>(precision, scale);
         else
+        */
+        if (precision > DataTypeDecimal128::maxPrecision())
             throw Exception(ErrorCodes::UNKNOWN_TYPE, "Spark doesn't support decimal type with precision {}", precision);
-
+        ch_type = createDecimal<DataTypeDecimal>(precision, scale);
         ch_type = wrapNullableType(substrait_type.decimal().nullability(), ch_type);
     }
     else if (substrait_type.has_struct_())
@@ -1218,7 +1221,7 @@ std::pair<DataTypePtr, Field> SerializedPlanParser::parseLiteral(const substrait
             else if (precision <= DataTypeDecimal128::maxPrecision())
             {
                 type = std::make_shared<DataTypeDecimal128>(precision, scale);
-                auto value = *reinterpret_cast<const Int128 *>(bytes.data());
+                auto value = BackingDataLengthCalculator::getDecimal128FromBytes(bytes);
                 field = DecimalField<Decimal128>(value, scale);
             }
             else

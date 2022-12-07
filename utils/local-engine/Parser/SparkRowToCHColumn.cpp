@@ -39,8 +39,18 @@ ALWAYS_INLINE static void writeRowToColumns(std::vector<MutableColumnPtr> & colu
     {
         if (spark_row_reader.supportRawData(i))
         {
-            const StringRef str{std::move(spark_row_reader.getStringRef(i))};
-            columns[i]->insertData(str != EMPTY_STRING_REF ? str.data : nullptr, str.size);
+            const StringRef str_ref{std::move(spark_row_reader.getStringRef(i))};
+            if (str_ref == EMPTY_STRING_REF)
+                columns[i]->insertData(nullptr, str_ref.size);
+            else if (!spark_row_reader.isBigEndianInSparkRow(i))
+                columns[i]->insertData(str_ref.data, str_ref.size);
+            else
+            {
+                String str(str_ref.data, str_ref.size);
+                auto * decimal128 = reinterpret_cast<Decimal128 *>(str.data());
+                BackingDataLengthCalculator::swapBytes(*decimal128);
+                columns[i]->insertData(str.data(), str.size());
+            }
         }
         else
             columns[i]->insert(spark_row_reader.getField(i));
@@ -135,9 +145,10 @@ Field VariableLengthDataReader::readDecimal(const char * buffer, size_t length) 
 
     Decimal128 value;
     memcpy(&value, buffer, length);
+    BackingDataLengthCalculator::swapBytes(value);
 
     const auto * decimal128_type = typeid_cast<const DataTypeDecimal128 *>(type_without_nullable.get());
-    return std::move(DecimalField<Decimal128>(value, decimal128_type->getScale()));
+    return std::move(DecimalField<Decimal128>(std::move(value), decimal128_type->getScale()));
 }
 
 Field VariableLengthDataReader::readString(const char * buffer, size_t length) const

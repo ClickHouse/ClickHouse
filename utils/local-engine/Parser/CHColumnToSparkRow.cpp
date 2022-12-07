@@ -107,14 +107,31 @@ static void writeVariableLengthNonNullableValue(
 {
     const auto type_without_nullable{std::move(removeNullable(col.type))};
     const bool use_raw_data = BackingDataLengthCalculator::isDataTypeSupportRawData(type_without_nullable);
+    const bool big_endian = BackingDataLengthCalculator::isBigEndianInSparkRow(type_without_nullable);
     VariableLengthDataWriter writer(col.type, buffer_address, offsets, buffer_cursor);
     if (use_raw_data)
     {
-        for (size_t i = 0; i < static_cast<size_t>(num_rows); i++)
+        if (!big_endian)
         {
-            StringRef str = col.column->getDataAt(i);
-            int64_t offset_and_size = writer.writeUnalignedBytes(i, str.data, str.size, 0);
-            memcpy(buffer_address + offsets[i] + field_offset, &offset_and_size, 8);
+            for (size_t i = 0; i < static_cast<size_t>(num_rows); i++)
+            {
+                StringRef str = col.column->getDataAt(i);
+                int64_t offset_and_size = writer.writeUnalignedBytes(i, str.data, str.size, 0);
+                memcpy(buffer_address + offsets[i] + field_offset, &offset_and_size, 8);
+            }
+        }
+        else
+        {
+            Field field;
+            for (size_t i = 0; i < static_cast<size_t>(num_rows); i++)
+            {
+                StringRef str_view = col.column->getDataAt(i);
+                String buf(str_view.data, str_view.size);
+                auto * decimal128 = reinterpret_cast<Decimal128 *>(buf.data());
+                BackingDataLengthCalculator::swapBytes(*decimal128);
+                int64_t offset_and_size = writer.writeUnalignedBytes(i, buf.data(), buf.size(), 0);
+                memcpy(buffer_address + offsets[i] + field_offset, &offset_and_size, 8);
+            }
         }
     }
     else
@@ -143,6 +160,7 @@ static void writeVariableLengthNullableValue(
     const auto & nested_column = nullable_column->getNestedColumn();
     const auto type_without_nullable{std::move(removeNullable(col.type))};
     const bool use_raw_data = BackingDataLengthCalculator::isDataTypeSupportRawData(type_without_nullable);
+    const bool big_endian = BackingDataLengthCalculator::isBigEndianInSparkRow(type_without_nullable);
     VariableLengthDataWriter writer(col.type, buffer_address, offsets, buffer_cursor);
     if (use_raw_data)
     {
@@ -150,10 +168,21 @@ static void writeVariableLengthNullableValue(
         {
             if (null_map[i])
                 bitSet(buffer_address + offsets[i], col_index);
-            else
+            else if (!big_endian)
             {
                 StringRef str = nested_column.getDataAt(i);
                 int64_t offset_and_size = writer.writeUnalignedBytes(i, str.data, str.size, 0);
+                memcpy(buffer_address + offsets[i] + field_offset, &offset_and_size, 8);
+            }
+            else
+            {
+                Field field;
+                nested_column.get(i, field);
+                StringRef str_view = nested_column.getDataAt(i);
+                String buf(str_view.data, str_view.size);
+                auto * decimal128 = reinterpret_cast<Decimal128 *>(buf.data());
+                BackingDataLengthCalculator::swapBytes(*decimal128);
+                int64_t offset_and_size = writer.writeUnalignedBytes(i, buf.data(), buf.size(), 0);
                 memcpy(buffer_address + offsets[i] + field_offset, &offset_and_size, 8);
             }
         }
@@ -344,9 +373,7 @@ int64_t SparkRowInfo::getTotalBytes() const
 std::unique_ptr<SparkRowInfo> CHColumnToSparkRow::convertCHColumnToSparkRow(const Block & block)
 {
     if (!block.columns())
-    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "A block with empty columns");
-    }
 
     std::unique_ptr<SparkRowInfo> spark_row_info = std::make_unique<SparkRowInfo>(block);
     spark_row_info->setBufferAddress(reinterpret_cast<char *>(alloc(spark_row_info->getTotalBytes(), 64)));
@@ -509,6 +536,30 @@ bool BackingDataLengthCalculator::isDataTypeSupportRawData(const DB::DataTypePtr
     return isFixedLengthDataType(type_without_nullable) || which.isStringOrFixedString() || which.isDecimal128();
 }
 
+bool BackingDataLengthCalculator::isBigEndianInSparkRow(const DB::DataTypePtr & type_without_nullable)
+{
+    const WhichDataType which(type_without_nullable);
+    return which.isDecimal128();
+}
+
+void BackingDataLengthCalculator::swapBytes(DB::Decimal128 & decimal128)
+{
+    auto & x = decimal128.value;
+    for (size_t i = 0; i != std::size(x.items); ++i)
+        x.items[i] = __builtin_bswap64(x.items[i]);
+}
+
+Decimal128 BackingDataLengthCalculator::getDecimal128FromBytes(const String & bytes)
+{
+    assert(bytes.size() == 16);
+
+    using base_type = Decimal128::NativeType::base_type;
+    String bytes_copy(bytes);
+    base_type * high = reinterpret_cast<base_type *>(bytes_copy.data() + 8);
+    base_type * low = reinterpret_cast<base_type *>(bytes_copy.data());
+    std::swap(*high, *low);
+    return std::move(*reinterpret_cast<Decimal128 *>(bytes_copy.data()));
+}
 
 VariableLengthDataWriter::VariableLengthDataWriter(
     const DataTypePtr & type_, char * buffer_address_, const std::vector<int64_t> & offsets_, std::vector<int64_t> & buffer_cursor_)
@@ -694,9 +745,10 @@ int64_t VariableLengthDataWriter::write(size_t row_idx, const DB::Field & field,
 
     if (which.isDecimal128())
     {
-        // const auto & decimal = field.get<DecimalField<Decimal128>>();
-        // const auto value = decimal.getValue();
-        return writeUnalignedBytes(row_idx, &field.reinterpret<char>(), sizeof(Decimal128), parent_offset);
+        const auto & decimal_field = field.reinterpret<DecimalField<Decimal128>>();
+        auto decimal128 = decimal_field.getValue();
+        BackingDataLengthCalculator::swapBytes(decimal128);
+        return writeUnalignedBytes(row_idx, reinterpret_cast<const char *>(&decimal128), sizeof(Decimal128), parent_offset);
     }
 
     if (which.isArray())
