@@ -168,6 +168,7 @@ try
         try
         {
             file->write(payload.data(), payload.size());
+            file->finalize();
         }
         catch (...)
         {
