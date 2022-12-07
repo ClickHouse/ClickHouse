@@ -73,7 +73,7 @@ public:
         if (!inner_function_node)
             return;
 
-        auto & inner_function_arguments_nodes = inner_function_node->getArguments().getNodes();
+        const auto & inner_function_arguments_nodes = inner_function_node->getArguments().getNodes();
         if (inner_function_arguments_nodes.size() != 2)
             return;
 
@@ -121,11 +121,13 @@ public:
             }
             resolveAggregateFunctionNode(*aggregate_function_node, inner_function_arguments_nodes[1], lower_function_name);
 
-            auto inner_function = aggregate_function_arguments_nodes[0];
-            auto inner_function_right_argument = std::move(inner_function_arguments_nodes[1]);
-            aggregate_function_arguments_nodes = {inner_function_right_argument};
-            inner_function_arguments_nodes[1] = node;
-            node = std::move(inner_function);
+            auto inner_function_clone = inner_function_node->clone();
+            auto & inner_function_clone_arguments = inner_function_clone->as<FunctionNode &>().getArguments();
+            auto & inner_function_clone_arguments_nodes = inner_function_clone_arguments.getNodes();
+            auto inner_function_clone_right_argument = inner_function_clone_arguments_nodes[1];
+            aggregate_function_arguments_nodes = {inner_function_clone_right_argument};
+            inner_function_clone_arguments_nodes[1] = node;
+            node = std::move(inner_function_clone);
         }
         else if (right_argument_constant_node)
         {
@@ -138,11 +140,13 @@ public:
             }
             resolveAggregateFunctionNode(*aggregate_function_node, inner_function_arguments_nodes[0], function_name_if_constant_is_negative);
 
-            auto inner_function = aggregate_function_arguments_nodes[0];
-            auto inner_function_left_argument = std::move(inner_function_arguments_nodes[0]);
-            aggregate_function_arguments_nodes = {inner_function_left_argument};
-            inner_function_arguments_nodes[0] = node;
-            node = std::move(inner_function);
+            auto inner_function_clone = inner_function_node->clone();
+            auto & inner_function_clone_arguments = inner_function_clone->as<FunctionNode &>().getArguments();
+            auto & inner_function_clone_arguments_nodes = inner_function_clone_arguments.getNodes();
+            auto inner_function_clone_left_argument = inner_function_clone_arguments_nodes[0];
+            aggregate_function_arguments_nodes = {inner_function_clone_left_argument};
+            inner_function_clone_arguments_nodes[0] = node;
+            node = std::move(inner_function_clone);
         }
     }
 
