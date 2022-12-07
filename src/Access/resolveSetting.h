@@ -70,4 +70,21 @@ inline bool settingIsBuiltin(std::string_view full_name)
     });
 }
 
+template <typename T>
+inline String settingFullName(std::string_view short_name);
+
+template <>
+inline String settingFullName<Settings>(std::string_view short_name)
+{
+    return String(short_name);
+}
+
+template <>
+inline String settingFullName<MergeTreeSettings>(std::string_view short_name)
+{
+    String full_name(MERGE_TREE_SETTINGS_PREFIX);
+    full_name += short_name; // Just because you cannot concatenate `std::string_view` and `std::string` using operator+ in C++20 yet
+    return full_name;
+}
+
 }

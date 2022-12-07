@@ -304,10 +304,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
 
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const
 {
-    String full_name(MERGE_TREE_SETTINGS_PREFIX);
-    full_name += short_name; // Just because you cannot concatenate `std::string_view` and `std::string` using operator+ in C++20 yet
-
-    auto it = constraints.find(full_name);
+    auto it = constraints.find(settingFullName<MergeTreeSettings>(short_name));
     if (it == constraints.end())
         return Checker(); // Allowed
     return Checker(it->second);
