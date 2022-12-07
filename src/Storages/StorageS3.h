@@ -214,7 +214,7 @@ private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
     friend class StorageHudi;
-    friend class StorageDelta;
+    friend class StorageDeltaLake;
 
     S3Configuration s3_configuration;
     std::vector<String> keys;
@@ -253,6 +253,8 @@ private:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
         std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
+
+    bool supportsSubcolumns() const override;
 
     bool supportsSubsetOfColumns() const override;
 

@@ -58,6 +58,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -70,6 +71,9 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
+
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 
 #define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
@@ -368,6 +372,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
         const char * alias_end = alias_pos + alias.size();
         ParserExpression expression_parser;
         column_declaration->default_expression = parseQuery(expression_parser, alias_pos, alias_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        column_declaration->children.push_back(column_declaration->default_expression);
 
         columns_list->children.emplace_back(column_declaration);
     }
@@ -1156,6 +1161,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visit(*create.columns_list);
     }
 
+    // substitute possible UDFs with their definitions
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(query_ptr);
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
@@ -1226,9 +1235,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// If table has dependencies - add them to the graph
     QualifiedTableName qualified_name{database_name, create.getTable()};
-    TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
-    if (!loading_dependencies.empty())
-        DatabaseCatalog::instance().addLoadingDependencies(qualified_name, std::move(loading_dependencies));
+    TableNamesSet dependencies = getLoadingDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
+    if (!dependencies.empty())
+        DatabaseCatalog::instance().addDependencies(qualified_name, dependencies);
 
     return fillTableIfNeeded(create);
 }

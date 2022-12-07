@@ -4,6 +4,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <optional>
 #include <ranges>
 #include <filesystem>
 
@@ -62,7 +63,7 @@ UnlinkFileOperation::UnlinkFileOperation(const std::string & path_, IDisk & disk
 
 void UnlinkFileOperation::execute(std::unique_lock<std::shared_mutex> &)
 {
-    auto buf = disk.readFile(path);
+    auto buf = disk.readFile(path, ReadSettings{}, std::nullopt, disk.getFileSize(path));
     readStringUntilEOF(prev_data, *buf);
     disk.removeFile(path);
 }

@@ -67,7 +67,8 @@ private:
 };
 
 DiskRestartProxy::DiskRestartProxy(DiskPtr & delegate_)
-    : DiskDecorator(delegate_) { }
+    : DiskDecorator(delegate_)
+{}
 
 ReservationPtr DiskRestartProxy::reserve(UInt64 bytes)
 {
@@ -356,7 +357,8 @@ void DiskRestartProxy::restart(ContextPtr context)
 
     LOG_INFO(log, "Restart lock acquired. Restarting disk {}", DiskDecorator::getName());
 
-    DiskDecorator::startup(context);
+    /// NOTE: access checking will cause deadlock here, so skip it.
+    DiskDecorator::startup(context, /* skip_access_check= */ true);
 
     LOG_INFO(log, "Disk restarted {}", DiskDecorator::getName());
 }
