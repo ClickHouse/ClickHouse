@@ -27,34 +27,29 @@ public:
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
-        ContextPtr context_,
+        ContextMutablePtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
         Poco::Logger * log_,
         UInt32 shard_count_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_,
-        SortDescription output_sort_description_,
-        DataStream::SortScope output_sort_scope_);
+        std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     String getName() const override { return "ReadFromRemote"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-private:
-    enum class Mode
-    {
-        PerReplica,
-        PerShard
-    };
+    void enforceSorting(SortDescription output_sort_description);
+    void enforceAggregationInOrder();
 
+private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
 
     StorageID main_table;
     ASTPtr table_func_ptr;
 
-    ContextPtr context;
+    ContextMutablePtr context;
 
     ThrottlerPtr throttler;
     Scalars scalars;
@@ -80,18 +75,19 @@ public:
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
-        ContextPtr context_,
+        ContextMutablePtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
         Poco::Logger * log_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_,
-        SortDescription output_sort_description_,
-        DataStream::SortScope output_sort_scope_);
+        std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    void enforceSorting(SortDescription output_sort_description);
+    void enforceAggregationInOrder();
 
 private:
 
@@ -104,7 +100,7 @@ private:
     StorageID main_table;
     ASTPtr table_func_ptr;
 
-    ContextPtr context;
+    ContextMutablePtr context;
 
     ThrottlerPtr throttler;
     Scalars scalars;

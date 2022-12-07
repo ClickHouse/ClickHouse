@@ -40,11 +40,14 @@ TablesDependencyGraph::TablesDependencyGraph(TablesDependencyGraph && src) noexc
 
 TablesDependencyGraph & TablesDependencyGraph::operator=(const TablesDependencyGraph & src)
 {
-    nodes = src.nodes;
-    nodes_by_database_and_table_names = src.nodes_by_database_and_table_names;
-    nodes_by_uuid = src.nodes_by_uuid;
-    levels_calculated = src.levels_calculated;
-    nodes_sorted_by_level_lazy = src.nodes_sorted_by_level_lazy;
+    if (&src != this)
+    {
+        nodes = src.nodes;
+        nodes_by_database_and_table_names = src.nodes_by_database_and_table_names;
+        nodes_by_uuid = src.nodes_by_uuid;
+        levels_calculated = src.levels_calculated;
+        nodes_sorted_by_level_lazy = src.nodes_sorted_by_level_lazy;
+    }
     return *this;
 }
 
@@ -358,7 +361,7 @@ size_t TablesDependencyGraph::removeIsolatedTables()
     auto it = nodes.begin();
     while (it != nodes.end())
     {
-        auto current = (it++)->get();
+        auto * current = (it++)->get();
         if (current->dependencies.empty() && current->dependents.empty())
         {
             removeNode(current);

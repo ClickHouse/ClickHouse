@@ -488,7 +488,6 @@ Aggregator::AggregateColumnsConstData Aggregator::Params::makeAggregateColumnsDa
 
 void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 {
-    Strings res;
     String prefix(indent, ' ');
 
     {
