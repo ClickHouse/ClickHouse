@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
+MergeTreeThreadSelectAlgorithm::MergeTreeThreadSelectAlgorithm(
     size_t thread_,
     const MergeTreeReadPoolPtr & pool_,
     size_t min_marks_to_read_,
@@ -27,12 +27,12 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
     std::optional<ParallelReadingExtension> extension_)
-    : MergeTreeBaseSelectProcessor(
-        pool_->getHeader(), storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings),
-        max_block_size_rows_, preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
-        reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_)
-    , thread{thread_}
-    , pool{pool_}
+    : IMergeTreeSelectAlgorithm{
+        pool_->getHeader(), storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
+        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
+        reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
+    thread{thread_},
+    pool{pool_}
 {
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     /// If granularity is adaptive it doesn't make sense
@@ -86,14 +86,14 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
 }
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
-bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
+bool MergeTreeThreadSelectAlgorithm::getNewTaskImpl()
 {
     task = pool->getTask(min_marks_to_read, thread);
     return static_cast<bool>(task);
 }
 
 
-void MergeTreeThreadSelectProcessor::finalizeNewTask()
+void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
 {
     const std::string part_name = task->data_part->isProjectionPart() ? task->data_part->getParentPart()->name : task->data_part->name;
 
@@ -118,13 +118,13 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
 }
 
 
-void MergeTreeThreadSelectProcessor::finish()
+void MergeTreeThreadSelectAlgorithm::finish()
 {
     reader.reset();
     pre_reader_for_step.clear();
 }
 
 
-MergeTreeThreadSelectProcessor::~MergeTreeThreadSelectProcessor() = default;
+MergeTreeThreadSelectAlgorithm::~MergeTreeThreadSelectAlgorithm() = default;
 
 }

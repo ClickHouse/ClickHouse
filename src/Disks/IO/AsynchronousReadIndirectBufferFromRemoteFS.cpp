@@ -140,13 +140,23 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 
 void AsynchronousReadIndirectBufferFromRemoteFS::resetPrefetch(FilesystemPrefetchState state)
 {
-    if (prefetch_future.valid())
+    /// Do not reinitialize internal state in case the new end of range is already included.
+    /// Actually it is likely that we will anyway reinitialize it as seek method is called after
+    /// changing end position, but seek avoiding feature might help to avoid reinitialization,
+    /// so this check is useful to save the prefetch for the time when we try to avoid seek by
+    /// reading and ignoring some data.
+    if (!read_until_position || position > *read_until_position)
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
         if (read_settings.enable_filesystem_read_prefetches_log)
         {
             appendToPrefetchLog(state);
         }
+        /// We must wait on future and reset the prefetch here, because otherwise there might be
+        /// a race between reading the data in the threadpool and impl->setReadUntilPosition()
+        /// which reinitializes internal remote read buffer (because if we have a new read range
+        /// then we need a new range request) and in case of reading from cache we need to request
+        /// and hold more file segment ranges from cache.
         prefetch_future.wait();
         prefetch_future = {};
     }

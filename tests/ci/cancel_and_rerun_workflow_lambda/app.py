@@ -13,8 +13,10 @@ import jwt
 import requests  # type: ignore
 import boto3  # type: ignore
 
+PULL_REQUEST_CI = "PullRequestCI"
+
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
-    "PullRequestCI",
+    PULL_REQUEST_CI,
     "DocsCheck",
     "DocsReleaseChecks",
     "BackportPR",
@@ -104,7 +106,7 @@ def _exec_get_with_retry(url: str, token: str) -> dict:
         try:
             response = requests.get(url, headers=headers)
             response.raise_for_status()
-            return response.json()
+            return response.json()  # type: ignore
         except Exception as ex:
             print("Got exception executing request", ex)
             time.sleep(i + 1)
@@ -114,13 +116,21 @@ def _exec_get_with_retry(url: str, token: str) -> dict:
 
 WorkflowDescription = namedtuple(
     "WorkflowDescription",
-    ["url", "run_id", "head_sha", "status", "rerun_url", "cancel_url", "conclusion"],
+    [
+        "url",
+        "run_id",
+        "name",
+        "head_sha",
+        "status",
+        "rerun_url",
+        "cancel_url",
+        "conclusion",
+    ],
 )
 
 
 def get_workflows_description_for_pull_request(
-    pull_request_event,
-    token,
+    pull_request_event: dict, token: str
 ) -> List[WorkflowDescription]:
     head_repo = pull_request_event["head"]["repo"]["full_name"]
     head_branch = pull_request_event["head"]["ref"]
@@ -169,6 +179,7 @@ def get_workflows_description_for_pull_request(
                 WorkflowDescription(
                     url=workflow["url"],
                     run_id=workflow["id"],
+                    name=workflow["name"],
                     head_sha=workflow["head_sha"],
                     status=workflow["status"],
                     rerun_url=workflow["rerun_url"],
@@ -181,7 +192,7 @@ def get_workflows_description_for_pull_request(
 
 
 def get_workflow_description_fallback(
-    pull_request_event, token
+    pull_request_event: dict, token: str
 ) -> List[WorkflowDescription]:
     head_repo = pull_request_event["head"]["repo"]["full_name"]
     head_branch = pull_request_event["head"]["ref"]
@@ -229,6 +240,7 @@ def get_workflow_description_fallback(
         WorkflowDescription(
             url=wf["url"],
             run_id=wf["id"],
+            name=wf["name"],
             head_sha=wf["head_sha"],
             status=wf["status"],
             rerun_url=wf["rerun_url"],
@@ -241,11 +253,12 @@ def get_workflow_description_fallback(
     return workflow_descriptions
 
 
-def get_workflow_description(workflow_url, token) -> WorkflowDescription:
+def get_workflow_description(workflow_url: str, token: str) -> WorkflowDescription:
     workflow = _exec_get_with_retry(workflow_url, token)
     return WorkflowDescription(
         url=workflow["url"],
         run_id=workflow["id"],
+        name=workflow["name"],
         head_sha=workflow["head_sha"],
         status=workflow["status"],
         rerun_url=workflow["rerun_url"],
@@ -268,8 +281,8 @@ def _exec_post_with_retry(url, token):
     raise Exception("Cannot execute POST request with retry")
 
 
-def exec_workflow_url(urls_to_cancel, token):
-    for url in urls_to_cancel:
+def exec_workflow_url(urls_to_post, token):
+    for url in urls_to_post:
         print("Post for workflow workflow using url", url)
         _exec_post_with_retry(url, token)
         print("Workflow post finished")
@@ -289,7 +302,7 @@ def main(event):
     pull_request = event_data["pull_request"]
     labels = {label["name"] for label in pull_request["labels"]}
     print("PR has labels", labels)
-    if action == "closed" or "do not test" in labels:
+    if action == "closed" or (action == "labeled" and "do not test" in labels):
         print("PR merged/closed or manually labeled 'do not test' will kill workflows")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -307,6 +320,29 @@ def main(event):
                 urls_to_cancel.append(workflow_description.cancel_url)
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
+        return
+    elif action == "edited":
+        print("PR is edited, check if it needs to rerun")
+        workflow_descriptions = get_workflows_description_for_pull_request(
+            pull_request, token
+        )
+        workflow_descriptions = (
+            workflow_descriptions
+            or get_workflow_description_fallback(pull_request, token)
+        )
+        workflow_descriptions.sort(key=lambda x: x.run_id)  # type: ignore
+        most_recent_workflow = workflow_descriptions[-1]
+        if (
+            most_recent_workflow.status == "completed"
+            and most_recent_workflow.name == PULL_REQUEST_CI
+        ):
+            print(
+                "The PR's body is changed and workflow is finished. "
+                "Rerun to check the description"
+            )
+            exec_workflow_url([most_recent_workflow.rerun_url], token)
+            print("Rerun finished, exiting")
+            return
     elif action == "synchronize":
         print("PR is synchronized, going to stop old actions")
         workflow_descriptions = get_workflows_description_for_pull_request(
@@ -339,8 +375,8 @@ def main(event):
             print("Not found any workflows")
             return
 
-        sorted_workflows = list(sorted(workflow_descriptions, key=lambda x: x.run_id))
-        most_recent_workflow = sorted_workflows[-1]
+        workflow_descriptions.sort(key=lambda x: x.run_id)  # type: ignore
+        most_recent_workflow = workflow_descriptions[-1]
         print("Latest workflow", most_recent_workflow)
         if (
             most_recent_workflow.status != "completed"

@@ -12,10 +12,10 @@ using MergeTreeReadPoolPtr = std::shared_ptr<IMergeTreeReadPool>;
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
   * to perform.
   */
-class MergeTreeThreadSelectProcessor final : public MergeTreeBaseSelectProcessor
+class MergeTreeThreadSelectAlgorithm final : public IMergeTreeSelectAlgorithm
 {
 public:
-    MergeTreeThreadSelectProcessor(
+    MergeTreeThreadSelectAlgorithm(
         size_t thread_,
         const MergeTreeReadPoolPtr & pool_,
         size_t min_marks_to_read_,
@@ -33,7 +33,7 @@ public:
 
     String getName() const override { return "MergeTreeThread"; }
 
-    ~MergeTreeThreadSelectProcessor() override;
+    ~MergeTreeThreadSelectAlgorithm() override;
 
 protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
