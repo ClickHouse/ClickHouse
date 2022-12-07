@@ -91,6 +91,16 @@ public:
     /// If Data Type can use raw data between CH Column and Spark Row if value is not null
     static bool isDataTypeSupportRawData(const DB::DataTypePtr & type_without_nullable);
 
+    /// If bytes in Spark Row is big-endian. If true, we have to transform them to little-endian afterwords
+    static bool isBigEndianInSparkRow(const DB::DataTypePtr & type_without_nullable);
+
+    /// Convert Field with type Decimal128 to/from buffer in Spark Row(big-endian)
+    static void swapBytes(DB::Decimal128 & decimal128);
+
+    /// Get Decimal128 from substrait decimal literal bytes
+    /// Note: bytes is little-endian, but Int128 has big-endian array containing two little-endian uint64_t
+    static DB::Decimal128 getDecimal128FromBytes(const String & bytes);
+
     static int64_t getOffsetAndSize(int64_t cursor, int64_t size);
     static int64_t extractOffset(int64_t offset_and_size);
     static int64_t extractSize(int64_t offset_and_size);
@@ -120,7 +130,7 @@ public:
     /// parent_offset: the starting offset of current structure in which we are updating it's backing data region
     virtual int64_t write(size_t row_idx, const DB::Field & field, int64_t parent_offset);
 
-    /// Only support String/FixedString/Decimal32/Decimal64
+    /// Only support String/FixedString/Decimal128
     int64_t writeUnalignedBytes(size_t row_idx, const char * src, size_t size, int64_t parent_offset);
 private:
     int64_t writeArray(size_t row_idx, const DB::Array & array, int64_t parent_offset);

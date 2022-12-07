@@ -267,6 +267,7 @@ std::shared_ptr<substrait::Type> SerializedPlanBuilder::buildType(const DB::Data
         const auto precision = getDecimalPrecision(*ch_type_without_nullable);
         if (scale == 0 && precision == 0)
             throw Exception(ErrorCodes::UNKNOWN_TYPE, "Spark doesn't support converting from {}", ch_type->getName());
+
         res->mutable_decimal()->set_nullability(type_nullability);
         res->mutable_decimal()->set_scale(scale);
         res->mutable_decimal()->set_precision(precision);

@@ -734,7 +734,8 @@ jlong Java_io_glutenproject_vectorized_BlockNativeConverter_convertSparkRowsToCH
         env->DeleteLocalRef(type);
     }
     local_engine::SparkRowToCHColumn converter;
-    return reinterpret_cast<jlong>(converter.convertSparkRowItrToCHColumn(java_iter, c_names, c_types));
+    auto * block = converter.convertSparkRowItrToCHColumn(java_iter, c_names, c_types);
+    return reinterpret_cast<jlong>(block);
     LOCAL_ENGINE_JNI_METHOD_END(env, -1)
 }
 
