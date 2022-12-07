@@ -155,7 +155,7 @@ public:
                         "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
                         getName(), value_type->getName()};
 
-                WhichDataType value_type_to_check(value_type);
+                WhichDataType value_type_to_check(value_type_without_nullable);
 
                 /// Do not promote decimal because of implementation issues of this function design
                 /// Currently we cannot get result column type in case of decimal we cannot get decimal scale
@@ -296,19 +296,19 @@ public:
         {
             case 0:
             {
-                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
+                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
                 break;
             }
             case 1:
             {
-                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
+                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
                 break;
             }
         }
 
         for (const auto & elem : merged_maps)
         {
-            keys_serialization->serializeBinary(elem.first, buf);
+            keys_serialization->serializeBinary(elem.first, buf, {});
             for (size_t col = 0; col < values_types.size(); ++col)
                 serialize(col, elem.second);
         }
@@ -328,12 +328,12 @@ public:
         {
             case 0:
             {
-                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
+                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
                 break;
             }
             case 1:
             {
-                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
+                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
                 break;
             }
         }
@@ -341,7 +341,7 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             Field key;
-            keys_serialization->deserializeBinary(key, buf);
+            keys_serialization->deserializeBinary(key, buf, {});
 
             Array values;
             values.resize(values_types.size());
