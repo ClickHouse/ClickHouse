@@ -113,13 +113,17 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
             data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(table_numbers.first));
             return;
         }
-
-        if (table_numbers.first != JoinIdentifierPos::NotApplicable && table_numbers.second != JoinIdentifierPos::NotApplicable)
+        if ((table_numbers.first == JoinIdentifierPos::Left && table_numbers.second == JoinIdentifierPos::Right) ||
+            (table_numbers.first == JoinIdentifierPos::Right && table_numbers.second == JoinIdentifierPos::Left))
         {
             data.addJoinKeys(left, right, table_numbers);
             return;
         }
+
+        throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+            "Cannot detect left and right JOIN keys. JOIN ON section is ambiguous for expression '{}'", queryToString(ast));
     }
+
 
     if (auto expr_from_table = getTableForIdentifiers(ast, false, data); expr_from_table != JoinIdentifierPos::Unknown)
     {
@@ -204,7 +208,7 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
     std::vector<const ASTIdentifier *> identifiers;
     getIdentifiers(ast, identifiers);
     if (identifiers.empty())
-        return JoinIdentifierPos::NotApplicable;
+        return JoinIdentifierPos::Unknown;
 
     JoinIdentifierPos table_number = JoinIdentifierPos::Unknown;
 
