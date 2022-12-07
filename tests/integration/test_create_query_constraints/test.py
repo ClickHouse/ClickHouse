@@ -7,10 +7,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance(
-    "instance",
-    user_configs=["users.xml"]
-)
+instance = cluster.add_instance("instance", user_configs=["users.xml"])
 
 
 @pytest.fixture(scope="module", autouse=True)
