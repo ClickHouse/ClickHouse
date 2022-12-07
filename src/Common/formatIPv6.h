@@ -18,6 +18,7 @@ constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;     /// Does not count tail zero byt
 namespace DB
 {
 
+extern const std::array<std::pair<const char *, size_t>, 256> one_byte_to_string_lookup_table;
 
 /** Rewritten inet_ntop6 from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
   *  performs significantly faster than the reference implementation due to the absence of sprintf calls,
@@ -227,8 +228,6 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
   */
 inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")
 {
-    extern const char one_byte_to_string_lookup_table[256][4];
-
     const size_t mask_length = mask_string ? strlen(mask_string) : 0;
     const size_t limit = std::min(IPV4_BINARY_LENGTH, IPV4_BINARY_LENGTH - mask_tail_octets);
     const size_t padding = std::min(4 - src_size, limit);
@@ -246,9 +245,8 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
             value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
         else
             value = static_cast<uint8_t>(src[octet]);
-        const auto * rep = one_byte_to_string_lookup_table[value];
-        const uint8_t len = rep[0];
-        const char* str = rep + 1;
+        const uint8_t len = one_byte_to_string_lookup_table[value].second;
+        const char* str = one_byte_to_string_lookup_table[value].first;
 
         memcpy(dst, str, len);
         dst += len;

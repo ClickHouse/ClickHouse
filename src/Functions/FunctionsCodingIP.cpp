@@ -506,6 +506,8 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// for backward compatibility IPv4ToIPv6 is overloaded, and result type depends on type of argument -
+    ///   if it is UInt32 (presenting IPv4) then result is FixedString(16), if IPv4 - result is IPv6
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * dt_uint32 = checkAndGetDataType<DataTypeUInt32>(arguments[0].get());
@@ -832,7 +834,7 @@ public:
                 second_argument->getName(), getName()
             );
 
-        DataTypePtr element = ipv6 ? DataTypeFactory::instance().get("IPv6") : DataTypeFactory::instance().get("FixedString(16)");
+        DataTypePtr element = ipv6 ? DataTypePtr(std::make_shared<DataTypeIPv6>()) : DataTypePtr(std::make_shared<DataTypeIPv4>());
         return std::make_shared<DataTypeTuple>(DataTypes{element, element});
     }
 

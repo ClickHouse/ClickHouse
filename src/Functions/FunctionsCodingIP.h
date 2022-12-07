@@ -99,24 +99,19 @@ namespace detail
                 return ColumnIPv6::create();
         };
 
-        auto get_vector = [](auto & col_res, size_t col_size) ->
-            typename std::conditional<
-                std::is_same_v<ToColumn, ColumnFixedString>,
-                    decltype(ColumnFixedString::create()->getChars()),
-                    decltype(ColumnIPv6::create()->getData())
-                >::type
+        auto get_vector = [](auto & col_res, size_t col_size) -> decltype(auto)
         {
             if constexpr (std::is_same_v<ToColumn, ColumnFixedString>)
             {
                 auto & vec_res = col_res->getChars();
                 vec_res.resize(col_size * IPV6_BINARY_LENGTH);
-                return vec_res;
+                return (vec_res);
             }
             else
             {
                 auto & vec_res = col_res->getData();
                 vec_res.resize(col_size);
-                return vec_res;
+                return (vec_res);
             }
         };
 
@@ -140,7 +135,7 @@ namespace detail
 
         int offset_inc = 1;
         if constexpr (std::is_same_v<ToColumn, ColumnFixedString>)
-                offset_inc = IPV6_BINARY_LENGTH;
+            offset_inc = IPV6_BINARY_LENGTH;
 
         for (size_t out_offset = 0, i = 0; i < column_size; out_offset += offset_inc, ++i)
         {
