@@ -122,7 +122,7 @@ std::pair<DataTypePtr, std::string> getEnumTypeAndString(const std::set<std::str
     }
     else
     {
-        auto enum_type = getDataEnumType<DataTypeEnum16>(string_values);
+        auto enum_type = getDataEnumType<DataTypeEnum8>(string_values);
         enum_string = makeStringsEnum(*enum_type);
         result_type = std::move(enum_type);
     }
