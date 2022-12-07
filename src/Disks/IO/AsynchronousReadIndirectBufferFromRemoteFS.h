@@ -63,7 +63,7 @@ private:
 
     bool hasPendingDataToRead();
 
-    void appendToPrefetchLog(FilesystemPrefetchState state);
+    void appendToPrefetchLog(FilesystemPrefetchState state, int64_t size);
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 

@@ -58,19 +58,56 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
-void MergeTreeReaderWide::prefetch()
+void MergeTreeReaderWide::prefetchBeginOfRange()
 {
-    std::unordered_map<String, ISerialization::SubstreamsCache> caches;
+    try
+    {
+        prefetchImpl(columns_to_read.size(), all_mark_ranges.front().begin, all_mark_ranges.back().end, false);
+        /// Arguments explanation:
+        /// Current prefetch is done for read tasks before they can be picked by reading threads in IMergeTreeReadPool::getTask method.
+        /// 1. columns_to_read.size() == requested_columns.size() == readRows::res_columns.size().
+        /// 3. current_task_last_mark argument in readRows() (which is used only for reading from remote fs to make precise
+        /// ranged read requests) is different from current reader's IMergeTreeReader::all_mark_ranges.back().end because
+        /// the same reader can be reused between read tasks - if the new task mark ranges correspond to the same part we last
+        /// read, so we cannot rely on all_mark_ranges and pass actual current_task_last_mark. But here we can do prefetch for begin
+        /// of range only once so there is no such problem.
+        /// 4. continue_reading == false, as we haven't read anything yet.
+    }
+    catch (Exception & e)
+    {
+        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            data_part_info_for_read->reportBroken();
+        throw;
+    }
+    catch (...)
+    {
+        data_part_info_for_read->reportBroken();
+        throw;
+    }
 
-    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    prefetched_begin_of_range = true;
+}
+
+void MergeTreeReaderWide::prefetchImpl(
+    size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
+{
+    bool do_prefetch = data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
+        ? settings.read_settings.remote_fs_prefetch
+        : settings.read_settings.local_fs_prefetch;
+
+    if (!do_prefetch)
+        return;
+
+    /// Request reading of data in advance,
+    /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
+    for (size_t pos = 0; pos < num_columns; ++pos)
     {
         try
         {
             auto & cache = caches[columns_to_read[pos].getNameInStorage()];
-            current_prefetch_from_mark = all_mark_ranges.front().begin;
             prefetch(
-                columns_to_read[pos], serializations[pos], current_prefetch_from_mark, false,
-                all_mark_ranges.back().end, cache);
+                columns_to_read[pos], serializations[pos], from_mark, continue_reading,
+                current_task_last_mark, cache);
         }
         catch (Exception & e)
         {
@@ -85,10 +122,6 @@ size_t MergeTreeReaderWide::readRows(
     size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
     size_t read_rows = 0;
-    if (!prefetched_streams.empty() && from_mark != current_prefetch_from_mark)
-    {
-        prefetched_streams.clear();
-    }
 
     try
     {
@@ -98,31 +131,7 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
-        std::unordered_map<String, ISerialization::SubstreamsCache> caches;
-
-        if (data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
-            ? settings.read_settings.remote_fs_prefetch
-            : settings.read_settings.local_fs_prefetch)
-        {
-            /// Request reading of data in advance,
-            /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
-            for (size_t pos = 0; pos < num_columns; ++pos)
-            {
-                try
-                {
-                    auto & cache = caches[columns_to_read[pos].getNameInStorage()];
-                    prefetch(
-                        columns_to_read[pos], serializations[pos], from_mark, continue_reading,
-                        current_task_last_mark, cache);
-                }
-                catch (Exception & e)
-                {
-                    /// Better diagnostics.
-                    e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
-                    throw;
-                }
-            }
-        }
+        prefetchImpl(num_columns, from_mark, current_task_last_mark, continue_reading);
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -161,6 +170,7 @@ size_t MergeTreeReaderWide::readRows(
         }
 
         prefetched_streams.clear();
+        caches.clear();
 
         /// NOTE: positions for all streams must be kept in sync.
         /// In particular, even if for some streams there are no rows to be read,
@@ -172,9 +182,11 @@ size_t MergeTreeReaderWide::readRows(
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + " "
-                     "from mark " + toString(from_mark) + " "
-                     "with max_rows_to_read = " + toString(max_rows_to_read) + ")");
+        e.addMessage(
+            fmt::format(
+                "(while reading from part {} from mark {} with max_rows_to_read = {})",
+                data_part_info_for_read->getDataPartStorage()->getFullPath(),
+                toString(from_mark), toString(max_rows_to_read)));
         throw;
     }
     catch (...)

@@ -12,13 +12,14 @@
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/AsynchronousReader.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Interpreters/Context.h>
 
 namespace DB
 {
+
+class IAsynchronousReader;
 
 class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {

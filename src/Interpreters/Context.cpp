@@ -1875,7 +1875,7 @@ ThreadPool & Context::getPrefetchThreadpool() const
     auto lock = getLock();
     if (!shared->prefetch_threadpool)
     {
-        auto pool_size = config.getUInt(".prefetch_threadpool_pool_size", 50);
+        auto pool_size = config.getUInt(".prefetch_threadpool_pool_size", 200);
         auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
         shared->prefetch_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
     }

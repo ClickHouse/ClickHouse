@@ -352,9 +352,13 @@ The server successfully detected this situation and will download merged part fr
     M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction") \
     M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer") \
     M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer") \
+    M(RemoteFSPrefetchedBytes, "Bytes read from prefecthed buffer") \
+    M(RemoteFSUnprefetchedBytes, "Bytes read without prefetched buffer") \
     M(RemoteFSLazySeeks, "Number of lazy seeks") \
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
+    M(PrefetchedReadBufferInitMS, "") \
+    M(WaitPrefetchTaskMicroseconds, "") \
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \

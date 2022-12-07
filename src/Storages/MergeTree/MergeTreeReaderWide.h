@@ -28,17 +28,20 @@ public:
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
-    size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                    bool continue_reading, size_t max_rows_to_read, Columns & res_columns) override;
+    size_t readRows(
+        size_t from_mark, size_t current_task_last_mark,
+        bool continue_reading, size_t max_rows_to_read, Columns & res_columns) override;
 
     bool canReadIncompleteGranules() const override { return true; }
 
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
-    void prefetch() override;
+    void prefetchBeginOfRange() override;
 
 private:
     FileStreams streams;
+
+    void prefetchImpl(size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading);
 
     void addStreams(
         const NameAndTypePair & name_and_type,
@@ -66,8 +69,9 @@ private:
         size_t current_task_last_mark,
         ISerialization::SubstreamsCache & cache);
 
+    std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_set<std::string> prefetched_streams;
-    size_t current_prefetch_from_mark = 0;
+    bool prefetched_begin_of_range = false;
 };
 
 }

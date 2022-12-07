@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <IO/AsyncReadCounters.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -358,6 +359,8 @@ private:
 
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Query metrics for reading data asynchronously with IAsynchronousReader.
+    mutable AsyncReadCounters async_read_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -1055,6 +1058,8 @@ public:
     };
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+
+    AsyncReadCounters & getAsyncReadCounters() const { return async_read_counters; }
 
     ThreadPool & getThreadPoolWriter() const;
 

@@ -41,7 +41,8 @@ public:
         size_t preferred_block_size_bytes_,
         const MergeTreeReaderSettings & reader_settings_,
         ContextPtr context_,
-        bool use_uncompressed_cache_);
+        bool use_uncompressed_cache_,
+        size_t prefetches_limit_);
 
     MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread) override;
 
@@ -55,10 +56,12 @@ private:
     using PartsInfos = std::vector<PartInfoPtr>;
     using ThreadsTasks = std::map<size_t, std::deque<MergeTreeReadTaskPtr>>;
 
+    /// smaller `priority` means more priority
     std::future<MergeTreeReaderPtr> createReader(
         const PartInfo & part,
         const NamesAndTypesList & columns,
-        const MarkRanges & required_ranges) const;
+        const MarkRanges & required_ranges,
+        int64_t priority) const;
 
     PartsInfos getPartsInfos(
         const RangesInDataParts & parts,
@@ -72,7 +75,7 @@ private:
         size_t min_marks_for_concurrent_read,
         const PrewhereInfoPtr & prewhere_info) const;
 
-    static MarkRanges getMarkRangesToRead(size_t need_marks, PartInfo & part);
+    static MarkRanges getMarkRangesFromPart(size_t need_marks, PartInfo & part);
 
     mutable std::mutex mutex;
     Poco::Logger * log;
@@ -84,6 +87,9 @@ private:
     MergeTreeReaderSettings reader_settings;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     ThreadPool & prefetch_threadpool;
+
+    size_t prefetches_limit;
+    mutable size_t created_prefetches_count = 0;
 
     /// Saved here, because MergeTreeReadTask in threads_tasks
     /// holds reference to its values.

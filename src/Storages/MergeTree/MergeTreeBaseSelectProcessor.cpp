@@ -5,15 +5,20 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Columns/FilterDescription.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-
-
 #include <city.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event WaitPrefetchTaskMicroseconds;
+}
 
 namespace DB
 {
@@ -254,7 +259,7 @@ ChunkAndProgress IMergeTreeSelectAlgorithm::read()
     return {Chunk(), num_read_rows, num_read_bytes};
 }
 
-void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForCurrentTask(
+void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForCurrentTask(
     const StorageMetadataPtr & metadata_snapshot,
     const IMergeTreeReader::ValueSizeMap & value_size_map,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
@@ -264,6 +269,7 @@ void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForCurrentTask(
 
     if (task->reader.valid())
     {
+        ElapsedUSProfileEventIncrement measure_time(ProfileEvents::WaitPrefetchTaskMicroseconds);
         reader = task->reader.get();
     }
     else
@@ -276,6 +282,7 @@ void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForCurrentTask(
 
     if (!task->pre_reader_for_step.empty())
     {
+        ElapsedUSProfileEventIncrement measure_time(ProfileEvents::WaitPrefetchTaskMicroseconds);
         pre_reader_for_step.clear();
         for (auto & pre_reader : task->pre_reader_for_step)
             pre_reader_for_step.push_back(pre_reader.get());
@@ -288,7 +295,7 @@ void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForCurrentTask(
     }
 }
 
-void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForPart(
+void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForPart(
     MergeTreeData::DataPartPtr & data_part,
     const MergeTreeReadTaskColumns & task_columns,
     const StorageMetadataPtr & metadata_snapshot,
@@ -306,7 +313,7 @@ void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForPart(
         mark_ranges, value_size_map, profile_callback);
 }
 
-void MergeTreeBaseSelectProcessor::initializeMergeTreePreReadersForPart(
+void IMergeTreeSelectAlgorithm::initializeMergeTreePreReadersForPart(
     MergeTreeData::DataPartPtr & data_part,
     const MergeTreeReadTaskColumns & task_columns,
     const StorageMetadataPtr & metadata_snapshot,

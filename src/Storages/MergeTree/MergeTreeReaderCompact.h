@@ -38,7 +38,7 @@ public:
 
     bool canReadIncompleteGranules() const override { return false; }
 
-    void prefetch() override;
+    void prefetchBeginOfRange() override;
 
 private:
     void initialize();

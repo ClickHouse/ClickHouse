@@ -21,6 +21,7 @@ struct FilesystemReadPrefetchesLogElement
     String query_id;
     String path;
     UInt64 offset;
+    Int64 size; /// -1 means unknown
     Decimal64 prefetch_start_time{};
     FilesystemPrefetchState state;
     UInt64 thread_id;

@@ -225,7 +225,8 @@ Pipe ReadFromMergeTree::readFromPool(
             settings.preferred_block_size_bytes,
             reader_settings,
             context,
-            use_uncompressed_cache);
+            use_uncompressed_cache,
+            settings.max_early_prefetches);
     }
     else
     {

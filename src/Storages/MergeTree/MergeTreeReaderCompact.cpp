@@ -11,6 +11,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -287,7 +288,7 @@ void MergeTreeReaderCompact::readData(
         last_read_granule.emplace(from_mark, column_position);
 }
 
-void MergeTreeReaderCompact::prefetch()
+void MergeTreeReaderCompact::prefetchBeginOfRange()
 {
     if (!initialized)
         initialize();

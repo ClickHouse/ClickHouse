@@ -61,7 +61,7 @@ public:
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
 
-    virtual void prefetch() {}
+    virtual void prefetchBeginOfRange() {}
 
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
