@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
+#include <Common/TerminalSize.h>
 
 namespace DB
 {
