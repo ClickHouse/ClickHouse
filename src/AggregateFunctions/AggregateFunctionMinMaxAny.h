@@ -795,7 +795,7 @@ public:
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            serialization.serializeBinary(value, buf);
+            serialization.serializeBinary(value, buf, {});
         }
         else
             writeBinary(false, buf);
@@ -807,7 +807,7 @@ public:
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            serialization.deserializeBinary(value, buf);
+            serialization.deserializeBinary(value, buf, {});
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)
@@ -1075,34 +1075,33 @@ struct AggregateFunctionSingleValueOrNullData : Data
     bool first_value = true;
     bool is_null = false;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
+    void changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (first_value)
         {
             first_value = false;
             this->change(column, row_num, arena);
-            return true;
         }
         else if (!this->isEqualTo(column, row_num))
         {
             is_null = true;
         }
-        return false;
     }
 
-    bool changeIfBetter(const Self & to, Arena * arena)
+    void changeIfBetter(const Self & to, Arena * arena)
     {
+        if (!to.has())
+            return;
+
         if (first_value)
         {
             first_value = false;
             this->change(to, arena);
-            return true;
         }
         else if (!this->isEqualTo(to))
         {
             is_null = true;
         }
-        return false;
     }
 
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfBetter(column, 0, arena); }

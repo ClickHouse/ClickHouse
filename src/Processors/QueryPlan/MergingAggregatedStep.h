@@ -33,12 +33,13 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr context) const override;
+    void updateInputSortDescription(SortDescription input_sort_description, DataStream::SortScope sort_scope);
+
+    bool memoryBoundMergingWillBeUsed() const;
 
 private:
     void updateOutputStream() override;
 
-    bool memoryBoundMergingWillBeUsed() const;
 
     Aggregator::Params params;
     bool final;
