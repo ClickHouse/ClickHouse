@@ -832,6 +832,11 @@ std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
     }
 }
 
+bool StorageS3::supportsSubcolumns() const
+{
+    return FormatFactory::instance().checkIfFormatSupportsSubcolumns(format_name);
+}
+
 bool StorageS3::supportsSubsetOfColumns() const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
