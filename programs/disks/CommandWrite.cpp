@@ -1,6 +1,7 @@
 #include "ICommand.h"
 #include <Interpreters/Context.h>
 
+#include <Common/TerminalSize.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>

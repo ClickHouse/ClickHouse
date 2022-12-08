@@ -2,10 +2,6 @@
 
 #include <Loggers/Loggers.h>
 
-#include <Common/ProgressIndication.h>
-#include <Common/StatusFile.h>
-#include <Common/InterruptListener.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/Application.h>
 
