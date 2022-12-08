@@ -117,8 +117,7 @@ function clone_submodules
             contrib/cctz
             contrib/libcpuid
             contrib/double-conversion
-            contrib/libcxx
-            contrib/libcxxabi
+            contrib/llvm-project
             contrib/lz4
             contrib/zstd
             contrib/fastops

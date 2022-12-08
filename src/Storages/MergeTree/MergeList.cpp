@@ -142,7 +142,11 @@ MergeInfo MergeListElement::getInfo() const
     return res;
 }
 
-MergeListElement::~MergeListElement() = default;
+MergeListElement::~MergeListElement()
+{
+    CurrentThread::getMemoryTracker()->adjustWithUntrackedMemory(untracked_memory);
+    untracked_memory = 0;
+}
 
 
 }
