@@ -929,6 +929,17 @@ struct ToSecondImpl
     using FactorTransform = ToStartOfMinuteImpl;
 };
 
+struct ToFractionalSecondImpl
+{
+    static constexpr auto name = "toFractionalSecond";
+    static inline Int64 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &) { return t.fractional; }
+    static inline Int64 execute(UInt32, const DateLUTImpl &) { return 0; }
+    static inline Int64 execute(Int32, const DateLUTImpl &) { return 0; }
+    static inline Int64 execute(UInt16, const DateLUTImpl &) { return 0; }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToISOYearImpl
 {
     static constexpr auto name = "toISOYear";
