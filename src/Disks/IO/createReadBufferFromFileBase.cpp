@@ -23,22 +23,37 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_STAT;
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
+std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileOrFileDescriptorBase(
     const std::string & filename,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size,
     int flags,
     char * existing_memory,
-    size_t alignment)
+    size_t alignment,
+    bool read_from_fd,
+    int fd)
 {
     if (file_size.has_value() && !*file_size)
         return std::make_unique<ReadBufferFromEmptyFile>();
 
-    size_t estimated_size = 0;
+    struct stat file_stat{};
+    if (read_from_fd)
+    {
+        if (0 != fstat(fd, &file_stat))
+            throwFromErrno("Cannot stat file descriptor", ErrorCodes::CANNOT_STAT);
+    }
+    else
+    {
+        if (0 != stat(filename.c_str(), &file_stat))
+            throwFromErrno("Cannot stat file " + filename, ErrorCodes::CANNOT_STAT);
+    }
+
+    size_t estimated_size = file_stat.st_size;
     if (read_hint.has_value())
         estimated_size = *read_hint;
     else if (file_size.has_value())
@@ -48,17 +63,18 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         && settings.local_fs_method == LocalFSReadMethod::mmap
         && settings.mmap_threshold
         && settings.mmap_cache
-        && estimated_size >= settings.mmap_threshold)
+        && estimated_size >= settings.mmap_threshold
+        && S_ISREG(file_stat.st_mode))
     {
         try
         {
-            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, file_size.value_or(-1));
+            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, estimated_size);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
         }
         catch (const ErrnoException &)
         {
-            /// Fallback if mmap is not supported (example: pipe).
+            /// Fallback if mmap is not supported.
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMapFailed);
         }
     }
@@ -67,13 +83,21 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         std::unique_ptr<ReadBufferFromFileBase> res;
 
-        if (settings.local_fs_method == LocalFSReadMethod::read)
+        /// Pread works only with regular files, so we explicitly fallback to read in other cases.
+        if (settings.local_fs_method == LocalFSReadMethod::read || !S_ISREG(file_stat.st_mode))
         {
-            res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+            if (read_from_fd)
+                res = std::make_unique<ReadBufferFromFileDescriptor>(fd, buffer_size, existing_memory, alignment, file_size);
+            else
+                res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread || settings.local_fs_method == LocalFSReadMethod::mmap)
         {
-            res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+            if (read_from_fd)
+                res = std::make_unique<ReadBufferFromFileDescriptorPRead>(fd, buffer_size, existing_memory, alignment, file_size);
+            else
+                res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(
+                    filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
@@ -82,8 +106,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
 
             auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
-            res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+
+            if (read_from_fd)
+                res = std::make_unique<AsynchronousReadBufferFromFileDescriptor>(
+                    reader, settings.priority, fd, buffer_size, existing_memory, alignment, file_size);
+            else
+                res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
+                    reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
@@ -92,8 +121,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
 
             auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
-            res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+
+            if (read_from_fd)
+                res = std::make_unique<AsynchronousReadBufferFromFileDescriptor>(
+                    reader, settings.priority, fd, buffer_size, existing_memory, alignment, file_size);
+            else
+                res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
+                    reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");
@@ -169,4 +203,26 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     return create(buffer_size, flags);
 }
 
+std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
+    const std::string & filename,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size,
+    int flags_,
+    char * existing_memory,
+    size_t alignment)
+{
+    return createReadBufferFromFileOrFileDescriptorBase(filename, settings, read_hint, file_size, flags_, existing_memory, alignment);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileDescriptorBase(
+    int fd,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size,
+    char * existing_memory ,
+    size_t alignment)
+{
+    return createReadBufferFromFileOrFileDescriptorBase({}, settings, read_hint, file_size, -1, existing_memory, alignment, true, fd);
+}
 }
