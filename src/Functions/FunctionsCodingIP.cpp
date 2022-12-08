@@ -834,7 +834,7 @@ public:
                 second_argument->getName(), getName()
             );
 
-        DataTypePtr element = ipv6 ? DataTypePtr(std::make_shared<DataTypeIPv6>()) : DataTypePtr(std::make_shared<DataTypeIPv4>());
+        DataTypePtr element = ipv6 ? DataTypePtr(std::make_shared<DataTypeIPv6>()) : DataTypePtr(std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH));
         return std::make_shared<DataTypeTuple>(DataTypes{element, element});
     }
 
