@@ -146,7 +146,7 @@ private:
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
     Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
-    Checker getMergeTreeChecker(std::string_view setting_name) const;
+    Checker getMergeTreeChecker(std::string_view short_name) const;
 
     // Special container for heterogeneous lookups: to avoid `String` construction during `find(std::string_view)`
     using Constraints = std::unordered_map<String, Constraint, StringHash, std::equal_to<>>;
