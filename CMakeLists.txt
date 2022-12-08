@@ -498,9 +498,9 @@ endif ()
 
 enable_testing() # Enable for tests without binary
 
-option(ENABLE_OPENSSL "This option is to use in-tree OpenSSL." OFF)
+option(ENABLE_OPENSSL "This option performs a build with OpenSSL. NOTE! This option is insecure and should never be used. By default, ClickHouse uses and only supports BoringSSL" OFF)
 
-option(ENABLE_OPENSSL_DYNAMIC "This option is to use dynamic linking OpenSSL." OFF)
+option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." OFF)
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
