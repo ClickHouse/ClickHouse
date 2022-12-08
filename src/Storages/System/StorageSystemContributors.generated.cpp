@@ -753,6 +753,7 @@ const char * auto_contributors[] {
     "SkyhotQin",
     "Slach",
     "Smita Kulkarni",
+    "SmitaRKulkarni",
     "Snow",
     "Sofia Antipushina",
     "Stanislav Pavlovichev",
