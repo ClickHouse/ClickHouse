@@ -69,7 +69,6 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int CANNOT_STAT;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
