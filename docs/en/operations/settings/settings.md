@@ -3753,6 +3753,28 @@ Allow parsing numbers as strings in JSON input formats.
 
 Disabled by default.
 
+### input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
+
+Allow parsing JSON objects as strings in JSON input formats.
+
+Example:
+
+```sql
+CREATE TABLE test (obj String) ENGINE=Memory();
+INSERT INTO test FORMAT JSONEachRow {"obj" : {"a" : 1, "b" : "Hello"}};
+SELECT * FROM test;
+```
+
+Result:
+
+```
+┌─obj──────────────────────┐
+│ {"a" : 1, "b" : "Hello"} │
+└──────────────────────────┘
+```
+
+Disabled by default.
+
 ### input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
 
 For JSON/JSONCompact/JSONColumnsWithMetadata input formats, if this setting is set to 1,
