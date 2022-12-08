@@ -158,7 +158,7 @@ namespace
     {
         size_t start = 0;
         auto cols = block.block.getColumns();
-        std::vector<String> block_id_vec(block.offsets->offsets.size());
+        std::vector<String> block_id_vec;
         for (auto offset : block.offsets->offsets)
         {
             SipHash hash;
