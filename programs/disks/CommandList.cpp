@@ -1,5 +1,3 @@
-#pragma once
-
 #include "ICommand.h"
 #include <Interpreters/Context.h>
 
@@ -11,7 +9,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandList : public ICommand
+class CommandList final : public ICommand
 {
 public:
     CommandList()
@@ -46,11 +44,11 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        String path =  command_arguments[0];
+        const String & path =  command_arguments[0];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = fullPathWithValidate(disk, path);
+        String full_path = validatePathAndGetAsRelative(path);
 
         bool recursive = config.getBool("recursive", false);
 
@@ -76,9 +74,13 @@ private:
         disk->listFiles(full_path, file_names);
 
         std::cout << full_path << ":\n";
-        for (const auto & file_name : file_names)
-            std::cout << file_name << '\n';
-        std::cout << "\n";
+
+        if (!file_names.empty())
+        {
+            for (const auto & file_name : file_names)
+                std::cout << file_name << '\n';
+            std::cout << "\n";
+        }
 
         for (const auto & file_name : file_names)
         {

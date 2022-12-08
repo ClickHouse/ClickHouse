@@ -1,5 +1,3 @@
-#pragma once
-
 #include "ICommand.h"
 #include <Interpreters/Context.h>
 
@@ -11,7 +9,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandCopy : public ICommand
+class CommandCopy final : public ICommand
 {
 public:
     CommandCopy()
@@ -51,14 +49,14 @@ public:
         String disk_name_from = config.getString("diskFrom", config.getString("disk", "default"));
         String disk_name_to = config.getString("diskTo", config.getString("disk", "default"));
 
-        String path_from = command_arguments[0];
-        String path_to =  command_arguments[1];
+        const String & path_from = command_arguments[0];
+        const String & path_to =  command_arguments[1];
 
         DiskPtr disk_from = global_context->getDisk(disk_name_from);
         DiskPtr disk_to = global_context->getDisk(disk_name_to);
 
-        String full_path_from = fullPathWithValidate(disk_from, path_from);
-        String full_path_to = fullPathWithValidate(disk_to, path_to);
+        String full_path_from = validatePathAndGetAsRelative(path_from);
+        String full_path_to = validatePathAndGetAsRelative(path_to);
 
         disk_from->copy(full_path_from, disk_to, full_path_to);
     }

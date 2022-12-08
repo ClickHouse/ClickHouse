@@ -1,7 +1,8 @@
-#pragma once
-
 #include "ICommand.h"
 #include <Interpreters/Context.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/copyData.h>
 
 namespace DB
 {
@@ -11,7 +12,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandRead : public ICommand
+class CommandRead final : public ICommand
 {
 public:
     CommandRead()
@@ -46,17 +47,15 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        String path = command_arguments[0];
-
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = fullPathWithValidate(disk, path);
+        String full_path = validatePathAndGetAsRelative(command_arguments[0]);
 
         String path_output = config.getString("output", "");
 
         if (!path_output.empty())
         {
-            String full_path_output = fullPathWithValidate(disk, path_output);
+            String full_path_output = validatePathAndGetAsRelative(path_output);
 
             auto in = disk->readFile(full_path);
             auto out = disk->writeFile(full_path_output);

@@ -6,6 +6,8 @@
 
 #include <Formats/registerFormats.h>
 
+#include "ICommand.h"
+
 namespace DB
 {
 
