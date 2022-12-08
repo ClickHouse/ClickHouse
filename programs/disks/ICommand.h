@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Disks/IDisk.h>
 
 #include <boost/program_options.hpp>
