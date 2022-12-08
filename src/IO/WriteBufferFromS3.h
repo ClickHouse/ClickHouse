@@ -43,7 +43,7 @@ class WriteBufferFromFile;
  * Data is divided on chunks with size greater than 'minimum_upload_part_size'. Last chunk can be less than this threshold.
  * Each chunk is written as a part to S3.
  */
-class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromS3 final : public WriteBuffer
 {
 public:
     WriteBufferFromS3(
@@ -52,7 +52,6 @@ public:
         const String & key_,
         const S3Settings::RequestSettings & request_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ThreadPoolCallbackRunner<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
@@ -63,28 +62,38 @@ public:
     void preFinalize() override;
 
 private:
-    void allocateBuffer();
+    std::shared_ptr<Aws::StringStream> allocateBuffer();
 
     void createMultipartUpload();
-    void writePart();
+    void writePart(std::shared_ptr<Aws::StringStream> temporary_buffer);
     void completeMultipartUpload();
 
-    void makeSinglepartUpload();
+    void makeSinglepartUpload(std::shared_ptr<Aws::StringStream> temporary_buffer);
 
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
 
     struct UploadPartTask;
-    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, int part_number);
+    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, std::shared_ptr<Aws::StringStream> temporary_buffer, int part_number);
     void processUploadRequest(UploadPartTask & task);
 
     struct PutObjectTask;
-    void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
+    void fillPutRequest(Aws::S3::Model::PutObjectRequest & req, std::shared_ptr<Aws::StringStream> temporary_buffer);
     void processPutRequest(const PutObjectTask & task);
 
     void waitForReadyBackGroundTasks();
     void waitForAllBackGroundTasks();
     void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
+
+    struct Memory
+    {
+        char * data = nullptr;
+        size_t size;
+
+        ~Memory();
+    };
+
+    Memory memory;
 
     const String bucket;
     const String key;
@@ -94,8 +103,7 @@ private:
 
     size_t upload_part_size = 0;
     std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
-    size_t last_part_size = 0;
-    std::atomic<size_t> total_parts_uploaded = 0;
+    size_t total_parts_uploaded = 0;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.

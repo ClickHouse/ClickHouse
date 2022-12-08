@@ -47,9 +47,12 @@ namespace DB
 // because custom S3 implementation may allow relaxed requirements on that.
 const int S3_WARN_MAX_PARTS = 10000;
 
+extern const size_t MMAP_THRESHOLD;
+
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 struct WriteBufferFromS3::UploadPartTask
@@ -67,16 +70,21 @@ struct WriteBufferFromS3::PutObjectTask
     std::exception_ptr exception;
 };
 
+WriteBufferFromS3::Memory::~Memory()
+{
+    if (data)
+        ::free(data);
+}
+
 WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const S3Settings::RequestSettings & request_settings_,
     std::optional<std::map<String, String>> object_metadata_,
-    size_t buffer_size_,
     ThreadPoolCallbackRunner<void> schedule_,
     const WriteSettings & write_settings_)
-    : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
+    : WriteBuffer(nullptr, 0)
     , bucket(bucket_)
     , key(key_)
     , request_settings(request_settings_)
@@ -86,51 +94,52 @@ WriteBufferFromS3::WriteBufferFromS3(
     , schedule(std::move(schedule_))
     , write_settings(write_settings_)
 {
-    allocateBuffer();
+    memory.size = request_settings.max_single_part_upload_size;
+    memory.data = static_cast<char *>(::malloc(memory.size));
+    set(memory.data, memory.size);
 }
 
 void WriteBufferFromS3::nextImpl()
 {
-    if (!offset())
+    if (offset() < memory.size)
         return;
-
-    /// Buffer in a bad state after exception
-    if (temporary_buffer->tellp() == -1)
-        allocateBuffer();
-
-    size_t size = offset();
-    temporary_buffer->write(working_buffer.begin(), size);
+        // throw Exception(
+        //     ErrorCodes::LOGICAL_ERROR,
+        //     "Cannot write incomplete buffer with offset {} size {}",
+        //     ReadableSize(offset()), ReadableSize(memory.size));
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
-    last_part_size += offset();
     if (write_settings.remote_throttler)
         write_settings.remote_throttler->add(offset());
 
-    /// Data size exceeds singlepart upload threshold, need to use multipart upload.
-    if (multipart_upload_id.empty() && last_part_size > request_settings.max_single_part_upload_size)
+    if (multipart_upload_id.empty())
         createMultipartUpload();
 
-    if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
-    {
-        writePart();
-
-        allocateBuffer();
-    }
-
+    writePart(allocateBuffer());
     waitForReadyBackGroundTasks();
 }
 
-void WriteBufferFromS3::allocateBuffer()
+std::shared_ptr<Aws::StringStream> WriteBufferFromS3::allocateBuffer()
 {
-    if (total_parts_uploaded != 0 && total_parts_uploaded % request_settings.upload_part_size_multiply_parts_count_threshold == 0)
+    ++total_parts_uploaded;
+    if (total_parts_uploaded % request_settings.upload_part_size_multiply_parts_count_threshold == 0)
     {
         upload_part_size *= request_settings.upload_part_size_multiply_factor;
         upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
     }
 
-    temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
+    Memory new_memory;
+    new_memory.size = upload_part_size;
+    new_memory.data = static_cast<char *>(::malloc(new_memory.size));
+
+    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", memory.data, memory.size, offset());
+    memory.data = new_memory.data;
+    new_memory.data = nullptr;
+
+    set(memory.data, memory.size);
+
     temporary_buffer->exceptions(std::ios::badbit);
-    last_part_size = 0;
+    return temporary_buffer;
 }
 
 WriteBufferFromS3::~WriteBufferFromS3()
@@ -155,19 +164,23 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
 void WriteBufferFromS3::preFinalize()
 {
-    next();
+    is_prefinalized = true;
+    if (!offset())
+        return;
+    bytes += offset();
+
+    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", memory.data, memory.size, offset());
+    memory.data = nullptr;
 
     if (multipart_upload_id.empty())
     {
-        makeSinglepartUpload();
+        makeSinglepartUpload(std::move(temporary_buffer));
     }
     else
     {
         /// Write rest of the data as last part.
-        writePart();
+        writePart(std::move(temporary_buffer));
     }
-
-    is_prefinalized = true;
 }
 
 void WriteBufferFromS3::finalizeImpl()
@@ -229,7 +242,7 @@ void WriteBufferFromS3::createMultipartUpload()
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
 }
 
-void WriteBufferFromS3::writePart()
+void WriteBufferFromS3::writePart(std::shared_ptr<Aws::StringStream> temporary_buffer)
 {
     auto size = temporary_buffer->tellp();
 
@@ -281,7 +294,7 @@ void WriteBufferFromS3::writePart()
 
         try
         {
-            fillUploadRequest(task->req, part_number);
+            fillUploadRequest(task->req, std::move(temporary_buffer), part_number);
 
             schedule([this, task, task_finish_notify]()
             {
@@ -308,13 +321,13 @@ void WriteBufferFromS3::writePart()
         UploadPartTask task;
         auto & tags = TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags); /// Suppress warning because schedule == false.
 
-        fillUploadRequest(task.req, static_cast<int>(tags.size() + 1));
+        fillUploadRequest(task.req, std::move(temporary_buffer), static_cast<int>(tags.size() + 1));
         processUploadRequest(task);
         tags.push_back(task.tag);
     }
 }
 
-void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, int part_number)
+void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, std::shared_ptr<Aws::StringStream> temporary_buffer, int part_number)
 {
     req.SetBucket(bucket);
     req.SetKey(key);
@@ -343,8 +356,6 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
     }
     else
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
-
-    total_parts_uploaded++;
 }
 
 void WriteBufferFromS3::completeMultipartUpload()
@@ -400,7 +411,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     }
 }
 
-void WriteBufferFromS3::makeSinglepartUpload()
+void WriteBufferFromS3::makeSinglepartUpload(std::shared_ptr<Aws::StringStream> temporary_buffer)
 {
     auto size = temporary_buffer->tellp();
     bool with_pool = static_cast<bool>(schedule);
@@ -431,7 +442,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
 
         try
         {
-            fillPutRequest(put_object_task->req);
+            fillPutRequest(put_object_task->req, std::move(temporary_buffer));
 
             schedule([this, task_notify_finish]()
             {
@@ -456,12 +467,12 @@ void WriteBufferFromS3::makeSinglepartUpload()
     else
     {
         PutObjectTask task;
-        fillPutRequest(task.req);
+        fillPutRequest(task.req, std::move(temporary_buffer));
         processPutRequest(task);
     }
 }
 
-void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
+void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req, std::shared_ptr<Aws::StringStream> temporary_buffer)
 {
     req.SetBucket(bucket);
     req.SetKey(key);
