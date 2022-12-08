@@ -55,7 +55,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         ops.emplace_back(zkutil::makeCreateRequest(path_prefix_, holder_path, zkutil::CreateMode::EphemeralSequential));
         Coordination::Responses responses;
         Coordination::Error e = zookeeper_->tryMulti(ops, responses);
-        if (e != Coordination::Error::ZOK)
+        if (e == Coordination::Error::ZNODEEXISTS)
         {
             if constexpr (async_insert)
             {
@@ -78,6 +78,10 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
                     deduplication_path);
                 return {};
             }
+        }
+
+        if (e != Coordination::Error::ZOK)
+        {
             zkutil::KeeperMultiException::check(e, ops, responses); // This should always throw the proper exception
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to handle error {} when acquiring ephemeral lock in ZK", toString(e));
         }
