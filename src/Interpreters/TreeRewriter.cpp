@@ -48,6 +48,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -60,6 +61,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int EMPTY_NESTED_TABLE;
     extern const int EXPECTED_ALL_OR_ANY;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -756,6 +758,10 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
             if (is_asof)
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                                 "Cannot get JOIN keys from JOIN ON section: {}", queryToString(table_join.on_expression));
+
+            if (const auto storage_join = analyzed_join.getStorageJoin())
+                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+                    "StorageJoin keys should match JOIN keys, expected JOIN ON [{}]", fmt::join(storage_join->getKeyNames(), ", "));
 
             bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
             if (!join_on_const_ok)
