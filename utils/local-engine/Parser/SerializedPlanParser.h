@@ -129,7 +129,7 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"from_unixtime", "FROM_UNIXTIME"},
     {"date_add", "addDays"},
     {"date_sub", "subtractDays"},
-    {"datediff", "date_diff"},
+    {"datediff", "dateDiff"},
 };
 
 static const std::set<std::string> FUNCTION_NEED_KEEP_ARGUMENTS = {"alias"};
