@@ -24,9 +24,9 @@ void MergeTreeDataPartDistinctPartitionExpressionCloner::deleteMinMaxFiles(
     IDataPartStorage & storage
 ) const
 {
-    for (const auto & column : src_part->getColumns())
+    for (const auto & column_name : merge_tree_data->getMinMaxColumnsNames(metadata_snapshot->partition_key))
     {
-        auto file = "minmax_" + escapeForFileName(column.name) + ".idx";
+        auto file = "minmax_" + escapeForFileName(column_name) + ".idx";
         storage.removeFile(file);
     }
 }

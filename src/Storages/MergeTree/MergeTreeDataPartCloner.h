@@ -36,11 +36,11 @@ namespace DB
     protected:
         MergeTreeData * merge_tree_data;
         const DataPartPtr & src_part;
+        const StorageMetadataPtr & metadata_snapshot;
 
         virtual MergeTreeData::MutableDataPartPtr finalizePart(const MutableDataPartPtr & dst_part) const;
 
     private:
-        const StorageMetadataPtr & metadata_snapshot;
         const MergeTreePartInfo & dst_part_info;
         const String & tmp_part_prefix;
         const MergeTreeTransactionPtr & txn;
