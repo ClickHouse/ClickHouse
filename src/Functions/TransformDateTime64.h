@@ -48,6 +48,10 @@ public:
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale_))
     {}
 
+    TransformDateTime64(DateTime64::NativeType scale_multiplier_ = 1) /// NOLINT(google-explicit-constructor)
+        : scale_multiplier(scale_multiplier_)
+    {}
+
     template <typename ... Args>
     inline auto NO_SANITIZE_UNDEFINED execute(const DateTime64 & t, Args && ... args) const
     {
@@ -126,6 +130,8 @@ public:
     {
         return wrapped_transform.executeExtendedResult(t, std::forward<Args>(args)...);
     }
+
+    DateTime64::NativeType getScaleMultiplier() const { return scale_multiplier; }
 
 private:
     DateTime64::NativeType scale_multiplier = 1;

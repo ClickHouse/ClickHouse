@@ -1530,9 +1530,9 @@ void Context::setCurrentQueryId(const String & query_id)
         client_info.initial_query_id = client_info.current_query_id;
 }
 
-void Context::killCurrentQuery()
+void Context::killCurrentQuery() const
 {
-    if (auto elem = process_list_elem.lock())
+    if (auto elem = getProcessListElement())
         elem->cancelQuery(true);
 }
 
@@ -1787,11 +1787,16 @@ void Context::setProcessListElement(QueryStatusPtr elem)
 {
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
+    has_process_list_elem = elem.get();
 }
 
 QueryStatusPtr Context::getProcessListElement() const
 {
-    return process_list_elem.lock();
+    if (!has_process_list_elem)
+        return {};
+    if (auto res = process_list_elem.lock())
+        return res;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Weak pointer to process_list_elem expired during query execution, it's a bug");
 }
 
 
