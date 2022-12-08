@@ -291,3 +291,6 @@
 	path = contrib/openssl
 	url = https://github.com/openssl/openssl
 	branch = openssl-3.0
+[submodule "contrib/google-benchmark"]
+	path = contrib/google-benchmark
+	url = https://github.com/google/benchmark.git
