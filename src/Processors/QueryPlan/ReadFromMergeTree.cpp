@@ -1440,7 +1440,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
     auto result = getAnalysisResult();
-    auto index_stats = result.index_stats;
+    const auto & index_stats = result.index_stats;
 
     std::string prefix(format_settings.offset, format_settings.indent_char);
     if (!index_stats.empty())
