@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 DATA_FILE=$USER_FILES_PATH/test_02497_storage_file_reader.data
-echo 'key\nfoo\nbar' > $DATA_FILE
+echo -e 'key\nfoo\nbar' > $DATA_FILE
 
 QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02497_storage_file_reader.data', 'TSV', 's String')" \
