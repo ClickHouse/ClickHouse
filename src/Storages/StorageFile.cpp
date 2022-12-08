@@ -39,6 +39,8 @@
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
 
+#include <Disks/IO/createReadBufferFromFileBase.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -180,7 +182,6 @@ void checkCreationIsAllowed(
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
     bool use_table_fd,
-    const String & storage_name,
     int table_fd,
     const String & compression_method,
     ContextPtr context)
@@ -188,32 +189,14 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     std::unique_ptr<ReadBuffer> nested_buffer;
     CompressionMethod method;
 
-    struct stat file_stat{};
-
     if (use_table_fd)
     {
-        /// Check if file descriptor allows random reads (and reading it twice).
-        if (0 != fstat(table_fd, &file_stat))
-            throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
-
-        if (S_ISREG(file_stat.st_mode))
-            nested_buffer = std::make_unique<MMapReadBufferFromFileDescriptor>(table_fd, 0);
-        else
-            nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
-
+        nested_buffer = createReadBufferFromFileDescriptorBase(table_fd, context->getReadSettings());
         method = chooseCompressionMethod("", compression_method);
     }
     else
     {
-        /// Check if file descriptor allows random reads (and reading it twice).
-        if (0 != stat(current_path.c_str(), &file_stat))
-            throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
-
-        if (S_ISREG(file_stat.st_mode))
-            nested_buffer = std::make_unique<MMapReadBufferFromFile>(current_path, 0);
-        else
-            nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
-
+        nested_buffer = createReadBufferFromFileBase(current_path, context->getReadSettings());
         method = chooseCompressionMethod(current_path, compression_method);
     }
 
@@ -284,7 +267,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
-        read_buffer_from_fd = createReadBuffer("", true, getName(), table_fd, compression_method, context);
+        read_buffer_from_fd = createReadBuffer("", true, table_fd, compression_method, context);
         auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
         read_buf->setCheckpoint();
         return read_buf;
@@ -333,7 +316,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         if (it == paths.end())
             return nullptr;
 
-        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
+        return createReadBuffer(*it++, false, -1, compression_method, context);
     };
 
     ColumnsDescription columns;
@@ -550,7 +533,7 @@ public:
                 }
 
                 if (!read_buf)
-                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
+                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
 
                 auto format
                     = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
