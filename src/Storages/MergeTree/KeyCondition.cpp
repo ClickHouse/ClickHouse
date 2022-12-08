@@ -657,7 +657,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             }
 
             res = &inverted_dag.addFunction(node.function_base, children, "");
-            chassert(res.result_type == node.result_type);
+            chassert(res->result_type == node.result_type);
         }
     }
 
