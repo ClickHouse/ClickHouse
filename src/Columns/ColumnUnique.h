@@ -368,6 +368,16 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 
     FieldVisitorGetData visitor;
     applyVisitor(visitor, x);
+    if (valuesHaveFixedSize())
+    {
+        if constexpr (std::endian::native == std::endian::big)
+        {
+            if ((x.getType() == Field::Types::Int64 || x.getType() == Field::Types::UInt64 || x.getType() == Field::Types::Bool) && size_of_value_if_fixed < 8)
+            {
+                return uniqueInsertData(visitor.res.data + 8 - size_of_value_if_fixed, size_of_value_if_fixed);
+            }
+        }
+    }
     return uniqueInsertData(visitor.res.data, visitor.res.size);
 }
 
