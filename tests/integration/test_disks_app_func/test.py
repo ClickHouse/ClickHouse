@@ -10,9 +10,7 @@ def started_cluster():
 
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "disks_app_test",
-            main_configs=["config.xml"],
-            with_minio=True
+            "disks_app_test", main_configs=["config.xml"], with_minio=True
         )
 
         cluster.start()
@@ -33,6 +31,7 @@ def init_data(source):
 
     source.query("INSERT INTO test_table(*) VALUES ('test1', 2)")
 
+
 def init_data_s3(source):
     source.query("DROP TABLE IF EXISTS test_table_s3")
 
@@ -43,6 +42,7 @@ def init_data_s3(source):
     )
 
     source.query("INSERT INTO test_table_s3(*) VALUES ('test1', 2)")
+
 
 def test_disks_app_func_ld(started_cluster):
     source = cluster.instances["disks_app_test"]
