@@ -41,9 +41,9 @@ public:
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = validatePathAndGetAsRelative(path);
+        String relative_path = validatePathAndGetAsRelative(path);
 
-        disk->removeRecursive(full_path);
+        disk->removeRecursive(relative_path);
     }
 };
 }

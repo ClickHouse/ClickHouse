@@ -42,13 +42,13 @@ public:
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path_from = validatePathAndGetAsRelative(path_from);
-        String full_path_to = validatePathAndGetAsRelative(path_to);
+        String relative_path_from = validatePathAndGetAsRelative(path_from);
+        String relative_path_to = validatePathAndGetAsRelative(path_to);
 
-        if (disk->isFile(full_path_from))
-            disk->moveFile(full_path_from, full_path_to);
+        if (disk->isFile(relative_path_from))
+            disk->moveFile(relative_path_from, relative_path_to);
         else
-            disk->moveDirectory(full_path_from, full_path_to);
+            disk->moveDirectory(relative_path_from, relative_path_to);
     }
 };
 }
