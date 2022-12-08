@@ -1,5 +1,3 @@
-#pragma once
-
 #include "ICommand.h"
 #include <Interpreters/Context.h>
 
@@ -11,7 +9,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandLink : public ICommand
+class CommandLink final : public ICommand
 {
 public:
     CommandLink()
@@ -40,13 +38,13 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        String path_from = command_arguments[0];
-        String path_to = command_arguments[1];
+        const String & path_from = command_arguments[0];
+        const String & path_to = command_arguments[1];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path_from = fullPathWithValidate(disk, path_from);
-        String full_path_to = fullPathWithValidate(disk, path_to);
+        String full_path_from = validatePathAndGetAsRelative(path_from);
+        String full_path_to = validatePathAndGetAsRelative(path_to);
 
         disk->createHardLink(full_path_from, full_path_to);
     }

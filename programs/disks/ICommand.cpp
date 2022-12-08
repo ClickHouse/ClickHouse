@@ -30,17 +30,18 @@ void ICommand::addOptions(ProgramOptionsDescription & options_description)
     options_description.add(*command_option_description);
 }
 
-String ICommand::fullPathWithValidate(const DiskPtr & disk, const String & path)
+String ICommand::validatePathAndGetAsRelative(const String & path)
 {
-    if (fs::path(path).lexically_normal().string() != path)
+    /// If path contain non-normalized symbols like ../ or something like
+    /// this it can be dangerous, disallow such paths. Also since clickhouse-disks
+    /// is not an interactive program (don't track you current path) it's OK to disallow them.
+    if (path.find("..") != std::string::npos || fs::path(path).lexically_normal().string() != path)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Path {} is not normalized", path);
 
-    String disk_path = fs::canonical(fs::path(disk->getPath())) / "";
-    String full_path = (fs::absolute(disk_path) / path).lexically_normal();
-
-    if (!full_path.starts_with(disk_path))
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS, "Path {} must be inside disk path {}", full_path, disk_path);
+    /// If path is absolute we should keep it as relative inside disk, so disk will look like
+    /// an ordinary filesystem with root.
+    if (fs::path(path).is_absolute())
+        return path.substr(1);
 
     return path;
 }

@@ -1,7 +1,9 @@
-#pragma once
-
 #include "ICommand.h"
 #include <Interpreters/Context.h>
+
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/copyData.h>
 
 namespace DB
 {
@@ -11,7 +13,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandWrite : public ICommand
+class CommandWrite final : public ICommand
 {
 public:
     CommandWrite()
@@ -46,11 +48,11 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        String path = command_arguments[0];
+        const String & path = command_arguments[0];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = fullPathWithValidate(disk, path);
+        String full_path = validatePathAndGetAsRelative(path);
 
         String path_input = config.getString("input", "");
         std::unique_ptr<ReadBufferFromFileBase> in;
@@ -60,7 +62,7 @@ public:
         }
         else
         {
-            String full_path_input = fullPathWithValidate(disk, path_input);
+            String full_path_input = validatePathAndGetAsRelative(path_input);
             in = disk->readFile(full_path_input);
         }
 
