@@ -10,7 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
-    extern const int TYPE_MISMATCH;
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
     extern const int BAD_ARGUMENTS;
