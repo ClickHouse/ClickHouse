@@ -101,16 +101,15 @@ WriteBufferFromS3::WriteBufferFromS3(
 
 void WriteBufferFromS3::nextImpl()
 {
-    if (offset() < memory.size)
+    if (size_t available_bytes = available(); available_bytes > 0)
+    {
+        buffer() = BufferBase::Buffer(pos, pos + available_bytes);
         return;
-        // throw Exception(
-        //     ErrorCodes::LOGICAL_ERROR,
-        //     "Cannot write incomplete buffer with offset {} size {}",
-        //     ReadableSize(offset()), ReadableSize(memory.size));
+    }
 
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, memory.size);
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset());
+        write_settings.remote_throttler->add(memory.size);
 
     if (multipart_upload_id.empty())
         createMultipartUpload();
@@ -132,8 +131,9 @@ std::shared_ptr<Aws::StringStream> WriteBufferFromS3::allocateBuffer()
     new_memory.size = upload_part_size;
     new_memory.data = static_cast<char *>(::malloc(new_memory.size));
 
-    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", memory.data, memory.size, offset());
+    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", memory.data, memory.size, memory.size);
     memory.data = new_memory.data;
+    memory.size = new_memory.size;
     new_memory.data = nullptr;
 
     set(memory.data, memory.size);
@@ -165,11 +165,14 @@ WriteBufferFromS3::~WriteBufferFromS3()
 void WriteBufferFromS3::preFinalize()
 {
     is_prefinalized = true;
-    if (!offset())
-        return;
     bytes += offset();
+    buffer() = BufferBase::Buffer(pos, pos + available());
 
-    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", memory.data, memory.size, offset());
+    size_t size = pos - memory.data;
+    if (size == 0)
+        return;
+
+    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", memory.data, memory.size, size);
     memory.data = nullptr;
 
     if (multipart_upload_id.empty())
