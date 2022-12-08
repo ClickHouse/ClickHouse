@@ -25,6 +25,27 @@ namespace ErrorCodes
                            ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
+static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_rule, FormatSettings & settings, const ParsedTemplateFormatString & row_format, char default_csv_delimiter, size_t file_column)
+{
+    if (escaping_rule != FormatSettings::EscapingRule::CSV)
+        return;
+
+    /// Clean custom_delimiter from previous column.
+    settings.csv.custom_delimiter.clear();
+    /// If field delimiter is empty, we read until default csv delimiter.
+    if (row_format.delimiters[file_column + 1].empty())
+        settings.csv.delimiter = default_csv_delimiter;
+    /// If field delimiter has length = 1, it will be more efficient to use csv.delimiter.
+    else if (row_format.delimiters[file_column + 1].size() == 1)
+        settings.csv.delimiter = row_format.delimiters[file_column + 1].front();
+    /// If we have some complex delimiter, normal CSV reading will now work properly if we will
+    /// use the first character of delimiter (for example, if delimiter='||' and we have data 'abc|d||')
+    /// We have special implementation for such case that uses custom delimiter, it's not so efficient,
+    /// but works properly.
+    else
+        settings.csv.custom_delimiter = row_format.delimiters[file_column + 1];
+}
+
 TemplateRowInputFormat::TemplateRowInputFormat(
     const Block & header_,
     ReadBuffer & in_,
@@ -129,16 +150,7 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
     const SerializationPtr & serialization, IColumn & column, size_t file_column)
 {
     EscapingRule escaping_rule = row_format.escaping_rules[file_column];
-    if (escaping_rule == EscapingRule::CSV)
-    {
-        settings.csv.custom_delimiter.clear();
-        if (row_format.delimiters[file_column + 1].empty())
-            settings.csv.delimiter = default_csv_delimiter;
-        else if (row_format.delimiters[file_column + 1].size() == 1)
-            settings.csv.delimiter = row_format.delimiters[file_column + 1].front();
-        else
-            settings.csv.custom_delimiter = row_format.delimiters[file_column + 1];
-    }
+    updateFormatSettingsIfNeeded(escaping_rule, settings, row_format, default_csv_delimiter, file_column);
 
     try
     {
@@ -497,17 +509,7 @@ DataTypes TemplateSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != row_format.columnsCount(); ++i)
     {
         format_reader.skipDelimiter(i);
-        if (row_format.escaping_rules[i] == FormatSettings::EscapingRule::CSV)
-        {
-            format_settings.csv.custom_delimiter.clear();
-            if (row_format.delimiters[i + 1].empty())
-                format_settings.csv.delimiter = default_csv_delimiter;
-            else if (row_format.delimiters[i + 1].size() == 1)
-                format_settings.csv.delimiter = row_format.delimiters[i + 1].front();
-            else
-                format_settings.csv.custom_delimiter = row_format.delimiters[i + 1];
-        }
-
+        updateFormatSettingsIfNeeded(row_format.escaping_rules[i], format_settings, row_format, default_csv_delimiter, i);
         field = readFieldByEscapingRule(buf, row_format.escaping_rules[i], format_settings);
         data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i]));
     }
