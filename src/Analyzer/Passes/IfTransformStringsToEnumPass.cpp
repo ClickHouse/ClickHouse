@@ -18,45 +18,6 @@ namespace DB
 namespace
 {
 
-/// Visitor for finding functions that are used inside another function
-class FindUsedFunctionsVisitor : public ConstInDepthQueryTreeVisitor<FindUsedFunctionsVisitor>
-{
-public:
-    FindUsedFunctionsVisitor(
-        std::unordered_set<FunctionNode *> & used_functions_,
-        const std::unordered_set<std::string> & function_names_,
-        size_t stack_size_)
-        : used_functions(used_functions_), function_names(function_names_), stack_size(stack_size_)
-    {
-    }
-
-    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & /* child */)
-    {
-        return parent->getNodeType() != QueryTreeNodeType::FUNCTION;
-    }
-
-    void visitImpl(const QueryTreeNodePtr & node)
-    {
-        auto * function_node = node->as<FunctionNode>();
-
-        if (!function_node)
-            return;
-
-        const auto & function_name = function_node->getFunctionName();
-        if (function_names.contains(function_name) && stack_size > 0)
-            used_functions.insert(function_node);
-
-        FindUsedFunctionsVisitor visitor(used_functions, function_names, stack_size + 1);
-        visitor.visit(function_node->getArgumentsNode());
-    }
-
-private:
-    /// we store only function pointers because these nodes won't be modified
-    std::unordered_set<FunctionNode *> & used_functions;
-    const std::unordered_set<std::string> & function_names;
-    size_t stack_size;
-};
-
 /// We place strings in ascending order here under the assumption it could speed up String to Enum conversion.
 template <typename EnumType>
 auto getDataEnumType(const std::set<std::string> & string_values)
@@ -95,6 +56,8 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr from, DataTypePtr result_ty
     return function_node;
 }
 
+/// if(arg1, arg2, arg3) will be transformed to if(arg1, _CAST(arg2, Enum...), _CAST(arg3, Enum...))
+/// where Enum is generated based on the possible values stored in string_values
 void changeIfArguments(
     QueryTreeNodePtr & first, QueryTreeNodePtr & second, const std::set<std::string> & string_values, const ContextPtr & context)
 {
@@ -104,6 +67,8 @@ void changeIfArguments(
     second = createCastFunction(second, result_type, context);
 }
 
+/// transform(value, array_from, array_to, default_value) will be transformed to transform(value, array_from, _CAST(array_to, Array(Enum...)), _CAST(default_value, Enum...))
+/// where Enum is generated based on the possible values stored in string_values
 void changeTransformArguments(
     QueryTreeNodePtr & array_to,
     QueryTreeNodePtr & default_value,
@@ -116,17 +81,23 @@ void changeTransformArguments(
     default_value = createCastFunction(default_value, std::move(result_type), context);
 }
 
+void wrapIntoToString(FunctionNode & function_node, QueryTreeNodePtr arg, ContextPtr context)
+{
+    assert(WhichDataType(function_node.getResultType()).isString());
+
+    auto to_string_function = FunctionFactory::instance().get("toString", std::move(context));
+    QueryTreeNodes arguments{std::move(arg)};
+
+    function_node.resolveAsFunction(std::move(to_string_function), std::make_shared<DataTypeString>());
+    function_node.getArguments().getNodes() = std::move(arguments);
+}
+
 class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitor<ConvertStringsToEnumVisitor>
 {
 public:
-    explicit ConvertStringsToEnumVisitor(std::unordered_set<FunctionNode *> used_functions_, ContextPtr context_)
-        : used_functions(std::move(used_functions_)), context(std::move(context_))
+    explicit ConvertStringsToEnumVisitor(ContextPtr context_)
+        : context(std::move(context_))
     {
-    }
-
-    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & /* child */)
-    {
-        return parent->getNodeType() != QueryTreeNodeType::FUNCTION;
     }
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -136,18 +107,17 @@ public:
         if (!function_node)
             return;
 
-        /// we cannot change the type of its result because it's used
-        /// as argument in another function
-        if (used_functions.contains(function_node))
-            return;
+        /// to preserve return type (String) of the current function_node, we wrap the newly
+        /// generated function nodes into toString
 
         std::string_view function_name = function_node->getFunctionName();
         if (function_name == "if")
         {
-            auto & argument_nodes = function_node->getArguments().getNodes();
-
-            if (argument_nodes.size() != 3)
+            if (function_node->getArguments().getNodes().size() != 3)
                 return;
+
+            auto modified_if_node = function_node->clone();
+            auto & argument_nodes = modified_if_node->as<FunctionNode>()->getArguments().getNodes();
 
             const auto * first_literal = argument_nodes[1]->as<ConstantNode>();
             const auto * second_literal = argument_nodes[2]->as<ConstantNode>();
@@ -163,15 +133,17 @@ public:
             string_values.insert(second_literal->getValue().get<std::string>());
 
             changeIfArguments(argument_nodes[1], argument_nodes[2], string_values, context);
+            wrapIntoToString(*function_node, std::move(modified_if_node), context);
             return;
         }
 
         if (function_name == "transform")
         {
-            auto & argument_nodes = function_node->getArguments().getNodes();
-
-            if (argument_nodes.size() != 4)
+            if (function_node->getArguments().getNodes().size() != 4)
                 return;
+
+            auto modified_transform_node = function_node->clone();
+            auto & argument_nodes = modified_transform_node->as<FunctionNode>()->getArguments().getNodes();
 
             const auto * literal_to = argument_nodes[2]->as<ConstantNode>();
             const auto * literal_default = argument_nodes[3]->as<ConstantNode>();
@@ -202,12 +174,12 @@ public:
             string_values.insert(literal_default->getValue().get<std::string>());
 
             changeTransformArguments(argument_nodes[2], argument_nodes[3], string_values, context);
+            wrapIntoToString(*function_node, std::move(modified_transform_node), context);
             return;
         }
     }
 
 private:
-    std::unordered_set<FunctionNode *> used_functions;
     ContextPtr context;
 };
 
@@ -215,18 +187,8 @@ private:
 
 void IfTransformStringsToEnumPass::run(QueryTreeNodePtr query, ContextPtr context)
 {
-    std::unordered_set<FunctionNode *> used_functions;
-    std::unordered_set<std::string> function_names{"if", "transform"};
-
-    {
-        FindUsedFunctionsVisitor visitor(used_functions, function_names, 0);
-        visitor.visit(query);
-    }
-
-    {
-        ConvertStringsToEnumVisitor visitor(std::move(used_functions), context);
-        visitor.visit(query);
-    }
+    ConvertStringsToEnumVisitor visitor(context);
+    visitor.visit(query);
 }
 
 }
