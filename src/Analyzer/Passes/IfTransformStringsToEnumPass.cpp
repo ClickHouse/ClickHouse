@@ -12,8 +12,6 @@
 
 #include <Functions/FunctionFactory.h>
 
-#include <stack>
-
 namespace DB
 {
 
@@ -25,7 +23,7 @@ class FindUsedFunctionsVisitor : public ConstInDepthQueryTreeVisitor<FindUsedFun
 {
 public:
     FindUsedFunctionsVisitor(
-        std::unordered_set<std::string_view> & used_functions_,
+        std::unordered_set<FunctionNode *> & used_functions_,
         const std::unordered_set<std::string> & function_names_,
         size_t stack_size_)
         : used_functions(used_functions_), function_names(function_names_), stack_size(stack_size_)
@@ -46,56 +44,20 @@ public:
 
         const auto & function_name = function_node->getFunctionName();
         if (function_names.contains(function_name) && stack_size > 0)
-        {
-            const auto & alias = function_node->getAlias();
-
-            if (!alias.empty())
-                used_functions.insert(alias);
-        }
+            used_functions.insert(function_node);
 
         FindUsedFunctionsVisitor visitor(used_functions, function_names, stack_size + 1);
         visitor.visit(function_node->getArgumentsNode());
     }
 
 private:
-    /// we store only function aliases which are not modified, including the nodes owning it
-    /// we will modify only argument nodes
-    std::unordered_set<std::string_view> & used_functions;
+    /// we store only function pointers because these nodes won't be modified
+    std::unordered_set<FunctionNode *> & used_functions;
     const std::unordered_set<std::string> & function_names;
     size_t stack_size;
 };
 
-template <typename EnumType>
-std::string makeStringsEnum(const EnumType & enum_type)
-{
-    std::string enum_string;
-
-    if constexpr (std::same_as<typename EnumType::FieldType, Int16>)
-    {
-        enum_string = "Enum16(";
-    }
-    else
-    {
-        static_assert(std::same_as<typename EnumType::FieldType, Int8>, "Invalid field type for enum");
-        enum_string = "Enum8(";
-    }
-
-    const auto & values = enum_type.getValues();
-    for (const auto & [value_string, value_index] : values)
-    {
-        enum_string += "\'" + value_string + "\' = " + std::to_string(value_index);
-
-        assert(value_index > 0);
-        if (static_cast<size_t>(value_index) < values.size())
-            enum_string += ", ";
-    }
-
-    enum_string += ")";
-
-    return enum_string;
-}
-
-/// We place strings in ascending order here under the assumption it colud speed up String to Enum conversion.
+/// We place strings in ascending order here under the assumption it could speed up String to Enum conversion.
 template <typename EnumType>
 auto getDataEnumType(const std::set<std::string> & string_values)
 {
@@ -110,47 +72,36 @@ auto getDataEnumType(const std::set<std::string> & string_values)
     return std::make_shared<EnumType>(std::move(enum_values));
 }
 
-std::pair<DataTypePtr, std::string> getEnumTypeAndString(const std::set<std::string> & string_values)
+DataTypePtr getEnumType(const std::set<std::string> & string_values)
 {
-    DataTypePtr result_type = nullptr;
-    std::string enum_string;
     if (string_values.size() >= 255)
-    {
-        auto enum_type = getDataEnumType<DataTypeEnum16>(string_values);
-        enum_string = makeStringsEnum(*enum_type);
-        result_type = std::move(enum_type);
-    }
+        return getDataEnumType<DataTypeEnum16>(string_values);
     else
-    {
-        auto enum_type = getDataEnumType<DataTypeEnum8>(string_values);
-        enum_string = makeStringsEnum(*enum_type);
-        result_type = std::move(enum_type);
-    }
+        return getDataEnumType<DataTypeEnum8>(string_values);
+}
 
-    return {std::move(result_type), std::move(enum_string)};
+QueryTreeNodePtr createCastFunction(QueryTreeNodePtr from, DataTypePtr result_type, ContextPtr context)
+{
+    auto enum_literal = std::make_shared<ConstantValue>(result_type->getName(), std::make_shared<DataTypeString>());
+    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
+
+    auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
+    QueryTreeNodes arguments{std::move(from), std::move(enum_literal_node)};
+
+    auto function_node = std::make_shared<FunctionNode>("_CAST");
+    function_node->resolveAsFunction(std::move(cast_function), std::move(result_type));
+    function_node->getArguments().getNodes() = std::move(arguments);
+
+    return function_node;
 }
 
 void changeIfArguments(
     QueryTreeNodePtr & first, QueryTreeNodePtr & second, const std::set<std::string> & string_values, const ContextPtr & context)
 {
-    auto [result_type, enum_string] = getEnumTypeAndString(string_values);
-    auto enum_literal = std::make_shared<ConstantValue>(enum_string, std::make_shared<DataTypeString>());
-    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
+    auto result_type = getEnumType(string_values);
 
-    const auto create_cast_function = [&, &result_type = result_type](QueryTreeNodePtr & node)
-    {
-        auto cast_function = FunctionFactory::instance().get("_CAST", context);
-        QueryTreeNodes arguments{node, enum_literal_node};
-
-        auto function_node = std::make_shared<FunctionNode>("_CAST");
-        function_node->resolveAsFunction(std::move(cast_function), result_type);
-        function_node->getArguments().getNodes() = std::move(arguments);
-
-        node = std::move(function_node);
-    };
-
-    create_cast_function(first);
-    create_cast_function(second);
+    first = createCastFunction(first, result_type, context);
+    second = createCastFunction(second, result_type, context);
 }
 
 void changeTransformArguments(
@@ -159,41 +110,16 @@ void changeTransformArguments(
     const std::set<std::string> & string_values,
     const ContextPtr & context)
 {
-    auto [result_type, enum_string] = getEnumTypeAndString(string_values);
+    auto result_type = getEnumType(string_values);
 
-    {
-        auto enum_literal = std::make_shared<ConstantValue>(fmt::format("Array({})", enum_string), std::make_shared<DataTypeString>());
-        auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
-
-        auto cast_function = FunctionFactory::instance().get("_CAST", context);
-        QueryTreeNodes arguments{array_to, enum_literal_node};
-
-        auto function_node = std::make_shared<FunctionNode>("_CAST");
-        function_node->resolveAsFunction(std::move(cast_function), std::make_shared<DataTypeArray>(result_type));
-        function_node->getArguments().getNodes() = std::move(arguments);
-
-        array_to = std::move(function_node);
-    }
-
-    {
-        auto enum_literal = std::make_shared<ConstantValue>(enum_string, std::make_shared<DataTypeString>());
-        auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
-
-        auto cast_function = FunctionFactory::instance().get("_CAST", context);
-        QueryTreeNodes arguments{default_value, enum_literal_node};
-
-        auto function_node = std::make_shared<FunctionNode>("_CAST");
-        function_node->resolveAsFunction(std::move(cast_function), result_type);
-        function_node->getArguments().getNodes() = std::move(arguments);
-
-        default_value = std::move(function_node);
-    }
+    array_to = createCastFunction(array_to, std::make_shared<DataTypeArray>(result_type), context);
+    default_value = createCastFunction(default_value, std::move(result_type), context);
 }
 
 class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitor<ConvertStringsToEnumVisitor>
 {
 public:
-    explicit ConvertStringsToEnumVisitor(std::unordered_set<std::string_view> used_functions_, ContextPtr context_)
+    explicit ConvertStringsToEnumVisitor(std::unordered_set<FunctionNode *> used_functions_, ContextPtr context_)
         : used_functions(std::move(used_functions_)), context(std::move(context_))
     {
     }
@@ -212,7 +138,7 @@ public:
 
         /// we cannot change the type of its result because it's used
         /// as argument in another function
-        if (used_functions.contains(function_node->getAlias()))
+        if (used_functions.contains(function_node))
             return;
 
         std::string_view function_name = function_node->getFunctionName();
@@ -281,7 +207,7 @@ public:
     }
 
 private:
-    std::unordered_set<std::string_view> used_functions;
+    std::unordered_set<FunctionNode *> used_functions;
     ContextPtr context;
 };
 
@@ -289,7 +215,7 @@ private:
 
 void IfTransformStringsToEnumPass::run(QueryTreeNodePtr query, ContextPtr context)
 {
-    std::unordered_set<std::string_view> used_functions;
+    std::unordered_set<FunctionNode *> used_functions;
     std::unordered_set<std::string> function_names{"if", "transform"};
 
     {
@@ -298,7 +224,7 @@ void IfTransformStringsToEnumPass::run(QueryTreeNodePtr query, ContextPtr contex
     }
 
     {
-        ConvertStringsToEnumVisitor visitor(used_functions, context);
+        ConvertStringsToEnumVisitor visitor(std::move(used_functions), context);
         visitor.visit(query);
     }
 }
