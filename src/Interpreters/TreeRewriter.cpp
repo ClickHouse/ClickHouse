@@ -62,7 +62,6 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int EMPTY_NESTED_TABLE;
     extern const int EXPECTED_ALL_OR_ANY;
-    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -792,8 +791,8 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
 
         if (any_keys_empty)
             throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                                "Cannot get JOIN keys from JOIN ON section: '{}'",
-                                queryToString(table_join.on_expression));
+                                "Cannot get JOIN keys from JOIN ON section: '{}', found keys: {}",
+                                queryToString(table_join.on_expression), TableJoin::formatClauses(analyzed_join.getClauses()));
 
         if (is_asof)
         {
