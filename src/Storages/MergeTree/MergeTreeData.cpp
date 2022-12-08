@@ -3675,13 +3675,13 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr q
             parts_count_in_partition, ReadableSize(average_part_size));
     }
 
-    if (k_inactive < 0 && parts_count_in_partition < parts_to_delay_insert)
+    if (k_inactive < 0 && (parts_count_in_partition < parts_to_delay_insert || parts_are_large_enough_in_average))
         return;
 
     const ssize_t k_active = ssize_t(parts_count_in_partition) - ssize_t(parts_to_delay_insert);
     size_t max_k;
     size_t k;
-    if (k_active > k_inactive && !parts_are_large_enough_in_average)
+    if (k_active > k_inactive)
     {
         max_k = parts_to_throw_insert - parts_to_delay_insert;
         k = k_active + 1;
