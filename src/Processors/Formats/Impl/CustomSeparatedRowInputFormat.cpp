@@ -234,10 +234,18 @@ void CustomSeparatedFormatReader::updateFormatSettings(bool is_last_column)
     if (format_settings.custom.escaping_rule != FormatSettings::EscapingRule::CSV)
         return;
 
+    /// Clean custom delimiter from previous delimiter.
     format_settings.csv.custom_delimiter.clear();
+
+    /// If delimiter has length = 1, it will be more efficient to use csv.delimiter.
+    /// If we have some complex delimiter, normal CSV reading will now work properly if we will
+    /// use just the first character of delimiter (for example, if delimiter='||' and we have data 'abc|d||')
+    /// We have special implementation for such case that uses custom delimiter, it's not so efficient,
+    /// but works properly.
 
     if (is_last_column)
     {
+        /// If field delimiter has length = 1, it will be more efficient to use csv.delimiter.
         if (format_settings.custom.row_after_delimiter.size() == 1)
             format_settings.csv.delimiter = format_settings.custom.row_after_delimiter.front();
         else
