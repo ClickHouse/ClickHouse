@@ -36,7 +36,7 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_)
-    : QueryNode(context_, {} /*settings_changes*/)
+    : QueryNode(std::move(context_), {} /*settings_changes*/)
 {}
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const

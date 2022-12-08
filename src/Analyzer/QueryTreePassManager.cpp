@@ -214,9 +214,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     const auto & settings = context->getSettingsRef();
 
     manager.addPass(std::make_unique<QueryAnalysisPass>());
-
-    if (settings.optimize_functions_to_subcolumns)
-        manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
+    manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     if (settings.count_distinct_optimization)
         manager.addPass(std::make_unique<CountDistinctPass>());
