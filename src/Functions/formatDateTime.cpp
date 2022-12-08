@@ -26,6 +26,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
@@ -48,8 +49,7 @@ template <> struct ActionValueTypeMap<DataTypeUInt64>     { using ActionValueTyp
 template <> struct ActionValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
 template <> struct ActionValueTypeMap<DataTypeDate32>     { using ActionValueType = Int32; };
 template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
-// TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
-template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = Int64; };
+template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = DateTime64; };
 
 
 /** formatDateTime(time, 'pattern')
@@ -113,20 +113,32 @@ private:
     class Action
     {
     public:
-        using Func = void (*)(char *, Time, const DateLUTImpl &);
+        using Func = std::function<void(char *, Time, std::optional<UInt32>, const DateLUTImpl &)>;
 
         Func func;
         size_t shift;
 
         explicit Action(Func func_, size_t shift_ = 0) : func(func_), shift(shift_) {}
 
-        void perform(char *& target, Time source, const DateLUTImpl & timezone)
+        void perform(char *& target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            func(target, source, timezone);
+            func(target, source, scale, timezone);
             target += shift;
         }
 
     private:
+        template <typename T>
+        static inline T truncate(const T value, const std::optional<UInt32>) { return value; }
+
+        template <>
+        static inline DateTime64 truncate<DateTime64>(const DateTime64 value, const std::optional<UInt32> scale)
+        {
+            if (!scale)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected scale to be present");
+
+            return DecimalUtils::getWholePart(value, *scale);
+        }
+
         template <typename T>
         static inline void writeNumber2(char * p, T v)
         {
@@ -148,135 +160,160 @@ private:
         }
 
     public:
-        static void noop(char *, Time, const DateLUTImpl &)
+        static void noop(char *, Time, const std::optional<UInt32>, const DateLUTImpl &)
         {
         }
 
-        static void century(char * target, Time source, const DateLUTImpl & timezone)
+        static void century(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            auto year = ToYearImpl::execute(source, timezone);
+            const auto value = truncate(source, scale);
+            auto year = ToYearImpl::execute(value, timezone);
             auto century = year / 100;
             writeNumber2(target, century);
         }
 
-        static void dayOfMonth(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfMonth(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber2(target, ToDayOfMonthImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToDayOfMonthImpl::execute(value, timezone));
         }
 
-        static void americanDate(char * target, Time source, const DateLUTImpl & timezone)
+        static void americanDate(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber2(target, ToMonthImpl::execute(source, timezone));
-            writeNumber2(target + 3, ToDayOfMonthImpl::execute(source, timezone));
-            writeNumber2(target + 6, ToYearImpl::execute(source, timezone) % 100);
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToMonthImpl::execute(value, timezone));
+            writeNumber2(target + 3, ToDayOfMonthImpl::execute(value, timezone));
+            writeNumber2(target + 6, ToYearImpl::execute(value, timezone) % 100);
         }
 
-        static void dayOfMonthSpacePadded(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfMonthSpacePadded(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            auto day = ToDayOfMonthImpl::execute(source, timezone);
+            const auto value = truncate(source, scale);
+            auto day = ToDayOfMonthImpl::execute(value, timezone);
             if (day < 10)
                 target[1] += day;
             else
                 writeNumber2(target, day);
         }
 
-        static void ISO8601Date(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Date(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone) // NOLINT
         {
-            writeNumber4(target, ToYearImpl::execute(source, timezone));
-            writeNumber2(target + 5, ToMonthImpl::execute(source, timezone));
-            writeNumber2(target + 8, ToDayOfMonthImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber4(target, ToYearImpl::execute(value, timezone));
+            writeNumber2(target + 5, ToMonthImpl::execute(value, timezone));
+            writeNumber2(target + 8, ToDayOfMonthImpl::execute(value, timezone));
         }
 
-        static void dayOfYear(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfYear(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber3(target, ToDayOfYearImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber3(target, ToDayOfYearImpl::execute(value, timezone));
         }
 
-        static void month(char * target, Time source, const DateLUTImpl & timezone)
+        static void month(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber2(target, ToMonthImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToMonthImpl::execute(value, timezone));
         }
 
-        static void dayOfWeek(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfWeek(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            *target += ToDayOfWeekImpl::execute(source, timezone);
+            const auto value = truncate(source, scale);
+            *target += ToDayOfWeekImpl::execute(value, timezone);
         }
 
-        static void dayOfWeek0To6(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfWeek0To6(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            auto day = ToDayOfWeekImpl::execute(source, timezone);
+            const auto value = truncate(source, scale);
+            auto day = ToDayOfWeekImpl::execute(value, timezone);
             *target += (day == 7 ? 0 : day);
         }
 
-        static void ISO8601Week(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Week(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone) // NOLINT
         {
-            writeNumber2(target, ToISOWeekImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToISOWeekImpl::execute(value, timezone));
         }
 
-        static void ISO8601Year2(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Year2(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone) // NOLINT
         {
-            writeNumber2(target, ToISOYearImpl::execute(source, timezone) % 100);
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToISOYearImpl::execute(value, timezone) % 100);
         }
 
-        static void ISO8601Year4(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Year4(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone) // NOLINT
         {
-            writeNumber4(target, ToISOYearImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber4(target, ToISOYearImpl::execute(value, timezone));
         }
 
-        static void year2(char * target, Time source, const DateLUTImpl & timezone)
+        static void year2(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber2(target, ToYearImpl::execute(source, timezone) % 100);
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToYearImpl::execute(value, timezone) % 100);
         }
 
-        static void year4(char * target, Time source, const DateLUTImpl & timezone)
+        static void year4(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber4(target, ToYearImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber4(target, ToYearImpl::execute(value, timezone));
         }
 
-        static void hour24(char * target, Time source, const DateLUTImpl & timezone)
+        static void hour24(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber2(target, ToHourImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToHourImpl::execute(value, timezone));
         }
 
-        static void hour12(char * target, Time source, const DateLUTImpl & timezone)
+        static void hour12(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            auto x = ToHourImpl::execute(source, timezone);
+            const auto value = truncate(source, scale);
+            auto x = ToHourImpl::execute(value, timezone);
             writeNumber2(target, x == 0 ? 12 : (x > 12 ? x - 12 : x));
         }
 
-        static void minute(char * target, Time source, const DateLUTImpl & timezone)
+        static void minute(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber2(target, ToMinuteImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToMinuteImpl::execute(value, timezone));
         }
 
-        static void AMPM(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void AMPM(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone) // NOLINT
         {
-            auto hour = ToHourImpl::execute(source, timezone);
+            const auto value = truncate(source, scale);
+            auto hour = ToHourImpl::execute(value, timezone);
             if (hour >= 12)
                 *target = 'P';
         }
 
-        static void hhmm24(char * target, Time source, const DateLUTImpl & timezone)
+        static void hhmm24(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber2(target, ToHourImpl::execute(source, timezone));
-            writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToHourImpl::execute(value, timezone));
+            writeNumber2(target + 3, ToMinuteImpl::execute(value, timezone));
         }
 
-        static void second(char * target, Time source, const DateLUTImpl & timezone)
+        static void second(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber2(target, ToSecondImpl::execute(source, timezone));
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToSecondImpl::execute(value, timezone));
         }
 
-        static void ISO8601Time(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void fractionalSecond(char * target, const DateTime64 source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            writeNumber2(target, ToHourImpl::execute(source, timezone));
-            writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
-            writeNumber2(target + 6, ToSecondImpl::execute(source, timezone));
+            if (!scale)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected scale to be present");
+
+            const auto decimal_combination = DecimalUtils::split(source, *scale);
+            const auto fractional_second = ToFractionalSecondImpl::execute(decimal_combination, timezone);
+            for (Int64 i = *scale, value = fractional_second; i >= 0; --i, value /= 10)
+                target[i - 1] += value % 10;
         }
 
-        static void timezoneOffset(char * target, Time source, const DateLUTImpl & timezone)
+        static void timezoneOffset(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
         {
-            auto offset = TimezoneOffsetImpl::execute(source, timezone);
+            const auto value = truncate(source, scale);
+            auto offset = TimezoneOffsetImpl::execute(value, timezone);
             if (offset < 0)
             {
                 *target = '-';
@@ -287,9 +324,18 @@ private:
             writeNumber2(target + 3, offset % 3600 / 60);
         }
 
-        static void quarter(char * target, Time source, const DateLUTImpl & timezone)
+        static void ISO8601Time(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone) // NOLINT
         {
-            *target += ToQuarterImpl::execute(source, timezone);
+            const auto value = truncate(source, scale);
+            writeNumber2(target, ToHourImpl::execute(value, timezone));
+            writeNumber2(target + 3, ToMinuteImpl::execute(value, timezone));
+            writeNumber2(target + 6, ToSecondImpl::execute(value, timezone));
+        }
+
+        static void quarter(char * target, Time source, const std::optional<UInt32> scale, const DateLUTImpl & timezone)
+        {
+            const auto value = truncate(source, scale);
+            *target += ToQuarterImpl::execute(value, timezone);
         }
     };
 
@@ -428,7 +474,12 @@ public:
 
         using T = typename ActionValueTypeMap<DataType>::ActionValueType;
         std::vector<Action<T>> instructions;
-        String pattern_to_fill = parsePattern(pattern, instructions);
+
+        std::optional<UInt32> scale;
+        if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
+            scale = times->getScale();
+
+        String pattern_to_fill = parsePattern(pattern, instructions, scale);
         size_t result_size = pattern_to_fill.size();
 
         const DateLUTImpl * time_zone_tmp = nullptr;
@@ -443,12 +494,6 @@ public:
 
         const DateLUTImpl & time_zone = *time_zone_tmp;
         const auto & vec = times->getData();
-
-        UInt32 scale [[maybe_unused]] = 0;
-        if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
-        {
-            scale = times->getScale();
-        }
 
         auto col_res = ColumnString::create();
         auto & dst_data = col_res->getChars();
@@ -482,19 +527,8 @@ public:
 
         for (size_t i = 0; i < vec.size(); ++i)
         {
-            if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
-            {
-                for (auto & instruction : instructions)
-                {
-                    const auto c = DecimalUtils::split(vec[i], scale);
-                    instruction.perform(pos, static_cast<Int64>(c.whole), time_zone);
-                }
-            }
-            else
-            {
-                for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<UInt32>(vec[i]), time_zone);
-            }
+            for (auto & instruction : instructions)
+                instruction.perform(pos, static_cast<T>(vec[i]), scale, time_zone);
 
             dst_offsets[i] = pos - begin;
         }
@@ -504,7 +538,7 @@ public:
     }
 
     template <typename T>
-    String parsePattern(const String & pattern, std::vector<Action<T>> & instructions) const
+    String parsePattern(const String & pattern, std::vector<Action<T>> & instructions, const std::optional<UInt32> scale) const
     {
         String result;
 
@@ -522,9 +556,7 @@ public:
         /// If the argument was DateTime, add instruction for printing. If it was date, just shift (the buffer is pre-filled with default values).
         auto add_instruction_or_shift = [&](typename Action<T>::Func func [[maybe_unused]], size_t shift)
         {
-            if constexpr (std::is_same_v<T, UInt32>)
-                instructions.emplace_back(func, shift);
-            else if constexpr (std::is_same_v<T, Int64>)
+            if constexpr (std::is_same_v<T, UInt32> || std::is_same_v<T, Int64> || std::is_same_v<T, DateTime64>)
                 instructions.emplace_back(func, shift);
             else
                 add_shift(shift);
@@ -572,6 +604,19 @@ public:
                         instructions.emplace_back(&Action<T>::dayOfMonthSpacePadded, 2);
                         result.append(" 0");
                         break;
+
+                    // Fractional seconds
+                    case 'f':
+                    {
+                        const auto actual_scale = scale.value_or(1);
+                        if constexpr (std::is_same_v<T, DateTime64>)
+                            instructions.emplace_back(&Action<T>::fractionalSecond, actual_scale);
+                        else
+                            add_shift(actual_scale);
+
+                        result.append(actual_scale, '0');
+                        break;
+                    }
 
                     // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                     case 'F':

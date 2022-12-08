@@ -233,6 +233,11 @@ Leap seconds are not accounted for.
 
 Alias: `SECOND`.
 
+## toFractionalSecond
+
+Converts a date with time to an Int64 number containing the fractional part of the second.
+Leap seconds are not accounted for.
+
 ## toUnixTimestamp
 
 For DateTime argument: converts value to the number with type UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
@@ -1178,6 +1183,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded ( 1-31)                  | &nbsp; 2   |
+| %f       | fractional second from the fractional part of DateTime64 | 1234560   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
@@ -1215,6 +1221,20 @@ Result:
 ┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
 │ 10                                         │
 └────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
+```
+
+Result:
+
+```
+┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
+│ 1234560                                                              │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## dateName
