@@ -348,26 +348,26 @@ protected:
                     res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
                 {
-                    Array dependencies_table_name_array;
-                    Array dependencies_database_name_array;
+                    Array views_table_name_array;
+                    Array views_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = DatabaseCatalog::instance().getDependencies(StorageID(database_name, table_name));
+                        const auto view_ids = DatabaseCatalog::instance().getDependentViews(StorageID(database_name, table_name));
 
-                        dependencies_table_name_array.reserve(dependencies.size());
-                        dependencies_database_name_array.reserve(dependencies.size());
-                        for (const auto & dependency : dependencies)
+                        views_table_name_array.reserve(view_ids.size());
+                        views_database_name_array.reserve(view_ids.size());
+                        for (const auto & view_id : view_ids)
                         {
-                            dependencies_table_name_array.push_back(dependency.table_name);
-                            dependencies_database_name_array.push_back(dependency.database_name);
+                            views_table_name_array.push_back(view_id.table_name);
+                            views_database_name_array.push_back(view_id.database_name);
                         }
                     }
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(dependencies_database_name_array);
+                        res_columns[res_index++]->insert(views_database_name_array);
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(dependencies_table_name_array);
+                        res_columns[res_index++]->insert(views_table_name_array);
                 }
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
@@ -513,37 +513,38 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
                 {
-                    DependenciesInfo info = DatabaseCatalog::instance().getLoadingDependenciesInfo({database_name, table_name});
+                    auto dependencies = DatabaseCatalog::instance().getDependencies(StorageID{database_name, table_name});
+                    auto dependents = DatabaseCatalog::instance().getDependents(StorageID{database_name, table_name});
 
-                    Array loading_dependencies_databases;
-                    Array loading_dependencies_tables;
-                    loading_dependencies_databases.reserve(info.dependencies.size());
-                    loading_dependencies_tables.reserve(info.dependencies.size());
-                    for (auto && dependency : info.dependencies)
+                    Array dependencies_databases;
+                    Array dependencies_tables;
+                    dependencies_databases.reserve(dependencies.size());
+                    dependencies_tables.reserve(dependencies.size());
+                    for (const auto & dependency : dependencies)
                     {
-                        loading_dependencies_databases.push_back(dependency.database);
-                        loading_dependencies_tables.push_back(dependency.table);
+                        dependencies_databases.push_back(dependency.database_name);
+                        dependencies_tables.push_back(dependency.table_name);
                     }
 
-                    Array loading_dependent_databases;
-                    Array loading_dependent_tables;
-                    loading_dependent_databases.reserve(info.dependencies.size());
-                    loading_dependent_tables.reserve(info.dependencies.size());
-                    for (auto && dependent : info.dependent_database_objects)
+                    Array dependents_databases;
+                    Array dependents_tables;
+                    dependents_databases.reserve(dependents.size());
+                    dependents_tables.reserve(dependents.size());
+                    for (const auto & dependent : dependents)
                     {
-                        loading_dependent_databases.push_back(dependent.database);
-                        loading_dependent_tables.push_back(dependent.table);
+                        dependents_databases.push_back(dependent.database_name);
+                        dependents_tables.push_back(dependent.table_name);
                     }
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependencies_databases);
+                        res_columns[res_index++]->insert(dependencies_databases);
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependencies_tables);
+                        res_columns[res_index++]->insert(dependencies_tables);
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependent_databases);
+                        res_columns[res_index++]->insert(dependents_databases);
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependent_tables);
+                        res_columns[res_index++]->insert(dependents_tables);
 
                 }
             }

@@ -131,7 +131,14 @@ function stop()
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    clickhouse stop --do-not-kill && return
+    # --max-tries is supported only since 22.12
+    if dpkg --compare-versions "$(clickhouse local -q 'select version()')" ge "22.12"; then
+        # Increase default waiting timeout for sanitizers and debug builds
+        clickhouse stop --max-tries 180 --do-not-kill && return
+    else
+        clickhouse stop --do-not-kill && return
+    fi
+
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
@@ -388,6 +395,8 @@ else
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
     rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
 
+    # Turn on after 22.12
+    rm -f /etc/clickhouse-server/config.d/compressed_marks_and_index.xml ||:
     # it uses recently introduced settings which previous versions may not have
     rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
 
@@ -456,7 +465,7 @@ else
     zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                -e "Code: 236. DB::Exception: Cancelled mutating parts" \
                -e "REPLICA_IS_ALREADY_ACTIVE" \
-               -e "REPLICA_IS_ALREADY_EXIST" \
+               -e "REPLICA_ALREADY_EXISTS" \
                -e "ALL_REPLICAS_LOST" \
                -e "DDLWorker: Cannot parse DDL task query" \
                -e "RaftInstance: failed to accept a rpc connection due to error 125" \
@@ -487,6 +496,7 @@ else
                -e "Code: 269. DB::Exception: Destination table is myself" \
                -e "Coordination::Exception: Connection loss" \
                -e "MutateFromLogEntryTask" \
+               -e "No connection to ZooKeeper, cannot get shared table ID" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
