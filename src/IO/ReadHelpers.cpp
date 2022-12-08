@@ -36,7 +36,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -819,7 +819,7 @@ void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, 
 {
     /// Check that delimiters are not empty.
     if (first_delimiter.empty() || second_delimiter.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENT, "Cannot read CSV field with two possible delimiters, one of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read CSV field with two possible delimiters, one of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
 
     /// Read all data until first_delimiter or second_delimiter
     while (true)
