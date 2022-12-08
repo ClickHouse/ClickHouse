@@ -52,7 +52,7 @@ public:
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = validatePathAndGetAsRelative(path);
+        String relative_path = validatePathAndGetAsRelative(path);
 
         String path_input = config.getString("input", "");
         std::unique_ptr<ReadBufferFromFileBase> in;
@@ -62,11 +62,11 @@ public:
         }
         else
         {
-            String full_path_input = validatePathAndGetAsRelative(path_input);
-            in = disk->readFile(full_path_input);
+            String relative_path_input = validatePathAndGetAsRelative(path_input);
+            in = disk->readFile(relative_path_input);
         }
 
-        auto out = disk->writeFile(full_path);
+        auto out = disk->writeFile(relative_path);
         copyData(*in, *out);
         out->finalize();
     }

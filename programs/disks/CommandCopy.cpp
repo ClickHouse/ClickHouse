@@ -55,10 +55,10 @@ public:
         DiskPtr disk_from = global_context->getDisk(disk_name_from);
         DiskPtr disk_to = global_context->getDisk(disk_name_to);
 
-        String full_path_from = validatePathAndGetAsRelative(path_from);
-        String full_path_to = validatePathAndGetAsRelative(path_to);
+        String relative_path_from = validatePathAndGetAsRelative(path_from);
+        String relative_path_to = validatePathAndGetAsRelative(path_to);
 
-        disk_from->copy(full_path_from, disk_to, full_path_to);
+        disk_from->copy(relative_path_from, disk_to, relative_path_to);
     }
 };
 }

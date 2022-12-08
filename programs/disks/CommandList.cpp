@@ -48,32 +48,32 @@ public:
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = validatePathAndGetAsRelative(path);
+        String relative_path = validatePathAndGetAsRelative(path);
 
         bool recursive = config.getBool("recursive", false);
 
         if (recursive)
-            listRecursive(disk, full_path);
+            listRecursive(disk, relative_path);
         else
-            list(disk, full_path);
+            list(disk, relative_path);
     }
 
 private:
-    static void list(const DiskPtr & disk, const std::string & full_path)
+    static void list(const DiskPtr & disk, const std::string & relative_path)
     {
         std::vector<String> file_names;
-        disk->listFiles(full_path, file_names);
+        disk->listFiles(relative_path, file_names);
 
         for (const auto & file_name : file_names)
             std::cout << file_name << '\n';
     }
 
-    static void listRecursive(const DiskPtr & disk, const std::string & full_path)
+    static void listRecursive(const DiskPtr & disk, const std::string & relative_path)
     {
         std::vector<String> file_names;
-        disk->listFiles(full_path, file_names);
+        disk->listFiles(relative_path, file_names);
 
-        std::cout << full_path << ":\n";
+        std::cout << relative_path << ":\n";
 
         if (!file_names.empty())
         {
@@ -84,7 +84,7 @@ private:
 
         for (const auto & file_name : file_names)
         {
-            auto path = full_path + "/" + file_name;
+            auto path = relative_path + "/" + file_name;
             if (disk->isDirectory(path))
                 listRecursive(disk, path);
         }

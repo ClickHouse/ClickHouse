@@ -43,10 +43,10 @@ public:
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path_from = validatePathAndGetAsRelative(path_from);
-        String full_path_to = validatePathAndGetAsRelative(path_to);
+        String relative_path_from = validatePathAndGetAsRelative(path_from);
+        String relative_path_to = validatePathAndGetAsRelative(path_to);
 
-        disk->createHardLink(full_path_from, full_path_to);
+        disk->createHardLink(relative_path_from, relative_path_to);
     }
 };
 }

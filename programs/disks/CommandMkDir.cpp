@@ -48,13 +48,13 @@ public:
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = validatePathAndGetAsRelative(path);
+        String relative_path = validatePathAndGetAsRelative(path);
         bool recursive = config.getBool("recursive", false);
 
         if (recursive)
-            disk->createDirectories(full_path);
+            disk->createDirectories(relative_path);
         else
-            disk->createDirectory(full_path);
+            disk->createDirectory(relative_path);
     }
 };
 }

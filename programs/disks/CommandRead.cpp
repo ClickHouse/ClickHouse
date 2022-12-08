@@ -49,23 +49,23 @@ public:
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = validatePathAndGetAsRelative(command_arguments[0]);
+        String relative_path = validatePathAndGetAsRelative(command_arguments[0]);
 
         String path_output = config.getString("output", "");
 
         if (!path_output.empty())
         {
-            String full_path_output = validatePathAndGetAsRelative(path_output);
+            String relative_path_output = validatePathAndGetAsRelative(path_output);
 
-            auto in = disk->readFile(full_path);
-            auto out = disk->writeFile(full_path_output);
+            auto in = disk->readFile(relative_path);
+            auto out = disk->writeFile(relative_path_output);
             copyData(*in, *out);
             out->finalize();
             return;
         }
         else
         {
-            auto in = disk->readFile(full_path);
+            auto in = disk->readFile(relative_path);
             std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
             copyData(*in, *out);
         }
