@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileWithCache.h>
+#include <IO/MMapReadBufferFromFile.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/ThreadPoolReader.h>
 #include <IO/SynchronousReader.h>
@@ -62,13 +63,18 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileOrFileDescriptor
     if (!existing_memory
         && settings.local_fs_method == LocalFSReadMethod::mmap
         && settings.mmap_threshold
-        && settings.mmap_cache
         && estimated_size >= settings.mmap_threshold
         && S_ISREG(file_stat.st_mode))
     {
         try
         {
-            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, estimated_size);
+            std::unique_ptr<ReadBufferFromFileBase> res;
+
+            if (settings.mmap_cache)
+                res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, estimated_size);
+            else
+                res = std::make_unique<MMapReadBufferFromFile>(filename, 0, estimated_size);
+
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
         }

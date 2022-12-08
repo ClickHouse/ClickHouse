@@ -11,9 +11,7 @@ echo -e 'key\nfoo\nbar' > $DATA_FILE
 
 QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02497_storage_file_reader.data', 'TSV', 's String')" \
-  --query_id $QUERY_ID \
-  --local_filesystem_read_method=mmap \
-  --min_bytes_to_use_mmap_io=1 \
+  --query_id $QUERY_ID
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT -q "SELECT sum(ProfileEvents['CreatedReadBufferMMap']) FROM system.query_log WHERE query_id='$QUERY_ID'"
@@ -22,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(ProfileEvents['CreatedReadBufferOrdinary']) FR
 QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02497_storage_file_reader.data', 'TSV', 's String')" \
   --query_id $QUERY_ID \
-  --local_filesystem_read_method=pread
+  --storage_file_read_method=pread
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT -q "SELECT sum(ProfileEvents['CreatedReadBufferMMap']) FROM system.query_log WHERE query_id='$QUERY_ID'"
