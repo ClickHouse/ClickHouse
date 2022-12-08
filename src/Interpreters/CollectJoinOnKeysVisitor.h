@@ -32,6 +32,8 @@ enum class JoinIdentifierPos
     Left,
     /// Right side of JOIN
     Right,
+    /// Identifier is not a column, but for example a constant
+    Constant,
 };
 
 using JoinIdentifierPosPair = std::pair<JoinIdentifierPos, JoinIdentifierPos>;

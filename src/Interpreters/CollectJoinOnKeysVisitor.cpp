@@ -19,6 +19,11 @@ namespace ErrorCodes
 namespace
 {
 
+bool isDeterminedIdentifier(JoinIdentifierPos pos)
+{
+    return pos == JoinIdentifierPos::Left || pos == JoinIdentifierPos::Right;
+}
+
 bool isLeftIdentifier(JoinIdentifierPos pos)
 {
     /// Unknown identifiers  considered as left, we will try to process it on later stages
@@ -79,7 +84,7 @@ void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
 
 void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr & ast, CollectJoinOnKeysMatcher::Data & data)
 {
-    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); expr_from_table != JoinIdentifierPos::Unknown)
+    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); isDeterminedIdentifier(expr_from_table))
         data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(expr_from_table));
     else
         throw Exception("Unexpected identifier '" + ident.name() + "' in JOIN ON section",
@@ -105,27 +110,26 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
         auto table_numbers = getTableNumbers(left, right, data);
+
         if (table_numbers.first == table_numbers.second)
         {
-            if (table_numbers.first == JoinIdentifierPos::Unknown)
-                throw Exception("Ambiguous column in expression '" + queryToString(ast) + "' in JOIN ON section",
-                                ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+            if (!isDeterminedIdentifier(table_numbers.first))
+                throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                    "Ambiguous columns in expression '{}' in JOIN ON section", queryToString(ast));
             data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(table_numbers.first));
             return;
         }
-        if ((table_numbers.first == JoinIdentifierPos::Left && table_numbers.second == JoinIdentifierPos::Right) ||
-            (table_numbers.first == JoinIdentifierPos::Right && table_numbers.second == JoinIdentifierPos::Left))
+
+        if ((isLeftIdentifier(table_numbers.first) && isRightIdentifier(table_numbers.second)) ||
+            (isRightIdentifier(table_numbers.first) && isLeftIdentifier(table_numbers.second)))
         {
             data.addJoinKeys(left, right, table_numbers);
             return;
         }
-
-        throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
-            "Cannot detect left and right JOIN keys. JOIN ON section is ambiguous for expression '{}'", queryToString(ast));
     }
 
 
-    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); expr_from_table != JoinIdentifierPos::Unknown)
+    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); isDeterminedIdentifier(expr_from_table))
     {
         data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(expr_from_table));
         return;
@@ -208,7 +212,7 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
     std::vector<const ASTIdentifier *> identifiers;
     getIdentifiers(ast, identifiers);
     if (identifiers.empty())
-        return JoinIdentifierPos::Unknown;
+        return JoinIdentifierPos::Constant;
 
     JoinIdentifierPos table_number = JoinIdentifierPos::Unknown;
 
