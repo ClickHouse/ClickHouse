@@ -165,7 +165,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
-        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Table '{} has incompatible type of JOIN", getStorageID().getNameForLogs());
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Table '{}' has incompatible type of JOIN", getStorageID().getNameForLogs());
 
     if ((analyzed_join->forceNullableRight() && !use_nulls) ||
         (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
@@ -186,7 +186,10 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
             key_names_right.size(), key_names.size());
 
     /* Resort left keys according to right keys order in StorageJoin
-     * We can't change the order of keys in StorageJoin because the hash table already build.
+     * We can't change the order of keys in StorageJoin
+     * because the hash table was already built with tuples serialized in the order of key_names.
+     * If we try to use the same hash table with different order of keys,
+     * then calculated hashes and the result of the comparison will be wrong.
      *
      * Example:
      * ```
@@ -196,15 +199,15 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
      * In that case right keys should still be (a, b), need to change the order of the left keys to (x, y).
      */
     Names left_key_names_resorted;
-    for (size_t i = 0; i < key_names.size(); ++i)
+    for (const auto & key_name : key_names)
     {
-        const auto & renamed_key = analyzed_join->renamedRightColumnName(key_names[i]);
+        const auto & renamed_key = analyzed_join->renamedRightColumnName(key_name);
         /// find position of renamed_key in key_names_right
         auto it = std::find(key_names_right.begin(), key_names_right.end(), renamed_key);
         if (it == key_names_right.end())
             throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
-                "Key '{}' not found in JOIN ON section. All Join engine keys '{}' have to be used", key_names[i], fmt::join(key_names, ", "));
-        size_t key_position = it - key_names_right.begin();
+                "Key '{}' not found in JOIN ON section. All Join engine keys '{}' have to be used", key_name, fmt::join(key_names, ", "));
+        const size_t key_position = std::distance(key_names_right.begin(), it);
         left_key_names_resorted.push_back(key_names_left[key_position]);
     }
 
