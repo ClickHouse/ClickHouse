@@ -9,9 +9,29 @@ SELECT number > 5 ? 'censor.net' : 'google' FROM system.numbers LIMIT 10;
 EXPLAIN SYNTAX SELECT number > 5 ? 'censor.net' : 'google' FROM system.numbers LIMIT 10;
 EXPLAIN QUERY TREE run_passes = 1 SELECT number > 5 ? 'censor.net' : 'google' FROM system.numbers LIMIT 10;
 
-SELECT CAST(number > 5 ? '20' : '21', 'Int8') FROM system.numbers LIMIT 10;
-EXPLAIN SYNTAX SELECT CAST(number > 5 ? '20' : '21', 'Int8') FROM system.numbers LIMIT 10;
-EXPLAIN QUERY TREE run_passes = 1 SELECT CAST(number > 5 ? '20' : '21', 'Int8') FROM system.numbers LIMIT 10;
+SELECT CONCAT(transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other'), '1') FROM system.numbers LIMIT 10;
+EXPLAIN SYNTAX SELECT CONCAT(transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other'), '1') FROM system.numbers LIMIT 10;
+EXPLAIN QUERY TREE run_passes = 1 SELECT CONCAT(transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other'), '1') FROM system.numbers LIMIT 10;
+
+SELECT CONCAT(number > 5 ? 'censor.net' : 'google', '1') FROM system.numbers LIMIT 10;
+EXPLAIN SYNTAX SELECT CONCAT(number > 5 ? 'censor.net' : 'google', '1') FROM system.numbers LIMIT 10;
+EXPLAIN QUERY TREE run_passes = 1 SELECT CONCAT(number > 5 ? 'censor.net' : 'google', '1') FROM system.numbers LIMIT 10;
+
+SELECT t1.value FROM (SELECT number > 5 ? 'censor.net' : 'google' as value FROM system.numbers LIMIT 10) as t1;
+EXPLAIN SYNTAX SELECT t1.value FROM (SELECT number > 5 ? 'censor.net' : 'google' as value FROM system.numbers LIMIT 10) as t1;
+EXPLAIN QUERY TREE run_passes = 1 SELECT t1.value FROM (SELECT number > 5 ? 'censor.net' : 'google' as value FROM system.numbers LIMIT 10) as t1;
+
+SELECT t1.value FROM (SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') as value FROM system.numbers LIMIT 10) as t1;
+EXPLAIN SYNTAX SELECT t1.value FROM (SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') as value FROM system.numbers LIMIT 10) as t1;
+EXPLAIN QUERY TREE run_passes = 1 SELECT t1.value FROM (SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') as value FROM system.numbers LIMIT 10) as t1;
+
+SELECT number > 5 ? 'censor.net' : 'google' as value, value FROM system.numbers LIMIT 10;
+EXPLAIN SYNTAX SELECT number > 5 ? 'censor.net' : 'google' as value, value FROM system.numbers LIMIT 10;
+EXPLAIN QUERY TREE run_passes = 1 SELECT number > 5 ? 'censor.net' : 'google' as value, value FROM system.numbers LIMIT 10;
+
+SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') as value, value FROM system.numbers LIMIT 10;
+EXPLAIN SYNTAX SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') as value, value FROM system.numbers LIMIT 10;
+EXPLAIN QUERY TREE run_passes = 1 SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') as value, value FROM system.numbers LIMIT 10;
 
 SET optimize_if_transform_strings_to_enum = 0;
 
