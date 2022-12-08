@@ -1,6 +1,7 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/exponentialmovingaverage
 sidebar_position: 108
+sidebar_title: exponentialMovingAverage
 ---
 
 ## exponentialMovingAverage
