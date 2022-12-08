@@ -3760,17 +3760,18 @@ Allow parsing JSON objects as strings in JSON input formats.
 Example:
 
 ```sql
-CREATE TABLE test (obj String) ENGINE=Memory();
-INSERT INTO test FORMAT JSONEachRow {"obj" : {"a" : 1, "b" : "Hello"}};
+SET input_format_json_read_objects_as_strings = 1;
+CREATE TABLE test (id UInt64, obj String, date Date) ENGINE=Memory();
+INSERT INTO test FORMAT JSONEachRow {"id" : 1, "obj" : {"a" : 1, "b" : "Hello"}, "date" : "2020-01-01"};
 SELECT * FROM test;
 ```
 
 Result:
 
 ```
-┌─obj──────────────────────┐
-│ {"a" : 1, "b" : "Hello"} │
-└──────────────────────────┘
+┌─id─┬─obj──────────────────────┬───────date─┐
+│  1 │ {"a" : 1, "b" : "Hello"} │ 2020-01-01 │
+└────┴──────────────────────────┴────────────┘
 ```
 
 Disabled by default.
