@@ -16,45 +16,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-template <class SchemaReader>
-void chooseResultColumnType(
-    SchemaReader & schema_reader,
-    DataTypePtr & type,
-    DataTypePtr & new_type,
-    const DataTypePtr & default_type,
-    const String & column_name,
-    size_t row)
-{
-    if (!type)
-    {
-        type = new_type;
-        return;
-    }
-
-    if (!new_type || type->equals(*new_type))
-        return;
-
-    schema_reader.transformTypesIfNeeded(type, new_type);
-    if (type->equals(*new_type))
-        return;
-
-    /// If the new type and the previous type for this column are different,
-    /// we will use default type if we have it or throw an exception.
-    if (default_type)
-        type = default_type;
-    else
-    {
-        throw Exception(
-            ErrorCodes::TYPE_MISMATCH,
-            "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
-            "You can specify the type for this column using setting schema_inference_hints",
-            type->getName(),
-            column_name,
-            row,
-            new_type->getName());
-    }
-}
-
 void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read)
 {
     if (!checkIfTypeIsComplete(type))
