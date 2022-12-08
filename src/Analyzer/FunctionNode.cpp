@@ -2,6 +2,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
+#include <Analyzer/ConstantNode.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -37,6 +38,8 @@ ColumnsWithTypeAndName FunctionNode::getArgumentTypes() const
     {
         ColumnWithTypeAndName argument;
         argument.type = arg->getResultType();
+        if (auto * constant = arg->as<ConstantNode>())
+            argument.column = argument.type->createColumnConst(1, constant->getValue());
         argument_types.push_back(argument);
     }
     return argument_types;
