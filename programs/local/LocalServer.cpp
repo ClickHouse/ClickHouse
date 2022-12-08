@@ -540,12 +540,6 @@ void LocalServer::processConfig()
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
 
-    if (!global_context->getSettingsRef().isChanged("local_filesystem_read_method"))
-        global_context->setSetting("local_filesystem_read_method", Field{"mmap"});
-
-    if (!global_context->getSettingsRef().isChanged("min_bytes_to_use_mmap_io"))
-        global_context->setSetting("min_bytes_to_use_mmap_io", Field{1});
-
     tryInitPath();
 
     Poco::Logger * log = &logger();

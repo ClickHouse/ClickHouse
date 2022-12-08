@@ -72,6 +72,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 namespace
@@ -188,14 +189,24 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     std::unique_ptr<ReadBuffer> nested_buffer;
     CompressionMethod method;
 
+    auto read_method = context->getSettingsRef().storage_file_read_method.value;
+    auto read_settings = context->getReadSettings();
+    read_settings.mmap_threshold = 1;
+    read_settings.mmap_cache = nullptr;  /// Turn off mmap cache for Storage File
+
+    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method))
+        read_settings.local_fs_method = *opt_method;
+    else
+        throwFromErrno("Unknown read method " + read_method, ErrorCodes::UNKNOWN_READ_METHOD);
+
     if (use_table_fd)
     {
-        nested_buffer = createReadBufferFromFileDescriptorBase(table_fd, context->getReadSettings());
+        nested_buffer = createReadBufferFromFileDescriptorBase(table_fd, read_settings);
         method = chooseCompressionMethod("", compression_method);
     }
     else
     {
-        nested_buffer = createReadBufferFromFileBase(current_path, context->getReadSettings());
+        nested_buffer = createReadBufferFromFileBase(current_path, read_settings);
         method = chooseCompressionMethod(current_path, compression_method);
     }
 
