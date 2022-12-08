@@ -49,6 +49,7 @@ namespace CurrentMetrics
     extern const Metric PartsWide;
     extern const Metric PartsCompact;
     extern const Metric PartsInMemory;
+    extern const Metric PartsBuffer;
 }
 
 namespace DB
@@ -276,6 +277,9 @@ static void incrementTypeMetric(MergeTreeDataPartType type)
         case MergeTreeDataPartType::InMemory:
             CurrentMetrics::add(CurrentMetrics::PartsInMemory);
             return;
+        case MergeTreeDataPartType::Buffer:
+            CurrentMetrics::add(CurrentMetrics::PartsBuffer);
+            return;
         case MergeTreeDataPartType::Unknown:
             return;
     }
@@ -293,6 +297,9 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
             return;
         case MergeTreeDataPartType::InMemory:
             CurrentMetrics::sub(CurrentMetrics::PartsInMemory);
+            return;
+        case MergeTreeDataPartType::Buffer:
+            CurrentMetrics::sub(CurrentMetrics::PartsBuffer);
             return;
         case MergeTreeDataPartType::Unknown:
             return;
@@ -2026,6 +2033,11 @@ bool isWidePart(const MergeTreeDataPartPtr & data_part)
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::InMemory);
+}
+
+bool isBufferPart(const MergeTreeDataPartPtr & data_part)
+{
+    return (data_part && data_part->getType() == MergeTreeDataPartType::Buffer);
 }
 
 std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage)

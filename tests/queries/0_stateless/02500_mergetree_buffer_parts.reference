@@ -1,0 +1,76 @@
+# vim: ft=sql
+-- { echoOn }
+
+
+-- {'name': 'mergetree', 'engine': 'MergeTree'}
+drop table if exists buffer_parts_mergetree;
+create table buffer_parts_mergetree
+    (key Int)
+    engine=MergeTree
+    order by key
+    settings min_bytes_for_in_memory_part=1e6;
+insert into buffer_parts_mergetree select * from numbers(5);
+-- check that data will not be deduplicated
+insert into buffer_parts_mergetree select * from numbers(5);
+select name, part_type, _state from system.parts where database = currentDatabase() and table = 'buffer_parts_mergetree';
+all_1_1_0	Buffer	Active
+all_2_2_0	Buffer	Active
+select * from buffer_parts_mergetree;
+-- check WAL
+detach table buffer_parts_mergetree;
+attach table buffer_parts_mergetree;
+select * from buffer_parts_mergetree;
+select name, part_type, _state from system.parts where database = currentDatabase() and table = 'buffer_parts_mergetree';
+all_1_1_0	Buffer	Active
+all_2_2_0	Buffer	Active
+-- Buffer -> Compact
+optimize table buffer_parts_mergetree;
+select name, part_type, _state from system.parts where database = currentDatabase() and table = 'buffer_parts_mergetree' and active;
+all_1_2_1	Compact	Active
+select * from buffer_parts_mergetree;
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+-- {'name': 'replicated_mergetree', 'engine': "ReplicatedMergeTree('/tables/{database}/replicated_mergetree', 'r1')"}
+drop table if exists buffer_parts_replicated_mergetree;
+create table buffer_parts_replicated_mergetree
+    (key Int)
+    engine=ReplicatedMergeTree('/tables/{database}/replicated_mergetree', 'r1')
+    order by key
+    settings min_bytes_for_in_memory_part=1e6;
+insert into buffer_parts_replicated_mergetree select * from numbers(5);
+-- check that data will not be deduplicated
+insert into buffer_parts_replicated_mergetree select * from numbers(5);
+select name, part_type, _state from system.parts where database = currentDatabase() and table = 'buffer_parts_replicated_mergetree';
+all_1_1_0	Buffer	Active
+all_2_2_0	Buffer	Active
+select * from buffer_parts_replicated_mergetree;
+-- check WAL
+detach table buffer_parts_replicated_mergetree;
+attach table buffer_parts_replicated_mergetree;
+select * from buffer_parts_replicated_mergetree;
+select name, part_type, _state from system.parts where database = currentDatabase() and table = 'buffer_parts_replicated_mergetree';
+all_1_1_0	Buffer	Active
+all_2_2_0	Buffer	Active
+-- Buffer -> Compact
+optimize table buffer_parts_replicated_mergetree;
+select name, part_type, _state from system.parts where database = currentDatabase() and table = 'buffer_parts_replicated_mergetree' and active;
+all_1_2_1	Compact	Active
+select * from buffer_parts_replicated_mergetree;
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4

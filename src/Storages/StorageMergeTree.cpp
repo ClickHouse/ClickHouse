@@ -164,6 +164,7 @@ void StorageMergeTree::flush()
         return;
 
     flushAllInMemoryPartsIfNeeded();
+    flushAllBufferPartsIfNeeded();
 }
 
 void StorageMergeTree::shutdown()

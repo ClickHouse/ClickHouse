@@ -449,6 +449,7 @@ public:
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+    StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -488,6 +489,7 @@ public:
     DataPartsVector getDataPartsVectorForInternalUsage() const;
 
     void filterVisibleDataParts(DataPartsVector & maybe_visible_parts, CSN snapshot_version, TransactionID current_tid) const;
+    void filterOutBufferDataParts(DataPartsVector & data_parts) const;
 
     /// Returns parts that visible with current snapshot
     DataPartsVector getVisibleDataPartsVector(ContextPtr local_context) const;
@@ -644,8 +646,10 @@ public:
     /// Removes parts from data_parts, they should be in Deleting state
     void removePartsFinally(const DataPartsVector & parts);
 
-    /// When WAL is not enabled, the InMemoryParts need to be persistent.
+    /// When WAL is not enabled, the InMemory parts need to be persistent.
     void flushAllInMemoryPartsIfNeeded();
+    /// When WAL is not enabled, the Buffer parts need to be persistent.
+    void flushAllBufferPartsIfNeeded();
 
     /// Delete irrelevant parts from memory and disk.
     /// If 'force' - don't wait for old_parts_lifetime.

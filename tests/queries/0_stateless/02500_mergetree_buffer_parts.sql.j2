@@ -1,0 +1,34 @@
+# vim: ft=sql
+-- { echoOn }
+
+{% for engine_args in [
+    {'name': 'mergetree', 'engine': 'MergeTree'},
+    {'name': 'replicated_mergetree', 'engine': "ReplicatedMergeTree('/tables/{database}/replicated_mergetree', 'r1')"},
+] %}
+-- {{ engine_args }}
+drop table if exists buffer_parts_{{ engine_args.name }};
+
+create table buffer_parts_{{ engine_args.name }}
+    (key Int)
+    engine={{ engine_args.engine }}
+    order by key
+    settings min_bytes_for_in_memory_part=1e6;
+
+insert into buffer_parts_{{ engine_args.name }} select * from numbers(5);
+-- check that data will not be deduplicated
+insert into buffer_parts_{{ engine_args.name }} select * from numbers(5);
+
+select name, part_type, _state from system.parts where database = currentDatabase() and table = 'buffer_parts_{{ engine_args.name }}';
+select * from buffer_parts_{{ engine_args.name }};
+
+-- check WAL
+detach table buffer_parts_{{ engine_args.name }};
+attach table buffer_parts_{{ engine_args.name }};
+select * from buffer_parts_{{ engine_args.name }};
+select name, part_type, _state from system.parts where database = currentDatabase() and table = 'buffer_parts_{{ engine_args.name }}';
+
+-- Buffer -> Compact
+optimize table buffer_parts_{{ engine_args.name }};
+select name, part_type, _state from system.parts where database = currentDatabase() and table = 'buffer_parts_{{ engine_args.name }}' and active;
+select * from buffer_parts_{{ engine_args.name }};
+{% endfor %}

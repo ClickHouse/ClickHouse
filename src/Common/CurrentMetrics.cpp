@@ -79,6 +79,7 @@
     M(PartsWide, "Wide parts.") \
     M(PartsCompact, "Compact parts.") \
     M(PartsInMemory, "In-memory parts.") \
+    M(PartsBuffer, "Buffer parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
     M(AsyncDrainedConnections, "Number of connections drained asynchronously.") \

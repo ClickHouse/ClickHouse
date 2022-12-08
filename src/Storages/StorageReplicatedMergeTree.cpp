@@ -1168,6 +1168,9 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Collect unexpected parts
     for (const auto & part : parts)
     {
+        if (isBufferPart(part))
+            continue;
+
         if (expected_parts.contains(part->name))
             local_expected_parts_set.add(part->name);
         else
@@ -3275,12 +3278,17 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     bool all_in_zk = true;
     for (size_t i = 0; i < parts.size(); ++i)
     {
+        const auto & part = parts[i];
+
+        /// Buffer part does not exists in ZooKeeper.
+        if (isBufferPart(part))
+            continue;
+
         /// If there is no information about part in ZK, we will not merge it.
         if (exists_results[i].error == Coordination::Error::ZNONODE)
         {
             all_in_zk = false;
 
-            const auto & part = parts[i];
             if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
             {
                 LOG_WARNING(log, "Part {} (that was selected for merge) with age {} seconds exists locally but not in ZooKeeper. Won't do merge with that part and will check it.", part->name, (time(nullptr) - part->modification_time));
@@ -4295,6 +4303,7 @@ void StorageReplicatedMergeTree::flush()
         return;
 
     flushAllInMemoryPartsIfNeeded();
+    flushAllBufferPartsIfNeeded();
 }
 
 void StorageReplicatedMergeTree::shutdown()

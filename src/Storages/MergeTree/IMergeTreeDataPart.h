@@ -310,6 +310,7 @@ public:
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
 
+    /// TODO: mark as virtual?
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
 
@@ -591,6 +592,7 @@ using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
+bool isBufferPart(const MergeTreeDataPartPtr & data_part);
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);

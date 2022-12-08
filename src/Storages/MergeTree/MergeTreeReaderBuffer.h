@@ -1,0 +1,40 @@
+#pragma once
+
+#include <Core/NamesAndTypes.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+
+
+namespace DB
+{
+
+class MergeTreeDataPartBuffer;
+using DataPartBufferPtr = std::shared_ptr<const MergeTreeDataPartBuffer>;
+
+/// Reader for Buffer parts
+/// FIXME: duplicate of MergeTreeReaderInMemory
+class MergeTreeReaderBuffer : public IMergeTreeReader
+{
+public:
+    MergeTreeReaderBuffer(
+        MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
+        DataPartBufferPtr data_part_,
+        NamesAndTypesList columns_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        MarkRanges mark_ranges_,
+        MergeTreeReaderSettings settings_);
+
+    /// Return the number of rows has been read or zero if there is no columns to read.
+    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
+    size_t readRows(size_t from_mark, size_t current_tasl_last_mark,
+                    bool continue_reading, size_t max_rows_to_read, Columns & res_columns) override;
+
+    bool canReadIncompleteGranules() const override { return true; }
+
+private:
+    size_t total_rows_read = 0;
+    DataPartBufferPtr part_in_memory;
+
+    std::unordered_map<String, size_t> positions_for_offsets;
+};
+
+}

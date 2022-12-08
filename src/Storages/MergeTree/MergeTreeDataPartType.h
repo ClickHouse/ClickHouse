@@ -21,6 +21,11 @@ public:
         /// Format with buffering data in RAM.
         InMemory,
 
+        /// Data stored in a buffer (backed by WAL) only, so until committed:
+        /// - data from Buffer part is not available to the SELECT,
+        /// - no data in coordinator.
+        Buffer,
+
         Unknown,
     };
 

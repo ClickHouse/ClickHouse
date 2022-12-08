@@ -93,6 +93,9 @@ private:
         size_t replicas_num,
         bool writing_existing_part);
 
+    /// Rename temporary part and *do not commit* to ZooKeeper (only WAL, if any).
+    void commitBufferPart(MergeTreeData::MutableDataPartPtr & part);
+
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
     void waitForQuorum(

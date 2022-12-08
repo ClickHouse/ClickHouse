@@ -53,6 +53,7 @@
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -116,6 +117,7 @@ namespace ProfileEvents
     extern const Event InsertedWideParts;
     extern const Event InsertedCompactParts;
     extern const Event InsertedInMemoryParts;
+    extern const Event InsertedBufferParts;
     extern const Event MergedIntoWideParts;
     extern const Event MergedIntoCompactParts;
     extern const Event MergedIntoInMemoryParts;
@@ -1891,6 +1893,22 @@ void MergeTreeData::flushAllInMemoryPartsIfNeeded()
     }
 }
 
+void MergeTreeData::flushAllBufferPartsIfNeeded()
+{
+    if (getSettings()->buffer_parts_enable_wal)
+        return;
+
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    DataPartsVector parts = getDataPartsVectorForInternalUsage();
+    for (const auto & part : parts)
+    {
+        if (auto part_buffer = asBufferPart(part))
+        {
+            part_buffer->flushToDisk(part_buffer->getDataPartStorage().getPartDirectory(), metadata_snapshot);
+        }
+    }
+}
+
 size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
 {
     DataPartsVector parts_to_remove = grabOldParts(force);
@@ -2753,6 +2771,9 @@ MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, s
     if (!canUsePolymorphicParts(*settings))
         return MergeTreeDataPartType::Wide;
 
+    if (bytes_uncompressed < settings->min_bytes_for_in_memory_part || rows_count < settings->min_rows_for_in_memory_part)
+        return MergeTreeDataPartType::Buffer;
+
     if (bytes_uncompressed < settings->min_bytes_for_compact_part || rows_count < settings->min_rows_for_compact_part)
         return MergeTreeDataPartType::InMemory;
 
@@ -2779,14 +2800,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
     MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
     const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part) const
 {
-    if (type == MergeTreeDataPartType::Compact)
-        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, data_part_storage, parent_part);
-    else if (type == MergeTreeDataPartType::Wide)
-        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, data_part_storage, parent_part);
-    else if (type == MergeTreeDataPartType::InMemory)
-        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, data_part_storage, parent_part);
-    else
-        throw Exception("Unknown type of part " + data_part_storage->getRelativePath(), ErrorCodes::UNKNOWN_PART_TYPE);
+    switch (type.getValue())
+    {
+        case MergeTreeDataPartType::Wide:
+            return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, data_part_storage, parent_part);
+        case MergeTreeDataPartType::Compact:
+            return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, data_part_storage, parent_part);
+        case MergeTreeDataPartType::InMemory:
+            return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, data_part_storage, parent_part);
+        case MergeTreeDataPartType::Buffer:
+            return std::make_shared<MergeTreeDataPartBuffer>(*this, name, part_info, data_part_storage, parent_part);
+        case MergeTreeDataPartType::Unknown:
+            throw Exception("Unknown type of part " + data_part_storage->getRelativePath(), ErrorCodes::UNKNOWN_PART_TYPE);
+    }
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
@@ -3174,6 +3200,14 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
     bool removed_active_part = false;
 
+    MergeTreeData::WriteAheadLogPtr wal;
+    auto get_inited_wal = [&] ()
+    {
+        if (!wal)
+            wal = getWriteAheadLog();
+        return wal;
+    };
+
     for (const DataPartPtr & part : remove)
     {
         if (part->version.creation_csn != Tx::RolledBackCSN)
@@ -3192,8 +3226,10 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
         if (part->getState() != MergeTreeDataPartState::Outdated)
             modifyPartState(part, MergeTreeDataPartState::Outdated);
 
-        if (isInMemoryPart(part) && getSettings()->in_memory_parts_enable_wal)
-            getWriteAheadLog()->dropPart(part->name);
+        if (getSettings()->in_memory_parts_enable_wal && isInMemoryPart(part))
+            get_inited_wal()->dropPart(part->name);
+        if (getSettings()->buffer_parts_enable_wal && isBufferPart(part))
+            get_inited_wal()->dropPart(part->name);
     }
 
     if (removed_active_part)
@@ -4696,6 +4732,19 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
              visible_size, total_size, snapshot_version, current_tid, fmt::join(getPartsNames(maybe_visible_parts), ", "));
 }
 
+void MergeTreeData::filterOutBufferDataParts(DataPartsVector & data_parts) const
+{
+    auto need_remove_pred = [](const DataPartPtr & part) -> bool
+    {
+        return isBufferPart(part);
+    };
+
+    size_t in_size = data_parts.size();
+    std::erase_if(data_parts, need_remove_pred);
+    size_t out_size = data_parts.size();
+
+    LOG_TEST(log, "Got {} parts (of {}) non-Buffer parts", out_size, in_size);
+}
 
 std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
 {
@@ -5361,10 +5410,12 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             return wal;
         };
 
-        if (settings->in_memory_parts_enable_wal)
+        if (settings->in_memory_parts_enable_wal || settings->buffer_parts_enable_wal)
+        {
             for (const auto & part : precommitted_parts)
-                if (auto part_in_memory = asInMemoryPart(part))
-                    get_inited_wal()->addPart(part_in_memory);
+                if (isInMemoryPart(part) || isBufferPart(part))
+                    get_inited_wal()->addPart(part);
+        }
 
         NOEXCEPT_SCOPE({
             auto current_time = time(nullptr);
@@ -5410,9 +5461,10 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                         data.modifyPartState(covered_part, DataPartState::Outdated);
                         data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
 
-                        if (settings->in_memory_parts_enable_wal)
-                            if (isInMemoryPart(covered_part))
-                                get_inited_wal()->dropPart(covered_part->name);
+                        if (settings->in_memory_parts_enable_wal && isInMemoryPart(covered_part))
+                            get_inited_wal()->dropPart(covered_part->name);
+                        if (settings->buffer_parts_enable_wal && isBufferPart(covered_part))
+                            get_inited_wal()->dropPart(covered_part->name);
                     }
 
                     reduce_parts += covered_parts.size();
@@ -6401,19 +6453,24 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
     /// Protect tmp dir from removing by cleanup thread with src_flushed_tmp_dir_lock
     /// Construct src_flushed_tmp_part in order to delete part with its directory at destructor
-    if (auto src_part_in_memory = asInMemoryPart(src_part))
+    auto flush_data_part = [&](auto & part_to_flush)
     {
-        auto flushed_part_path = *src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
+        auto flushed_part_path = *part_to_flush->getRelativePathForPrefix(tmp_part_prefix);
 
         auto tmp_src_part_file_name = fs::path(tmp_dst_part_name).filename();
         src_flushed_tmp_dir_lock = src_part->storage.getTemporaryPartDirectoryHolder(tmp_src_part_file_name);
 
-        auto flushed_part_storage = src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
+        auto flushed_part_storage = part_to_flush->flushToDisk(flushed_part_path, metadata_snapshot);
         src_flushed_tmp_part = createPart(src_part->name, src_part->info, flushed_part_storage);
         src_flushed_tmp_part->is_temp = true;
 
         src_part_storage = flushed_part_storage;
-    }
+    };
+
+    if (auto src_part_buffer = asBufferPart(src_part))
+        flush_data_part(src_part_buffer);
+    if (auto src_part_in_memory = asInMemoryPart(src_part))
+        flush_data_part(src_part_in_memory);
 
     String with_copy;
     if (copy_instead_of_hardlink)
@@ -6615,17 +6672,22 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         scope_guard src_flushed_tmp_dir_lock;
         MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
-        if (auto part_in_memory = asInMemoryPart(part))
+        auto flush_data_part = [&](auto & part_to_flush)
         {
-            auto flushed_part_path = *part_in_memory->getRelativePathForPrefix("tmp_freeze");
+            auto flushed_part_path = *part_to_flush->getRelativePathForPrefix("tmp_freeze");
             src_flushed_tmp_dir_lock = part->storage.getTemporaryPartDirectoryHolder("tmp_freeze" + part->name);
 
-            auto flushed_part_storage = part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
+            auto flushed_part_storage = part_to_flush->flushToDisk(flushed_part_path, metadata_snapshot);
             src_flushed_tmp_part = createPart(part->name, part->info, flushed_part_storage);
             src_flushed_tmp_part->is_temp = true;
 
             data_part_storage = flushed_part_storage;
-        }
+        };
+
+        if (auto part_buffer = asBufferPart(part))
+            flush_data_part(part_buffer);
+        if (auto part_in_memory = asInMemoryPart(part))
+            flush_data_part(part_in_memory);
 
         auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
         {
@@ -7343,6 +7405,16 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
+StorageSnapshotPtr MergeTreeData::getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+{
+    auto snapshot_data = std::make_unique<SnapshotData>();
+
+    auto lock = lockParts();
+    snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
+    filterOutBufferDataParts(snapshot_data->parts);
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+}
+
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)
 {
     switch (type.getValue())
@@ -7356,7 +7428,10 @@ void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType typ
         case MergeTreeDataPartType::InMemory:
             ProfileEvents::increment(ProfileEvents::InsertedInMemoryParts);
             break;
-        default:
+        case MergeTreeDataPartType::Buffer:
+            ProfileEvents::increment(ProfileEvents::InsertedBufferParts);
+            break;
+        case MergeTreeDataPartType::Unknown:
             break;
     }
 }
@@ -7374,7 +7449,10 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
         case MergeTreeDataPartType::InMemory:
             ProfileEvents::increment(ProfileEvents::MergedIntoInMemoryParts);
             break;
-        default:
+        case MergeTreeDataPartType::Buffer:
+            /// NOTE: Or maybe it is OK?
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part cannot be merged into Buffer");
+        case MergeTreeDataPartType::Unknown:
             break;
     }
 }

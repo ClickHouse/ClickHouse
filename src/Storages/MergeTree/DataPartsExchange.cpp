@@ -10,6 +10,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuffer.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -144,6 +145,9 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     try
     {
         part = findPart(part_name);
+
+        if (isBufferPart(part))
+            throw Exception(ErrorCodes::ABORTED, "Buffer parts cannot be sent ({})", part->name);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 

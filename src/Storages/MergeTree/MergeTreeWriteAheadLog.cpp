@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -24,6 +25,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int BAD_DATA_PART_NAME;
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
@@ -83,7 +85,7 @@ void MergeTreeWriteAheadLog::init()
     bytes_at_last_sync = 0;
 }
 
-void MergeTreeWriteAheadLog::addPart(DataPartInMemoryPtr & part)
+void MergeTreeWriteAheadLog::addPart(const MergeTreeDataPartPtr & part)
 {
     std::unique_lock lock(write_mutex);
 
@@ -95,11 +97,17 @@ void MergeTreeWriteAheadLog::addPart(DataPartInMemoryPtr & part)
 
     ActionMetadata metadata{};
     metadata.part_uuid = part->uuid;
+    metadata.part_type = part->getType();
     metadata.write(*out);
 
     writeIntBinary(static_cast<UInt8>(ActionType::ADD_PART), *out);
     writeStringBinary(part->name, *out);
-    block_out->write(part->block);
+    if (auto part_buffer = asBufferPart(part))
+        block_out->write(part_buffer->block);
+    else if (auto part_in_memory = asInMemoryPart(part))
+        block_out->write(part_in_memory->block);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "WAL supports only Buffer/InMemory parts, not {}", part->getTypeName());
     block_out->flush();
     sync(lock);
 
@@ -179,7 +187,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
 
                 part = storage.createPart(
                     part_name,
-                    MergeTreeDataPartType::InMemory,
+                    metadata.part_type,
                     MergeTreePartInfo::fromPartName(part_name, storage.format_version),
                     data_part_storage);
 
@@ -331,6 +339,7 @@ String MergeTreeWriteAheadLog::ActionMetadata::toJSON() const
 
     if (part_uuid != UUIDHelpers::Nil)
         json.set(JSON_KEY_PART_UUID, toString(part_uuid));
+    json.set(JSON_KEY_PART_TYPE, part_type.toString());
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -346,6 +355,8 @@ void MergeTreeWriteAheadLog::ActionMetadata::fromJSON(const String & buf)
 
     if (json->has(JSON_KEY_PART_UUID))
         part_uuid = parseFromString<UUID>(json->getValue<std::string>(JSON_KEY_PART_UUID));
+    if (json->has(JSON_KEY_PART_TYPE))
+        part_type.fromString(json->getValue<std::string>(JSON_KEY_PART_TYPE));
 }
 
 void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)

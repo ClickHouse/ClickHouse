@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
@@ -1348,7 +1350,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
             if (part)
             {
-                if (auto part_in_memory = asInMemoryPart(part))
+                if (auto part_buffer = asBufferPart(part))
+                    sum_parts_size_in_bytes += part_buffer->block.bytes();
+                else if (auto part_in_memory = asInMemoryPart(part))
                     sum_parts_size_in_bytes += part_in_memory->block.bytes();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
@@ -2114,7 +2118,9 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     for (const String & partition : partitions)
         paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
 
-    auto locks_children = zookeeper->getChildren(paths);
+    /// NOTE: in general we don't need tryGetChildren(), getChildren() is enough
+    /// however if there are only Buffer parts, then, znode does not exist.
+    auto locks_children = zookeeper->tryGetChildren(paths);
 
     for (size_t i = 0; i < partitions.size(); ++i)
     {
@@ -2211,6 +2217,10 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
+        /// Buffer part does not exists in ZooKeeper or on replicas, it can be merged always.
+        if (isBufferPart(part))
+            continue;
+
         if (pinned_part_uuids.part_uuids.contains(part->uuid))
         {
             if (out_reason)
@@ -2268,6 +2278,10 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
+        /// Buffer part does not exists in ZooKeeper or on replicas, it can be merged always.
+        if (isBufferPart(part))
+            continue;
+
         /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
         /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
         String containing_part = queue.virtual_parts.getContainingPart(part->info);
@@ -2320,6 +2334,10 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
     String * out_reason) const
 {
+    /// Buffer part does not exists in ZooKeeper or on replicas, it can be merged always.
+    if (isBufferPart(part))
+        return true;
+
     if (pinned_part_uuids.part_uuids.contains(part->uuid))
     {
         if (out_reason)

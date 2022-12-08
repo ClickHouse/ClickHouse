@@ -83,6 +83,8 @@ std::string MarkType::getFileExtension() const
             return res + "3";
         case MergeTreeDataPartType::InMemory:
             return "";
+        case MergeTreeDataPartType::Buffer:
+            return "";
         case MergeTreeDataPartType::Unknown:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown data part type");
     }
@@ -122,14 +124,19 @@ void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const IDataPartS
 
 size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) const
 {
-    if (mark_type.part_type == MergeTreeDataPartType::Wide)
-        return mark_type.adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
-    else if (mark_type.part_type == MergeTreeDataPartType::Compact)
-        return getAdaptiveMrkSizeCompact(columns_num);
-    else if (mark_type.part_type == MergeTreeDataPartType::InMemory)
-        return 0;
-    else
-        throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
+    switch (mark_type.part_type)
+    {
+        case MergeTreeDataPartType::Wide:
+            return mark_type.adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
+        case MergeTreeDataPartType::Compact:
+            return getAdaptiveMrkSizeCompact(columns_num);
+        case MergeTreeDataPartType::InMemory:
+            return 0;
+        case MergeTreeDataPartType::Buffer:
+            return 0;
+        case MergeTreeDataPartType::Unknown:
+            throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
+    }
 }
 
 size_t getAdaptiveMrkSizeCompact(size_t columns_num)

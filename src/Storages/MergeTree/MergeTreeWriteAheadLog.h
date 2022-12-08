@@ -3,14 +3,20 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/IDisk.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 
 namespace DB
 {
 
 class MergeTreeData;
+
+class IMergeTreeDataPart;
+using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
+using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** WAL stores addditions and removals of data parts in in-memory format.
   * Format of data in WAL:
@@ -39,12 +45,14 @@ public:
 
         /// Actual metadata.
         UUID part_uuid = UUIDHelpers::Nil;
+        MergeTreeDataPartType part_type = MergeTreeDataPartType::InMemory;
 
         void write(WriteBuffer & meta_out) const;
         void read(ReadBuffer & meta_in);
 
     private:
         static constexpr auto JSON_KEY_PART_UUID = "part_uuid";
+        static constexpr auto JSON_KEY_PART_TYPE = "part_type";
 
         String toJSON() const;
         void fromJSON(const String & buf);
@@ -60,8 +68,9 @@ public:
 
     ~MergeTreeWriteAheadLog();
 
-    void addPart(DataPartInMemoryPtr & part);
+    void addPart(const MergeTreeDataPartPtr & part);
     void dropPart(const String & part_name);
+
     std::vector<MergeTreeMutableDataPartPtr> restore(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,

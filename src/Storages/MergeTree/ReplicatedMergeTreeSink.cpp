@@ -451,7 +451,10 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false);
+            if (isBufferPart(part))
+                commitBufferPart(part);
+            else
+                commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -987,6 +990,19 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         });
     }
     return {};
+}
+
+template<bool async_insert>
+void ReplicatedMergeTreeSink::commitBufferPart(MergeTreeData::MutableDataPartPtr & part)
+{
+    /// It's important to create it outside of lock scope because
+    /// otherwise it can lock parts in destructor and deadlock is possible.
+    MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
+    {
+        auto lock = storage.lockParts();
+        storage.renameTempPartAndAdd(part, transaction, lock);
+        transaction.commit(&lock);
+    }
 }
 
 template<bool async_insert>

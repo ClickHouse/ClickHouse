@@ -165,6 +165,7 @@
     M(InsertedWideParts, "Number of parts inserted in Wide format.") \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.") \
     M(InsertedInMemoryParts, "Number of parts inserted in InMemory format.") \
+    M(InsertedBufferParts, "Number of parts inserted in Buffer format.") \
     M(MergedIntoWideParts, "Number of parts merged into Wide format.") \
     M(MergedIntoCompactParts, "Number of parts merged into Compact format.") \
     M(MergedIntoInMemoryParts, "Number of parts in merged into InMemory format.") \

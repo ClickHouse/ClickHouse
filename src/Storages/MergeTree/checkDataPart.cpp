@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <Common/CurrentMetrics.h>
@@ -231,11 +232,22 @@ IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & 
     return data_checksums;
 }
 
+IMergeTreeDataPart::Checksums checkDataPartBuffer(const DataPartBufferPtr & data_part)
+{
+    IMergeTreeDataPart::Checksums data_checksums;
+    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
+    /// NOTE: Buffer parts does not have checksums, so, nothing to compare.
+    return data_checksums;
+}
+
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
+    if (auto part_in_memory = asBufferPart(data_part))
+        return checkDataPartBuffer(part_in_memory);
+
     if (auto part_in_memory = asInMemoryPart(data_part))
         return checkDataPartInMemory(part_in_memory);
 
