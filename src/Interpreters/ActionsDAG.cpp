@@ -2162,7 +2162,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     if (result_dag_outputs.size() > 1)
     {
         auto function_builder = FunctionFactory::instance().get("and", context);
-        result_dag_outputs = {&result_dag->addFunction(function_builder, result_dag_outputs, {})};
+        result_dag_outputs = { &result_dag->addFunction(function_builder, result_dag_outputs, {}) };
     }
 
     return result_dag;
