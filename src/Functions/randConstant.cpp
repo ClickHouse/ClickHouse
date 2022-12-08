@@ -59,8 +59,10 @@ public:
         return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
     }
 
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isDeterministic() const override
+    {
+        return false;
+    }
 
 private:
     ToType value;
