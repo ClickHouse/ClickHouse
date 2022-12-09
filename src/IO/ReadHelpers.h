@@ -1078,7 +1078,7 @@ inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little 
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
-        auto & item = x.items[std::size(x.items) - i - 1];
+        auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
         readBinaryBigEndian(item, buf);
     }
 }
@@ -1448,6 +1448,8 @@ void skipToCarriageReturnOrEOF(ReadBuffer & buf);
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
+/// Skip to next character after next \0. If no \0 in stream, skip to end.
+void skipNullTerminated(ReadBuffer & buf);
 
 /** This function just copies the data from buffer's internal position (in.position())
   * to current position (from arguments) into memory.

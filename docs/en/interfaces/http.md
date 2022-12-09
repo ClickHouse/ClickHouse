@@ -244,7 +244,7 @@ The username and password can be indicated in one of three ways:
 $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
-1.  In the ‘user’ and ‘password’ URL parameters. Example:
+2.  In the ‘user’ and ‘password’ URL parameters (*We do not recommend using this method as the parameter might be logged by web proxy and cached in the browser*). Example:
 
 <!-- -->
 
@@ -252,7 +252,7 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
-1.  Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
+3.  Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
 
 <!-- -->
 
