@@ -71,12 +71,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
 
-    if (constant_value)
-    {
-        buffer << ", constant_value: " << constant_value->getValue().dump();
-        buffer << ", constant_value_type: " << constant_value->getType()->getName();
-    }
-
     if (hasWith())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "WITH\n";
@@ -185,13 +179,6 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
-    if (constant_value && rhs_typed.constant_value && *constant_value != *rhs_typed.constant_value)
-        return false;
-    else if (constant_value && !rhs_typed.constant_value)
-        return false;
-    else if (!constant_value && rhs_typed.constant_value)
-        return false;
-
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
         cte_name == rhs_typed.cte_name &&
@@ -231,17 +218,6 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
-
-    if (constant_value)
-    {
-        auto constant_dump = applyVisitor(FieldVisitorToString(), constant_value->getValue());
-        state.update(constant_dump.size());
-        state.update(constant_dump);
-
-        auto constant_value_type_name = constant_value->getType()->getName();
-        state.update(constant_value_type_name.size());
-        state.update(constant_value_type_name);
-    }
 }
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
@@ -259,7 +235,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
-    result_query_node->constant_value = constant_value;
 
     return result_query_node;
 }
