@@ -79,8 +79,6 @@ FunctionNodePtr createResolvedAggregateFunction(const String & name, const Query
     function_node->resolveAsAggregateFunction(aggregate_function, aggregate_function->getReturnType());
     function_node->getArguments().getNodes() = { argument };
 
-    function_node->getArguments().getNodes() = { argument };
-
     if (!parameters.empty())
     {
         QueryTreeNodes parameter_nodes;

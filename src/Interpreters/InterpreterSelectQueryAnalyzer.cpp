@@ -62,11 +62,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
     const SelectQueryOptions & select_query_options_,
     ContextPtr context_)
-    : WithContext(context_)
-    , query(normalizeAndValidateQuery(query_))
+    : query(normalizeAndValidateQuery(query_))
     , query_tree(buildQueryTreeAndRunPasses(query, context_))
     , select_query_options(select_query_options_)
-    , planner(query_tree, select_query_options, context_)
+    , context(std::move(context_))
+    , planner(query_tree, select_query_options)
 {
 }
 
@@ -74,11 +74,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const QueryTreeNodePtr & query_tree_,
     const SelectQueryOptions & select_query_options_,
     ContextPtr context_)
-    : WithContext(context_)
-    , query(query_tree_->toAST())
+    : query(query_tree_->toAST())
     , query_tree(query_tree_)
     , select_query_options(select_query_options_)
-    , planner(query_tree, select_query_options, context_)
+    , context(std::move(context_))
+    , planner(query_tree, select_query_options)
 {
 }
 
@@ -101,7 +101,7 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
     result.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
 
     if (!select_query_options.ignore_quota && (select_query_options.to_stage == QueryProcessingStage::Complete))
-        result.pipeline.setQuota(getContext()->getQuota());
+        result.pipeline.setQuota(context->getQuota());
 
     return result;
 }
