@@ -124,6 +124,7 @@ QTCreator
 RBAC
 RawBLOB
 RedHat
+ReplicatedMergeTree
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
@@ -415,6 +416,7 @@ representable
 requestor
 resultset
 rethrow
+retriable
 risc
 riscv
 ro
