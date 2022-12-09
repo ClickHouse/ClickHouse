@@ -8,13 +8,19 @@ namespace DB
 {
 
 XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(true, header_, out_, params_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
+    NamesAndTypesList columns(sample.getNamesAndTypesList());
+    fields.assign(columns.begin(), columns.end());
     field_tag_names.resize(sample.columns());
 
+    bool need_validate_utf8 = false;
     for (size_t i = 0; i < sample.columns(); ++i)
     {
+        if (!sample.getByPosition(i).type->textCanContainOnlyValidUTF8())
+            need_validate_utf8 = true;
+
         /// As element names, we will use the column name if it has a valid form, or "field", otherwise.
         /// The condition below is more strict than the XML standard requires.
         bool is_column_name_suitable = true;
@@ -38,6 +44,14 @@ XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_
             ? fields[i].name
             : "field";
     }
+
+    if (need_validate_utf8)
+    {
+        validating_ostr = std::make_unique<WriteBufferValidUTF8>(out);
+        ostr = validating_ostr.get();
+    }
+    else
+        ostr = &out;
 }
 
 
@@ -186,6 +200,7 @@ void XMLRowOutputFormat::onProgress(const Progress & value)
 
 void XMLRowOutputFormat::finalizeImpl()
 {
+
     writeCString("\t<rows>", *ostr);
     writeIntText(row_count, *ostr);
     writeCString("</rows>\n", *ostr);

@@ -1,9 +1,0 @@
-<clickhouse>
-    <named_collections>
-        <named_collection_s3_backups>
-            <url>http://minio1:9001/root/data/backups</url>
-            <access_key_id>minio</access_key_id>
-            <secret_access_key>minio123</secret_access_key>
-        </named_collection_s3_backups>
-    </named_collections>
-</clickhouse>

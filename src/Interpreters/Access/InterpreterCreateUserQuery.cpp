@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+
 }
 namespace
 {
@@ -100,13 +101,8 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
-    bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
-
-     if (!query.attach && !query.alter && !query.auth_data && !implicit_no_password_allowed)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Authentication type NO_PASSWORD must be explicitly specified, check the setting allow_implicit_no_password in the server configuration");
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)

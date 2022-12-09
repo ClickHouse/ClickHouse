@@ -1,0 +1,58 @@
+Source: clickhouse
+Section: database
+Priority: optional
+Maintainer: Alexey Milovidov <milovidov@clickhouse.com>
+Build-Depends: debhelper (>= 9),
+               cmake | cmake3,
+               ninja-build,
+               clang-13,
+               llvm-13,
+               lld-13,
+               libc6-dev,
+               tzdata
+Standards-Version: 3.9.8
+
+Package: clickhouse-client
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version})
+Replaces: clickhouse-compressor
+Conflicts: clickhouse-compressor
+Description: Client binary for ClickHouse
+ ClickHouse is a column-oriented database management system
+ that allows generating analytical data reports in real time.
+ .
+ This package provides clickhouse-client , clickhouse-local and clickhouse-benchmark
+
+Package: clickhouse-common-static
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Suggests: clickhouse-common-static-dbg
+Replaces: clickhouse-common, clickhouse-server-base
+Provides: clickhouse-common, clickhouse-server-base
+Description: Common files for ClickHouse
+ ClickHouse is a column-oriented database management system
+ that allows generating analytical data reports in real time.
+ .
+ This package provides common files for both clickhouse server and client
+
+Package: clickhouse-server
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser
+Recommends: libcap2-bin
+Replaces: clickhouse-server-common, clickhouse-server-base
+Provides: clickhouse-server-common
+Description: Server binary for ClickHouse
+ ClickHouse is a column-oriented database management system
+ that allows generating analytical data reports in real time.
+ .
+ This package provides clickhouse common configuration files
+
+Package: clickhouse-common-static-dbg
+Architecture: any
+Section: debug
+Priority: optional
+Depends: ${misc:Depends}
+Replaces: clickhouse-common-dbg
+Conflicts: clickhouse-common-dbg
+Description: debugging symbols for clickhouse-common-static
+ This package contains the debugging symbols for clickhouse-common.

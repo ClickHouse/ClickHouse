@@ -2,21 +2,14 @@ import os
 import logging
 import ast
 
-from env_helper import (
-    GITHUB_JOB_URL,
-    GITHUB_REPOSITORY,
-    GITHUB_RUN_URL,
-    GITHUB_SERVER_URL,
-)
-from report import ReportColorTheme, create_test_html_report
+from env_helper import GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_URL
+from report import create_test_html_report
 
 
 def process_logs(
     s3_client, additional_logs, s3_path_prefix, test_results, with_raw_logs
 ):
-    logging.info("Upload files to s3 %s", additional_logs)
-
-    processed_logs = {}  # type: ignore
+    processed_logs = {}
     # Firstly convert paths of logs from test_results to urls to s3.
     for test_result in test_results:
         if len(test_result) <= 3 or with_raw_logs:
@@ -57,7 +50,6 @@ def upload_results(
     additional_files,
     check_name,
     with_raw_logs=True,
-    statuscolors=None,
 ):
     s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(
         " ", "_"
@@ -73,28 +65,24 @@ def upload_results(
         branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_number}"
     commit_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commit/{commit_sha}"
 
+    task_url = GITHUB_RUN_URL
+
     if additional_urls:
         raw_log_url = additional_urls[0]
         additional_urls.pop(0)
     else:
-        raw_log_url = GITHUB_JOB_URL()
-
-    statuscolors = (
-        ReportColorTheme.bugfixcheck if "bugfix validate check" in check_name else None
-    )
+        raw_log_url = task_url
 
     html_report = create_test_html_report(
         check_name,
         test_results,
         raw_log_url,
-        GITHUB_RUN_URL,
-        GITHUB_JOB_URL(),
+        task_url,
         branch_url,
         branch_name,
         commit_url,
         additional_urls,
         with_raw_logs,
-        statuscolors=statuscolors,
     )
     with open("report.html", "w", encoding="utf-8") as f:
         f.write(html_report)

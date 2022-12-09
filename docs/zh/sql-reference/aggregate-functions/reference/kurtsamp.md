@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/kurtsamp
-sidebar_position: 154
+toc_priority: 154
 ---
 
 # kurtSamp {#kurtsamp}

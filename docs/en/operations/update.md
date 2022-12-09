@@ -1,10 +1,9 @@
 ---
-slug: /en/operations/update
+toc_priority: 47
+toc_title: ClickHouse Upgrade
 ---
 
-# Update
-
-## Self-managed ClickHouse Upgrade
+# ClickHouse Upgrade {#clickhouse-upgrade}
 
 If ClickHouse was installed from `deb` packages, execute the following commands on the server:
 
@@ -16,9 +15,8 @@ $ sudo service clickhouse-server restart
 
 If you installed ClickHouse using something other than the recommended `deb` packages, use the appropriate update method.
 
-:::note
-You can update multiple servers at once as soon as there is no moment when all replicas of one shard are offline.
-:::
+!!! note "Note"
+    You can update multiple servers at once as soon as there is no moment when all replicas of one shard are offline.
 
 The upgrade of older version of ClickHouse to specific version:
 

@@ -2,7 +2,6 @@
 
 #include <Common/CurrentMetrics.h>
 #include <memory>
-#include <mutex>
 
 
 namespace CurrentMetrics
@@ -18,25 +17,22 @@ namespace DB
 class OpenedFile
 {
 public:
-    OpenedFile(const std::string & file_name_, int flags_);
+    OpenedFile(const std::string & file_name_, int flags);
     ~OpenedFile();
 
     /// Close prematurally.
     void close();
 
-    int getFD() const;
+    int getFD() const { return fd; }
     std::string getFileName() const;
 
 private:
     std::string file_name;
-    int flags = 0;
-
-    mutable int fd = -1;
-    mutable std::mutex mutex;
+    int fd = -1;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
 
-    void open() const;
+    void open(int flags);
 };
 
 }
