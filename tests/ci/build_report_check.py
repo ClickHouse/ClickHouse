@@ -76,7 +76,7 @@ def group_by_artifacts(build_urls: List[str]) -> Dict[str, List[str]]:
             groups["apk"].append(url)
         elif url.endswith(".rpm"):
             groups["rpm"].append(url)
-        elif url.endswith(".tgz"):
+        elif url.endswith(".tgz") or url.endswith(".tgz.sha512"):
             groups["tgz"].append(url)
         else:
             groups["binary"].append(url)
