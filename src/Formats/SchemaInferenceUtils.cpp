@@ -323,6 +323,31 @@ static void transformMapsAndObjectsToObjects(DataTypes & data_types)
     }
 }
 
+static void transformMapsObjectsAndStringsToStrings(DataTypes & data_types)
+{
+    bool have_maps = false;
+    bool have_objects = false;
+    bool have_strings = false;
+    for (const auto & type : data_types)
+    {
+        if (isMap(type))
+            have_maps = true;
+        else if (isObject(type))
+            have_objects = true;
+        else if (isString(type))
+            have_strings = true;
+    }
+
+    if (have_strings && (have_maps || have_objects))
+    {
+        for (auto & type : data_types)
+        {
+            if (isMap(type) || isObject(type))
+                type = std::make_shared<DataTypeString>();
+        }
+    }
+}
+
 template <bool is_json>
 static void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info)
 {
@@ -374,6 +399,9 @@ static void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSe
         /// Convert Maps to Objects if needed.
         if (settings.json.try_infer_objects)
             transformMapsAndObjectsToObjects(data_types);
+
+        if (settings.json.read_objects_as_strings)
+            transformMapsObjectsAndStringsToStrings(data_types);
     };
 
     transformTypesRecursively(types, transform_simple_types, transform_complex_types);
@@ -772,6 +800,8 @@ static DataTypePtr tryInferMapOrObject(ReadBuffer & buf, const FormatSettings & 
         {
             if (settings.json.try_infer_objects)
                 return std::make_shared<DataTypeObject>("json", true);
+            if (settings.json.read_objects_as_strings)
+                return makeNullable(std::make_shared<DataTypeString>());
             return nullptr;
         }
 
