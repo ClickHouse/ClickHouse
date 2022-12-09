@@ -83,7 +83,7 @@ void changeTransformArguments(
 
 void wrapIntoToString(FunctionNode & function_node, QueryTreeNodePtr arg, ContextPtr context)
 {
-    assert(WhichDataType(function_node.getResultType()).isString());
+    assert(isString(function_node.getResultType()));
 
     auto to_string_function = FunctionFactory::instance().get("toString", std::move(context));
     QueryTreeNodes arguments{std::move(arg)};
@@ -125,7 +125,7 @@ public:
             if (!first_literal || !second_literal)
                 return;
 
-            if (!WhichDataType(first_literal->getResultType()).isString() || !WhichDataType(second_literal->getResultType()).isString())
+            if (!isString(first_literal->getResultType()) || !isString(second_literal->getResultType()))
                 return;
 
             std::set<std::string> string_values;
@@ -145,13 +145,16 @@ public:
             auto modified_transform_node = function_node->clone();
             auto & argument_nodes = modified_transform_node->as<FunctionNode>()->getArguments().getNodes();
 
+            if (!isString(function_node->getResultType()))
+                return;
+
             const auto * literal_to = argument_nodes[2]->as<ConstantNode>();
             const auto * literal_default = argument_nodes[3]->as<ConstantNode>();
 
             if (!literal_to || !literal_default)
                 return;
 
-            if (!WhichDataType(literal_to->getResultType()).isArray() || !WhichDataType(literal_default->getResultType()).isString())
+            if (!isArray(literal_to->getResultType()) || !isString(literal_default->getResultType()))
                 return;
 
             auto array_to = literal_to->getValue().get<Array>();
