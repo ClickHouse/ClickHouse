@@ -35,14 +35,14 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  * In case of failure doesn't modify buffer pointed by `dst`.
  *
  * WARNING - this function is adapted to work with ReadBuffer, where src is the position reference (ReadBuffer::position())
- *           and eof is the ReadBuffer::eof() - therefor algorithm below does not rely on buffer's continuity.
+ *           and eof is the ReadBuffer::eof() - therefore algorithm below does not rely on buffer's continuity.
  *           To parse strings use overloads below.
  *
  * @param src         - iterator (reference to pointer) over input string - warning - continuity is not guaranteed.
  * @param eof         - function returning true if iterator riched the end - warning - can break iterator's continuity.
  * @param dst         - where to put output bytes, expected to be non-null and at IPV4_BINARY_LENGTH-long.
  * @param first_octet - preparsed first octet
- * @return            - true if parsed successfuly, false otherwise.
+ * @return            - true if parsed successfully, false otherwise.
  */
 template <typename T, typename EOFfunction>
 requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
@@ -55,7 +55,7 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int first_
     int offset = 24;
     if (first_octet >= 0)
     {
-        result |= first_octet << offset; 
+        result |= first_octet << offset;
         offset -= 8;
     }
 
@@ -106,13 +106,13 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
 * which should be long enough. In case of failure zeroes IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
 *
 * WARNING - this function is adapted to work with ReadBuffer, where src is the position reference (ReadBuffer::position())
-*           and eof is the ReadBuffer::eof() - therefor algorithm below does not rely on buffer's continuity.
+*           and eof is the ReadBuffer::eof() - therefore algorithm below does not rely on buffer's continuity.
 *           To parse strings use overloads below.
 *
 * @param src - iterator (reference to pointer) over input string - warning - continuity is not guaranteed.
 * @param eof - function returning true if iterator riched the end - warning - can break iterator's continuity.
 * @param dst - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
-* @return    - true if parsed successfuly, false otherwise.
+* @return    - true if parsed successfully, false otherwise.
 */
 template <typename T, typename EOFfunction>
 requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
@@ -138,7 +138,7 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst)
         if (*src == ':')
         {
             ++src;
-            if (eof()) /// traling colon is not allowed
+            if (eof()) /// trailing colon is not allowed
                 return clear_dst();
             if (*src == ':')
             {
@@ -202,7 +202,7 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst)
 
         if (xdigits == 0)
         {
-            if (zptr == iter) /// traling all-zeroes block - end of parsing
+            if (zptr == iter) /// trailing all-zeroes block - end of parsing
                 break;
             /// empty group is not allowed
             return clear_dst();
