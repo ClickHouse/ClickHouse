@@ -3,7 +3,6 @@
 #include "Epoll.h"
 #include <Common/Exception.h>
 #include <unistd.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -70,9 +69,6 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocki
 
         if (ready_size == -1 && errno != EINTR)
             throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
-
-        if (errno == EINTR)
-            LOG_TEST(&Poco::Logger::get("Epoll"), "EINTR");
     }
     while (ready_size <= 0 && (ready_size != 0 || blocking));
 
