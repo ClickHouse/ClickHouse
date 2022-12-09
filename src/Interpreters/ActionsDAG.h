@@ -323,6 +323,25 @@ public:
     bool
     isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
 
+    /** Build filter dag from multiple filter dags.
+      *
+      * If filter nodes are empty, result is nullptr.
+      *
+      * If filter nodes are not empty, nodes and their children are merged into single dag.
+      *
+      * Additionally during dag construction if node has name that exists in node_name_to_input_column map argument
+      * in final dag this node is represented as INPUT node with specified column.
+      *
+      * Result dag has only single output node:
+      * 1. If there is single filter node, result dag output will contain this node.
+      * 2. If there are multiple filter nodes, result dag output will contain single `and` function node
+      * and children of this node will be filter nodes.
+      */
+    static ActionsDAGPtr buildFilterActionsDAG(
+        const NodeRawConstPtrs & filter_nodes,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
+        const ContextPtr & context);
+
 private:
     Node & addNode(Node node);
 

@@ -17,6 +17,7 @@
 
 # logs
 *.log
+*.debuglog
 *.stderr
 *.stdout
 
