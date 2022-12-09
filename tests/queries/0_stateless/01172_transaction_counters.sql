@@ -31,7 +31,7 @@ attach table txn_counters;
 begin transaction;
 insert into txn_counters(n) values (4);
 select 6, system.parts.name, txn_counters.creation_tid = system.parts.creation_tid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
-select 7, name, removal_tid, removal_csn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 7, name, removal_tid, removal_csn from system.parts where database=currentDatabase() and table='txn_counters' and active order by system.parts.name;
 select 8, transactionID().3 == serverUUID();
 commit;
 
