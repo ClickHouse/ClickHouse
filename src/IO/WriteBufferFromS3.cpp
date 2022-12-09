@@ -308,16 +308,20 @@ void WriteBufferFromS3::writePart()
 
 void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & req)
 {
-    if (++part_number > request_settings.max_part_number)
+    /// Increase part number.
+    ++part_number;
+    if (!multipart_upload_id.empty() && (part_number > request_settings.max_part_number))
     {
         throw Exception(
             ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Part number {} became too big while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
-            "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}",
-            part_number, count(), request_settings.min_upload_part_size, request_settings.max_upload_part_size,
-            request_settings.upload_part_size_multiply_factor, request_settings.upload_part_size_multiply_parts_count_threshold);
+            "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
+            "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_part_upload_size = {}",
+            request_settings.max_part_number, count(), request_settings.min_upload_part_size, request_settings.max_upload_part_size,
+            request_settings.upload_part_size_multiply_factor, request_settings.upload_part_size_multiply_parts_count_threshold,
+            request_settings.max_single_part_upload_size);
     }
 
+    /// Setup request.
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetPartNumber(static_cast<int>(part_number));
@@ -328,7 +332,8 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    if (part_number % request_settings.upload_part_size_multiply_parts_count_threshold == 0)
+    /// Maybe increase `upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
+    if (!multipart_upload_id.empty() && (part_number % request_settings.upload_part_size_multiply_parts_count_threshold == 0))
     {
         upload_part_size *= request_settings.upload_part_size_multiply_factor;
         upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
