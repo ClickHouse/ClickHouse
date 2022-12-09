@@ -9,7 +9,7 @@
 
 #include <optional>
 #include <utility>
-
+#include <filesystem>
 
 namespace DB
 {
@@ -223,6 +223,11 @@ void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::
 
     params.realm = config.getString("kerberos.realm", "");
     params.principal = config.getString("kerberos.principal", "");
+
+    String keytab = config.getString("kerberos.keytab", "");
+    if (!keytab.empty() && std::filesystem::exists(keytab))
+        if (krb5_gss_register_acceptor_identity(keytab.c_str()))
+            throw Exception("Invalid keytab file is specified", ErrorCodes::BAD_ARGUMENTS);
 }
 
 }

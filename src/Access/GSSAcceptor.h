@@ -9,6 +9,7 @@
 #if USE_KRB5
 #   include <gssapi/gssapi.h>
 #   include <gssapi/gssapi_ext.h>
+#   include <gssapi/gssapi_krb5.h>
 #   define MAYBE_NORETURN
 #else
 #   define MAYBE_NORETURN [[noreturn]]
