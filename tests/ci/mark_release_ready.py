@@ -5,7 +5,8 @@ from env_helper import GITHUB_JOB_URL
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from pr_info import PRInfo
-from release import RELEASE_READY_STATUS
+
+RELEASE_READY_STATUS = "Ready for release"
 
 
 def main():

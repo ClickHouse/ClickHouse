@@ -15,7 +15,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
-#include <base/scope_guard.h>
 
 
 namespace DB
@@ -58,9 +57,7 @@ public:
     ~BackgroundSchedulePool();
 
 private:
-    /// BackgroundSchedulePool schedules a task on its own task queue, there's no need to construct/restore tracing context on this level.
-    /// This is also how ThreadPool class treats the tracing context. See ThreadPool for more information.
-    using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>;
+    using Threads = std::vector<ThreadFromGlobalPool>;
 
     void threadFunction();
     void delayExecutionThreadFunction();
@@ -86,7 +83,7 @@ private:
     std::condition_variable delayed_tasks_cond_var;
     std::mutex delayed_tasks_mutex;
     /// Thread waiting for next delayed task.
-    ThreadFromGlobalPoolNoTracingContextPropagation delayed_thread;
+    ThreadFromGlobalPool delayed_thread;
     /// Tasks ordered by scheduled time.
     DelayedTasks delayed_tasks;
 
@@ -96,7 +93,7 @@ private:
     CurrentMetrics::Metric tasks_metric;
     std::string thread_name;
 
-    [[nodiscard]] scope_guard attachToThreadGroup();
+    void attachToThreadGroup();
 };
 
 
@@ -123,10 +120,6 @@ public:
 
     /// get Coordination::WatchCallback needed for notifications from ZooKeeper watches.
     Coordination::WatchCallback getWatchCallback();
-
-    /// Returns lock that protects from concurrent task execution.
-    /// This lock should not be held for a long time.
-    std::unique_lock<std::mutex> getExecLock();
 
 private:
     friend class TaskNotification;

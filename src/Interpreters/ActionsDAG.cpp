@@ -1169,17 +1169,6 @@ ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 
 ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
-    first.mergeInplace(std::move(second));
-
-    /// Drop unused inputs and, probably, some actions.
-    first.removeUnusedActions();
-
-    return std::make_shared<ActionsDAG>(std::move(first));
-}
-
-void ActionsDAG::mergeInplace(ActionsDAG && second)
-{
-    auto & first = *this;
     /// first: x (1), x (2), y ==> x (2), z, x (3)
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
     /// merge: x (1), x (2), x (3), y =(first)=> x (2), z, x (4), x (3) =(second)=> x (3), x (4), x (2), z
@@ -1205,7 +1194,7 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
             if (it == first_result.end() || it->second.empty())
             {
                 if (first.project_input)
-                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
                                     "Cannot find column {} in ActionsDAG result", input_node->result_name);
 
                 first.inputs.push_back(input_node);
@@ -1267,6 +1256,11 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 
     first.projected_output = second.projected_output;
+
+    /// Drop unused inputs and, probably, some actions.
+    first.removeUnusedActions();
+
+    return std::make_shared<ActionsDAG>(std::move(first));
 }
 
 ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const

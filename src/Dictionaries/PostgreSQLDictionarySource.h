@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
 
