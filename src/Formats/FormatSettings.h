@@ -154,6 +154,7 @@ struct FormatSettings
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
         bool read_numbers_as_strings = true;
+        bool read_objects_as_strings = true;
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;

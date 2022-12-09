@@ -8,6 +8,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
+#include <fmt/core.h>
 
 namespace ProfileEvents
 {
@@ -35,13 +36,39 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
 }
 
-struct ReplicatedMergeTreeSink::DelayedChunk
+template<bool async_insert>
+struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
 {
     struct Partition
     {
         MergeTreeDataWriter::TemporaryPart temp_part;
         UInt64 elapsed_ns;
-        String block_id;
+        BlockIDsType block_id;
+        BlockWithPartition block_with_partition;
+        std::unordered_map<String, size_t> block_id_to_offset_idx;
+
+        Partition() = default;
+        Partition(MergeTreeDataWriter::TemporaryPart && temp_part_, UInt64 elapsed_ns_, BlockIDsType && block_id_, BlockWithPartition && block_)
+            : temp_part(std::move(temp_part_)),
+              elapsed_ns(elapsed_ns_),
+              block_id(std::move(block_id_)),
+              block_with_partition(std::move(block_))
+        {
+                initBlockIDMap();
+        }
+
+        void initBlockIDMap()
+        {
+            if constexpr (async_insert)
+            {
+                block_id_to_offset_idx.clear();
+                for (size_t i = 0; i < block_id.size(); ++i)
+                {
+                    block_id_to_offset_idx[block_id[i]] = i;
+                }
+            }
+        }
+
     };
 
     DelayedChunk() = default;
@@ -52,7 +79,109 @@ struct ReplicatedMergeTreeSink::DelayedChunk
     std::vector<Partition> partitions;
 };
 
-ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
+namespace
+{
+    /// Convert block id vector to string. Output at most 50 ids.
+    template<typename T>
+    inline String toString(const std::vector<T> & vec)
+    {
+        size_t size = vec.size();
+        if (size > 50) size = 50;
+        return fmt::format("({})", fmt::join(vec.begin(), vec.begin() + size, ","));
+    }
+
+    /// remove the conflict parts of block for rewriting again.
+    void rewriteBlock(Poco::Logger * log, typename ReplicatedMergeTreeSinkImpl<true>::DelayedChunk::Partition & partition, const std::vector<String> & block_paths)
+    {
+        std::vector<size_t> offset_idx;
+        for (const auto & raw_path : block_paths)
+        {
+            std::filesystem::path p(raw_path);
+            String conflict_block_id = p.filename();
+            auto it = partition.block_id_to_offset_idx.find(conflict_block_id);
+            if (it == partition.block_id_to_offset_idx.end())
+                throw Exception("Unknown conflict path " + conflict_block_id, ErrorCodes::LOGICAL_ERROR);
+            offset_idx.push_back(it->second);
+        }
+        std::sort(offset_idx.begin(), offset_idx.end());
+
+        auto & offsets = partition.block_with_partition.offsets->offsets;
+        size_t idx = 0, remove_count = 0;
+        auto it = offset_idx.begin();
+        std::vector<size_t> new_offsets;
+        std::vector<String> new_block_ids;
+
+        /// construct filter
+        size_t rows = partition.block_with_partition.block.rows();
+        auto filter_col = ColumnUInt8::create(rows, 1u);
+        ColumnUInt8::Container & vec = filter_col->getData();
+        UInt8 * pos = vec.data();
+        for (auto & offset : offsets)
+        {
+            if (it != offset_idx.end() && *it == idx)
+            {
+                size_t start_pos = idx > 0 ? offsets[idx - 1] : 0;
+                size_t end_pos = offset;
+                remove_count += end_pos - start_pos;
+                while (start_pos < end_pos)
+                {
+                    *(pos + start_pos) = 0;
+                    start_pos ++;
+                }
+                it++;
+            }
+            else
+            {
+                new_offsets.push_back(offset - remove_count);
+                new_block_ids.push_back(partition.block_id[idx]);
+            }
+            idx++;
+        }
+
+        LOG_TRACE(log, "New block IDs: {}, new offsets: {}, size: {}", toString(new_block_ids), toString(new_offsets), new_offsets.size());
+
+        offsets = std::move(new_offsets);
+        partition.block_id = std::move(new_block_ids);
+        auto cols = partition.block_with_partition.block.getColumns();
+        for (auto & col : cols)
+        {
+            col = col->filter(vec, rows - remove_count);
+        }
+        partition.block_with_partition.block.setColumns(cols);
+
+        LOG_TRACE(log, "New block rows {}", partition.block_with_partition.block.rows());
+
+        partition.initBlockIDMap();
+    }
+
+    std::vector<String> getHashesForBlocks(BlockWithPartition & block, String partition_id)
+    {
+        size_t start = 0;
+        auto cols = block.block.getColumns();
+        std::vector<String> block_id_vec;
+        for (auto offset : block.offsets->offsets)
+        {
+            SipHash hash;
+            for (size_t i = start; i < offset; ++i)
+                for (const auto & col : cols)
+                    col->updateHashWithValue(i, hash);
+            union
+            {
+                char bytes[16];
+                UInt64 words[2];
+            } hash_value;
+            hash.get128(hash_value.bytes);
+
+            block_id_vec.push_back(partition_id + "_" + DB::toString(hash_value.words[0]) + "_" + DB::toString(hash_value.words[1]));
+
+            start = offset;
+        }
+        return block_id_vec;
+    }
+}
+
+template<bool async_insert>
+ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     StorageReplicatedMergeTree & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     size_t quorum_size,
@@ -81,7 +210,8 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
         required_quorum_size = 0;
 }
 
-ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink() = default;
+template<bool async_insert>
+ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl() = default;
 
 /// Allow to verify that the session in ZooKeeper is still alive.
 static void assertSessionIsNotExpired(const zkutil::ZooKeeperPtr & zookeeper)
@@ -93,7 +223,8 @@ static void assertSessionIsNotExpired(const zkutil::ZooKeeperPtr & zookeeper)
         throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
 }
 
-size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper)
+template<bool async_insert>
+size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
     if (!isQuorumEnabled())
         return 0;
@@ -161,7 +292,8 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
     return replicas_number;
 }
 
-void ReplicatedMergeTreeSink::consume(Chunk chunk)
+template<bool async_insert>
+void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -197,9 +329,22 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
-    using DelayedPartitions = std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition>;
+    ChunkOffsetsPtr chunk_offsets;
+
+    if constexpr (async_insert)
+    {
+        const auto & chunk_info = chunk.getChunkInfo();
+        if (const auto * chunk_offsets_ptr = typeid_cast<const ChunkOffsets *>(chunk_info.get()))
+            chunk_offsets = std::make_shared<ChunkOffsets>(chunk_offsets_ptr->offsets);
+        else
+            throw Exception("No chunk info for async inserts", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, chunk_offsets);
+
+    using DelayedPartition = typename ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk::Partition;
+    using DelayedPartitions = std::vector<DelayedPartition>;
     DelayedPartitions partitions;
 
     size_t streams = 0;
@@ -218,9 +363,15 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
-        String block_id;
+        BlockIDsType block_id;
 
-        if (deduplicate)
+        if constexpr (async_insert)
+        {
+            /// TODO consider insert_deduplication_token
+            block_id = getHashesForBlocks(current_block, temp_part.part->info.partition_id);
+            LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(current_block.offsets->offsets), current_block.offsets->offsets.size());
+        }
+        else if (deduplicate)
         {
             String block_dedup_token;
 
@@ -255,7 +406,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         if (streams > max_insert_delayed_streams_for_parallel_write)
         {
             finishDelayedChunk(zookeeper);
-            delayed_chunk = std::make_unique<ReplicatedMergeTreeSink::DelayedChunk>(replicas_num);
+            delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk>(replicas_num);
             delayed_chunk->partitions = std::move(partitions);
             finishDelayedChunk(zookeeper);
 
@@ -264,15 +415,16 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
             partitions = DelayedPartitions{};
         }
 
-        partitions.emplace_back(ReplicatedMergeTreeSink::DelayedChunk::Partition{
-            .temp_part = std::move(temp_part),
-            .elapsed_ns = elapsed_ns,
-            .block_id = std::move(block_id)
-        });
+        partitions.emplace_back(DelayedPartition(
+            std::move(temp_part),
+            elapsed_ns,
+            std::move(block_id),
+            std::move(current_block)
+        ));
     }
 
     finishDelayedChunk(zookeeper);
-    delayed_chunk = std::make_unique<ReplicatedMergeTreeSink::DelayedChunk>();
+    delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
 
     /// If deduplicated data should not be inserted into MV, we need to set proper
@@ -283,7 +435,8 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         finishDelayedChunk(zookeeper);
 }
 
-void ReplicatedMergeTreeSink::finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper)
+template<>
+void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
     if (!delayed_chunk)
         return;
@@ -317,7 +470,36 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(const ZooKeeperWithFaultInjecti
     delayed_chunk.reset();
 }
 
-void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
+template<>
+void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper)
+{
+    if (!delayed_chunk)
+        return;
+
+    for (auto & partition: delayed_chunk->partitions)
+    {
+        int retry_times = 0;
+        while (true)
+        {
+            partition.temp_part.finalize();
+            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false);
+            if (conflict_block_ids.empty())
+                break;
+            LOG_DEBUG(log, "Found depulicate block IDs: {}, retry times {}", toString(conflict_block_ids), ++retry_times);
+            /// partition clean conflict
+            rewriteBlock(log, partition, conflict_block_ids);
+            if (partition.block_id.empty())
+                break;
+            partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
+            partition.temp_part = storage.writer.writeTempPart(partition.block_with_partition, metadata_snapshot, context);
+        }
+    }
+
+    delayed_chunk.reset();
+}
+
+template<bool async_insert>
+void ReplicatedMergeTreeSinkImpl<async_insert>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
     /// NOTE: No delay in this case. That's Ok.
 
@@ -332,7 +514,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, "", replicas_num, true);
+        commitPart(zookeeper, part, BlockIDsType(), replicas_num, true);
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
@@ -342,10 +524,11 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     }
 }
 
-void ReplicatedMergeTreeSink::commitPart(
+template<bool async_insert>
+std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
-    const String & block_id,
+    const BlockIDsType & block_id,
     size_t replicas_num,
     bool writing_existing_part)
 {
@@ -367,6 +550,7 @@ void ReplicatedMergeTreeSink::commitPart(
     /// for retries due to keeper error
     bool part_committed_locally_but_zookeeper = false;
     Coordination::Error write_part_info_keeper_error = Coordination::Error::ZOK;
+    std::vector<String> conflict_block_ids;
 
     ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info);
     retries_ctl.retryLoop([&]()
@@ -422,8 +606,15 @@ void ReplicatedMergeTreeSink::commitPart(
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
         /// Allocate new block number and check for duplicates
-        const bool deduplicate_block = !block_id.empty();
-        String block_id_path = deduplicate_block ? storage.zookeeper_path + "/blocks/" + block_id : "";
+        bool deduplicate_block = !block_id.empty();
+        BlockIDsType block_id_path ;
+        if constexpr (async_insert)
+        {
+            for (const auto & single_block_id : block_id)
+                block_id_path.push_back(storage.zookeeper_path + "/async_blocks/" + single_block_id);
+        }
+        else if (deduplicate_block)
+            block_id_path = storage.zookeeper_path + "/blocks/" + block_id;
         auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
         ThreadFuzzer::maybeInjectSleep();
 
@@ -436,6 +627,20 @@ void ReplicatedMergeTreeSink::commitPart(
         String existing_part_name;
         if (block_number_lock)
         {
+            if constexpr (async_insert)
+            {
+                /// The truth is that we always get only one path from block_number_lock.
+                /// This is a restriction of Keeper. Here I would like to use vector because
+                /// I wanna keep extensibility for future optimization, for instance, using
+                /// cache to resolve conflicts in advance.
+                String conflict_path = block_number_lock->getConflictPath();
+                if (!conflict_path.empty())
+                {
+                    LOG_TRACE(log, "Cannot get lock, the conflict path is {}", conflict_path);
+                    conflict_block_ids.push_back(conflict_path);
+                    return;
+                }
+            }
             is_already_existing_part = false;
             block_number = block_number_lock->getNumber();
 
@@ -467,7 +672,8 @@ void ReplicatedMergeTreeSink::commitPart(
             log_entry.new_part_name = part->name;
             /// TODO maybe add UUID here as well?
             log_entry.quorum = getQuorumSize(replicas_num);
-            log_entry.block_id = block_id;
+            if constexpr (!async_insert)
+                log_entry.block_id = block_id;
             log_entry.new_part_type = part->getType();
 
             ops.emplace_back(zkutil::makeCreateRequest(
@@ -523,7 +729,8 @@ void ReplicatedMergeTreeSink::commitPart(
                         quorum_info.host_node_version));
             }
         }
-        else
+        /// async_insert will never return null lock, because they need the conflict path.
+        else if constexpr (!async_insert)
         {
             is_already_existing_part = true;
 
@@ -577,6 +784,8 @@ void ReplicatedMergeTreeSink::commitPart(
             /// Do not check for duplicate on commit to ZK.
             block_id_path.clear();
         }
+        else
+            throw Exception("Conflict block ids and block number lock should not be empty at the same time for async inserts", ErrorCodes::LOGICAL_ERROR);
 
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);
@@ -675,11 +884,24 @@ void ReplicatedMergeTreeSink::commitPart(
         {
             String failed_op_path = zkutil::KeeperMultiException(multi_code, ops, responses).getPathForFirstFailedOp();
 
-            if (multi_code == Coordination::Error::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
+            auto contains = [](const auto & block_ids, const String & path)
+            {
+                if constexpr (async_insert)
+                {
+                    for (const auto & local_block_id : block_ids)
+                        if (local_block_id == path)
+                            return true;
+                    return false;
+                }
+                else
+                    return block_ids == path;
+            };
+
+            if (multi_code == Coordination::Error::ZNODEEXISTS && deduplicate_block && contains(block_id_path, failed_op_path))
             {
                 /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
                 LOG_INFO(log, "Block with ID {} already exists (it was just appeared). Renaming part {} back to {}. Will retry write.",
-                    block_id, part->name, temporary_part_relative_path);
+                    toString(block_id), part->name, temporary_part_relative_path);
 
                 /// We will try to add this part again on the new iteration as it's just a new part.
                 /// So remove it from storage parts set immediately and transfer state to temporary.
@@ -687,6 +909,13 @@ void ReplicatedMergeTreeSink::commitPart(
 
                 part->is_temp = true;
                 part->renameTo(temporary_part_relative_path, false);
+
+                if constexpr (async_insert)
+                {
+                    conflict_block_ids = std::vector<String>({failed_op_path});
+                    LOG_TRACE(log, "conflict when committing, the conflict block ids are {}", toString(conflict_block_ids));
+                    return;
+                }
 
                 /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
                 /// than it will be ignored on the next iteration.
@@ -714,7 +943,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                     "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
                     block_number,
-                    block_id,
+                    toString(block_id),
                     Coordination::errorMessage(multi_code),
                     failed_op_path);
             }
@@ -727,12 +956,13 @@ void ReplicatedMergeTreeSink::commitPart(
                 ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                 "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
                 block_number,
-                block_id,
+                toString(block_id),
                 Coordination::errorMessage(multi_code));
         }
     },
     [&zookeeper]() { zookeeper->cleanupEphemeralNodes(); });
-
+    if (!conflict_block_ids.empty())
+        return conflict_block_ids;
     if (isQuorumEnabled())
     {
         ZooKeeperRetriesControl quorum_retries_ctl("waitForQuorum", zookeeper_retries_info);
@@ -756,23 +986,27 @@ void ReplicatedMergeTreeSink::commitPart(
                 return;
         });
     }
+    return {};
 }
 
-void ReplicatedMergeTreeSink::onStart()
+template<bool async_insert>
+void ReplicatedMergeTreeSinkImpl<async_insert>::onStart()
 {
     /// Only check "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
     storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context);
 }
 
-void ReplicatedMergeTreeSink::onFinish()
+template<bool async_insert>
+void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
 {
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
     finishDelayedChunk(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper));
 }
 
-void ReplicatedMergeTreeSink::waitForQuorum(
+template<bool async_insert>
+void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
@@ -826,14 +1060,16 @@ void ReplicatedMergeTreeSink::waitForQuorum(
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
 }
 
-String ReplicatedMergeTreeSink::quorumLogMessage(size_t replicas_num) const
+template<bool async_insert>
+String ReplicatedMergeTreeSinkImpl<async_insert>::quorumLogMessage(size_t replicas_num) const
 {
     if (!isQuorumEnabled())
         return "";
     return fmt::format(" (quorum {} of {} replicas)", getQuorumSize(replicas_num), replicas_num);
 }
 
-size_t ReplicatedMergeTreeSink::getQuorumSize(size_t replicas_num) const
+template<bool async_insert>
+size_t ReplicatedMergeTreeSinkImpl<async_insert>::getQuorumSize(size_t replicas_num) const
 {
     if (!isQuorumEnabled())
         return 0;
@@ -844,9 +1080,13 @@ size_t ReplicatedMergeTreeSink::getQuorumSize(size_t replicas_num) const
     return replicas_num / 2 + 1;
 }
 
-bool ReplicatedMergeTreeSink::isQuorumEnabled() const
+template<bool async_insert>
+bool ReplicatedMergeTreeSinkImpl<async_insert>::isQuorumEnabled() const
 {
     return !required_quorum_size.has_value() || required_quorum_size.value() > 1;
 }
+
+template class ReplicatedMergeTreeSinkImpl<true>;
+template class ReplicatedMergeTreeSinkImpl<false>;
 
 }

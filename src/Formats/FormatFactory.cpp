@@ -98,6 +98,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_decimals = settings.output_format_json_quote_decimals;
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
     format_settings.json.read_numbers_as_strings = settings.input_format_json_read_numbers_as_strings;
+    format_settings.json.read_objects_as_strings = settings.input_format_json_read_objects_as_strings;
     format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;

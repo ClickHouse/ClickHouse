@@ -287,3 +287,6 @@
 [submodule "contrib/xxHash"]
 	path = contrib/xxHash
 	url = https://github.com/Cyan4973/xxHash.git
+[submodule "contrib/google-benchmark"]
+	path = contrib/google-benchmark
+	url = https://github.com/google/benchmark.git
