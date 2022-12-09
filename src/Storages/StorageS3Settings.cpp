@@ -6,25 +6,11 @@
 #include <Common/Exception.h>
 #include <Common/Throttler.h>
 #include <Interpreters/Context.h>
-#include <base/unit.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
 {
-
-namespace
-{
-    /// An object up to 5 GB can be copied in a single atomic operation.
-    constexpr UInt64 DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE = 5_GiB;
-
-    /// The maximum size of an uploaded part.
-    constexpr UInt64 DEFAULT_MAX_UPLOAD_PART_SIZE = 5_GiB;
-
-    /// The maximum part number
-    constexpr UInt64 DEFAULT_MAX_PART_NUMBER = 10000;
-}
-
 
 void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings)
 {
@@ -64,12 +50,12 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
             S3Settings::RequestSettings request_settings;
             request_settings.max_single_read_retries = get_uint_for_key(key, "max_single_read_retries", true, settings.s3_max_single_read_retries);
             request_settings.min_upload_part_size = get_uint_for_key(key, "min_upload_part_size", true, settings.s3_min_upload_part_size);
-            request_settings.max_upload_part_size = get_uint_for_key(key, "max_upload_part_size", true, DEFAULT_MAX_UPLOAD_PART_SIZE);
+            request_settings.max_upload_part_size = get_uint_for_key(key, "max_upload_part_size", true, S3Settings::RequestSettings::DEFAULT_MAX_UPLOAD_PART_SIZE);
             request_settings.upload_part_size_multiply_factor = get_uint_for_key(key, "upload_part_size_multiply_factor", true, settings.s3_upload_part_size_multiply_factor);
             request_settings.upload_part_size_multiply_parts_count_threshold = get_uint_for_key(key, "upload_part_size_multiply_parts_count_threshold", true, settings.s3_upload_part_size_multiply_parts_count_threshold);
-            request_settings.max_part_number = get_uint_for_key(key, "max_part_number", true, DEFAULT_MAX_PART_NUMBER);
+            request_settings.max_part_number = get_uint_for_key(key, "max_part_number", true, S3Settings::RequestSettings::DEFAULT_MAX_PART_NUMBER);
             request_settings.max_single_part_upload_size = get_uint_for_key(key, "max_single_part_upload_size", true, settings.s3_max_single_part_upload_size);
-            request_settings.max_single_operation_copy_size = get_uint_for_key(key, "max_single_operation_copy_size", true, DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE);
+            request_settings.max_single_operation_copy_size = get_uint_for_key(key, "max_single_operation_copy_size", true, S3Settings::RequestSettings::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE);
             request_settings.max_connections = get_uint_for_key(key, "max_connections", true, settings.s3_max_connections);
             request_settings.check_objects_after_upload = get_bool_for_key(key, "check_objects_after_upload", true, false);
 
