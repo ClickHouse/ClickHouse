@@ -264,7 +264,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             const auto col = type.createColumn();
             ReadBufferFromString in_buffer(src.get<String>());
-            type.getDefaultSerialization()->deserializeBinary(*col, in_buffer);
+            type.getDefaultSerialization()->deserializeBinary(*col, in_buffer, {});
             return (*col)[0];
         }
     }

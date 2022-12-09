@@ -840,13 +840,8 @@ inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
 template <typename ReturnType = void>
 inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
 {
-    const char * end = parseIPv4(buf.position(), buf.position() + buf.available(), reinterpret_cast<unsigned char *>(&ip.toUnderType()));
-
-    if (end)
-    {
-        buf.position() += end - buf.position();
+    if (parseIPv4(buf.position(), [&buf](){ return buf.eof(); }, reinterpret_cast<unsigned char *>(&ip.toUnderType())))
         return ReturnType(true);
-    }
 
     if constexpr (std::is_same_v<ReturnType, void>)
         throw ParsingException(std::string("Cannot parse IPv4 ").append(buf.position(), buf.available()), ErrorCodes::CANNOT_PARSE_IPV4);
@@ -869,8 +864,7 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
 {
     unsigned char * p = reinterpret_cast<unsigned char *>(ip.toUnderType().items);
 
-    const char * end = parseIPv4(buf.position(), buf.position() + buf.available(), p);
-    if (end)
+    if (parseIPv4(buf.position(), [&buf](){ return buf.eof(); }, p))
     {
         if constexpr (std::endian::native == std::endian::little)
         {
@@ -889,17 +883,11 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
 
         p[11] = 0xff;
         p[10] = 0xff;
-        buf.position() += end - buf.position();
         return ReturnType(true);
     }
 
-    end = parseIPv6(buf.position(), buf.position() + buf.available(), p);
-
-    if (end)
-    {
-        buf.position() += end - buf.position();
+    if (parseIPv6(buf.position(), [&buf](){ return buf.eof(); }, p))
         return ReturnType(true);
-    }
 
     memset(p, '\0', IPV6_BINARY_LENGTH);
 
