@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -222,6 +223,16 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
     for (size_t part_number = 1; position < size; ++part_number)
     {
+        if (part_number > request_settings.max_part_number)
+        {
+            throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "Part number {} became too big while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
+                "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}",
+                part_number, size, request_settings.min_upload_part_size, request_settings.max_upload_part_size,
+                request_settings.upload_part_size_multiply_factor, request_settings.upload_part_size_multiply_parts_count_threshold);
+        }
+
         size_t next_position = std::min(position + upload_part_size, size);
 
         Aws::S3::Model::UploadPartCopyRequest part_request;
