@@ -25,6 +25,7 @@ CentOS
 ClickHouse
 ClickHouse's
 Config
+ConnectionDetails
 Contrib
 Ctrl
 CustomSeparated
@@ -97,6 +98,7 @@ MySQLDump
 NEKUDOTAYIM
 NULLIF
 NVME
+NYPD
 NuRaft
 ObjectId
 Ok
@@ -110,13 +112,13 @@ Precompiled
 PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
-PrettyNoEscapes
-PrettySpace
-PrettySpaceNoEscapes
 PrettyCompactNoEscapesMonoBlock
 PrettyMonoBlock
+PrettyNoEscapes
 PrettyNoEscapesMonoBlock
+PrettySpace
 PrettySpaceMonoBlock
+PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
@@ -137,6 +139,7 @@ SQLInsert
 SQLSTATE
 SSSE
 Schemas
+SelfManaged
 Stateful
 Submodules
 Subqueries
@@ -194,9 +197,9 @@ boolean
 bools
 boringssl
 brotli
-buildable
 bson
 bsoneachrow
+buildable
 camelCase
 capn
 capnproto
@@ -249,6 +252,7 @@ ddl
 deallocation
 debian
 decompressor
+denormalizing
 denormals
 deserialization
 deserialized
@@ -387,13 +391,13 @@ prestable
 prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
-prettynoescapes
-prettyspace
-prettyspacenoescapes
 prettycompactnoescapesmonoblock
 prettymonoblock
+prettynoescapes
 prettynoescapesmonoblock
+prettyspace
 prettyspacemonoblock
+prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prlimit
 prometheus
@@ -484,6 +488,7 @@ tsv
 tui
 turbostat
 txt
+uint
 unary
 unencrypted
 unixodbc
@@ -492,7 +497,6 @@ userspace
 userver
 utils
 uuid
-uint
 variadic
 varint
 vectorized
@@ -513,7 +517,3 @@ zkcopy
 zlib
 znodes
 zstd
-NYPD
-denormalizing
-ConnectionDetails
-SelfManaged
