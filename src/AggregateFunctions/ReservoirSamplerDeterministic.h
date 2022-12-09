@@ -116,6 +116,7 @@ public:
     {
         if (samples.empty())
         {
+            /// call onEmpty() first to check OnEmpty policy, - throw or return default value
             [[maybe_unused]] auto nan = onEmpty<T>();
             if constexpr (DB::is_decimal<T>)
                 return 0;
