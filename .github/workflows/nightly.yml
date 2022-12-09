@@ -10,6 +10,9 @@ env:
   workflow_dispatch:
 
 jobs:
+  Debug:
+    # The task for having a preserved ENV and event.json for later investigation
+    uses: ./.github/workflows/debug.yml
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
@@ -102,7 +105,7 @@ jobs:
       - name: Build
         run: |
           git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"

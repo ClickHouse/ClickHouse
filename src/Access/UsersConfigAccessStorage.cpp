@@ -4,6 +4,7 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessControl.h>
+#include <Access/resolveSetting.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
@@ -228,6 +229,12 @@ namespace
             user->access.revokeGrantOption(AccessType::ALL);
         }
 
+        bool show_named_collections = config.getBool(user_config + ".show_named_collections", false);
+        if (!show_named_collections)
+        {
+            user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS);
+        }
+
         String default_database = config.getString(user_config + ".default_database", "");
         user->default_database = default_database;
 
@@ -445,9 +452,9 @@ namespace
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
-                    profile_element.min_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.min_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
-                    profile_element.max_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.max_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "readonly" || constraint_type == "const")
                 {
                     writability_count++;
@@ -511,7 +518,7 @@ namespace
 
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
-            profile_element.value = Settings::stringToValueUtil(setting_name, config.getString(profile_config + "." + key));
+            profile_element.value = settingStringToValueUtil(setting_name, config.getString(profile_config + "." + key));
             profile->elements.emplace_back(std::move(profile_element));
         }
 

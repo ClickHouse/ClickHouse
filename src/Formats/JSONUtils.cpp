@@ -231,7 +231,19 @@ namespace JSONUtils
             {
                 auto type = getDataTypeFromFieldImpl(key_value_pair.second, settings, numbers_parsed_from_json_strings);
                 if (!type)
+                {
+                    /// If we couldn't infer nested type and Object type is not enabled,
+                    /// we can't determine the type of this JSON field.
+                    if (!settings.json.try_infer_objects)
+                    {
+                        /// If read_objects_as_strings is enabled, we can read objects into strings.
+                        if (settings.json.read_objects_as_strings)
+                            return makeNullable(std::make_shared<DataTypeString>());
+                        return nullptr;
+                    }
+
                     continue;
+                }
 
                 if (settings.json.try_infer_objects && isObject(type))
                     return std::make_shared<DataTypeObject>("json", true);
@@ -250,7 +262,12 @@ namespace JSONUtils
             if (!are_types_equal)
             {
                 if (!settings.json.try_infer_objects)
+                {
+                    /// If read_objects_as_strings is enabled, we can read objects into strings.
+                    if (settings.json.read_objects_as_strings)
+                        return makeNullable(std::make_shared<DataTypeString>());
                     return nullptr;
+                }
                 return std::make_shared<DataTypeObject>("json", true);
             }
 

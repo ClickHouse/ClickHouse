@@ -16,12 +16,17 @@
 namespace DB
 {
 
-ConstantNode::ConstantNode(ConstantValuePtr constant_value_)
+ConstantNode::ConstantNode(ConstantValuePtr constant_value_, QueryTreeNodePtr source_expression)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
     , value_string(applyVisitor(FieldVisitorToString(), constant_value->getValue()))
 {
+    children[source_child_index] = std::move(source_expression);
 }
+
+ConstantNode::ConstantNode(ConstantValuePtr constant_value_)
+    : ConstantNode(constant_value_, nullptr /*source_expression*/)
+{}
 
 ConstantNode::ConstantNode(Field value_, DataTypePtr value_data_type_)
     : ConstantNode(std::make_shared<ConstantValue>(convertFieldToTypeOrThrow(value_, *value_data_type_), value_data_type_))
@@ -40,6 +45,12 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
     buffer << ", constant_value: " << constant_value->getValue().dump();
     buffer << ", constant_value_type: " << constant_value->getType()->getName();
+
+    if (getSourceExpression())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION " << '\n';
+        getSourceExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 }
 
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs) const

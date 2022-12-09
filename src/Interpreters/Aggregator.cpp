@@ -36,6 +36,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -220,16 +221,31 @@ void initDataVariantsWithSizeHint(
             const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
             const auto lower_limit = hint->sum_of_sizes / max_threads;
             const auto upper_limit = stats_collecting_params.max_size_to_preallocate_for_aggregation / max_threads;
-            const auto adjusted = std::min(std::max(lower_limit, hint->median_size), upper_limit);
-            if (worthConvertToTwoLevel(
-                    params.group_by_two_level_threshold,
-                    hint->sum_of_sizes,
-                    /*group_by_two_level_threshold_bytes*/ 0,
-                    /*result_size_bytes*/ 0))
-                method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
-            result.init(method_chosen, adjusted);
-            ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
-            return;
+            if (hint->median_size > upper_limit)
+            {
+                /// Since we cannot afford to preallocate as much as we want, we will likely need to do resize anyway.
+                /// But we will also work with the big (i.e. not so cache friendly) HT from the beginning which may result in a slight slowdown.
+                /// So let's just do nothing.
+                LOG_TRACE(
+                    &Poco::Logger::get("Aggregator"),
+                    "No space were preallocated in hash tables because 'max_size_to_preallocate_for_aggregation' has too small value: {}, "
+                    "should be at least {}",
+                    stats_collecting_params.max_size_to_preallocate_for_aggregation,
+                    hint->median_size * max_threads);
+            }
+            else
+            {
+                const auto adjusted = std::max(lower_limit, hint->median_size);
+                if (worthConvertToTwoLevel(
+                        params.group_by_two_level_threshold,
+                        hint->sum_of_sizes,
+                        /*group_by_two_level_threshold_bytes*/ 0,
+                        /*result_size_bytes*/ 0))
+                    method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
+                result.init(method_chosen, adjusted);
+                ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
+                return;
+            }
         }
     }
     result.init(method_chosen);
@@ -487,7 +503,6 @@ Aggregator::AggregateColumnsConstData Aggregator::Params::makeAggregateColumnsDa
 
 void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 {
-    Strings res;
     String prefix(indent, ' ');
 
     {
@@ -930,7 +945,10 @@ void Aggregator::executeOnBlockSmall(
     /// How to perform the aggregation?
     if (result.empty())
     {
-        initDataVariantsWithSizeHint(result, method_chosen, params);
+        if (method_chosen != AggregatedDataVariants::Type::without_key)
+            initDataVariantsWithSizeHint(result, method_chosen, params);
+        else
+            result.init(method_chosen);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
     }
@@ -2234,6 +2252,10 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
     auto converter = [&](size_t thread_id, ThreadGroupStatusPtr thread_group)
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
 
@@ -2508,6 +2530,8 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
     ManyAggregatedDataVariants & non_empty_data) const
 {
+    ThreadPool thread_pool{params.max_threads};
+
     AggregatedDataVariantsPtr & res = non_empty_data[0];
 
     /// We merge all aggregation results to the first.
@@ -2517,7 +2541,15 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         AggregatedDataWithoutKey & current_data = non_empty_data[result_num]->without_key;
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i], res->aggregates_pool);
+            if (aggregate_functions[i]->isAbleToParallelizeMerge())
+                aggregate_functions[i]->merge(
+                    res_data + offsets_of_aggregate_states[i],
+                    current_data + offsets_of_aggregate_states[i],
+                    thread_pool,
+                    res->aggregates_pool);
+            else
+                aggregate_functions[i]->merge(
+                    res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i], res->aggregates_pool);
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
@@ -2637,7 +2669,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const
 {
     if (data_variants.empty())
-        throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
+        throw Exception("Empty data passed to Aggregator::prepareVariantsToMerge.", ErrorCodes::EMPTY_DATA_PASSED);
 
     LOG_TRACE(log, "Merging aggregated data");
 
@@ -2941,6 +2973,10 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
             if (thread_group)
                 CurrentThread::attachToIfDetached(thread_group);
 

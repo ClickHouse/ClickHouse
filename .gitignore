@@ -17,6 +17,7 @@
 
 # logs
 *.log
+*.debuglog
 *.stderr
 *.stdout
 
@@ -154,3 +155,6 @@ website/package-lock.json
 /programs/server/metadata
 /programs/server/store
 
+# temporary test files
+tests/queries/0_stateless/test_*
+tests/queries/0_stateless/*.binary
