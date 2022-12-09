@@ -47,8 +47,6 @@ namespace DB
 // because custom S3 implementation may allow relaxed requirements on that.
 const int S3_WARN_MAX_PARTS = 10000;
 
-extern const size_t MMAP_THRESHOLD;
-
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
