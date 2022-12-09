@@ -29,9 +29,16 @@ The compatibility of experimental features can be broken at any moment in any wa
 ### Downgrades
 If you upgrade and then realize that the new version is not compatible with some feature that you depend on you may be able to downgrade to a recent (less than one year old) version if you have not started to use any of the new features.  Once the new features are used the downgrade will not work.
 
-### Minor version upgrades
+### Multiple ClickHouse server versions in a cluster
 
 We make an effort to maintain a one-year compatibility window (which includes 2 LTS versions). This means that any two versions should be able to work together in a cluster if the difference between them is less than one year (or if there are less than two LTS versions between them). However, it is recommended to upgrade all members of a cluster to the same version as quickly as possible, as some minor issues are possible (like slowdown of distributed queries, retriable errors in some background operations in ReplicatedMergeTree, etc).
+
+We never recommend running different versions in the same cluster when the release dates are more than one year. While we do not expect that you will have data loss, the cluster may become unusable. The issues that you should expect if you have more than one year difference in versions include:
+
+- the cluster may not work
+- some (or even all) queries may fail with arbitrary errors
+- arbitrary errors/warnings may appear in the logs
+- it may be impossible to downgrade
 
 ### Incremental upgrades
 
