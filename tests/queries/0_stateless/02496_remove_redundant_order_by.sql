@@ -209,3 +209,32 @@ FROM
     GROUP BY number
 )
 WHERE a > 0;
+
+SELECT '-- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function';
+SET query_plan_enable_optimizations = 0;
+
+SELECT '-- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order';
+EXPLAIN
+SELECT
+    number,
+    neighbor(number, 2)
+FROM
+(
+    SELECT *
+    FROM numbers(10)
+    ORDER BY number DESC
+)
+ORDER BY number ASC;
+
+SELECT '-- non-stateful function does _not_ prevent removing inner ORDER BY';
+EXPLAIN
+SELECT
+    number,
+    plus(number, 2)
+FROM
+(
+    SELECT *
+    FROM numbers(10)
+    ORDER BY number DESC
+)
+ORDER BY number ASC;
