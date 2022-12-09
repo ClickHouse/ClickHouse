@@ -420,7 +420,7 @@ struct AggregateFunctionFlameGraphData
 
             frames.push_back(current->ptr);
 
-            if(current->children)
+            if (current->children)
                 nodes.push_back(current->children);
             else
             {
