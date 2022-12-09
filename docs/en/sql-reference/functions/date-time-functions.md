@@ -233,11 +233,6 @@ Leap seconds are not accounted for.
 
 Alias: `SECOND`.
 
-## toFractionalSecond
-
-Converts a date with time to an Int64 number containing the fractional part of the second.
-Leap seconds are not accounted for.
-
 ## toUnixTimestamp
 
 For DateTime argument: converts value to the number with type UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
