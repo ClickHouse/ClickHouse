@@ -24,16 +24,51 @@ void printStepName(const char * prefix, const QueryPlan::Node * node)
     LOG_DEBUG(&Poco::Logger::get("RedundantOrderBy"), "{}: {}: {}", prefix, stepName(node), reinterpret_cast<void *>(node->step.get()));
 }
 
+struct FrameWithParent
+{
+    QueryPlan::Node * node = nullptr;
+    QueryPlan::Node * parent_node = nullptr;
+    size_t next_child = 0;
+};
+
+using StackWithParent = std::vector<FrameWithParent>;
+
+bool checkForStatefulFunctions(std::vector<FrameWithParent> const & stack, const QueryPlan::Node * node_affect_order)
+{
+    chassert(!stack.empty());
+    chassert(typeid_cast<const SortingStep *>(stack.back().node->step.get()));
+
+    /// skip element on top of stack since it's sorting
+    for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
+    {
+        const auto * node = it->node;
+        if (node == node_affect_order)
+            break;
+
+        const auto * step = node->step.get();
+
+        const auto * expr = typeid_cast<const ExpressionStep *>(step);
+        if (expr)
+        {
+            if (expr->getExpression()->hasStatefulFunctions())
+                return true;
+        }
+        else
+        {
+            const auto * trans = typeid_cast<const ITransformingStep *>(step);
+            if (!trans)
+                break;
+
+            if (!trans->getDataStreamTraits().preserves_sorting)
+                break;
+        }
+    }
+    return false;
+}
+
 void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 {
-    struct Frame
-    {
-        QueryPlan::Node * node = nullptr;
-        QueryPlan::Node * parent_node = nullptr;
-        size_t next_child = 0;
-    };
-
-    std::vector<Frame> stack;
+    StackWithParent stack;
     stack.push_back({.node = root});
 
     std::vector<QueryPlan::Node *> nodes_affect_order;
@@ -44,7 +79,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 
         QueryPlan::Node * current_node = frame.node;
         QueryPlan::Node * parent_node = frame.parent_node;
-        IQueryPlanStep * current_step = frame.node->step.get();
+        IQueryPlanStep * current_step = current_node->step.get();
         printStepName("back", current_node);
 
         /// top-down visit
@@ -66,7 +101,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
                         return false;
 
                     bool remove_sorting = false;
-                    /// TODO: (0) check stateful functions
+
                     /// (1) aggregation
                     if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(step_affect_order); parent_aggr)
                     {
@@ -88,6 +123,12 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 
                     if (remove_sorting)
                     {
+                        /// if there is expression with stateful function between current step
+                        /// and step which affects order, then we need to keep sorting since
+                        /// stateful function output can depend on order
+                        if (checkForStatefulFunctions(stack, node_affect_order))
+                            return false;
+
                         chassert(typeid_cast<ExpressionStep *>(current_node->children.front()->step.get()));
                         chassert(!current_node->children.front()->children.empty());
 
@@ -104,7 +145,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
                     frame.next_child = frame.node->children.size();
 
                     /// current sorting step has been removed from plan, its parent has new children, need to visit them
-                    auto next_frame = Frame{.node = parent_node->children[0], .parent_node = parent_node};
+                    auto next_frame = FrameWithParent{.node = parent_node->children[0], .parent_node = parent_node};
                     ++frame.next_child;
                     printStepName("push", next_frame.node);
                     stack.push_back(next_frame);
@@ -126,7 +167,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
         /// Traverse all children
         if (frame.next_child < frame.node->children.size())
         {
-            auto next_frame = Frame{.node = current_node->children[frame.next_child], .parent_node = current_node};
+            auto next_frame = FrameWithParent{.node = current_node->children[frame.next_child], .parent_node = current_node};
             ++frame.next_child;
             printStepName("push", next_frame.node);
             stack.push_back(next_frame);
