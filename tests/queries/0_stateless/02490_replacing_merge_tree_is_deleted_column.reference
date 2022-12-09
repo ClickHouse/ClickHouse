@@ -1,3 +1,9 @@
+== Test SELECT ... FINAL ==
+d1	5	0
+d2	1	0
+d3	1	0
+d4	3	0
+d5	1	0
 d1	5	0
 d2	1	0
 d3	1	0
@@ -10,14 +16,12 @@ d2	1	0
 d3	1	0
 d4	3	0
 d5	1	0
-d6	2	1
 == Insert a second batch with overlaping data ==
 d1	5	0
 d2	3	0
 d3	3	0
 d4	3	0
 d5	1	0
-d6	2	1
 == Only last version remains after OPTIMIZE W/ CLEANUP ==
 d1	5	0
 d2	1	0
@@ -31,7 +35,12 @@ d2	1	0
 d3	1	0
 d4	1	0
 d5	1	0
-== Test of the SETTINGS clean_deleted_rows as Alaways ==
+== Test of the SETTINGS clean_deleted_rows as Always ==
+d1	5	0
+d2	1	0
+d3	1	0
+d4	3	0
+d5	1	0
 d1	5	0
 d2	1	0
 d3	1	0

@@ -934,6 +934,12 @@
         </node>
     </zookeeper>
     -->
+    <zookeeper>
+        <node>
+            <host>localhost</host>
+            <port>2181</port>
+        </node>
+    </zookeeper>
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.

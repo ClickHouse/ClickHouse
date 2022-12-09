@@ -5,7 +5,9 @@ set allow_deprecated_syntax_for_merge_tree=0;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid);
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
+SELECT '== Test SELECT ... FINAL ==';
 select * from test FINAL;
+select * from test;
 
 SELECT '== Insert backups ==';
 INSERT INTO test (*) VALUES ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1);
@@ -37,11 +39,11 @@ select * from test;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid) SETTINGS clean_deleted_rows='Always';
 
-SELECT '== Test of the SETTINGS clean_deleted_rows as Alaways ==';
-INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
+SELECT '== Test of the SETTINGS clean_deleted_rows as Always ==';
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 -- Even if the setting is set to Always, the SELECT FINAL doesn't delete rows
 select * from test FINAL;
+select * from test;
 
 OPTIMIZE TABLE test FINAL;
 -- d6 has to be removed since we set clean_deleted_rows as 'Always'
