@@ -221,7 +221,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     WriteMode mode, // S3 doesn't support append, only rewrite
     std::optional<ObjectAttributes> attributes,
     FinalizeCallback && finalize_callback,
-    [[maybe_unused]] size_t buf_size,
+    size_t buf_size,
     const WriteSettings & write_settings)
 {
     WriteSettings disk_write_settings = IObjectStorage::patchSettings(write_settings);
@@ -240,6 +240,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         object.absolute_path,
         settings_ptr->request_settings,
         attributes,
+        buf_size,
         std::move(scheduler),
         disk_write_settings);
 

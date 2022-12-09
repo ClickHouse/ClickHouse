@@ -52,7 +52,6 @@ extern const size_t MMAP_THRESHOLD;
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 struct WriteBufferFromS3::UploadPartTask
@@ -73,7 +72,7 @@ struct WriteBufferFromS3::PutObjectTask
 WriteBufferFromS3::Memory::~Memory()
 {
     if (data)
-        ::free(data);
+        allocator.free(data, size);
 }
 
 WriteBufferFromS3::WriteBufferFromS3(
@@ -82,6 +81,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     const String & key_,
     const S3Settings::RequestSettings & request_settings_,
     std::optional<std::map<String, String>> object_metadata_,
+    size_t buffer_size_,
     ThreadPoolCallbackRunner<void> schedule_,
     const WriteSettings & write_settings_)
     : WriteBuffer(nullptr, 0)
@@ -94,9 +94,24 @@ WriteBufferFromS3::WriteBufferFromS3(
     , schedule(std::move(schedule_))
     , write_settings(write_settings_)
 {
-    memory.size = request_settings.max_single_part_upload_size;
-    memory.data = static_cast<char *>(::malloc(memory.size));
-    set(memory.data, memory.size);
+    memory = std::make_unique<Memory>();
+    memory->size = request_settings.max_single_part_upload_size;
+
+    if (buffer_size_)
+        memory->size = std::min(buffer_size_, request_settings.max_single_part_upload_size);
+
+    memory->data = static_cast<char *>(memory->allocator.alloc(memory->size));
+    set(memory->data, memory->size);
+}
+
+static void reallocBuffer(WriteBufferFromS3::Memory & memory, size_t max_size)
+{
+    static constexpr size_t factor = 4;
+    size_t new_size = roundUpToPowerOfTwoOrZero(memory.size) * factor;
+    new_size = std::min(new_size, max_size);
+
+    memory.data = static_cast<char *>(memory.allocator.realloc(memory.data, memory.size, new_size));
+    memory.size = new_size;
 }
 
 void WriteBufferFromS3::nextImpl()
@@ -107,9 +122,18 @@ void WriteBufferFromS3::nextImpl()
         return;
     }
 
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, memory.size);
+    if (multipart_upload_id.empty() && memory->size < request_settings.max_single_part_upload_size)
+    {
+        size_t prev_size = memory->size;
+        reallocBuffer(*memory, request_settings.max_single_part_upload_size);
+        set(memory->data, memory->size);
+        buffer() = BufferBase::Buffer(memory->data + prev_size, memory->data + memory->size);
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, memory->size);
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(memory.size);
+        write_settings.remote_throttler->add(memory->size);
 
     if (multipart_upload_id.empty())
         createMultipartUpload();
@@ -127,16 +151,14 @@ std::shared_ptr<Aws::StringStream> WriteBufferFromS3::allocateBuffer()
         upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
     }
 
-    Memory new_memory;
-    new_memory.size = upload_part_size;
-    new_memory.data = static_cast<char *>(::malloc(new_memory.size));
+    size_t cur_size = memory->size;
+    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", std::move(memory), cur_size);
 
-    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", memory.data, memory.size, memory.size);
-    memory.data = new_memory.data;
-    memory.size = new_memory.size;
-    new_memory.data = nullptr;
+    memory = std::make_unique<Memory>();
+    memory->size = upload_part_size;
+    memory->data = static_cast<char *>(memory->allocator.alloc(memory->size));
 
-    set(memory.data, memory.size);
+    set(memory->data, memory->size);
 
     temporary_buffer->exceptions(std::ios::badbit);
     return temporary_buffer;
@@ -168,12 +190,11 @@ void WriteBufferFromS3::preFinalize()
     bytes += offset();
     buffer() = BufferBase::Buffer(pos, pos + available());
 
-    size_t size = pos - memory.data;
+    size_t size = pos - memory->data;
     if (size == 0)
         return;
 
-    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", memory.data, memory.size, size);
-    memory.data = nullptr;
+    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", std::move(memory), size);
 
     if (multipart_upload_id.empty())
     {

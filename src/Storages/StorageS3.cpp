@@ -591,6 +591,7 @@ public:
                 key,
                 s3_configuration_.request_settings,
                 std::nullopt,
+                DBMS_DEFAULT_BUFFER_SIZE,
                 threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"),
                 context->getWriteSettings()),
             compression_method,

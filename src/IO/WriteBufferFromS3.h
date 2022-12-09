@@ -52,6 +52,7 @@ public:
         const String & key_,
         const S3Settings::RequestSettings & request_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ThreadPoolCallbackRunner<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
@@ -60,6 +61,14 @@ public:
     void nextImpl() override;
 
     void preFinalize() override;
+
+    struct Memory : public Aws::StringStream::ExternalMemory
+    {
+        Memory() = default;
+        ~Memory() override;
+
+        Allocator<false, false> allocator;
+    };
 
 private:
     std::shared_ptr<Aws::StringStream> allocateBuffer();
@@ -85,15 +94,7 @@ private:
     void waitForAllBackGroundTasks();
     void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
 
-    struct Memory
-    {
-        char * data = nullptr;
-        size_t size;
-
-        ~Memory();
-    };
-
-    Memory memory;
+    std::unique_ptr<Memory> memory;
 
     const String bucket;
     const String key;
@@ -102,7 +103,6 @@ private:
     const std::optional<std::map<String, String>> object_metadata;
 
     size_t upload_part_size = 0;
-    std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
     size_t total_parts_uploaded = 0;
 
     /// Upload in S3 is made in parts.
