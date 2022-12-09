@@ -82,7 +82,6 @@ addYears
 addressToLine
 addressToLineWithInlines
 addressToSymbol
-age
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -220,6 +219,14 @@ cutFragment
 cutIPv6
 cutQueryString
 cutQueryStringAndFragment
+cutToFirstSignificantSubdomain
+cutToFirstSignificantSubdomainCustom
+cutToFirstSignificantSubdomainCustomRFC
+cutToFirstSignificantSubdomainCustomWithWWW
+cutToFirstSignificantSubdomainCustomWithWWWRFC
+cutToFirstSignificantSubdomainRFC
+cutToFirstSignificantSubdomainWithWWW
+cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 dateDiff
@@ -277,6 +284,10 @@ dictGetUUIDOrDefault
 dictHas
 dictIsIn
 divide
+domain
+domainRFC
+domainWithoutWWW
+domainWithoutWWWRFC
 dotProduct
 dumpColumnStructure
 e
@@ -323,10 +334,12 @@ farmHash64
 file
 filesystemAvailable
 filesystemCapacity
-filesystemUnreserved
+filesystemFree
 finalizeAggregation
+firstSignificantSubdomain
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
+firstSignificantSubdomainRFC
 flattenTuple
 floor
 format
@@ -587,6 +600,8 @@ polygonsUnionCartesian
 polygonsUnionSpherical
 polygonsWithinCartesian
 polygonsWithinSpherical
+port
+portRFC
 position
 positionCaseInsensitive
 positionCaseInsensitiveUTF8
@@ -891,6 +906,8 @@ toYear
 toYearWeek
 today
 tokens
+topLevelDomain
+topLevelDomainRFC
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot

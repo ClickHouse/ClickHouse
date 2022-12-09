@@ -150,7 +150,6 @@ public:
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
-    const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
 
     void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
@@ -164,7 +163,7 @@ private:
         return 1;
     }
 
-    MergeTreeReaderSettings reader_settings;
+    const MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
     Names real_column_names;
@@ -184,8 +183,7 @@ private:
     ContextPtr context;
 
     const size_t max_block_size;
-    size_t requested_num_streams;
-    size_t output_streams_limit = 0;
+    const size_t requested_num_streams;
     const size_t preferred_block_size_bytes;
     const size_t preferred_max_column_in_block_size_bytes;
     const bool sample_factor_column_queried;

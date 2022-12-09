@@ -316,9 +316,9 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 Возвращается дата.
 
 :::note "Attention"
-Возвращаемое значение для некорректных дат зависит от реализации. ClickHouse может вернуть нулевую дату, выбросить исключение, или выполнить «естественное» перетекание дат между месяцами.
+    Возвращаемое значение для некорректных дат зависит от реализации. ClickHouse может вернуть нулевую дату, выбросить исключение, или выполнить «естественное» перетекание дат между месяцами.
 :::
-
+    
 ## toMonday {#tomonday}
 
 Округляет дату или дату-с-временем вниз до ближайшего понедельника.
@@ -424,23 +424,23 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 
 ## toRelativeYearNum {#torelativeyearnum}
 
-Переводит дату или дату-с-временем в номер года, начиная с некоторого фиксированного момента в прошлом.
+Переводит дату-с-временем или дату в номер года, начиная с некоторого фиксированного момента в прошлом.
 
 ## toRelativeQuarterNum {#torelativequarternum}
 
-Переводит дату или дату-с-временем в номер квартала, начиная с некоторого фиксированного момента в прошлом.
+Переводит дату-с-временем или дату в номер квартала, начиная с некоторого фиксированного момента в прошлом.
 
 ## toRelativeMonthNum {#torelativemonthnum}
 
-Переводит дату или дату-с-временем в номер месяца, начиная с некоторого фиксированного момента в прошлом.
+Переводит дату-с-временем или дату в номер месяца, начиная с некоторого фиксированного момента в прошлом.
 
 ## toRelativeWeekNum {#torelativeweeknum}
 
-Переводит дату или дату-с-временем в номер недели, начиная с некоторого фиксированного момента в прошлом.
+Переводит дату-с-временем или дату в номер недели, начиная с некоторого фиксированного момента в прошлом.
 
 ## toRelativeDayNum {#torelativedaynum}
 
-Переводит дату или дату-с-временем в номер дня, начиная с некоторого фиксированного момента в прошлом.
+Переводит дату-с-временем или дату в номер дня, начиная с некоторого фиксированного момента в прошлом.
 
 ## toRelativeHourNum {#torelativehournum}
 
@@ -456,7 +456,7 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 
 ## toISOYear {#toisoyear}
 
-Переводит дату или дату-с-временем в число типа UInt16, содержащее номер ISO года. ISO год отличается от обычного года, потому что в соответствии с [ISO 8601:1988](https://en.wikipedia.org/wiki/ISO_8601) ISO год начинается необязательно первого января.
+Переводит дату-с-временем или дату в число типа UInt16, содержащее номер ISO года. ISO год отличается от обычного года, потому что в соответствии с [ISO 8601:1988](https://en.wikipedia.org/wiki/ISO_8601) ISO год начинается необязательно первого января.
 
 **Пример**
 
@@ -479,7 +479,7 @@ SELECT
 
 ## toISOWeek {#toisoweek}
 
-Переводит дату или дату-с-временем в число типа UInt8, содержащее номер ISO недели.
+Переводит дату-с-временем или дату в число типа UInt8, содержащее номер ISO недели.
 Начало ISO года отличается от начала обычного года, потому что в соответствии с [ISO 8601:1988](https://en.wikipedia.org/wiki/ISO_8601) первая неделя года - это неделя с четырьмя или более днями в этом году.
 
 1 Января 2017 г. - воскресение, т.е. первая ISO неделя 2017 года началась в понедельник 2 января, поэтому 1 января 2017 это последняя неделя 2016 года.
@@ -503,7 +503,7 @@ SELECT
 ```
 
 ## toWeek(date\[, mode\]\[, timezone\]) {#toweek}
-Переводит дату или дату-с-временем в число UInt8, содержащее номер недели. Второй аргументам mode задает режим, начинается ли неделя с воскресенья или с понедельника и должно ли возвращаемое значение находиться в диапазоне от 0 до 53 или от 1 до 53. Если аргумент mode опущен, то используется режим 0.
+Переводит дату-с-временем или дату в число UInt8, содержащее номер недели. Второй аргументам mode задает режим, начинается ли неделя с воскресенья или с понедельника и должно ли возвращаемое значение находиться в диапазоне от 0 до 53 или от 1 до 53. Если аргумент mode опущен, то используется режим 0.
 
 `toISOWeek() ` эквивалентно `toWeek(date,3)`.
 
@@ -569,132 +569,6 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
-## age
-
-Вычисляет компонент `unit` разницы между `startdate` и `enddate`. Разница вычисляется с точностью в 1 секунду.
-Например, разница между `2021-12-29` и `2022-01-01` 3 дня для единицы `day`, 0 месяцев для единицы `month`, 0 лет для единицы `year`.
-
-**Синтаксис**
-
-``` sql
-age('unit', startdate, enddate, [timezone])
-```
-
-**Аргументы**
-
--   `unit` — единица измерения времени, в которой будет выражено возвращаемое значение функции. [String](../../sql-reference/data-types/string.md).
-    Возможные значения:
-
-    - `second` (возможные сокращения: `ss`, `s`)
-    - `minute` (возможные сокращения: `mi`, `n`)
-    - `hour` (возможные сокращения: `hh`, `h`)
-    - `day` (возможные сокращения: `dd`, `d`)
-    - `week` (возможные сокращения: `wk`, `ww`)
-    - `month` (возможные сокращения: `mm`, `m`)
-    - `quarter` (возможные сокращения: `qq`, `q`)
-    - `year` (возможные сокращения: `yyyy`, `yy`)
-
--   `startdate` — первая дата или дата со временем, которая вычитается из `enddate`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `enddate` — вторая дата или дата со временем, из которой вычитается `startdate`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (необязательно). Если этот аргумент указан, то он применяется как для `startdate`, так и для `enddate`. Если этот аргумент не указан, то используются часовые пояса аргументов `startdate` и `enddate`. Если часовые пояса аргументов `startdate` и `enddate` не совпадают, то результат не определен. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
-Разница между `enddate` и `startdate`, выраженная в `unit`.
-
-Тип: [Int](../../sql-reference/data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'));
-```
-
-Результат:
-
-``` text
-┌─age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))─┐
-│                                                                                24 │
-└───────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT
-    toDate('2022-01-01') AS e,
-    toDate('2021-12-29') AS s,
-    age('day', s, e) AS day_age,
-    age('month', s, e) AS month__age,
-    age('year', s, e) AS year_age;
-```
-
-Результат:
-
-``` text
-┌──────────e─┬──────────s─┬─day_age─┬─month__age─┬─year_age─┐
-│ 2022-01-01 │ 2021-12-29 │       3 │          0 │        0 │
-└────────────┴────────────┴─────────┴────────────┴──────────┘
-```
-
-## date\_diff {#date_diff}
-
-Вычисляет разницу указанных границ `unit` пересекаемых между `startdate` и `enddate`.
-
-**Синтаксис**
-
-``` sql
-date_diff('unit', startdate, enddate, [timezone])
-```
-
-Синонимы: `dateDiff`, `DATE_DIFF`.
-
-**Аргументы**
-
--   `unit` — единица измерения времени, в которой будет выражено возвращаемое значение функции. [String](../../sql-reference/data-types/string.md).
-    Возможные значения:
-
-    - `second` (возможные сокращения: `ss`, `s`)
-    - `minute` (возможные сокращения: `mi`, `n`)
-    - `hour` (возможные сокращения: `hh`, `h`)
-    - `day` (возможные сокращения: `dd`, `d`)
-    - `week` (возможные сокращения: `wk`, `ww`)
-    - `month` (возможные сокращения: `mm`, `m`)
-    - `quarter` (возможные сокращения: `qq`, `q`)
-    - `year` (возможные сокращения: `yyyy`, `yy`)
-
--   `startdate` — первая дата или дата со временем, которая вычитается из `enddate`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `enddate` — вторая дата или дата со временем, из которой вычитается `startdate`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (необязательно). Если этот аргумент указан, то он применяется как для `startdate`, так и для `enddate`. Если этот аргумент не указан, то используются часовые пояса аргументов `startdate` и `enddate`. Если часовые пояса аргументов `startdate` и `enddate` не совпадают, то результат не определен. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
-Разница между `enddate` и `startdate`, выраженная в `unit`.
-
-Тип: [Int](../../sql-reference/data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
-```
-
-Результат:
-
-``` text
-┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
-│                                                                                     25 │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
 ## date_trunc {#date_trunc}
 
 Отсекает от даты и времени части, меньшие чем указанная часть.
@@ -728,7 +602,7 @@ date_trunc(unit, value[, timezone])
 
 -   Дата и время, отсеченные до указанной части.
 
-Тип: [DateTime](../../sql-reference/data-types/datetime.md).
+Тип: [Datetime](../../sql-reference/data-types/datetime.md).
 
 **Примеры**
 
@@ -813,6 +687,60 @@ SELECT date_add(YEAR, 3, toDate('2018-01-01'));
 ┌─plus(toDate('2018-01-01'), toIntervalYear(3))─┐
 │                                    2021-01-01 │
 └───────────────────────────────────────────────┘
+```
+
+## date\_diff {#date_diff}
+
+Вычисляет разницу между двумя значениями дат или дат со временем.
+
+**Синтаксис**
+
+``` sql
+date_diff('unit', startdate, enddate, [timezone])
+```
+
+Синонимы: `dateDiff`, `DATE_DIFF`.
+
+**Аргументы**
+
+-   `unit` — единица измерения времени, в которой будет выражено возвращаемое значение функции. [String](../../sql-reference/data-types/string.md).
+    Возможные значения:
+
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+
+-   `startdate` — первая дата или дата со временем, которая вычитается из `enddate`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+-   `enddate` — вторая дата или дата со временем, из которой вычитается `startdate`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+-   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (необязательно). Если этот аргумент указан, то он применяется как для `startdate`, так и для `enddate`. Если этот аргумент не указан, то используются часовые пояса аргументов `startdate` и `enddate`. Если часовые пояса аргументов `startdate` и `enddate` не совпадают, то результат не определен. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+Разница между `enddate` и `startdate`, выраженная в `unit`.
+
+Тип: [Int](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
+```
+
+Результат:
+
+``` text
+┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                     25 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## date\_sub {#date_sub}
@@ -985,7 +913,7 @@ now([timezone])
 
 -   Текущие дата и время.
 
-Тип: [DateTime](../../sql-reference/data-types/datetime.md).
+Тип: [Datetime](../../sql-reference/data-types/datetime.md).
 
 **Пример**
 
@@ -1198,7 +1126,8 @@ SELECT FROM_UNIXTIME(423543535);
 └──────────────────────────┘
 ```
 
-В случае, когда есть два или три аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md), а второй является строкой постоянного формата и третий является строкой постоянной временной зоны — функция работает также, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
+В случае, когда есть два аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md) или [DateTime](../../sql-reference/data-types/datetime.md), а второй является строкой постоянного формата — функция работает также, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
+
 
 Запрос:
 

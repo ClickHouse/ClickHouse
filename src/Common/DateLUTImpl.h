@@ -1204,11 +1204,6 @@ public:
         return res;
     }
 
-    template <typename DateOrTime>
-    inline DateTimeComponents toDateTimeComponents(DateOrTime v) const
-    {
-        return toDateTimeComponents(lut[toLUTIndex(v)].date);
-    }
 
     inline UInt64 toNumYYYYMMDDhhmmss(Time t) const
     {
@@ -1336,7 +1331,7 @@ public:
     }
 
     template <typename DateOrTime>
-    inline auto NO_SANITIZE_UNDEFINED addQuarters(DateOrTime d, Int64 delta) const
+    inline auto addQuarters(DateOrTime d, Int64 delta) const
     {
         return addMonths(d, delta * 3);
     }
