@@ -216,12 +216,31 @@ struct TernaryValueBuilderImpl<Type, Types...>
                 const auto& null_data = nullable_column->getNullMapData();
                 const auto& column_data = nested_column->getData();
 
-                for (size_t i = 0; i < size; ++i)
+                if constexpr (sizeof(Type) == 1)
                 {
-                    auto has_value = static_cast<UInt8>(column_data[i] != 0);
-                    auto is_null = !!null_data[i];
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        auto has_value = static_cast<UInt8>(column_data[i] != 0);
+                        auto is_null = !!null_data[i];
 
-                    ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        auto has_value = static_cast<UInt8>(column_data[i] != 0);
+                        ternary_column_data[i] = has_value;
+                    }
+
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        auto has_value = ternary_column_data[i];
+                        auto is_null = !!null_data[i];
+
+                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                    }
                 }
             }
             else
