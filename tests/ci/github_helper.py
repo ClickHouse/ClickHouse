@@ -30,10 +30,11 @@ Issues = List[Issue]
 
 
 class GitHub(github.Github):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, create_cache_dir=True, **kwargs):
         # Define meta attribute and apply setter logic
         self._cache_path = Path(CACHE_PATH)
-        self.cache_path = self.cache_path
+        if create_cache_dir:
+            self.cache_path = self.cache_path
         # And set Path
         super().__init__(*args, **kwargs)
         self._retries = 0
