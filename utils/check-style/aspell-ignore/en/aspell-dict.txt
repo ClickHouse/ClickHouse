@@ -206,6 +206,7 @@ ccache
 cctz
 cfg
 changelog
+changelogs
 charset
 charsets
 checkouting
