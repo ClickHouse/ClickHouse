@@ -174,8 +174,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     else if (query_node || union_node)
     {
         auto subquery_options = select_query_options.subquery();
-        auto subquery_context = buildSubqueryContext(planner_context->getQueryContext());
-        Planner subquery_planner(table_expression, subquery_options, std::move(subquery_context), planner_context->getGlobalPlannerContext());
+        Planner subquery_planner(table_expression, subquery_options, planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
         query_plan = std::move(subquery_planner).extractQueryPlan();
     }
