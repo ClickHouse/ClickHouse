@@ -85,22 +85,22 @@ public:
         assert_cast<ColumnVector<IPv> &>(column).getData().push_back(value);
     }
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override
+    void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override
     {
         IPv x = field.get<IPv>();
         writeBinary(x, ostr);
     }
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override
+    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override
     {
         IPv x;
         readBinary(x.toUnderType(), istr);
         field = NearestFieldType<IPv>(x);
     }
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
     {
         writeBinary(assert_cast<const ColumnVector<IPv> &>(column).getData()[row_num], ostr);
     }
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override
+    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override
     {
         IPv x;
         readBinary(x.toUnderType(), istr);
