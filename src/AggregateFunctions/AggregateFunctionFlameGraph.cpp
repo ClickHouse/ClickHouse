@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
 #include <Common/ArenaAllocator.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -16,6 +17,13 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int FUNCTION_NOT_ALLOWED;
+    extern const int NOT_IMPLEMENTED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 struct AggregateFunctionFlameGraphTree
 {
@@ -482,7 +490,6 @@ public:
     {
         const auto * trace = typeid_cast<const ColumnArray *>(columns[0]);
         const auto & sizes = typeid_cast<const ColumnInt64 *>(columns[1])->getData();
-        const auto & ptrs = typeid_cast<const ColumnUInt64 *>(columns[2])->getData();
 
         const auto & trace_offsets = trace->getOffsets();
         const auto & trace_values = typeid_cast<const ColumnUInt64 *>(&trace->getData())->getData();
@@ -491,7 +498,14 @@ public:
             prev_offset = trace_offsets[row_num - 1];
         UInt64 trace_size = trace_offsets[row_num] - prev_offset;
 
-        this->data(place).add(ptrs[row_num], sizes[row_num], trace_values.data() + prev_offset, trace_size, arena);
+        UInt64 ptr = 0;
+        if (argument_types.size() >= 3)
+        {
+            const auto & ptrs = typeid_cast<const ColumnUInt64 *>(columns[2])->getData();
+            ptr = ptrs[row_num];
+        }
+
+        this->data(place).add(ptr, sizes[row_num], trace_values.data() + prev_offset, trace_size, arena);
     }
 
     void addManyDefaults(
@@ -532,10 +546,10 @@ static void check(const std::string & name, const DataTypes & argument_types, co
 {
     assertNoParameters(name, params);
 
-    if (argument_types.size() != 3)
+    if (argument_types.size() < 2 || argument_types.size() > 3)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} requires 3 arguments : trace, size, ptr",
+            "Aggregate function {} requires 2 or 3 arguments : trace, size, [ptr]",
             name);
 
     auto ptr_type = std::make_shared<DataTypeUInt64>();
@@ -552,14 +566,18 @@ static void check(const std::string & name, const DataTypes & argument_types, co
             "Second argument (size) for function {} must be Int64, but it has type {}",
             name, argument_types[1]->getName());
 
-    if (!argument_types[2]->equals(*ptr_type))
+    if (argument_types.size() >= 3 && !argument_types[2]->equals(*ptr_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Third argument (ptr) for function {} must be UInt64, but it has type {}",
             name, argument_types[2]->getName());
 }
 
-AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
+    if (!settings->allow_introspection_functions)
+        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
+        "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
+
     check(name, argument_types, params);
     return std::make_shared<AggregateFunctionFlameGraph>(argument_types);
 }
