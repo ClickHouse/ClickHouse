@@ -368,3 +368,6 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
+
+# Check for existence of __init__.py files
+for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
