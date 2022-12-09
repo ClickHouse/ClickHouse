@@ -1,6 +1,5 @@
 SET allow_experimental_analyzer=1;
 SET optimize_duplicate_order_by_and_distinct=0;
--- set query_plan_enable_optimizations=0;
 
 SELECT '-- Disable query_plan_remove_redundant_order_by';
 SET query_plan_remove_redundant_order_by=0;
