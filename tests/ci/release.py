@@ -336,7 +336,8 @@ class Release:
             body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
             self.run(
                 f"gh pr create --repo {self.repo} --title 'Update version after "
-                f"release' --head {helper_branch} --body-file '{body_file}'"
+                f"release' --head {helper_branch} --body-file '{body_file}' "
+                "--label 'do not test' --assignee @me"
             )
             # Here the testing part is done
             yield
