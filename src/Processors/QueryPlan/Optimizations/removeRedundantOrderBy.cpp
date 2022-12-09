@@ -33,7 +33,7 @@ struct FrameWithParent
 
 using StackWithParent = std::vector<FrameWithParent>;
 
-bool checkForStatefulFunctions(std::vector<FrameWithParent> const & stack, const QueryPlan::Node * node_affect_order)
+bool checkForStatefulFunctions(const StackWithParent & stack, const QueryPlan::Node * node_affect_order)
 {
     chassert(!stack.empty());
     chassert(typeid_cast<const SortingStep *>(stack.back().node->step.get()));
