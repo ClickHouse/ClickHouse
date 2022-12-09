@@ -2148,7 +2148,13 @@ struct ToNumberMonotonicity
             return { .is_monotonic = true, .is_always_monotonic = true };
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
-        if (WhichDataType(type).isFloat())
+        bool is_type_float = false;
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
+            is_type_float = WhichDataType(low_cardinality->getDictionaryType()).isFloat();
+        else
+            is_type_float = WhichDataType(type).isFloat();
+
+        if (is_type_float)
         {
             if (left.isNull() || right.isNull())
                 return {};
@@ -2296,6 +2302,10 @@ struct ToStringMonotonicity
         const auto * type_ptr = &type;
         if (const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
             type_ptr = low_cardinality_type->getDictionaryType().get();
+
+        /// Order on enum values (which is the order on integers) is completely arbitrary in respect to the order on strings.
+        if (WhichDataType(type).isEnum())
+            return not_monotonic;
 
         /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
         if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeString>(type_ptr))
@@ -2660,8 +2670,6 @@ public:
 
     String getName() const override { return cast_name; }
 
-    bool isDeterministic() const override { return true; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool hasInformationAboutMonotonicity() const override
@@ -2827,6 +2835,31 @@ private:
                 return FunctionToFixedString::executeForN<ConvertToFixedStringExceptionMode::Throw>(arguments, N);
         };
     }
+
+#define GENERATE_INTERVAL_CASE(INTERVAL_KIND) \
+            case IntervalKind::INTERVAL_KIND: \
+                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(), from_type);
+
+    static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind)
+    {
+        switch (kind)
+        {
+            GENERATE_INTERVAL_CASE(Nanosecond)
+            GENERATE_INTERVAL_CASE(Microsecond)
+            GENERATE_INTERVAL_CASE(Millisecond)
+            GENERATE_INTERVAL_CASE(Second)
+            GENERATE_INTERVAL_CASE(Minute)
+            GENERATE_INTERVAL_CASE(Hour)
+            GENERATE_INTERVAL_CASE(Day)
+            GENERATE_INTERVAL_CASE(Week)
+            GENERATE_INTERVAL_CASE(Month)
+            GENERATE_INTERVAL_CASE(Quarter)
+            GENERATE_INTERVAL_CASE(Year)
+        }
+        throw Exception{ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion to unexpected IntervalKind: {}", kind.toString()};
+    }
+
+#undef GENERATE_INTERVAL_CASE
 
     template <typename ToDataType>
     requires IsDataTypeDecimal<ToDataType>
@@ -3853,6 +3886,8 @@ private:
                 return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
+            case TypeIndex::Interval:
+                return createIntervalWrapper(from_type, checkAndGetDataType<DataTypeInterval>(to_type.get())->getKind());
             default:
                 break;
         }
