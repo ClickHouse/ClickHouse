@@ -258,7 +258,7 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
     return buf.st_size;
 }
 
-Int64 getINodeNumberFromPath(const String & path)
+int getINodeNumberFromPath(const String & path)
 {
     struct stat file_stat;
     if (stat(path.data(), &file_stat))

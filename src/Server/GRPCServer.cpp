@@ -390,7 +390,7 @@ namespace
             case CALL_WITH_STREAM_IO: return "ExecuteQueryWithStreamIO()";
             case CALL_MAX: break;
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     bool isInputStreaming(CallType call_type)
@@ -550,7 +550,7 @@ namespace
             case CALL_WITH_STREAM_IO: return std::make_unique<Responder<CALL_WITH_STREAM_IO>>();
             case CALL_MAX: break;
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
 
@@ -1082,8 +1082,7 @@ namespace
                     NamesAndTypesList columns;
                     for (size_t column_idx : collections::range(external_table.columns_size()))
                     {
-                        /// TODO: consider changing protocol
-                        const auto & name_and_type = external_table.columns(static_cast<int>(column_idx));
+                        const auto & name_and_type = external_table.columns(column_idx);
                         NameAndTypePair column;
                         column.name = name_and_type.name();
                         if (column.name.empty())

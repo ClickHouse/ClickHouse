@@ -160,9 +160,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     for (auto & part_ptr : parts)
     {
         ttl_infos.update(part_ptr->ttl_infos);
-        auto disk_name = part_ptr->getDataPartStorage().getDiskName();
-        size_t volume_index = storage.getStoragePolicy()->getVolumeIndexByDiskName(disk_name);
-        max_volume_index = std::max(max_volume_index, volume_index);
+        max_volume_index = std::max(max_volume_index, part_ptr->data_part_storage->getVolumeIndex(*storage.getStoragePolicy()));
     }
 
     /// It will live until the whole task is being destroyed
@@ -296,10 +294,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     part = merge_task->getFuture().get();
+    auto builder = merge_task->getBuilder();
 
     /// Task is not needed
     merge_task.reset();
-    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
+
+    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr, builder);
 
     try
     {
@@ -330,7 +330,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
             write_part_log(ExecutionStatus::fromCurrentException());
 
             if (storage.getSettings()->detach_not_byte_identical_parts)
-                storage.forcefullyMovePartToDetachedAndRemoveFromMemory(std::move(part), "merge-not-byte-identical");
+                storage.forgetPartAndMoveToDetached(std::move(part), "merge-not-byte-identical");
             else
                 storage.tryRemovePartImmediately(std::move(part));
 

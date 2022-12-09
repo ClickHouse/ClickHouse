@@ -87,7 +87,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
-        , semaphore(0, static_cast<int>(num_consumers))
+        , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(RESCHEDULE_MS)
@@ -674,7 +674,7 @@ void StorageRabbitMQ::read(
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t /* max_block_size */,
-        size_t /* num_streams */)
+        unsigned /* num_streams */)
 {
     if (!rabbit_is_ready)
         throw Exception("RabbitMQ setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
@@ -938,24 +938,24 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
+    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    if (dependencies.empty())
         return true;
 
     // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
+    for (const auto & db_tab : dependencies)
     {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
+        if (!table)
             return false;
 
         // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(view_id))
+        if (!checkDependencies(db_tab))
             return false;
     }
 
@@ -984,10 +984,10 @@ void StorageRabbitMQ::streamingToViewsFunc()
             auto table_id = getStorageID();
 
             // Check if at least one direct dependency is attached
-            size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+            size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
             bool rabbit_connected = connection->isConnected() || connection->reconnect();
 
-            if (num_views && rabbit_connected)
+            if (dependencies_count && rabbit_connected)
             {
                 initializeBuffers();
                 auto start_time = std::chrono::steady_clock::now();
@@ -1000,7 +1000,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
                     if (!checkDependencies(table_id))
                         break;
 
-                    LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+                    LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                     if (streamToViews())
                     {

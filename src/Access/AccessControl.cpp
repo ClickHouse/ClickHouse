@@ -20,7 +20,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
-#include <IO/Operators.h>
+#include <base/find_symbols.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -162,7 +162,6 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     if (config_.has("custom_settings_prefixes"))
         setCustomSettingsPrefixes(config_.getString("custom_settings_prefixes"));
 
-    setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
 
@@ -454,21 +453,9 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
 
-        WriteBufferFromOwnString message;
-        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
-
-        /// Better exception message for usability.
-        /// It is typical when users install ClickHouse, type some password and instantly forget it.
-        if (credentials.getUserName().empty() || credentials.getUserName() == "default")
-            message << "\n\n"
-                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
-                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
-                << "and deleting this file will reset the password.\n"
-                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
-
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
-        throw Exception(message.str(), ErrorCodes::AUTHENTICATION_FAILED);
+        throw Exception(credentials.getUserName() + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 
@@ -512,15 +499,6 @@ void AccessControl::checkSettingNameIsAllowed(const std::string_view setting_nam
     custom_settings_prefixes->checkSettingNameIsAllowed(setting_name);
 }
 
-void AccessControl::setImplicitNoPasswordAllowed(bool allow_implicit_no_password_)
-{
-    allow_implicit_no_password = allow_implicit_no_password_;
-}
-
-bool AccessControl::isImplicitNoPasswordAllowed() const
-{
-    return allow_implicit_no_password;
-}
 
 void AccessControl::setNoPasswordAllowed(bool allow_no_password_)
 {

@@ -9,9 +9,6 @@ AddressSanitizer
 AppleClang
 ArrowStream
 AvroConfluent
-BSON
-BSONEachRow
-Bool
 CCTOOLS
 CLion
 CMake
@@ -98,7 +95,6 @@ NEKUDOTAYIM
 NULLIF
 NVME
 NuRaft
-ObjectId
 Ok
 OpenSUSE
 OpenStack
@@ -194,8 +190,6 @@ bools
 boringssl
 brotli
 buildable
-bson
-bsoneachrow
 camelCase
 capn
 capnproto
@@ -206,7 +200,6 @@ ccache
 cctz
 cfg
 changelog
-changelogs
 charset
 charsets
 checkouting
@@ -457,7 +450,6 @@ subquery
 subseconds
 substring
 subtree
-subtype
 sudo
 symlink
 symlinks
@@ -490,7 +482,6 @@ userspace
 userver
 utils
 uuid
-uint
 variadic
 varint
 vectorized
@@ -511,7 +502,3 @@ zkcopy
 zlib
 znodes
 zstd
-NYPD
-denormalizing
-ConnectionDetails
-SelfManaged

@@ -1,8 +1,5 @@
 1
-abandonable_lock-insert
-abandonable_lock-other
 alter_partition_version
-async_blocks
 block_numbers
 blocks
 columns
@@ -40,10 +37,7 @@ zero_copy_hdfs
 zero_copy_s3
 -------------------------
 1
-abandonable_lock-insert
-abandonable_lock-other
 alter_partition_version
-async_blocks
 block_numbers
 blocks
 columns

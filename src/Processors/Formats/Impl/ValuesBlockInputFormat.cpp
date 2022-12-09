@@ -101,9 +101,7 @@ Chunk ValuesBlockInputFormat::generate()
         return {};
     }
 
-    for (const auto & column : columns)
-        column->finalize();
-
+    finalizeObjectColumns(columns);
     size_t rows_in_block = columns[0]->size();
     return Chunk{std::move(columns), rows_in_block};
 }
@@ -352,7 +350,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Expected expected;
     Tokens tokens(buf->position(), buf->buffer().end());
-    IParser::Pos token_iterator(tokens, static_cast<unsigned>(settings.max_parser_depth));
+    IParser::Pos token_iterator(tokens, settings.max_parser_depth);
     ASTPtr ast;
 
     bool parsed = parser.parse(token_iterator, ast, expected);

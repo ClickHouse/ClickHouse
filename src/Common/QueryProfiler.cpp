@@ -1,7 +1,7 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/TraceSender.h>
+#include <Interpreters/TraceCollector.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
@@ -66,7 +66,7 @@ namespace
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        TraceSender::send(trace_type, stack_trace, {});
+        TraceCollector::collect(trace_type, stack_trace, 0);
         ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;
@@ -132,11 +132,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         sev.sigev_signo = pause_signal;
 
 #if defined(OS_FREEBSD)
-        sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
+        sev._sigev_un._threadid = thread_id;
 #elif defined(USE_MUSL)
-        sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);
+        sev.sigev_notify_thread_id = thread_id;
 #else
-        sev._sigev_un._tid = static_cast<pid_t>(thread_id);
+        sev._sigev_un._tid = thread_id;
 #endif
         timer_t local_timer_id;
         if (timer_create(clock_type, &sev, &local_timer_id))

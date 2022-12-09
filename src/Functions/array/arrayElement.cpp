@@ -1025,14 +1025,12 @@ ColumnPtr FunctionArrayElement::executeMap(
     if (col_const_map)
         values_array = ColumnConst::create(values_array, input_rows_count);
 
-    const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
-
     /// Prepare arguments to call arrayElement for array with values and calculated indices at previous step.
     ColumnsWithTypeAndName new_arguments =
     {
         {
             values_array,
-            std::make_shared<DataTypeArray>(type_map.getValueType()),
+            std::make_shared<DataTypeArray>(result_type),
             ""
         },
         {
@@ -1088,9 +1086,7 @@ ColumnPtr FunctionArrayElement::executeImpl(const ColumnsWithTypeAndName & argum
 
     col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (col_array)
-    {
         is_array_of_nullable = isColumnNullable(col_array->getData());
-    }
     else
     {
         col_const_array = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());

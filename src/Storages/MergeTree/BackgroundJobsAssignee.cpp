@@ -90,7 +90,7 @@ String BackgroundJobsAssignee::toString(Type type)
         case Type::Moving:
             return "Moving";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 void BackgroundJobsAssignee::start()

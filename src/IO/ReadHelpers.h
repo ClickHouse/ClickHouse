@@ -964,16 +964,15 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         components.whole = components.whole / common::exp10_i32(scale);
     }
 
-    bool is_ok = true;
     if constexpr (std::is_same_v<ReturnType, void>)
         datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
     else
-        is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
+        DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
 
     datetime64 *= negative_multiplier;
 
 
-    return ReturnType(is_ok);
+    return ReturnType(true);
 }
 
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
@@ -1078,7 +1077,7 @@ inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little 
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
-        auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
+        auto & item = x.items[std::size(x.items) - i - 1];
         readBinaryBigEndian(item, buf);
     }
 }
@@ -1105,7 +1104,6 @@ inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatTe
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
-inline void readText(DayNum & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 
@@ -1187,7 +1185,6 @@ inline void readCSV(T & x, ReadBuffer & buf)
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(DayNum & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
@@ -1448,8 +1445,6 @@ void skipToCarriageReturnOrEOF(ReadBuffer & buf);
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
-/// Skip to next character after next \0. If no \0 in stream, skip to end.
-void skipNullTerminated(ReadBuffer & buf);
 
 /** This function just copies the data from buffer's internal position (in.position())
   * to current position (from arguments) into memory.
