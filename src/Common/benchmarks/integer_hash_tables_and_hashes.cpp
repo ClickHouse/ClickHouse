@@ -1,5 +1,8 @@
-#include <iostream>
+#include <benchmark/benchmark.h>
+
 #include <iomanip>
+#include <iostream>
+#include <random>
 #include <vector>
 
 #include <unordered_map>
@@ -13,11 +16,22 @@
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <base/types.h>
-#include <IO/ReadBufferFromFile.h>
+#include <farmhash.h>
+#include <wyhash.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <IO/ReadBufferFromFile.h>
+#include <base/types.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+
+#include <pcg-random/pcg_random.hpp>
+#include <Common/randomSeed.h>
+
+#ifdef __clang__
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wused-but-marked-unused"
+#endif
+#include <xxhash.h>
 
 using Key = UInt64;
 using Value = UInt64;
@@ -282,98 +296,91 @@ namespace Hashes
             return res;
         }
     };
+
+    struct FarmHash
+    {
+        size_t operator()(Key x) const { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(reinterpret_cast<const char *>(&x), sizeof(x)); }
+    };
+
+    struct WyHash
+    {
+        size_t operator()(Key x) const { return wyhash(reinterpret_cast<const char *>(&x), sizeof(x), 0, _wyp); }
+    };
+
+    struct XXH3Hash
+    {
+        size_t operator()(Key x) const { return XXH_INLINE_XXH3_64bits(reinterpret_cast<const char *>(&x), sizeof(x)); }
+    };
 }
 
 
 template <template <typename...> class Map, typename Hash>
 void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, Value, Hash> &)> init = {})
 {
-    Stopwatch watch;
-
     Map<Key, Value, Hash> map;
     if (init)
         init(map);
 
     for (const auto * end = data + size; data < end; ++data)
         ++map[*data];
-
-    watch.stop();
-    std::cerr << __PRETTY_FUNCTION__
-        << ":\nElapsed: " << watch.elapsedSeconds()
-        << " (" << size / watch.elapsedSeconds() << " elem/sec.)"
-        << ", map size: " << map.size() << "\n";
 }
 
-template <template <typename...> class Map, typename Init>
-void NO_INLINE testForEachHash(const Key * data, size_t size, Init && init)
+template <template <typename...> typename Map, typename Hash>
+struct TestRndInput : public benchmark::Fixture
 {
-    test<Map, Hashes::IdentityHash>(data, size, init);
-    test<Map, Hashes::SimpleMultiplyHash>(data, size, init);
-    test<Map, Hashes::MultiplyAndMixHash>(data, size, init);
-    test<Map, Hashes::MixMultiplyMixHash>(data, size, init);
-    test<Map, Hashes::MurMurMixHash>(data, size, init);
-    test<Map, Hashes::MixAllBitsHash>(data, size, init);
-    test<Map, Hashes::IntHash32>(data, size, init);
-    test<Map, Hashes::ArcadiaNumericHash>(data, size, init);
-    test<Map, Hashes::MurMurButDifferentHash>(data, size, init);
-    test<Map, Hashes::TwoRoundsTwoVarsHash>(data, size, init);
-    test<Map, Hashes::TwoRoundsLessOpsHash>(data, size, init);
-    test<Map, Hashes::CRC32Hash>(data, size, init);
-    test<Map, Hashes::MulShiftHash>(data, size, init);
-    test<Map, Hashes::TabulationHash>(data, size, init);
-    test<Map, Hashes::CityHash>(data, size, init);
-    test<Map, Hashes::SipHash>(data, size, init);
-}
-
-static void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
-{
-    auto nothing = [](auto &){};
-
-    testForEachHash<HashMap>(data, size, nothing);
-    testForEachHash<std::unordered_map>(data, size, nothing);
-    testForEachHash<::google::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
-    testForEachHash<::google::sparse_hash_map>(data, size, nothing);
-    testForEachHash<::absl::flat_hash_map>(data, size, nothing);
-}
-
-
-int main(int argc, char ** argv)
-{
-    if (argc < 2)
+    void SetUp(const ::benchmark::State & state) override
     {
-        std::cerr << "Usage: program n\n";
-        return 1;
+        pcg64_fast rng(randomSeed());
+        std::normal_distribution<double> dist(0, 10);
+
+        const size_t elements = state.range(0);
+        data.resize(elements);
+        for (auto & elem : data)
+            elem = static_cast<Key>(dist(rng)) % elements;
     }
 
-    size_t n = std::stol(argv[1]);
-//    size_t m = std::stol(argv[2]);
-
-    std::cerr << std::fixed << std::setprecision(3);
-
-    std::vector<Key> data(n);
-
-    std::cerr << "sizeof(Key) = " << sizeof(Key) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
-
+    void test(benchmark::State & st)
     {
-        Stopwatch watch;
-        DB::ReadBufferFromFileDescriptor in1(STDIN_FILENO);
-        DB::CompressedReadBuffer in2(in1);
-
-        in2.readStrict(reinterpret_cast<char*>(data.data()), sizeof(data[0]) * n);
-
-        watch.stop();
-        std::cerr
-            << "Vector. Size: " << n
-            << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
-            << std::endl;
+        for (auto _ : st)
+            ::test<HashMap, Hash>(data.data(), data.size());
     }
 
-    /** Actually we should not run multiple test within same invocation of binary,
-      *  because order of test could alter test results (due to state of allocator and various minor reasons),
-      *  but in this case it's Ok.
-      */
+    std::vector<Key> data;
+};
 
-    testForEachMapAndHash(data.data(), data.size());
-    return 0;
-}
+#define OK_GOOGLE(Fixture, Map, Hash, N) \
+    BENCHMARK_TEMPLATE_DEFINE_F(Fixture, Test##Map##Hash, Map, Hashes::Hash)(benchmark::State & st) \
+    { \
+        test(st); \
+    } \
+    BENCHMARK_REGISTER_F(Fixture, Test##Map##Hash)->Arg(N);
+
+
+constexpr size_t elements_to_insert = 10'000'000;
+
+/// tldr: crc32 has almost the same speed as identity hash if the corresponding intrinsics are available
+/// todo: extend benchmark with larger key sizes up to say 24 bytes
+
+OK_GOOGLE(TestRndInput, HashMap, ArcadiaNumericHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, CRC32Hash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, CityHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, FarmHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, IdentityHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, IntHash32, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, MixAllBitsHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, MixMultiplyMixHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, MulShiftHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, MultiplyAndMixHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, MurMurButDifferentHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, MurMurMixHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, SimpleMultiplyHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, SipHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, TabulationHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, TwoRoundsLessOpsHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, TwoRoundsTwoVarsHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, WyHash, elements_to_insert)
+OK_GOOGLE(TestRndInput, HashMap, XXH3Hash, elements_to_insert)
+
+#ifdef __clang__
+#    pragma clang diagnostic pop
+#endif
