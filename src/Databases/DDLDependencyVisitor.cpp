@@ -2,6 +2,7 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -180,21 +181,21 @@ namespace
                 return {};
 
             const auto & arg = args[arg_idx];
+            ASTPtr evaluated;
 
-            if (const auto * literal = arg->as<ASTLiteral>())
+            try
             {
-                if (literal->value.getType() != Field::Types::String))
-                    return {};
-                return literal->value.safeGet<String>();
+                evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
             }
-            else if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get()))
+            catch (...)
             {
-                return identifier->name();
+                return {};
             }
-            else
-            {
-                return nullptr;
-            }
+
+            const auto * literal = evaluated->as<ASTLiteral>();
+            if (!literal || (literal->value.getType() != Field::Types::String))
+                return {};
+            return literal->value.safeGet<String>();
         }
 
         /// Gets an argument as a qualified table name.
