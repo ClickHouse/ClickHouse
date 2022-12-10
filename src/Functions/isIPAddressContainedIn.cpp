@@ -30,7 +30,7 @@ public:
     explicit IPAddressVariant(std::string_view address_str)
     {
         UInt32 v4;
-        if (DB::parseIPv4whole(address_str.begin(), address_str.end(),  reinterpret_cast<unsigned char *>(&v4)))
+        if (DB::parseIPv4whole(address_str.begin(), address_str.end(), reinterpret_cast<unsigned char *>(&v4)))
         {
             addr = v4;
         }
