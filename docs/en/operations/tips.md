@@ -189,10 +189,12 @@ preAllocSize=131072
 # especially if there are a lot of clients. To prevent ZooKeeper from running
 # out of memory due to queued requests, ZooKeeper will throttle clients so that
 # there is no more than globalOutstandingLimit outstanding requests in the
-# system. The default limit is 1,000.ZooKeeper logs transactions to a
-# transaction log. After snapCount transactions are written to a log file a
-# snapshot is started and a new transaction log file is started. The default
-# snapCount is 10,000.
+# system. The default limit is 1000.
+# globalOutstandingLimit=1000
+
+# ZooKeeper logs transactions to a transaction log. After snapCount transactions
+# are written to a log file a snapshot is started and a new transaction log file
+# is started. The default snapCount is 100000.
 snapCount=3000000
 
 # If this option is defined, requests will be will logged to a trace file named

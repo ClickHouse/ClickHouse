@@ -45,7 +45,6 @@ public:
     std::optional<String> new_name;
 
     std::optional<AuthenticationData> auth_data;
-    bool show_password = true; /// formatImpl() shows a password or hash by default
 
     mutable std::optional<String> temporary_password_for_checks;
 
@@ -62,6 +61,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    bool hasSecretParts() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
 };
 }

@@ -46,7 +46,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -99,6 +99,10 @@
 #include "config_version.h"
 
 #if defined(OS_LINUX)
+#    include <cstddef>
+#    include <cstdlib>
+#    include <sys/socket.h>
+#    include <sys/un.h>
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
@@ -208,6 +212,7 @@ try
 
     /// Clearing old temporary files.
     fs::directory_iterator dir_end;
+    size_t unknown_files = 0;
     for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
         if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
@@ -216,8 +221,17 @@ try
             fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+        {
+            unknown_files++;
+            if (unknown_files < 100)
+                LOG_DEBUG(log, "Found unknown {} {} in temporary path",
+                    it->is_regular_file() ? "file" : (it->is_directory() ? "directory" : "element"),
+                    it->path().string());
+        }
     }
+
+    if (unknown_files)
+        LOG_DEBUG(log, "Found {} unknown files in temporary path", unknown_files);
 }
 catch (...)
 {
@@ -273,6 +287,7 @@ namespace ErrorCodes
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -342,19 +357,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     [[maybe_unused]] bool secure) const
 {
     auto address = makeSocketAddress(host, port, &logger());
-#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
-    if (secure)
-        /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
-        /// https://github.com/pocoproject/poco/pull/2257
-        socket.bind(address, /* reuseAddress = */ true);
-    else
-#endif
-#if POCO_VERSION < 0x01080000
-    socket.bind(address, /* reuseAddress = */ true);
-#else
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config.getBool("listen_reuse_port", false));
-#endif
-
     /// If caller requests any available port from the OS, discover it after binding.
     if (port == 0)
     {
@@ -658,7 +661,53 @@ static void sanityChecks(Server & server)
     }
 }
 
+#if defined(OS_LINUX)
+/// Sends notification to systemd, analogous to sd_notify from libsystemd
+static void systemdNotify(const std::string_view & command)
+{
+    const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
+
+    if (path == nullptr)
+        return; /// not using systemd
+
+    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+
+    if (s == -1)
+        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
+
+    SCOPE_EXIT({ close(s); });
+
+    const size_t len = strlen(path);
+
+    struct sockaddr_un addr;
+
+    addr.sun_family = AF_UNIX;
+
+    if (len < 2 || len > sizeof(addr.sun_path) - 1)
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
+
+    memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
+
+    size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
+
+    /// '@' meass this is Linux abstract socket, per documentation it must be sun_path[0] must be set to '\0' for it.
+    if (path[0] == '@')
+        addr.sun_path[0] = 0;
+    else if (path[0] == '/')
+        addrlen += 1; /// non-abstract-addresses should be zero terminated.
+    else
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
+
+    const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
+
+    if (sendto(s, command.data(), command.size(), 0, sock_addr, static_cast <socklen_t>(addrlen)) != static_cast <ssize_t>(command.size()))
+        throw Exception("Failed to notify systemd.", ErrorCodes::SYSTEM_ERROR);
+
+}
+#endif
+
 int Server::main(const std::vector<std::string> & /*args*/)
+try
 {
     Poco::Logger * log = &logger();
 
@@ -691,7 +740,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks();
+    registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
 
@@ -754,7 +803,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
-    AsynchronousMetrics async_metrics(
+    ServerAsynchronousMetrics async_metrics(
         global_context,
         config().getUInt("asynchronous_metrics_update_period_s", 1),
         config().getUInt("asynchronous_heavy_metrics_update_period_s", 120),
@@ -1160,6 +1209,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+            bool allow_use_jemalloc_memory = config->getBool("allow_use_jemalloc_memory", true);
+            total_memory_tracker.setAllowUseJemallocMemory(allow_use_jemalloc_memory);
+
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
@@ -1433,8 +1485,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (settings.async_insert_threads)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
-            settings.async_insert_threads,
-            settings.async_insert_cleanup_timeout_ms));
+            settings.async_insert_threads));
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
@@ -1788,6 +1839,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             tryLogCurrentException(log, "Caught exception while starting cluster discovery");
         }
 
+#if defined(OS_LINUX)
+        systemdNotify("READY=1\n");
+#endif
+
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
 
@@ -1857,6 +1912,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     return Application::EXIT_OK;
 }
+catch (...)
+{
+    /// Poco does not provide stacktrace.
+    tryLogCurrentException("Application");
+    throw;
+}
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const Poco::Util::AbstractConfiguration & config,
@@ -1886,15 +1947,15 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
             );
         if (type == "prometheus")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
             );
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -1933,6 +1994,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     }
 
     return stack;
+}
+
+HTTPContextPtr Server::httpContext() const
+{
+    return std::make_shared<HTTPContext>(context());
 }
 
 void Server::createServers(
@@ -2017,7 +2083,7 @@ void Server::createServers(
                 port_name,
                 "http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
         });
 
         /// HTTPS
@@ -2034,7 +2100,7 @@ void Server::createServers(
                 port_name,
                 "https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 #else
             UNUSED(port);
             throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -2159,7 +2225,7 @@ void Server::createServers(
                 port_name,
                 "Prometheus: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
 
@@ -2179,7 +2245,7 @@ void Server::createServers(
                 port_name,
                 "replica communication (interserver): http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(),
+                    httpContext(),
                     createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
@@ -2199,7 +2265,7 @@ void Server::createServers(
                 port_name,
                 "secure replica communication (interserver): https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(),
+                    httpContext(),
                     createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                     server_pool,
                     socket,

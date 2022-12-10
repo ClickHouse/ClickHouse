@@ -14,6 +14,11 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
+
+#include <base/FnTraits.h>
+
 namespace DB
 {
 
@@ -573,6 +578,111 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
+template <Fn<size_t(size_t)> Sharder>
+static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
+{
+    const auto & hashes = hash.getData();
+    size_t num_rows = hashes.size();
+
+    IColumn::Selector selector(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+        selector[i] = sharder(intHashCRC32(hashes[i]));
+    return selector;
+}
+
+template <Fn<size_t(size_t)> Sharder>
+static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
+{
+    size_t num_rows = block.rows();
+    size_t num_cols = block.columns();
+
+    /// Use non-standard initial value so as not to degrade hash map performance inside shard that uses the same CRC32 algorithm.
+    WeakHash32 hash(num_rows);
+    for (const auto & key_name : key_columns_names)
+    {
+        ColumnPtr key_col = materializeColumn(block, key_name);
+        key_col->updateWeakHash32(hash);
+    }
+    auto selector = hashToSelector(hash, sharder);
+
+    Blocks result;
+    result.reserve(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        result.emplace_back(block.cloneEmpty());
+    }
+
+    for (size_t i = 0; i < num_cols; ++i)
+    {
+        auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
+        assert(result.size() == dispatched_columns.size());
+        for (size_t block_index = 0; block_index < num_shards; ++block_index)
+        {
+            result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
+        }
+    }
+    return result;
+}
+
+static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards)
+{
+    size_t mask = num_shards - 1;
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; });
+}
+
+static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
+{
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) { return hash % num_shards; });
+}
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)
+{
+    if (num_shards == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
+    UNUSED(scatterBlockByHashPow2);
+    // if (likely(isPowerOf2(num_shards)))
+    //     return scatterBlockByHashPow2(key_columns_names, block, num_shards);
+    return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
+}
+
+template<typename T>
+static Blocks scatterBlockByHashForList(const Strings & key_columns_names, const T & blocks, size_t num_shards)
+{
+    std::vector<Blocks> scattered_blocks(num_shards);
+    for (const auto & block : blocks)
+    {
+        if (block.rows() == 0)
+            continue;
+        auto scattered = scatterBlockByHash(key_columns_names, block, num_shards);
+        for (size_t i = 0; i < num_shards; ++i)
+            scattered_blocks[i].emplace_back(std::move(scattered[i]));
+    }
+
+    Blocks result;
+    result.reserve(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        result.emplace_back(concatenateBlocks(scattered_blocks[i]));
+    }
+    return result;
+}
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards)
+{
+    return scatterBlockByHashForList(key_columns_names, blocks, num_shards);
+}
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards)
+{
+    return scatterBlockByHashForList(key_columns_names, blocks, num_shards);
+}
+
+bool hasNonJoinedBlocks(const TableJoin & table_join)
+{
+    return table_join.strictness() != JoinStrictness::Asof && table_join.strictness() != JoinStrictness::Semi
+        && isRightOrFull(table_join.kind());
+}
+
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();
@@ -735,7 +845,7 @@ void NotJoinedBlocks::copySameKeys(Block & block) const
     }
 }
 
-Block NotJoinedBlocks::read()
+Block NotJoinedBlocks::nextImpl()
 {
     Block result_block = result_sample_block.cloneEmpty();
     {
