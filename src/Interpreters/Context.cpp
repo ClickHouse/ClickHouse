@@ -1431,6 +1431,11 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
     getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
 }
 
+void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
+{
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(merge_tree_settings, changes);
+}
+
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
     auto lock = getLock();

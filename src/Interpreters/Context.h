@@ -662,6 +662,7 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes) const;
     void checkSettingsConstraints(SettingsChanges & changes) const;
     void clampToSettingsConstraints(SettingsChanges & changes) const;
+    void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
     void resetSettingsToDefaultValue(const std::vector<String> & names);
