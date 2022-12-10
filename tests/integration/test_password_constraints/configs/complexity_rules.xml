@@ -1,25 +1,4 @@
 <clickhouse>
-    <logger>
-        <level>trace</level>
-        <console>true</console>
-    </logger>
-
-    <tcp_port>9000</tcp_port>
-    <path>./</path>
-    <mark_cache_size>0</mark_cache_size>
-
-    <users>
-        <default>
-            <password></password>
-
-            <networks>
-                <ip>::/0</ip>
-            </networks>
-
-            <access_management>1</access_management>
-        </default>
-    </users>
-
     <password_complexity>
         <rule>
             <pattern>.{12}</pattern>
@@ -42,13 +21,5 @@
             <message>contain at least 1 special character</message>
         </rule>
     </password_complexity>
-
-    <profiles>
-        <default/>
-    </profiles>
-
-    <quotas>
-        <default />
-    </quotas>
 </clickhouse>
 
