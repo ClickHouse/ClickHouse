@@ -157,6 +157,11 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
     {
         *iter++ = static_cast<unsigned char>((first_block >> 8) & 0xffu);
         *iter++ = static_cast<unsigned char>(first_block & 0xffu);
+        if (*src == ':')
+        {
+            zptr = iter;
+            ++src;
+        }
         ++groups;
     }
 
@@ -344,8 +349,11 @@ inline bool parseIPv6orIPv4(T * &src, EOFfunction eof, unsigned char * dst)
 
     if (*src == '.') /// IPv4
     {
-        /// should has some digits, not has leading zeroes, has no more than 3 digits
-        if (digits == 0 || leading_zero || digits > 3)
+        /// should has some digits
+        if (digits == 0)
+            return clear_dst();
+        /// should not has leading zeroes, should has no more than 3 digits
+        if ((leading_zero && digits > 1) || digits > 3)
             return clear_dst();
 
         /// recode first group as decimal
