@@ -1,4 +1,5 @@
 #include "MergeTreeDataPartCompact.h"
+#include <Compression/getCompressionCodecForFile.h>
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
@@ -79,6 +80,52 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         default_codec_, writer_settings, computed_index_granularity);
 }
 
+CompressionCodecPtr MergeTreeDataPartCompact::getCodecForPart(const String & column_name) const
+{
+    /// In memory parts doesn't have any compression
+    if (!isStoredOnDisk())
+        return CompressionCodecFactory::instance().get("NONE", {});
+
+    // TODO(ddelnano): Evaluate if this should be used if column file does not exist
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto part_column_option = storage_columns.getAll().tryGetByName(column_name);
+    if (! part_column_option.has_value())
+        return CompressionCodecFactory::instance().get("NONE", {});
+
+    const auto part_column = part_column_option.value();
+
+    CompressionCodecPtr result = nullptr;
+    /// It was compressed with default codec and it's not empty
+    if (storage_columns.hasCompressionCodec(column_name))
+    {
+        String path_to_data_file;
+        getSerialization(column_name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (path_to_data_file.empty())
+            {
+                String candidate_path = /*fs::path(getRelativePath()) */ (ISerialization::getFileNameForStream(part_column, substream_path) + ".bin");
+
+                /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
+                if (getDataPartStorage().exists(candidate_path) && getDataPartStorage().getFileSize(candidate_path) != 0)
+                    path_to_data_file = candidate_path;
+            }
+        });
+
+        if (path_to_data_file.empty())
+        {
+            /* LOG_WARNING(log, "Part's {} column {} has non zero data compressed size, but all data files don't exist or empty", name, backQuoteIfNeed(column_name)); */
+            return CompressionCodecFactory::instance().getDefaultCodec();
+        }
+
+        result = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
+    }
+
+    if (!result)
+        result = CompressionCodecFactory::instance().getDefaultCodec();
+
+    return result;
+}
 
 void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
 {

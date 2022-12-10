@@ -57,6 +57,11 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
         read_info, ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
 }
 
+CompressionCodecPtr MergeTreeDataPartInMemory::getCodecForPart(const String & /*column_name*/) const
+{
+        return CompressionCodecFactory::instance().get("NONE", {});
+}
+
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,

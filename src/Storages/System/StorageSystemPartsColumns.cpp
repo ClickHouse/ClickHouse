@@ -218,8 +218,10 @@ void StorageSystemPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
-	    if (columns_mask[src_index++])
-                columns[res_index++]->insert(queryToString(part->detectDefaultCompressionCodec()->getFullCodecDesc()));
+            auto codec = part->getCodecForPart(column.name);
+	    if (columns_mask[src_index++]) {
+                    columns[res_index++]->insert(queryToString(codec->getFullCodecDesc()));
+            }
 
             ColumnSize column_size = part->getColumnSize(column.name);
             if (columns_mask[src_index++])

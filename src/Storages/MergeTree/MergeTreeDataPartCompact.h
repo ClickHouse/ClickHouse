@@ -58,6 +58,8 @@ public:
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
+    CompressionCodecPtr getCodecForPart(const String & column_name) const override;
+
     bool hasColumnFiles(const NameAndTypePair & column) const override;
 
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }

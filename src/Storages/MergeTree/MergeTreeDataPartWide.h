@@ -55,6 +55,8 @@ public:
 
     bool supportsVerticalMerge() const override { return true; }
 
+    CompressionCodecPtr getCodecForPart(const String & column_name) const override;
+
     String getFileNameForColumn(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;

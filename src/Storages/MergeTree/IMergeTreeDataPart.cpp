@@ -986,8 +986,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
     for (const auto & part_column : columns)
     {
         /// It was compressed with default codec and it's not empty
-        auto column_size = getColumnSize(part_column.name);
-        if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
+        if (storage_columns.hasCompressionCodec(part_column.name))
         {
             String path_to_data_file;
             getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
@@ -1823,7 +1822,6 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
 void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) const
 {
-    throw Exception("Method 'checkConsistency' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
