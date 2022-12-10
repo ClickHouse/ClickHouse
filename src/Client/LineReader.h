@@ -9,6 +9,9 @@
 #include <base/types.h>
 #include <base/defines.h>
 
+namespace DB
+{
+
 class LineReader
 {
 public:
@@ -68,3 +71,5 @@ protected:
     virtual InputStatus readOneLine(const String & prompt);
     virtual void addToHistory(const String &) {}
 };
+
+}
