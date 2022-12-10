@@ -1,5 +1,8 @@
+---
+slug: /en/operations/backup
+---
 
-[//]: # (This file is included in Manage > Backups)
+# Backup and Restore
 
 - [Backup to a local disk](#backup-to-a-local-disk)
 - [Configuring backup/restore to use an S3 endpoint](#configuring-backuprestore-to-use-an-s3-endpoint)
@@ -55,7 +58,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - SETTINGS:
     - [`compression_method`](en/sql-reference/statements/create/table/#column-compression-codecs) and compression_level
     - `password` for the file on disk
-    - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')` 
+    - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
 
 ### Usage examples
 
@@ -72,7 +75,7 @@ RESTORE TABLE test.table FROM Disk('backups', '1.zip')
 :::note
 The above RESTORE would fail if the table `test.table` contains data, you would have to drop the table in order to test the RESTORE, or use the setting `allow_non_empty_tables=true`:
 ```
-RESTORE TABLE test.table FROM Disk('backups', '1.zip') 
+RESTORE TABLE test.table FROM Disk('backups', '1.zip')
 SETTINGS allow_non_empty_tables=true
 ```
 :::
@@ -101,7 +104,7 @@ BACKUP TABLE test.table TO Disk('backups', 'incremental-a.zip')
 
 Restore all data from the incremental backup and the base_backup into a new table `test.table2`:
 ```
-RESTORE TABLE test.table AS test.table2 
+RESTORE TABLE test.table AS test.table2
   FROM Disk('backups', 'incremental-a.zip');
 ```
 
@@ -356,4 +359,3 @@ Data can be restored from backup using the `ALTER TABLE ... ATTACH PARTITION ...
 For more information about queries related to partition manipulations, see the [ALTER documentation](../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
 
 A third-party tool is available to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
-
