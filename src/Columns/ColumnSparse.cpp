@@ -744,17 +744,17 @@ bool ColumnSparse::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnSparse::forEachSubcolumn(ColumnCallback callback)
+void ColumnSparse::forEachSubcolumn(ColumnCallback callback) const
 {
     callback(values);
     callback(offsets);
 }
 
-void ColumnSparse::forEachSubcolumnRecursively(ColumnCallback callback)
+void ColumnSparse::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
-    callback(values);
+    callback(*values);
     values->forEachSubcolumnRecursively(callback);
-    callback(offsets);
+    callback(*offsets);
     offsets->forEachSubcolumnRecursively(callback);
 }
 
