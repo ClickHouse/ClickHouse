@@ -332,6 +332,12 @@ macro (dbms_target_link_libraries)
     endforeach ()
 endmacro ()
 
+macro (dbms_target_include_directories)
+    foreach (module ${all_modules})
+        target_include_directories (${module} ${ARGN})
+    endforeach ()
+endmacro ()
+
 dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
@@ -587,6 +593,11 @@ dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::annoy)
     dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
+endif()
+
+if (TARGET ch_rust::skim)
+    # Add only -I, library is needed only for clickhouse-client/clickhouse-local
+    dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")

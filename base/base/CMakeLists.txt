@@ -8,7 +8,6 @@ set (SRCS
     getPageSize.cpp
     getThreadId.cpp
     JSON.cpp
-    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp
@@ -16,7 +15,6 @@ set (SRCS
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
-    ReplxxLineReader.cpp
     StringRef.cpp
     safeExit.cpp
     throwError.cpp
@@ -38,11 +36,6 @@ if (WITH_COVERAGE)
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
-
-# FIXME: move libraries for line reading out from base
-if (TARGET ch_rust::skim)
-    target_link_libraries(common PUBLIC ch_rust::skim)
-endif()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
 

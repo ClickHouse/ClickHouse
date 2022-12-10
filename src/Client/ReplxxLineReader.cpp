@@ -1,4 +1,4 @@
-#include <base/ReplxxLineReader.h>
+#include <Client/ReplxxLineReader.h>
 #include <base/errnoToString.h>
 
 #include <stdexcept>
@@ -269,6 +269,9 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 
 }
 
+namespace DB
+{
+
 static bool replxx_last_is_delimiter = false;
 void ReplxxLineReader::setLastIsDelimiter(bool flag)
 {
@@ -507,4 +510,6 @@ void ReplxxLineReader::enableBracketedPaste()
 {
     bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
+}
+
 }
