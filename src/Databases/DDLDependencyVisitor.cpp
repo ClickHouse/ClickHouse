@@ -1,14 +1,17 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/getClusterName.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Common/KnownObjectNames.h>
 #include <Poco/String.h>
 
 
@@ -146,6 +149,27 @@ namespace
             /// Buffer('db_name', 'dest_table_name')
             if (table_engine.name == "Buffer")
                 addDatabaseAndTableNameFromArguments(table_engine, 0, 1);
+
+            /// Distributed(cluster_name, db_name, table_name, ...)
+            if (table_engine.name == "Distributed")
+                visitDistributedTableEngine(table_engine);
+        }
+
+        /// Distributed(cluster_name, database_name, table_name, ...)
+        void visitDistributedTableEngine(const ASTFunction & table_engine)
+        {
+            /// We consider only dependencies on local tables.
+            bool has_local_replicas = false;
+
+            if (auto cluster_name = tryGetClusterNameFromArgument(table_engine, 0))
+            {
+                auto cluster = context->tryGetCluster(*cluster_name);
+                if (cluster && cluster->getLocalShardCount())
+                    has_local_replicas = true;
+            }
+
+            if (has_local_replicas)
+                addDatabaseAndTableNameFromArguments(table_engine, 1, 2);
         }
 
         /// Finds dependencies of a function.
@@ -167,6 +191,81 @@ namespace
             {
                 /// dictionary(dict_name)
                 addQualifiedNameFromArgument(function, 0);
+            }
+            else if (function.name == "remote" || function.name == "remoteSecure")
+            {
+                visitRemoteFunction(function, /* is_cluster_function= */ false);
+            }
+            else if (function.name == "cluster" || function.name == "clusterAllReplicas")
+            {
+                visitRemoteFunction(function, /* is_cluster_function= */ true);
+            }
+        }
+
+        /// remote('addresses_expr', db_name.table_name, ...)
+        /// remote('addresses_expr', 'db_name', 'table_name', ...)
+        /// remote('addresses_expr', table_function(), ...)
+        /// cluster('cluster_name', db_name.table_name, ...)
+        /// cluster('cluster_name', 'db_name', 'table_name', ...)
+        /// cluster('cluster_name', table_function(), ...)
+        void visitRemoteFunction(const ASTFunction & function, bool is_cluster_function)
+        {
+            /// We consider dependencies on local tables only.
+            bool has_local_replicas = false;
+
+            if (is_cluster_function)
+            {
+                if (auto cluster_name = tryGetClusterNameFromArgument(function, 0))
+                {
+                    if (auto cluster = context->tryGetCluster(*cluster_name))
+                    {
+                        if (cluster->getLocalShardCount())
+                            has_local_replicas = true;
+                    }
+                }
+            }
+            else
+            {
+                /// remote() and remoteSecure() are not fully supported. To properly support them we would need to check the first
+                /// argument to decide whether the host & port pattern specified in the first argument contains the local host or not
+                /// which is not trivial. For now we just always assume that the host & port pattern doesn't contain the local host.
+            }
+
+            if (!function.arguments)
+                return;
+
+            ASTs & args = function.arguments->children;
+            if (args.size() < 2)
+                return;
+
+            const ASTFunction * table_function = nullptr;
+            if (const auto * second_arg_as_function = args[1]->as<ASTFunction>();
+                second_arg_as_function && KnownTableFunctionNames::instance().exists(second_arg_as_function->name))
+            {
+                table_function = second_arg_as_function;
+            }
+
+            if (has_local_replicas && !table_function)
+            {
+                auto maybe_qualified_name = tryGetQualifiedNameFromArgument(function, 1, /* apply_current_database= */ false);
+                if (!maybe_qualified_name)
+                    return;
+                auto & qualified_name = *maybe_qualified_name;
+                if (qualified_name.database.empty())
+                {
+                    auto table = tryGetStringFromArgument(function, 2);
+                    if (!table)
+                        return;
+                    qualified_name.database = std::move(qualified_name.table);
+                    qualified_name.table = std::move(table).value();
+                }
+                dependencies.insert(qualified_name);
+            }
+
+            if (!has_local_replicas && table_function)
+            {
+                /// `table function` will be executed remotely, so we won't check it or its arguments for dependencies.
+                skip_asts.emplace(table_function);
             }
         }
 
@@ -278,6 +377,22 @@ namespace
         {
             if (auto qualified_name = tryGetDatabaseAndTableNameFromArguments(function, database_arg_idx, table_arg_idx))
                 dependencies.emplace(std::move(qualified_name).value());
+        }
+
+        std::optional<String> tryGetClusterNameFromArgument(const ASTFunction & function, size_t arg_idx) const
+        {
+            if (!function.arguments)
+                return {};
+
+            ASTs & args = function.arguments->children;
+            if (arg_idx >= args.size())
+                return {};
+
+            auto cluster_name = ::DB::tryGetClusterName(*args[arg_idx]);
+            if (cluster_name)
+                return cluster_name;
+
+            return tryGetStringFromArgument(function, arg_idx);
         }
     };
 
