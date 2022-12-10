@@ -27,7 +27,7 @@ enum class IPStringToNumExceptionMode : uint8_t
 
 static inline bool tryParseIPv4(const char * pos, UInt32 & result_value)
 {
-    return parseIPv4(pos, reinterpret_cast<unsigned char *>(&result_value));
+    return parseIPv4whole(pos, reinterpret_cast<unsigned char *>(&result_value));
 }
 
 namespace detail
@@ -181,11 +181,11 @@ namespace detail
                     src_ipv4_buf + std::strlen("::ffff:"),
                     src_value,
                     std::min<UInt64>(src_next_offset - src_offset, IPV4_MAX_TEXT_LENGTH + 1));
-                parse_result = parseIPv6(src_ipv4_buf, res_value);
+                parse_result = parseIPv6whole(src_ipv4_buf, res_value);
             }
             else
             {
-                parse_result = parseIPv6(src_value, res_value);
+                parse_result = parseIPv6whole(src_value, res_value);
             }
 
             if (!parse_result)

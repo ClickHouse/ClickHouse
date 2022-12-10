@@ -29,22 +29,17 @@ public:
 
     explicit IPAddressVariant(std::string_view address_str)
     {
-        /// IP address parser functions require that the input is
-        /// NULL-terminated so we need to copy it.
-        const auto address_str_copy = std::string(address_str);
-
         UInt32 v4;
-        if (DB::parseIPv4(address_str_copy.c_str(), reinterpret_cast<unsigned char *>(&v4)))
+        if (DB::parseIPv4whole(address_str.begin(), address_str.end(),  reinterpret_cast<unsigned char *>(&v4)))
         {
             addr = v4;
         }
         else
         {
             addr = IPv6AddrType();
-            bool success = DB::parseIPv6(address_str_copy.c_str(), std::get<IPv6AddrType>(addr).data());
+            bool success = DB::parseIPv6whole(address_str.begin(), address_str.end(), std::get<IPv6AddrType>(addr).data());
             if (!success)
-                throw DB::Exception("Neither IPv4 nor IPv6 address: '" + address_str_copy + "'",
-                                    DB::ErrorCodes::CANNOT_PARSE_TEXT);
+                throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", address_str);
         }
     }
 

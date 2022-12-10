@@ -90,14 +90,33 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int first_
     return true;
 }
 
-inline bool parseIPv4(const char * src, const char * end, unsigned char * dst)
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv4(const char * src, const char * end, unsigned char * dst)
 {
-    return parseIPv4(src, [&src, end](){ return src == end; }, dst);
+    if (parseIPv4(src, [&src, end](){ return src == end; }, dst))
+        return src;
+    return nullptr;
 }
 
-inline bool parseIPv4(const char * src, unsigned char * dst)
+/// returns true if whole buffer was parsed successfully
+inline bool parseIPv4whole(const char * src, const char * end, unsigned char * dst)
 {
-    return parseIPv4(src, [](){ return false; }, dst);
+    return parseIPv4(src, end, dst) == end;
+}
+
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv4(const char * src, unsigned char * dst)
+{
+    if (parseIPv4(src, [](){ return false; }, dst))
+        return src;
+    return nullptr;
+}
+
+/// returns true if whole null-terminated string was parsed successfully
+inline bool parseIPv4whole(const char * src, unsigned char * dst)
+{
+    const char * end = parseIPv4(src, dst);
+    return end != nullptr && *end == '\0';
 }
 
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
@@ -131,6 +150,8 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst)
     unsigned char * iter = dst;     /// iterator over dst buffer
     unsigned char * zptr = nullptr; /// pointer into dst buffer array where all-zeroes block ("::") is started
 
+    bool group_start = true;
+
     std::memset(dst, '\0', IPV6_BINARY_LENGTH);
 
     while (!eof() && groups < 8)
@@ -140,6 +161,9 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst)
             ++src;
             if (eof()) /// trailing colon is not allowed
                 return clear_dst();
+
+            group_start = true;
+
             if (*src == ':')
             {
                 if (zptr != nullptr) /// multiple all-zeroes blocks are not allowed
@@ -189,6 +213,10 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst)
             break; /// IPv4 block is the last - end of parsing
         }
 
+        if (!group_start) /// end of parsing
+            break;
+        group_start = false;
+
         UInt16 val = 0;   /// current decoded group
         int xdigits = 0;  /// number of decoded hex digits in current group
 
@@ -200,13 +228,8 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst)
             (val <<= 4) |= num;
         }
 
-        if (xdigits == 0)
-        {
-            if (zptr == iter) /// trailing all-zeroes block - end of parsing
-                break;
-            /// empty group is not allowed
-            return clear_dst();
-        }
+        if (xdigits == 0) /// end of parsing
+            break;
 
         *iter++ = static_cast<unsigned char>((val >> 8) & 0xffu);
         *iter++ = static_cast<unsigned char>(val & 0xffu);
@@ -227,14 +250,33 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst)
     return true;
 }
 
-inline bool parseIPv6(const char * src, const char * end, unsigned char * dst)
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv6(const char * src, const char * end, unsigned char * dst)
 {
-    return parseIPv6(src, [&src, end](){ return src == end; }, dst);
+    if (parseIPv6(src, [&src, end](){ return src == end; }, dst))
+        return src;
+    return nullptr;
 }
 
-inline bool parseIPv6(const char * src, unsigned char * dst)
+/// returns true if whole buffer was parsed successfully
+inline bool parseIPv6whole(const char * src, const char * end, unsigned char * dst)
 {
-    return parseIPv6(src, [](){ return false; }, dst);
+    return parseIPv6(src, end, dst) == end;
+}
+
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv6(const char * src, unsigned char * dst)
+{
+    if (parseIPv6(src, [](){ return false; }, dst))
+        return src;
+    return nullptr;
+}
+
+/// returns true if whole null-terminated string was parsed successfully
+inline bool parseIPv6whole(const char * src, unsigned char * dst)
+{
+    const char * end = parseIPv6(src, dst);
+    return end != nullptr && *end == '\0';
 }
 
 /** Format 4-byte binary sequesnce as IPv4 text: 'aaa.bbb.ccc.ddd',
