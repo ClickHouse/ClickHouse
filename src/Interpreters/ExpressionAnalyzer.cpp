@@ -1960,6 +1960,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             /// TODO correct conditions
             optimize_aggregation_in_order =
                     context->getSettingsRef().optimize_aggregation_in_order
+                    && (!context->getSettingsRef().query_plan_aggregation_in_order)
                     && storage && query.groupBy();
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
