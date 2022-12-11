@@ -50,6 +50,7 @@ public:
         DictionarySourcePtr source_ptr_,
         const HashedDictionaryStorageConfiguration & configuration_,
         BlockPtr update_field_loaded_block_ = nullptr);
+    ~HashedDictionary() override;
 
     std::string getTypeName() const override
     {
