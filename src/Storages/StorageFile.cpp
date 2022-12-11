@@ -253,7 +253,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
     }
-    else
+    else if (mmap_failed)
     {
         if (use_table_fd)
             nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);

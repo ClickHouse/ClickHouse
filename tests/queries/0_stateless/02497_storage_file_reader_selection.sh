@@ -15,6 +15,7 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02497_storage_file_reader.data',
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT -q "SELECT sum(ProfileEvents['CreatedReadBufferMMap']) FROM system.query_log WHERE query_id='$QUERY_ID'"
+$CLICKHOUSE_CLIENT -q "SELECT sum(ProfileEvents['CreatedReadBufferOrdinary']) FROM system.query_log WHERE query_id='$QUERY_ID'"
 
 QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02497_storage_file_reader.data', 'TSV', 's String')" \
@@ -23,3 +24,4 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02497_storage_file_reader.data',
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT -q "SELECT sum(ProfileEvents['CreatedReadBufferMMap']) FROM system.query_log WHERE query_id='$QUERY_ID'"
+$CLICKHOUSE_CLIENT -q "SELECT sum(ProfileEvents['CreatedReadBufferOrdinary']) FROM system.query_log WHERE query_id='$QUERY_ID'"
