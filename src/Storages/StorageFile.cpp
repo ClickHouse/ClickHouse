@@ -38,8 +38,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
-
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Common/ProfileEvents.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -50,6 +49,13 @@
 #include <re2/re2.h>
 #include <filesystem>
 
+
+namespace ProfileEvents
+{
+    extern const Event CreatedReadBufferOrdinary;
+    extern const Event CreatedReadBufferMMap;
+    extern const Event CreatedReadBufferMMapFailed;
+}
 
 namespace fs = std::filesystem;
 
@@ -69,6 +75,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int CANNOT_STAT;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
@@ -182,6 +189,7 @@ void checkCreationIsAllowed(
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
     bool use_table_fd,
+    const String & storage_name,
     int table_fd,
     const String & compression_method,
     ContextPtr context)
@@ -189,26 +197,72 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     std::unique_ptr<ReadBuffer> nested_buffer;
     CompressionMethod method;
 
-    auto read_method = context->getSettingsRef().storage_file_read_method.value;
-    auto read_settings = context->getReadSettings();
-    read_settings.mmap_threshold = 1;
-    read_settings.mmap_cache = nullptr;  /// Turn off mmap cache for Storage File
-
-    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method))
-        read_settings.local_fs_method = *opt_method;
+    auto read_method_string = context->getSettingsRef().storage_file_read_method.value;
+    LocalFSReadMethod read_method;
+    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_string))
+        read_method = *opt_method;
     else
-        throwFromErrno("Unknown read method " + read_method, ErrorCodes::UNKNOWN_READ_METHOD);
+        throwFromErrno("Unknown read method " + read_method_string, ErrorCodes::UNKNOWN_READ_METHOD);
+
+    struct stat file_stat{};
 
     if (use_table_fd)
     {
-        nested_buffer = createReadBufferFromFileDescriptorBase(table_fd, read_settings);
+        /// Check if file descriptor allows random reads (and reading it twice).
+        if (0 != fstat(table_fd, &file_stat))
+            throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
+
         method = chooseCompressionMethod("", compression_method);
     }
     else
     {
-        nested_buffer = createReadBufferFromFileBase(current_path, read_settings);
+        /// Check if file descriptor allows random reads (and reading it twice).
+        if (0 != stat(current_path.c_str(), &file_stat))
+            throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
+
         method = chooseCompressionMethod(current_path, compression_method);
     }
+
+
+    bool mmap_failed = false;
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
+    {
+        try
+        {
+            if (use_table_fd)
+                nested_buffer = std::make_unique<MMapReadBufferFromFileDescriptor>(table_fd, 0);
+            else
+                nested_buffer = std::make_unique<MMapReadBufferFromFile>(current_path, 0);
+
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
+        }
+        catch (const ErrnoException &)
+        {
+            /// Fallback if mmap is not supported.
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMapFailed);
+            mmap_failed = true;
+        }
+    }
+
+    if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || mmap_failed))
+    {
+        if (use_table_fd)
+            nested_buffer = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
+        else
+            nested_buffer = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
+
+        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    }
+    else
+    {
+        if (use_table_fd)
+            nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
+        else
+            nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
+
+        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    }
+
 
     /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
     if (context->getApplicationType() == Context::ApplicationType::LOCAL
@@ -277,7 +331,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
-        read_buffer_from_fd = createReadBuffer("", true, table_fd, compression_method, context);
+        read_buffer_from_fd = createReadBuffer("", true, getName(), table_fd, compression_method, context);
         auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
         read_buf->setCheckpoint();
         return read_buf;
@@ -326,7 +380,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         if (it == paths.end())
             return nullptr;
 
-        return createReadBuffer(*it++, false, -1, compression_method, context);
+        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
     };
 
     ColumnsDescription columns;
@@ -543,7 +597,7 @@ public:
                 }
 
                 if (!read_buf)
-                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
+                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
                 auto format
                     = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
