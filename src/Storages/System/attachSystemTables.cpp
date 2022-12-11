@@ -32,7 +32,6 @@
 #include <Storages/System/StorageSystemOne.h>
 #include <Storages/System/StorageSystemPartMovesBetweenShards.h>
 #include <Storages/System/StorageSystemParts.h>
-#include <Storages/System/StorageSystemPasswordRules.h>
 #include <Storages/System/StorageSystemProjectionParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
@@ -133,7 +132,6 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemPrivileges>(context, system_database, "privileges");
     attach<StorageSystemErrors>(context, system_database, "errors");
     attach<StorageSystemWarnings>(context, system_database, "warnings");
-    attach<StorageSystemPasswordRules>(context, system_database, "password_rules");
     attach<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices");
     attach<StorageSystemLicenses>(context, system_database, "licenses");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
