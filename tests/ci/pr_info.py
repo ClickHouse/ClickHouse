@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from typing import Set
+from typing import Dict, List, Set
 
 from unidiff import PatchSet  # type: ignore
 
@@ -46,15 +46,22 @@ def get_pr_for_commit(sha, ref):
     try:
         response = get_with_retries(try_get_pr_url, sleep=RETRY_SLEEP)
         data = response.json()
+        our_prs = []  # type: List[Dict]
         if len(data) > 1:
             print("Got more than one pr for commit", sha)
         for pr in data:
+            # We need to check if the PR is created in our repo, because
+            # https://github.com/kaynewu/ClickHouse/pull/2
+            # has broke our PR search once in a while
+            if pr["base"]["repo"]["full_name"] != GITHUB_REPOSITORY:
+                continue
             # refs for pushes looks like refs/head/XX
             # refs for RPs looks like XX
             if pr["head"]["ref"] in ref:
                 return pr
+            our_prs.append(pr)
         print("Cannot find PR with required ref", ref, "returning first one")
-        first_pr = data[0]
+        first_pr = our_prs[0]
         return first_pr
     except Exception as ex:
         print("Cannot fetch PR info from commit", ex)
@@ -64,6 +71,7 @@ def get_pr_for_commit(sha, ref):
 class PRInfo:
     default_event = {
         "commits": 1,
+        "head_commit": {"message": "commit_message"},
         "before": "HEAD~",
         "after": "HEAD",
         "ref": None,
@@ -86,8 +94,10 @@ class PRInfo:
         self.changed_files = set()  # type: Set[str]
         self.body = ""
         self.diff_urls = []
+        # release_pr and merged_pr are used for docker images additional cache
         self.release_pr = 0
-        ref = github_event.get("ref", "refs/head/master")
+        self.merged_pr = 0
+        ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
 
@@ -158,6 +168,14 @@ class PRInfo:
 
             self.diff_urls.append(github_event["pull_request"]["diff_url"])
         elif "commits" in github_event:
+            # `head_commit` always comes with `commits`
+            commit_message = github_event["head_commit"]["message"]
+            if commit_message.startswith("Merge pull request #"):
+                merged_pr = commit_message.split(maxsplit=4)[3]
+                try:
+                    self.merged_pr = int(merged_pr[1:])
+                except ValueError:
+                    logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"

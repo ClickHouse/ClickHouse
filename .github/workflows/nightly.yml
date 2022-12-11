@@ -102,7 +102,7 @@ jobs:
       - name: Build
         run: |
           git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"

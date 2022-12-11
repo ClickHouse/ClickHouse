@@ -1017,6 +1017,15 @@ template <typename T>
 requires is_arithmetic_v<T>
 inline void readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
+inline void readBinary(bool & x, ReadBuffer & buf)
+{
+    /// When deserializing a bool it might trigger UBSAN if the input is not 0 or 1, so it's better to treat it as an Int8
+    static_assert(sizeof(bool) == sizeof(Int8));
+    Int8 flag = 0;
+    readBinary(flag, buf);
+    x = (flag != 0);
+}
+
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Int256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }

@@ -200,7 +200,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         settings_ptr->s3_settings,
         attributes,
         buf_size,
-        threadPoolCallbackRunner(getThreadPoolWriter()),
+        scheduler,
         disk_write_settings);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(
