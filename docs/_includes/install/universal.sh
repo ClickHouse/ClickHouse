@@ -49,13 +49,13 @@ then
     exit 1
 fi
 
-ch="clickhouse"
-clickhouse="$ch"
+clickhouse_download_filename_prefix="clickhouse"
+clickhouse="$clickhouse_download_filename_prefix"
 
 i=0
 while [ -f "$clickhouse" ]
 do
-    clickhouse="${ch}.${i}"
+    clickhouse="${clickhouse_download_filename_prefix}.${i}"
     i=$(($i+1))
 done
 
