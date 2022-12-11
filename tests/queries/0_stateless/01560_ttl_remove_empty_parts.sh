@@ -19,7 +19,7 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO ttl_empty_parts SELECT 1, toDate('2050-01-0
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ttl_empty_parts;"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE table = 'ttl_empty_parts' AND database = currentDatabase() AND active;"
 
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE ttl_empty_parts MODIFY TTL d;"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE ttl_empty_parts MODIFY TTL d SETTINGS mutations_sync = 1;"
 
 # To be sure, that task, which clears outdated parts executed.
 timeout 60 bash -c 'wait_for_delete_empty_parts ttl_empty_parts'
