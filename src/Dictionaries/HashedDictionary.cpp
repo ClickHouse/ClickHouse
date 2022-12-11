@@ -204,6 +204,60 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
+HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
+{
+    size_t shards = std::max<size_t>(configuration.shards, 1);
+    size_t attributes_tables = std::max<size_t>(attributes.size(), 1 /* no_attributes_containers */);
+    ThreadPool pool(shards * attributes_tables);
+
+    size_t hash_tables_count = 0;
+    auto schedule_destroy = [&hash_tables_count, &pool](auto & container)
+    {
+        if (container.empty())
+            return;
+
+        pool.scheduleOrThrowOnError([&container, thread_group = CurrentThread::getGroup()]
+        {
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
+            setThreadName("HashedDictDtor");
+
+            if constexpr (sparse)
+                container.clear();
+            else
+                container.clearAndShrink();
+        });
+
+        ++hash_tables_count;
+    };
+
+    if (attributes.empty())
+    {
+        for (size_t shard = 0; shard < shards; ++shard)
+        {
+            schedule_destroy(no_attributes_containers[shard]);
+        }
+    }
+    else
+    {
+        for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
+        {
+            getAttributeContainer(attribute_index, [&](auto & containers)
+            {
+                for (size_t shard = 0; shard < shards; ++shard)
+                {
+                    schedule_destroy(containers[shard]);
+                }
+            });
+        }
+    }
+
+    LOG_TRACE(log, "Destroying {} non empty hash tables (using {} threads)", hash_tables_count, pool.getMaxThreads());
+    pool.wait();
+    LOG_TRACE(log, "Hash tables destroyed");
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
     const std::string & attribute_name,
     const DataTypePtr & result_type,
