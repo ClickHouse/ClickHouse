@@ -155,6 +155,19 @@ public:
     void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
 private:
+    static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
+        MergeTreeData::DataPartsVector parts,
+        const StorageMetadataPtr & metadata_snapshot_base,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr context,
+        size_t num_streams,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
+        const MergeTreeData & data,
+        const Names & real_column_names,
+        bool sample_factor_column_queried,
+        Poco::Logger * log);
+
     int getSortDirection() const
     {
         const InputOrderInfoPtr & order_info = query_info.getInputOrderInfo();
@@ -184,7 +197,8 @@ private:
     ContextPtr context;
 
     const size_t max_block_size;
-    const size_t requested_num_streams;
+    size_t requested_num_streams;
+    size_t output_streams_limit = 0;
     const size_t preferred_block_size_bytes;
     const size_t preferred_max_column_in_block_size_bytes;
     const bool sample_factor_column_queried;
