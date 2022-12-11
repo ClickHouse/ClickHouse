@@ -1,10 +1,11 @@
 #include "DisksApp.h"
+#include "ICommand.h"
 
 #include <Disks/registerDisks.h>
 
-#include <base/argsToConfig.h>
-
+#include <Common/TerminalSize.h>
 #include <Formats/registerFormats.h>
+
 
 namespace DB
 {
