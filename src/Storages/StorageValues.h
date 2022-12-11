@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -8,12 +9,10 @@ namespace DB
 /* One block storage used for values table function
  * It's structure is similar to IStorageSystemOneBlock
  */
-class StorageValues final : public IStorage
+class StorageValues final : public shared_ptr_helper<StorageValues>, public IStorage
 {
+    friend struct shared_ptr_helper<StorageValues>;
 public:
-    StorageValues(
-        const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_, const NamesAndTypesList & virtuals_ = {});
-
     std::string getName() const override { return "Values"; }
 
     Pipe read(
@@ -32,13 +31,13 @@ public:
     {
         return virtuals;
     }
-
-    /// FIXME probably it should return false, but StorageValues is used in ExecutingInnerQueryFromViewTransform (whatever it is)
-    bool supportsTransactions() const override { return true; }
-
 private:
     Block res_block;
     NamesAndTypesList virtuals;
+
+protected:
+    StorageValues(
+        const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_, const NamesAndTypesList & virtuals_ = {});
 };
 
 }

@@ -18,7 +18,7 @@ using FunctionMultiSearch = FunctionsMultiStringSearch<MultiSearchImpl<NameMulti
 
 }
 
-REGISTER_FUNCTION(MultiSearchAny)
+void registerFunctionMultiSearchAny(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiSearch>();
 }

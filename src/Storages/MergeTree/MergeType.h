@@ -14,15 +14,17 @@ namespace DB
 enum class MergeType
 {
     /// Just regular merge
-    Regular = 1,
+    REGULAR = 1,
     /// Merge assigned to delete some data from parts (with TTLMergeSelector)
-    TTLDelete = 2,
+    TTL_DELETE = 2,
     /// Merge with recompression
-    TTLRecompress = 3,
+    TTL_RECOMPRESS = 3,
 };
 
 /// Check parsed merge_type from raw int and get enum value.
 MergeType checkAndGetMergeType(UInt64 merge_type);
+
+String toString(MergeType merge_type);
 
 /// Check this merge assigned with TTL
 bool isTTLMergeType(MergeType merge_type);

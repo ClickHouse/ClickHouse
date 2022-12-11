@@ -51,7 +51,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
     }
 };
 
-REGISTER_FUNCTION(BitNot)
+void registerFunctionBitNot(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitNot>();
 }

@@ -4,9 +4,10 @@
 
 #include <boost/algorithm/string/split.hpp>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/LocalDateTime.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/ShellCommand.h>
 
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/ShellCommandSource.h>
@@ -18,6 +19,7 @@
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
+
 
 namespace DB
 {
@@ -68,17 +70,17 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadAll()
+Pipe ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadUpdatedAll()
+Pipe ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -86,7 +88,7 @@ QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> 
     return getStreamForBlock(block);
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -94,7 +96,7 @@ QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_colum
     return getStreamForBlock(block);
 }
 
-QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
+Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
     String command = configuration.command;
     const auto & coordinator_configuration = coordinator->getConfiguration();
@@ -111,15 +113,9 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
                 command,
                 user_scripts_path);
 
-        if (!FS::exists(script_path))
+        if (!std::filesystem::exists(std::filesystem::path(script_path)))
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Executable file {} does not exist inside user scripts folder {}",
-                command,
-                user_scripts_path);
-
-        if (!FS::canExecute(script_path))
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Executable file {} is not executable inside user scripts folder {}",
                 command,
                 user_scripts_path);
 
@@ -147,7 +143,7 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
 
-    return QueryPipeline(std::move(pipe));
+    return pipe;
 }
 
 bool ExecutablePoolDictionarySource::isModified() const

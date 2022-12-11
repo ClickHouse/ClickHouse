@@ -69,6 +69,11 @@ static void aggregate1(Map & map, Source::const_iterator begin, Source::const_it
         ++map[*it];
 }
 
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 static void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
     Map::LookupResult found = nullptr;
@@ -116,6 +121,10 @@ static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source:
         ++found->getMapped();
     }
 }
+
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 static void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
 {

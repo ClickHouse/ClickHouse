@@ -6,7 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -56,7 +56,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(LogTrace)
+void registerFunctionLogTrace(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionLogTrace>();
 }

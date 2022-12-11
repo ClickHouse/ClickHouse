@@ -1,7 +1,7 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/
-sidebar_label: Reference
-sidebar_position: 36
+toc_folder_title: Reference
+toc_priority: 36
+toc_hidden: true
 ---
 
 # 聚合函数列表 {#aggregate-functions-reference}

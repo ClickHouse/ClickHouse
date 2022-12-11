@@ -5,7 +5,7 @@
 #include <Common/Arena.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
@@ -236,7 +236,7 @@ private:
 
     void onBackgroundException()
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
         if (!background_exception)
         {
             background_exception = std::current_exception();

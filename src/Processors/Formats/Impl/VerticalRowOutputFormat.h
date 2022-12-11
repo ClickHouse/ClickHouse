@@ -32,9 +32,6 @@ private:
     void writeMaxExtreme(const Columns & columns, size_t row_num) override;
     void writeTotals(const Columns & columns, size_t row_num) override;
 
-    bool supportTotals() const override { return true; }
-    bool supportExtremes() const override { return true; }
-
     void writeBeforeTotals() override;
     void writeBeforeExtremes() override;
 

@@ -76,7 +76,7 @@ public:
 };
 
 
-REGISTER_FUNCTION(ArrayEnumerate)
+void registerFunctionArrayEnumerate(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayEnumerate>();
 }

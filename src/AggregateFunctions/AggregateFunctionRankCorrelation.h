@@ -32,7 +32,7 @@ struct RankCorrelationData : public StatisticalSample<Float64, Float64>
         std::tie(ranks_y, std::ignore) = computeRanksAndTieCorrection(this->y);
 
         /// Sizes can be non-equal due to skipped NaNs.
-        const Float64 size = static_cast<Float64>(std::min(this->size_x, this->size_y));
+        const auto size = std::min(this->size_x, this->size_y);
 
         /// Count d^2 sum
         Float64 answer = 0;
@@ -102,4 +102,4 @@ public:
 
 };
 
-}
+};

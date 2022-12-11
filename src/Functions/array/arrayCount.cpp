@@ -83,7 +83,7 @@ struct ArrayCountImpl
 struct NameArrayCount { static constexpr auto name = "arrayCount"; };
 using FunctionArrayCount = FunctionArrayMapped<ArrayCountImpl, NameArrayCount>;
 
-REGISTER_FUNCTION(ArrayCount)
+void registerFunctionArrayCount(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayCount>();
 }

@@ -130,7 +130,7 @@ struct NotImpl
 
     static inline ResultType apply(A a)
     {
-        return !static_cast<bool>(a);
+        return !a;
     }
 
 #if USE_EMBEDDED_COMPILER

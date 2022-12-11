@@ -48,9 +48,6 @@ struct BlockIO
         pipeline.reset();
     }
 
-    /// Set is_all_data_sent in system.processes for this query.
-    void setAllDataSent() const;
-
 private:
     void reset();
 };

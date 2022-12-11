@@ -13,18 +13,18 @@ public:
     {
         /// Data of each column is stored in one or several (for complex types) files.
         /// Every data file is followed by marks file.
-        Wide,
+        WIDE,
 
         /// Data of all columns is stored in one file. Marks are also stored in single file.
-        Compact,
+        COMPACT,
 
         /// Format with buffering data in RAM.
-        InMemory,
+        IN_MEMORY,
 
-        Unknown,
+        UNKNOWN,
     };
 
-    MergeTreeDataPartType() : value(Unknown) {}
+    MergeTreeDataPartType() : value(UNKNOWN) {}
     MergeTreeDataPartType(Value value_) : value(value_) {} /// NOLINT
 
     bool operator==(const MergeTreeDataPartType & other) const

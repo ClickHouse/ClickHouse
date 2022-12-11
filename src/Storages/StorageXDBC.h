@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
-#include <BridgeHelper/XDBCBridgeHelper.h>
+#include <Bridge/XDBCBridgeHelper.h>
 
 namespace Poco
 {
@@ -32,8 +32,7 @@ public:
         const StorageID & table_id_,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        ColumnsDescription columns_,
-        ConstraintsDescription constraints_,
+        const ColumnsDescription & columns_,
         const String & comment,
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
@@ -68,7 +67,7 @@ private:
 
     Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool isColumnOriented() const override;
 };
 
 }

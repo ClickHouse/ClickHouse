@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/session_log
----
 # system.session_log {#system_tables-session_log}
 
 Содержит информацию о всех успешных и неудачных событиях входа и выхода из системы.
