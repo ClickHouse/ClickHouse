@@ -79,12 +79,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     if (default_expression)
     {
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << default_specifier << (settings.hilite ? hilite_none : "");
-        if (default_specifier != "EPHEMERAL" ||
-            !(
-                    default_expression->as<ASTLiteral>()->value.isNull() ||
-                    (type && default_expression->as<ASTLiteral>()->value == DataTypeFactory::instance().get(type)->getDefault())
-            )
-        )
+        if (!ephemeral_default)
         {
             settings.ostr << ' ';
             default_expression->formatImpl(settings, state, frame);
