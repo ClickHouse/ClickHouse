@@ -7,7 +7,6 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Progress.h>
 #include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
 #include <Interpreters/Context.h>
@@ -252,20 +251,6 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
 size_t ReadBufferFromFileDescriptor::getFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
-}
-
-
-void ReadBufferFromFileDescriptor::setProgressCallback(ContextPtr context)
-{
-    auto file_progress_callback = context->getFileProgressCallback();
-
-    if (!file_progress_callback)
-        return;
-
-    setProfileCallback([file_progress_callback](const ProfileInfo & progress)
-    {
-        file_progress_callback(FileProgress(progress.bytes_read, 0));
-    });
 }
 
 }

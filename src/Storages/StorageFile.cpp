@@ -214,7 +214,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     if (context->getApplicationType() == Context::ApplicationType::LOCAL
         || context->getApplicationType() == Context::ApplicationType::CLIENT)
     {
-        auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
+        auto & in = static_cast<ReadBufferFromFileBase &>(*nested_buffer);
         in.setProgressCallback(context);
     }
 
