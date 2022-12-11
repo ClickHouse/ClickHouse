@@ -34,6 +34,9 @@ void HTTPServerConnection::run()
 
                 Poco::Timestamp now;
 
+                if (!forwarded_for.empty())
+                    request.set("X-Forwarded-For", forwarded_for);
+
                 if (request.isSecure())
                 {
                     size_t hsts_max_age = context->getMaxHstsAge();

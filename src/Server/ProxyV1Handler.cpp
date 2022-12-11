@@ -60,6 +60,9 @@ void ProxyV1Handler::run()
     // read port and "\r\n"
     if (!readWord(5, word, eol) || !eol)
         throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+
+    if (!stack_data.forwarded_for.empty())
+        LOG_TRACE(log, "Forwarded client address from PROXY header: {}", stack_data.forwarded_for);
 }
 
 bool ProxyV1Handler::readWord(int max_len, std::string & word, bool & eol)
