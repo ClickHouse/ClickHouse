@@ -542,11 +542,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                         final_column_name));
 
                 default_expr_list->children.emplace_back(
-                    setAlias(
-                        col_decl.default_specifier == "EPHEMERAL" ? /// can be ASTLiteral::value NULL
-                            std::make_shared<ASTLiteral>(data_type_ptr->getDefault()) :
-                            col_decl.default_expression->clone(),
-                        tmp_column_name));
+                    setAlias(col_decl.default_expression->clone(), tmp_column_name));
             }
             else
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
