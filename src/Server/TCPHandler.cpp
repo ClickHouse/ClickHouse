@@ -119,6 +119,8 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
 {
+    if (!forwarded_for.empty())
+        LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
 }
 
 TCPHandler::~TCPHandler()
