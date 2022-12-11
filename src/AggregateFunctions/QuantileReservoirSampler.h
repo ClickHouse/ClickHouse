@@ -55,6 +55,9 @@ struct QuantileReservoirSampler
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level)
     {
+        if (data.empty())
+            return {};
+
         if constexpr (is_decimal<Value>)
             return Value(static_cast<typename Value::NativeType>(data.quantileInterpolated(level)));
         else
