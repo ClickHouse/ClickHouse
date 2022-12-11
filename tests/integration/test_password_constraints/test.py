@@ -1,7 +1,3 @@
-# pylint: disable=unused-argument
-# pylint: disable=redefined-outer-name
-# pylint: disable=line-too-long
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster

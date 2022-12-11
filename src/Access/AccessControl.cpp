@@ -175,16 +175,23 @@ public:
         }
     }
 
-    void addPasswordComplexityRule(std::pair<String, String> rule_)
+    void setPasswordComplexityRules(std::vector<std::pair<String, String>> rules_)
     {
-        auto matcher = std::make_unique<RE2>(rule_.first, RE2::Quiet);
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Password complexity pattern {} cannot be compiled: {}",
-                rule_.first, matcher->error());
+        Rules new_rules;
+
+        for (const auto & [original_pattern, exception_message] : rules_)
+        {
+            auto matcher = std::make_unique<RE2>(original_pattern, RE2::Quiet);
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "Password complexity pattern {} cannot be compiled: {}",
+                    original_pattern, matcher->error());
+
+            new_rules.push_back({std::move(matcher), std::move(original_pattern), std::move(exception_message)});
+        }
 
         std::lock_guard lock{mutex};
-        rules.push_back({std::move(matcher), std::move(rule_.first), std::move(rule_.second)});
+        rules = std::move(new_rules);
     }
 
     void checkPasswordComplexityRules(const String & password_) const
@@ -636,9 +643,9 @@ void AccessControl::setPasswordComplexityRulesFromConfig(const Poco::Util::Abstr
     password_rules->setPasswordComplexityRulesFromConfig(config_);
 }
 
-void AccessControl::addPasswordComplexityRule(std::pair<String, String> rule_)
+void AccessControl::setPasswordComplexityRules(std::vector<std::pair<String, String>> rules_)
 {
-    password_rules->addPasswordComplexityRule(std::move(rule_));
+    password_rules->setPasswordComplexityRules(std::move(rules_));
 }
 
 void AccessControl::checkPasswordComplexityRules(const String & password_) const

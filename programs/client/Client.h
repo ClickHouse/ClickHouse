@@ -48,6 +48,5 @@ private:
     void printChangedSettings() const;
     void showWarnings();
     std::vector<String> loadWarningMessages();
-    void loadPasswordComplexityRules();
 };
 }

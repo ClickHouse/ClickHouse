@@ -182,64 +182,6 @@ std::vector<String> Client::loadWarningMessages()
 }
 
 
-/// Make query to get all server password complexity rules
-void Client::loadPasswordComplexityRules()
-{
-    /// Older server versions cannot execute the query loading password complexity rules.
-    constexpr UInt64 min_server_revision_to_load_complexity_rules = DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES;
-
-    if (server_revision < min_server_revision_to_load_complexity_rules)
-        return;
-
-    connection->sendQuery(connection_parameters.timeouts,
-                          "SELECT * FROM viewIfPermitted(SELECT pattern, message FROM system.password_rules ELSE null('pattern String, message String'))",
-                          {} /* query_parameters */,
-                          "" /* query_id */,
-                          QueryProcessingStage::Complete,
-                          &global_context->getSettingsRef(),
-                          &global_context->getClientInfo(), false, {});
-    while (true)
-    {
-        Packet packet = connection->receivePacket();
-        switch (packet.type)
-        {
-            case Protocol::Server::Data:
-                if (packet.block)
-                {
-                    const ColumnString & column_pattern = typeid_cast<const ColumnString &>(*packet.block.getByPosition(0).column);
-                    const ColumnString & column_message = typeid_cast<const ColumnString &>(*packet.block.getByPosition(1).column);
-
-                    auto & access_control = global_context->getAccessControl();
-                    size_t rows = packet.block.rows();
-                    for (size_t i = 0; i < rows; ++i)
-                        access_control.addPasswordComplexityRule({column_pattern[i].get<String>(), column_message[i].get<String>()});
-                }
-                continue;
-
-            case Protocol::Server::Progress:
-            case Protocol::Server::ProfileInfo:
-            case Protocol::Server::Totals:
-            case Protocol::Server::Extremes:
-            case Protocol::Server::Log:
-                continue;
-
-            case Protocol::Server::Exception:
-                packet.exception->rethrow();
-                return;
-
-            case Protocol::Server::EndOfStream:
-                return;
-
-            case Protocol::Server::ProfileEvents:
-                continue;
-
-            default:
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                    packet.type, connection->getDescription());
-        }
-    }
-}
-
 void Client::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
@@ -318,7 +260,9 @@ try
     if (is_interactive && !config().has("no-warnings"))
         showWarnings();
 
-    loadPasswordComplexityRules();
+    /// Set user password complexity rules
+    auto & access_control = global_context->getAccessControl();
+    access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
     if (is_interactive && !delayed_interactive)
     {
