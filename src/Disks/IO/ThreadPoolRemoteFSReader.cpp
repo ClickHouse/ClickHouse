@@ -35,15 +35,14 @@ namespace
         explicit AsyncReadIncrement(AsyncReadCounters & counters_)
             : counters(counters_)
         {
-            size_t current = counters.current_parallel_read_tasks.fetch_add(1) + 1;
-            size_t current_max = counters.max_parallel_read_tasks;
-            while (current > current_max &&
-                        !counters.max_parallel_read_tasks.compare_exchange_weak(current_max, current)) {}
-
+            std::lock_guard lock(counters.mutex);
+            if (++counters.current_parallel_read_tasks > counters.max_parallel_read_tasks)
+                counters.max_parallel_read_tasks = counters.current_parallel_read_tasks;
         }
 
         ~AsyncReadIncrement()
         {
+            std::lock_guard lock(counters.mutex);
             --counters.current_parallel_read_tasks;
         }
 

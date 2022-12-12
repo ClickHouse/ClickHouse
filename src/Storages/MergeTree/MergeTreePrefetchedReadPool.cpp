@@ -32,15 +32,18 @@ namespace
         explicit PrefetchIncrement(AsyncReadCounters & counters_)
             : counters(counters_)
         {
+            std::lock_guard lock(counters.mutex);
             ++counters.total_prefetch_tasks;
-            size_t current = counters.current_parallel_prefetch_tasks.fetch_add(1) + 1;
-            size_t current_max = counters.max_parallel_prefetch_tasks;
-            while (current > current_max &&
-                        !counters.max_parallel_prefetch_tasks.compare_exchange_weak(current_max, current)) {}
+            if (++counters.current_parallel_prefetch_tasks > counters.max_parallel_prefetch_tasks)
+                counters.max_parallel_prefetch_tasks = counters.current_parallel_prefetch_tasks;
 
         }
 
-        ~PrefetchIncrement() { --counters.current_parallel_prefetch_tasks; }
+        ~PrefetchIncrement()
+        {
+            std::lock_guard lock(counters.mutex);
+            --counters.current_parallel_prefetch_tasks;
+        }
 
         AsyncReadCounters & counters;
     };
@@ -331,11 +334,11 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
 
             if (!prefetches_limit || ++created_prefetches_count <= prefetches_limit)
             {
-                reader = createReader(part, part.task_columns.columns, ranges_to_get_from_part, priority++);
+                reader = createReader(part, part.task_columns.columns, ranges_to_get_from_part, priority);
 
                 if (reader_settings.apply_deleted_mask && part.data_part->hasLightweightDelete())
                 {
-                    auto pre_reader = createReader(part, {LightweightDeleteDescription::FILTER_COLUMN}, ranges_to_get_from_part, priority++);
+                    auto pre_reader = createReader(part, {LightweightDeleteDescription::FILTER_COLUMN}, ranges_to_get_from_part, priority);
                     pre_reader_for_step.push_back(std::move(pre_reader));
                 }
 
@@ -343,10 +346,12 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
                 {
                     for (const auto & pre_columns_per_step : part.task_columns.pre_columns)
                     {
-                        auto pre_reader = createReader(part, pre_columns_per_step, ranges_to_get_from_part, priority++);
+                        auto pre_reader = createReader(part, pre_columns_per_step, ranges_to_get_from_part, priority);
                         pre_reader_for_step.push_back(std::move(pre_reader));
                     }
                 }
+
+                ++priority;
             }
 
             auto read_task = std::make_unique<MergeTreeReadTask>(
