@@ -51,11 +51,15 @@ def test_merge_tree_load_parts(started_cluster):
     node1.query("OPTIMIZE TABLE mt_load_parts FINAL")
     node1.restart_clickhouse(kill=True)
 
+    node1.query("SYSTEM WAIT LOADING PARTS mt_load_parts")
+
     assert node1.contains_in_log("Loading Active part 44_1_20")
     for i in range(1, 21):
         assert not node1.contains_in_log(f"Loading Active part 44_{i}_{i}_0")
+        assert node1.contains_in_log(f"Loading Outdated part 44_{i}_{i}_0")
 
     assert node1.query("SELECT count() FROM mt_load_parts") == "20\n"
+
     assert (
         node1.query(
             "SELECT count() FROM system.parts WHERE table = 'mt_load_parts' AND active"
@@ -63,44 +67,23 @@ def test_merge_tree_load_parts(started_cluster):
         == "1\n"
     )
 
-    MAX_RETRY = 20
-
-    all_outdated_loaded = False
-    for _ in range(MAX_RETRY):
-        all_outdated_loaded = all(
-            [
-                node1.contains_in_log(f"Loading Outdated part 44_{i}_{i}_0")
-                for i in range(1, 21)
-            ]
-        )
-        if all_outdated_loaded:
-            break
-        time.sleep(2)
-
-    assert all_outdated_loaded
-
     node1.query("ALTER TABLE mt_load_parts MODIFY SETTING old_parts_lifetime = 1")
     node1.query("DETACH TABLE mt_load_parts")
     node1.query("ATTACH TABLE mt_load_parts")
+
+    node1.query("SYSTEM WAIT LOADING PARTS mt_load_parts")
 
     table_path = node1.query(
         "SELECT data_paths[1] FROM system.tables WHERE table = 'mt_load_parts'"
     ).strip()
 
-    part_dirs_ok = False
-    for _ in range(MAX_RETRY):
-        part_dirs = node1.exec_in_container(
-            ["bash", "-c", f"ls {table_path}"], user="root"
-        )
-        part_dirs = list(
-            set(part_dirs.strip().split("\n")) - {"detached", "format_version.txt"}
-        )
-        part_dirs_ok = len(part_dirs) == 1 and part_dirs[0].startswith("44_1_20")
-        if part_dirs_ok:
-            break
-        time.sleep(2)
+    part_dirs = node1.exec_in_container(["bash", "-c", f"ls {table_path}"], user="root")
 
-    assert part_dirs_ok
+    part_dirs = list(
+        set(part_dirs.strip().split("\n")) - {"detached", "format_version.txt"}
+    )
+
+    assert len(part_dirs) == 1 and part_dirs[0].startswith("44_1_20")
 
 
 def test_merge_tree_load_parts_corrupted(started_cluster):
@@ -148,6 +131,7 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
     corrupt_part_data_on_disk(node1, "mt_load_parts_2", get_part_name(node1, 333, 2, 2))
 
     node1.restart_clickhouse(kill=True)
+    node1.query("SYSTEM WAIT LOADING PARTS mt_load_parts_2")
 
     def check_parts_loading(node, partition, loaded, failed, skipped):
         for (min_block, max_block) in loaded:

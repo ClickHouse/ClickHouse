@@ -484,7 +484,7 @@ BlockIO InterpreterSystemQuery::execute()
             dropReplica(query);
             break;
         case Type::SYNC_REPLICA:
-            syncReplica(query);
+            syncReplica();
             break;
         case Type::SYNC_DATABASE_REPLICA:
             syncReplicatedDatabase(query);
@@ -503,6 +503,9 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::RESTORE_REPLICA:
             restoreReplica();
+            break;
+        case Type::WAIT_LOADING_PARTS:
+            waitLoadingParts();
             break;
         case Type::RESTART_DISK:
             restartDisk(query.disk);
@@ -781,7 +784,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
     return true;
 }
 
-void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
+void InterpreterSystemQuery::syncReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -801,6 +804,23 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
 
+void InterpreterSystemQuery::waitLoadingParts()
+{
+    getContext()->checkAccess(AccessType::SYSTEM_WAIT_LOADING_PARTS, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+    {
+        LOG_TRACE(log, "Waiting for loading of parts of table {}", table_id.getFullTableName());
+        merge_tree->waitForOutdatedPartsToBeLoaded();
+        LOG_TRACE(log, "Finished waiting for loading of parts of table {}", table_id.getFullTableName());
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Command WAIT LOADING PARTS is supported only for MergeTree table, but got: {}", table->getName());
+    }
+}
 
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
@@ -1003,6 +1023,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTART_REPLICAS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA);
+            break;
+        }
+        case Type::WAIT_LOADING_PARTS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_WAIT_LOADING_PARTS, query.getDatabase(), query.getTable());
             break;
         }
         case Type::SYNC_DATABASE_REPLICA:
