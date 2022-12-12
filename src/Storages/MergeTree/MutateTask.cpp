@@ -488,6 +488,9 @@ static NameSet collectFilesToSkip(
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
+    /// Do not hardlink this file because it's always rewritten at the end of mutation.
+    files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+
     auto new_stream_counts = getStreamCounts(new_part, new_part->getColumns().getNames());
     auto source_updated_stream_counts = getStreamCounts(source_part, updated_header.getNames());
     auto new_updated_stream_counts = getStreamCounts(new_part, updated_header.getNames());
@@ -1484,7 +1487,16 @@ bool MutateTask::execute()
             if (task->executeStep())
                 return true;
 
-            promise.set_value(ctx->new_data_part);
+            // The `new_data_part` is a shared pointer and must be moved to allow
+            // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
+            //
+            // `tryRemovePartImmediately` requires `std::shared_ptr::unique() == true`
+            // to delete the part timely. When there are multiple shared pointers,
+            // only the part state is changed to `Deleting`.
+            //
+            // Fetching a byte-identical part (in case of checksum mismatches) will fail with
+            // `Part ... should be deleted after previous attempt before fetch`.
+            promise.set_value(std::move(ctx->new_data_part));
             return false;
         }
     }

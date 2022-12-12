@@ -701,6 +701,8 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/blocks", "",
             zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/async_blocks", "",
+            zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/nonincrement_block_numbers", "",
@@ -1011,7 +1013,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 
     /// NOTE /block_numbers/ actually is not flat, because /block_numbers/<partition_id>/ may have ephemeral children,
     /// but we assume that all ephemeral block locks are already removed when table is being dropped.
-    static constexpr std::array flat_nodes = {"block_numbers", "blocks", "leader_election", "log", "mutations", "pinned_part_uuids"};
+    static constexpr std::array flat_nodes = {"block_numbers", "blocks", "async_blocks", "leader_election", "log", "mutations", "pinned_part_uuids"};
 
     /// First try to remove paths that are known to be flat
     for (const auto * node : flat_nodes)
@@ -4525,6 +4527,16 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
     const auto storage_settings_ptr = getSettings();
     const Settings & query_settings = local_context->getSettingsRef();
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
+    bool async_deduplicate = query_settings.async_insert && storage_settings_ptr->replicated_deduplication_window_for_async_inserts != 0 && query_settings.insert_deduplicate;
+    if (async_deduplicate)
+        return std::make_shared<ReplicatedMergeTreeSinkWithAsyncDeduplicate>(
+            *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
+            query_settings.insert_quorum_timeout.totalMilliseconds(),
+            query_settings.max_partitions_per_insert_block,
+            query_settings.insert_quorum_parallel,
+            deduplicate,
+            query_settings.insert_quorum.is_auto,
+            local_context);
 
     // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeSink?
     return std::make_shared<ReplicatedMergeTreeSink>(
@@ -5358,7 +5370,6 @@ bool StorageReplicatedMergeTree::existsNodeCached(const ZooKeeperWithFaultInject
     return res;
 }
 
-
 std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id,
     const zkutil::ZooKeeperPtr & zookeeper,
@@ -5369,11 +5380,11 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
         partition_id, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), zookeeper_block_id_path, zookeeper_path_prefix);
 }
 
-
+template<typename T>
 std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id,
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
-    const String & zookeeper_block_id_path,
+    const T & zookeeper_block_id_path,
     const String & zookeeper_path_prefix) const
 {
     String zookeeper_table_path;
@@ -6546,16 +6557,23 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
 void StorageReplicatedMergeTree::getClearBlocksInPartitionOps(
     Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num)
 {
+    getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "blocks");
+    getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "async_blocks");
+}
+
+void StorageReplicatedMergeTree::getClearBlocksInPartitionOpsImpl(
+    Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num, const String & blocks_dir_name)
+{
     Strings blocks;
-    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(fs::path(zookeeper_path) / "blocks", blocks))
-        throw Exception(zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(fs::path(zookeeper_path) / blocks_dir_name, blocks))
+        throw Exception(zookeeper_path + "/" + blocks_dir_name + "blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
     String partition_prefix = partition_id + "_";
     Strings paths_to_get;
 
     for (const String & block_id : blocks)
         if (startsWith(block_id, partition_prefix))
-            paths_to_get.push_back(fs::path(zookeeper_path) / "blocks" / block_id);
+            paths_to_get.push_back(fs::path(zookeeper_path) / blocks_dir_name / block_id);
 
     auto results = zookeeper.tryGet(paths_to_get);
 
@@ -7161,10 +7179,20 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     const DataPartPtr & part,
     const String & block_id_path) const
 {
+    if (block_id_path.empty())
+        return getCommitPartOps(ops, part, std::vector<String>());
+    else
+        return getCommitPartOps(ops, part, std::vector<String>({block_id_path}));
+}
+
+void StorageReplicatedMergeTree::getCommitPartOps(
+    Coordination::Requests & ops,
+    const DataPartPtr & part,
+    const std::vector<String> & block_id_paths) const
+{
     const String & part_name = part->name;
     const auto storage_settings_ptr = getSettings();
-
-    if (!block_id_path.empty())
+    for (const String & block_id_path : block_id_paths)
     {
         /// Make final duplicate check and commit block_id
         ops.emplace_back(
@@ -8739,6 +8767,18 @@ void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && p
     for (auto part : parts)
         sink->writeExistingPart(part);
 }
+
+template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber<String>(
+    const String & partition_id,
+    const ZooKeeperWithFaultInjectionPtr & zookeeper,
+    const String & zookeeper_block_id_path,
+    const String & zookeeper_path_prefix) const;
+
+template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber<std::vector<String>>(
+    const String & partition_id,
+    const ZooKeeperWithFaultInjectionPtr & zookeeper,
+    const std::vector<String> & zookeeper_block_id_path,
+    const String & zookeeper_path_prefix) const;
 
 #if 0
 PartsTemporaryRename renamed_parts(*this, "detached/");

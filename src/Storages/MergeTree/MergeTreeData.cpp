@@ -2707,6 +2707,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
+
         for (const auto & changed_setting : new_changes)
         {
             const auto & setting_name = changed_setting.name;
@@ -3717,13 +3719,13 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr q
             parts_count_in_partition, ReadableSize(average_part_size));
     }
 
-    if (k_inactive < 0 && parts_count_in_partition < parts_to_delay_insert)
+    if (k_inactive < 0 && (parts_count_in_partition < parts_to_delay_insert || parts_are_large_enough_in_average))
         return;
 
     const ssize_t k_active = ssize_t(parts_count_in_partition) - ssize_t(parts_to_delay_insert);
     size_t max_k;
     size_t k;
-    if (k_active > k_inactive && !parts_are_large_enough_in_average)
+    if (k_active > k_inactive)
     {
         max_k = parts_to_throw_insert - parts_to_delay_insert;
         k = k_active + 1;

@@ -735,6 +735,24 @@ try
     }
 #endif
 
+#if USE_OPENSSL_INTREE
+    /// When building openssl into clickhouse, clickhouse owns the configuration
+    /// Therefore, the clickhouse openssl configuration should be kept separate from
+    /// the OS. Default to the one in the standard config directory, unless overridden
+    /// by a key in the config.
+    if (config().has("opensslconf"))
+    {
+        std::string opensslconf_path = config().getString("opensslconf");
+        setenv("OPENSSL_CONF", opensslconf_path.c_str(), true);
+    }
+    else
+    {
+        const String config_path = config().getString("config-file", "config.xml");
+        const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+        setenv("OPENSSL_CONF", config_dir.string() + "openssl.conf", true);
+    }
+#endif
+
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
