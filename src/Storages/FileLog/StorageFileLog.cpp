@@ -251,7 +251,8 @@ void StorageFileLog::deserialize()
     /// iterated directory always has one file inside.
     for (const auto dir_iter = disk->iterateDirectory(metadata_base_path); dir_iter->isValid(); dir_iter->next())
     {
-        if (!disk->isFile(dir_iter->name()))
+        auto full_name = getFullMetaPath(dir_iter->name());
+        if (!disk->isFile(full_name))
         {
             throw Exception(
                 ErrorCodes::BAD_FILE_TYPE,
@@ -260,7 +261,7 @@ void StorageFileLog::deserialize()
                 metadata_base_path);
         }
 
-        auto in = disk->readFile(dir_iter->name());
+        auto in = disk->readFile(full_name);
         FileMeta meta;
         UInt64 inode, last_written_pos;
 
