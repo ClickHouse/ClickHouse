@@ -1,0 +1,24 @@
+Expression (Project names)
+Header: number UInt64
+  Distinct (Preliminary DISTINCT)
+  Header: number_0 UInt64
+    Expression ((Projection + (Change column names to column identifiers + Project names)))
+    Header: number_0 UInt64
+      Distinct (Preliminary DISTINCT)
+      Header: number_1 UInt64
+        Expression ((Projection + (Change column names to column identifiers + Project names)))
+        Header: number_1 UInt64
+          Distinct (Preliminary DISTINCT)
+          Header: number_2 UInt64
+            Expression ((Projection + Change column names to column identifiers))
+            Header: number_2 UInt64
+              ReadFromStorage (SystemNumbers)
+              Header: number UInt64
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + Project names)))))))
+Header: number UInt64
+  Distinct (Preliminary DISTINCT)
+  Header: number_2 UInt64
+    Expression ((Projection + Change column names to column identifiers))
+    Header: number_2 UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64

@@ -30,6 +30,9 @@ struct QueryPlanOptimizationSettings
     /// If aggregation-in-order optimisation is enabled
     bool aggregation_in_order = false;
 
+    /// true if removing redundant DISTINCT clauses is enabled
+    bool remove_redundant_distinct = true;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };
