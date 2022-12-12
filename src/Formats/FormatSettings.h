@@ -83,6 +83,8 @@ struct FormatSettings
 
     UInt64 max_binary_string_size = 0;
 
+    UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+
     struct
     {
         UInt64 row_group_size = 1000000;

@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read)
+void checkFinalInferredType(DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read)
 {
     if (!checkIfTypeIsComplete(type))
     {
@@ -23,7 +23,8 @@ void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & ty
             throw Exception(
                 ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
                 "Cannot determine type for column '{}' by first {} rows of data, most likely this column contains only Nulls or empty "
-                "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints",
+                "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints. "
+                "If your data contains complex JSON objects, try enabling one of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
                 name,
                 rows_read);
 
@@ -32,8 +33,6 @@ void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & ty
 
     if (settings.schema_inference_make_columns_nullable)
         type = makeNullableRecursively(type);
-
-    result.emplace_back(name, type);
 }
 
 IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
@@ -143,9 +142,14 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     NamesAndTypesList result;
     for (field_index = 0; field_index != data_types.size(); ++field_index)
     {
-        transformFinalTypeIfNeeded(data_types[field_index]);
-        /// Check that we could determine the type of this column.
-        checkResultColumnTypeAndAppend(result, data_types[field_index], column_names[field_index], format_settings, getDefaultType(field_index), rows_read);
+        /// Don't check/change types from hints.
+        if (!hints.contains(column_names[field_index]))
+        {
+            transformFinalTypeIfNeeded(data_types[field_index]);
+            /// Check that we could determine the type of this column.
+            checkFinalInferredType(data_types[field_index], column_names[field_index], format_settings, getDefaultType(field_index), rows_read);
+        }
+        result.emplace_back(column_names[field_index], data_types[field_index]);
     }
 
     return result;
@@ -252,9 +256,14 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     for (auto & name : names_order)
     {
         auto & type = names_to_types[name];
-        transformFinalTypeIfNeeded(type);
-        /// Check that we could determine the type of this column.
-        checkResultColumnTypeAndAppend(result, type, name, format_settings, default_type, rows_read);
+        /// Don't check/change types from hints.
+        if (!hints.contains(name))
+        {
+            transformFinalTypeIfNeeded(type);
+            /// Check that we could determine the type of this column.
+            checkFinalInferredType(type, name, format_settings, default_type, rows_read);
+        }
+        result.emplace_back(name, type);
     }
 
     return result;

@@ -171,8 +171,7 @@ void chooseResultColumnType(
     }
 }
 
-void checkResultColumnTypeAndAppend(
-    NamesAndTypesList & result, DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read);
+void checkFinalInferredType(DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read);
 
 Strings splitColumnNames(const String & column_names_str);
 

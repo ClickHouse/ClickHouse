@@ -79,13 +79,18 @@ public:
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
 
+    bool needContext() const override { return !hints_str.empty(); }
+    void setContext(ContextPtr & ctx) override;
+
 private:
     NamesAndTypesList readSchema() override;
 
     /// Read whole column in the block (up to max_rows_to_read rows) and extract the data type.
     DataTypePtr readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read);
 
-    const FormatSettings format_settings;
+    const FormatSettings & format_settings;
+    String hints_str;
+    std::unordered_map<String, DataTypePtr> hints;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     Names column_names_from_settings;
     JSONInferenceInfo inference_info;
