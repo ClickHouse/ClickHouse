@@ -306,7 +306,7 @@ private:
 
             const auto decimal_combination = DecimalUtils::split(source, *scale);
             const auto fractional_second = ToFractionalSecondImpl::execute(decimal_combination, timezone);
-            for (Int64 i = *scale, value = fractional_second; i >= 0; --i, value /= 10)
+            for (Int64 i = *scale, value = fractional_second; i > 0; --i, value /= 10)
                 target[i - 1] += value % 10;
         }
 
