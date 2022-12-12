@@ -22,7 +22,6 @@ namespace DB
 {
 
 
-
 struct BlocksMetadata
 {
     String hash;
