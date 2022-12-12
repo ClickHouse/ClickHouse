@@ -48,16 +48,11 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    static ColumnsDescription getTableStructureFromData(
+        const StorageS3Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr ctx);
 private:
-    std::vector<std::string> getKeysFromS3();
-
-    /// Apache Hudi store parts of data in different files.
-    /// Every part file has timestamp in it.
-    /// Every partition(directory) in Apache Hudi has different versions of part.
-    /// To find needed parts we need to find out latest part file for every partition.
-    /// Part format is usually parquet, but can differ.
-    static String generateQueryFromKeys(const std::vector<std::string> & keys, const String & format);
-
     StorageS3::S3Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;

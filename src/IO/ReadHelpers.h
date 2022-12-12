@@ -964,15 +964,16 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         components.whole = components.whole / common::exp10_i32(scale);
     }
 
+    bool is_ok = true;
     if constexpr (std::is_same_v<ReturnType, void>)
         datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
     else
-        DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
+        is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
 
     datetime64 *= negative_multiplier;
 
 
-    return ReturnType(true);
+    return ReturnType(is_ok);
 }
 
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
@@ -1032,6 +1033,15 @@ template <typename T>
 requires is_arithmetic_v<T>
 inline void readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
+inline void readBinary(bool & x, ReadBuffer & buf)
+{
+    /// When deserializing a bool it might trigger UBSAN if the input is not 0 or 1, so it's better to treat it as an Int8
+    static_assert(sizeof(bool) == sizeof(Int8));
+    Int8 flag = 0;
+    readBinary(flag, buf);
+    x = (flag != 0);
+}
+
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Int256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
@@ -1068,7 +1078,7 @@ inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little 
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
-        auto & item = x.items[std::size(x.items) - i - 1];
+        auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
         readBinaryBigEndian(item, buf);
     }
 }
@@ -1438,6 +1448,8 @@ void skipToCarriageReturnOrEOF(ReadBuffer & buf);
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
+/// Skip to next character after next \0. If no \0 in stream, skip to end.
+void skipNullTerminated(ReadBuffer & buf);
 
 /** This function just copies the data from buffer's internal position (in.position())
   * to current position (from arguments) into memory.
