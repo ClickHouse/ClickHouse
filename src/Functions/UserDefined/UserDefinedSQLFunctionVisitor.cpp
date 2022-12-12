@@ -31,7 +31,17 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 
         auto * old_value = child.get();
         visit(child);
-        ast->setOrReplace(old_value, child);
+
+        // child did not change
+        if (old_value == child.get())
+            return;
+
+        // child changed, we need to modify it in the list of children of the parent also
+        for (auto & current_child : ast->children)
+        {
+            if (current_child.get() == old_value)
+                current_child = child;
+        }
     };
 
     if (auto * col_decl = ast->as<ASTColumnDeclaration>())

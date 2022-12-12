@@ -111,8 +111,8 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
         auto & query_context = planner_context->getQueryContext();
 
         auto from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
-        const auto & columns_names_set = table_expression_data.getColumnsNames();
-        Names columns_names(columns_names_set.begin(), columns_names_set.end());
+
+        Names columns_names = table_expression_data.getColumnNames();
 
         /** The current user must have the SELECT privilege.
           * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
@@ -174,8 +174,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     else if (query_node || union_node)
     {
         auto subquery_options = select_query_options.subquery();
-        auto subquery_context = buildSubqueryContext(planner_context->getQueryContext());
-        Planner subquery_planner(table_expression, subquery_options, std::move(subquery_context), planner_context->getGlobalPlannerContext());
+        Planner subquery_planner(table_expression, subquery_options, planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
         query_plan = std::move(subquery_planner).extractQueryPlan();
     }
@@ -494,7 +493,8 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
         }
     }
 
-    auto left_table_names = left_plan.getCurrentDataStream().header.getNames();
+    const Block & left_header = left_plan.getCurrentDataStream().header;
+    auto left_table_names = left_header.getNames();
     NameSet left_table_names_set(left_table_names.begin(), left_table_names.end());
 
     auto columns_from_joined_table = right_plan.getCurrentDataStream().header.getNamesAndTypesList();
@@ -506,7 +506,8 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             table_join->addJoinedColumn(column_from_joined_table);
     }
 
-    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), right_plan.getCurrentDataStream().header, planner_context);
+    const Block & right_header = right_plan.getCurrentDataStream().header;
+    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context);
 
     auto result_plan = QueryPlan();
 
