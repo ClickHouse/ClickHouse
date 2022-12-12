@@ -164,8 +164,13 @@ public:
     void get128(char * out)
     {
         finalize();
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        unalignedStore<UInt64>(out + 8, v0 ^ v1);
+        unalignedStore<UInt64>(out, v2 ^ v3);
+#else
         unalignedStore<UInt64>(out, v0 ^ v1);
         unalignedStore<UInt64>(out + 8, v2 ^ v3);
+#endif
     }
 
     template <typename T>

@@ -50,7 +50,6 @@ private:
     size_t thread;
 
     MergeTreeReadPoolPtr pool;
-    size_t min_marks_to_read;
 
     /// Last part read in this thread
     std::string last_readed_part_name;

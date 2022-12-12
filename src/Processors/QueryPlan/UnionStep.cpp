@@ -37,6 +37,11 @@ UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
     else
         output_stream = DataStream{.header = header};
 
+    updateOutputSortDescription();
+}
+
+void UnionStep::updateOutputSortDescription()
+{
     SortDescription common_sort_description = input_streams.front().sort_description;
     DataStream::SortScope sort_scope = input_streams.front().sort_scope;
     for (const auto & input_stream : input_streams)
