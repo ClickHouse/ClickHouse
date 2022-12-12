@@ -51,13 +51,13 @@ system table `SYSTEM.QUERYRESULT_CACHE`.
 
 The cache exists per-user and cache results are not shared between users.
 
-SELECT queries which contain non-deterministic functions and predicates (e.g. `now()`, `rand()`, etc.) are not cached.
-
 Queries are indexed in the cache by their AST, meaning that caching is agnostic to upper/lowercase (`SELECT` vs. `select`).
 
 ### Further configuration options:
 
 To configure the size of the query result cache, use setting [query_result_cache_size](settings/settings.md#query-result-cache-size).
+
+To adjust if results of queries with non-deterministic functions (e.g. `rand()`, `now()`) should be cached, use setting [query_result_cache_ignore_nondeterministic_functions](settings/settings.md#query-result-cache-ignore-nondeterministic-functions).
 
 To control how often a query needs to run until its result is cached, use setting [query_result_cache_min_query_runs](settings/settings.md#query-result-cache-min-query-runs).
 

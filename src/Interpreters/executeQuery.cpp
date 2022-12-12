@@ -314,6 +314,9 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
 
 static bool hasNonCacheableFunctions(ASTPtr ast, ContextPtr context)
 {
+    if (!context->getSettings().query_result_cache_ignore_nondeterministic_functions)
+        return false;
+
     if (const auto * function = ast->as<ASTFunction>())
     {
         const FunctionFactory & function_factory = FunctionFactory::instance();
