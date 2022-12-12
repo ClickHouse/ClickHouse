@@ -326,7 +326,7 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         if constexpr (std::is_same_v<ReturnType, void>)
             throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
         else
-            return false;
+            return ReturnType(false);
     }
 
     char char_after_backslash = *buf.position();
@@ -537,7 +537,7 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
                 "Cannot parse quoted string: expected opening quote '{}', got '{}'",
                 std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
         else
-            return false;
+            return ReturnType(false);
     }
 
     ++buf.position();
@@ -573,7 +573,7 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
             else
             {
                 if (!parseComplexEscapeSequence<Vector, ReturnType>(s, buf))
-                    return false;
+                    return ReturnType(false);
             }
         }
     }
@@ -582,7 +582,7 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
         throw ParsingException("Cannot parse quoted string: expected closing quote",
             ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
     else
-        return false;
+        return ReturnType(false);
 }
 
 template <bool enable_sql_style_quoting, typename Vector>
