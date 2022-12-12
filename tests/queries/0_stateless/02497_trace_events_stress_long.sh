@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function thread1()
 {
-    query_id="$RANDOM-$CLICKHOUSE_DATABASE"
+    query_id="$RANDOM-$CLICKHOUSE_DATABASE-$1"
 
     while true; do
         $CLICKHOUSE_CLIENT --query_id=$query_id --query "
@@ -35,10 +35,10 @@ export -f thread2
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c thread1 >/dev/null &
-timeout $TIMEOUT bash -c thread1 >/dev/null &
-timeout $TIMEOUT bash -c thread1 >/dev/null &
-timeout $TIMEOUT bash -c thread1 >/dev/null &
+timeout $TIMEOUT bash -c "thread1 t1" >/dev/null &
+timeout $TIMEOUT bash -c "thread1 t2" >/dev/null &
+timeout $TIMEOUT bash -c "thread1 t3" >/dev/null &
+timeout $TIMEOUT bash -c "thread1 t4" >/dev/null &
 timeout $TIMEOUT bash -c thread2 >/dev/null &
 
 wait
