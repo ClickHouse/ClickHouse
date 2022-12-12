@@ -24,6 +24,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MovesList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -79,6 +80,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -227,6 +230,7 @@ struct ContextSharedPart : boost::noncopyable
     ProcessList process_list;                               /// Executing queries at the moment.
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
+    MovesList moves_list;                                   /// The list of executing moves (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
@@ -635,6 +639,8 @@ const ProcessList & Context::getProcessList() const { return shared->process_lis
 OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
+MovesList & Context::getMovesList() { return shared->moves_list; }
+const MovesList & Context::getMovesList() const { return shared->moves_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
 const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
 
@@ -987,10 +993,12 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     return access ? access : ContextAccess::getFullAccess();
 }
 
-ASTPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
+RowPolicyFilterPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     auto lock = getLock();
-    auto row_filter_of_initial_user = row_policies_of_initial_user ? row_policies_of_initial_user->getFilter(database, table_name, filter_type) : nullptr;
+    RowPolicyFilterPtr row_filter_of_initial_user;
+    if (row_policies_of_initial_user)
+        row_filter_of_initial_user = row_policies_of_initial_user->getFilter(database, table_name, filter_type);
     return getAccess()->getRowPolicyFilter(database, table_name, filter_type, row_filter_of_initial_user);
 }
 
@@ -1227,7 +1235,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 }
 
 
-StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     auto hash = table_expression->getTreeHash();
     String key = toString(hash.first) + '_' + toString(hash.second);
@@ -1237,15 +1245,61 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     if (!res)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
+        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & insertion_table = getInsertionTable();
-            if (!insertion_table.empty())
+            const auto & structure_hint = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            bool use_columns_from_insert_query = true;
+
+            /// use_structure_from_insertion_table_in_table_functions=2 means `auto`
+            if (select_query_hint && getSettingsRef().use_structure_from_insertion_table_in_table_functions == 2)
             {
-                const auto & structure_hint
-                    = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
-                table_function_ptr->setStructureHint(structure_hint);
+                const auto * expression_list = select_query_hint->select()->as<ASTExpressionList>();
+                Names columns_names;
+                bool have_asterisk = false;
+                /// First, check if we have only identifiers, asterisk and literals in select expression,
+                /// and if no, we cannot use the structure from insertion table.
+                for (const auto & expression : expression_list->children)
+                {
+                    if (auto * identifier = expression->as<ASTIdentifier>())
+                    {
+                        columns_names.push_back(identifier->name());
+                    }
+                    else if (expression->as<ASTAsterisk>())
+                    {
+                        have_asterisk = true;
+                    }
+                    else if (!expression->as<ASTLiteral>())
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                }
+
+                /// Check that all identifiers are column names from insertion table.
+                for (const auto & column_name : columns_names)
+                {
+                    if (!structure_hint.has(column_name))
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                }
+
+                /// If we don't have asterisk but only subset of columns, we should use
+                /// structure from insertion table only in case when table function
+                /// supports reading subset of columns from data.
+                if (use_columns_from_insert_query && !have_asterisk && !columns_names.empty())
+                {
+                    /// For input function we should check if input format supports reading subset of columns.
+                    if (table_function_ptr->getName() == "input")
+                        use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                    else
+                        use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+                }
             }
+
+            if (use_columns_from_insert_query)
+                table_function_ptr->setStructureHint(structure_hint);
         }
 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
@@ -1377,6 +1431,11 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
     getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
 }
 
+void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
+{
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(merge_tree_settings, changes);
+}
+
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
     auto lock = getLock();
@@ -1471,9 +1530,9 @@ void Context::setCurrentQueryId(const String & query_id)
         client_info.initial_query_id = client_info.current_query_id;
 }
 
-void Context::killCurrentQuery()
+void Context::killCurrentQuery() const
 {
-    if (auto elem = process_list_elem.lock())
+    if (auto elem = getProcessListElement())
         elem->cancelQuery(true);
 }
 
@@ -1482,10 +1541,19 @@ String Context::getDefaultFormat() const
     return default_format.empty() ? "TabSeparated" : default_format;
 }
 
-
 void Context::setDefaultFormat(const String & name)
 {
     default_format = name;
+}
+
+String Context::getInsertFormat() const
+{
+    return insert_format;
+}
+
+void Context::setInsertFormat(const String & name)
+{
+    insert_format = name;
 }
 
 MultiVersion<Macros>::Version Context::getMacros() const
@@ -1719,11 +1787,16 @@ void Context::setProcessListElement(QueryStatusPtr elem)
 {
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
+    has_process_list_elem = elem.get();
 }
 
 QueryStatusPtr Context::getProcessListElement() const
 {
-    return process_list_elem.lock();
+    if (!has_process_list_elem)
+        return {};
+    if (auto res = process_list_elem.lock())
+        return res;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Weak pointer to process_list_elem expired during query execution, it's a bug");
 }
 
 

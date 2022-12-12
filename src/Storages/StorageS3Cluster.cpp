@@ -14,6 +14,8 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -46,7 +48,7 @@ StorageS3Cluster::StorageS3Cluster(
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
     : IStorage(table_id_)
-    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
+    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.request_settings, configuration_.headers}
     , filename(configuration_.url)
     , cluster_name(configuration_.cluster_name)
     , format_name(configuration_.format)
@@ -103,8 +105,7 @@ Pipe StorageS3Cluster::read(
     auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String { return iterator->next(); });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-    Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+    auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
 
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
@@ -112,37 +113,39 @@ Pipe StorageS3Cluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
-    ASTPtr query_to_send = query_info.original_query->clone();
+    ASTPtr query_to_send = interpreter.getQueryInfo().query->clone();
     if (add_columns_structure_to_query)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
 
-    for (const auto & replicas : cluster->getShardsAddresses())
+    RestoreQualifiedNamesVisitor::Data data;
+    data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
+    data.remote_table.database = context->getCurrentDatabase();
+    data.remote_table.table = getName();
+    RestoreQualifiedNamesVisitor(data).visit(query_to_send);
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
+        /* only_replace_current_database_function_= */false,
+        /* only_replace_in_join_= */true);
+    visitor.visit(query_to_send);
+
+    const auto & current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+    for (const auto & shard_info : cluster->getShardsInfo())
     {
-        /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & node : replicas)
+        auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
+        for (auto & try_result : try_results)
         {
-            auto connection = std::make_shared<Connection>(
-                node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
-                "S3ClusterInititiator",
-                node.compression,
-                node.secure
-            );
-
-
-            /// For unknown reason global context is passed to IStorage::read() method
-            /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
-                queryToString(query_to_send),
-                header,
-                context,
-                /*throttler=*/nullptr,
-                scalars,
-                Tables(),
-                processed_stage,
-                RemoteQueryExecutor::Extension{.task_iterator = callback});
+                    shard_info.pool,
+                    std::vector<IConnectionPool::Entry>{try_result},
+                    queryToString(query_to_send),
+                    interpreter.getSampleBlock(),
+                    context,
+                    /*throttler=*/nullptr,
+                    scalars,
+                    Tables(),
+                    processed_stage,
+                    RemoteQueryExecutor::Extension{.task_iterator = callback});
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }

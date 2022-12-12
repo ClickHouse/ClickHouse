@@ -1,10 +1,11 @@
 #include "DisksApp.h"
+#include "ICommand.h"
 
 #include <Disks/registerDisks.h>
 
-#include <base/argsToConfig.h>
-
+#include <Common/TerminalSize.h>
 #include <Formats/registerFormats.h>
+
 
 namespace DB
 {
@@ -176,7 +177,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
     }
 
-    registerDisks();
+    registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
     shared_context = Context::createShared();

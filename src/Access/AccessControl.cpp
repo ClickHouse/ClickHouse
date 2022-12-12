@@ -16,11 +16,13 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
+#include <Access/resolveSetting.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
-#include <base/find_symbols.h>
+#include <IO/Operators.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -37,7 +39,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
 }
-
 
 namespace
 {
@@ -103,7 +104,7 @@ public:
 
     bool isSettingNameAllowed(std::string_view setting_name) const
     {
-        if (Settings::hasBuiltin(setting_name))
+        if (settingIsBuiltin(setting_name))
             return true;
 
         std::lock_guard lock{mutex};
@@ -454,9 +455,21 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
 
+        WriteBufferFromOwnString message;
+        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
+
+        /// Better exception message for usability.
+        /// It is typical when users install ClickHouse, type some password and instantly forget it.
+        if (credentials.getUserName().empty() || credentials.getUserName() == "default")
+            message << "\n\n"
+                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
+                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
+                << "and deleting this file will reset the password.\n"
+                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
+
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
-        throw Exception(credentials.getUserName() + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
+        throw Exception(message.str(), ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 

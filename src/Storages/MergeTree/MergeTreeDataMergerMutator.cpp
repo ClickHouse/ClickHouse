@@ -244,7 +244,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
             * Obviously we have to check it manually only for the first part
             * of each partition because it will be automatically checked for a pair of parts. */
-            if (!can_merge_callback(nullptr, part, txn.get(), nullptr))
+            if (!can_merge_callback(nullptr, part, txn.get(), out_disable_reason))
                 continue;
 
             /// This part can be merged only with next parts (no prev part exists), so start
@@ -256,7 +256,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         {
             /// If we cannot merge with previous part we had to start new parts
             /// interval (in the same partition)
-            if (!can_merge_callback(*prev_part, part, txn.get(), nullptr))
+            if (!can_merge_callback(*prev_part, part, txn.get(), out_disable_reason))
             {
                 /// Now we have no previous part
                 prev_part = nullptr;
@@ -268,7 +268,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
                 /// for example, merge is already assigned for such parts, or they participate in quorum inserts
                 /// and so on.
                 /// Also we don't start new interval here (maybe all next parts cannot be merged and we don't want to have empty interval)
-                if (!can_merge_callback(nullptr, part, txn.get(), nullptr))
+                if (!can_merge_callback(nullptr, part, txn.get(), out_disable_reason))
                     continue;
 
                 /// Starting new interval in the same partition
@@ -314,18 +314,32 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
         /// TTL delete is preferred to recompression
-        TTLDeleteMergeSelector delete_ttl_selector(
+        TTLDeleteMergeSelector drop_ttl_selector(
                 next_delete_ttl_merge_times_by_partition,
                 current_time,
                 data_settings->merge_with_ttl_timeout,
-                data_settings->ttl_only_drop_parts);
+                true);
 
-        parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
+        /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
+        parts_to_merge = drop_ttl_selector.select(parts_ranges, data_settings->max_bytes_to_merge_at_max_space_in_pool);
         if (!parts_to_merge.empty())
         {
             future_part->merge_type = MergeType::TTLDelete;
         }
-        else if (metadata_snapshot->hasAnyRecompressionTTL())
+        else if (!data_settings->ttl_only_drop_parts)
+        {
+            TTLDeleteMergeSelector delete_ttl_selector(
+                next_delete_ttl_merge_times_by_partition,
+                current_time,
+                data_settings->merge_with_ttl_timeout,
+                false);
+
+            parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
+            if (!parts_to_merge.empty())
+                future_part->merge_type = MergeType::TTLDelete;
+        }
+
+        if (parts_to_merge.empty() && metadata_snapshot->hasAnyRecompressionTTL())
         {
             TTLRecompressMergeSelector recompress_ttl_selector(
                     next_recompress_ttl_merge_times_by_partition,
@@ -621,8 +635,16 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
 {
     size_t res = 0;
+    time_t current_time = std::time(nullptr);
     for (const MergeTreeData::DataPartPtr & part : source_parts)
+    {
+        /// Exclude expired parts
+        time_t part_max_ttl = part->ttl_infos.part_max_ttl;
+        if (part_max_ttl && part_max_ttl <= current_time)
+            continue;
+
         res += part->getBytesOnDisk();
+    }
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
