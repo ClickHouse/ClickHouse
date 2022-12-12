@@ -89,7 +89,6 @@ WriteBufferFromS3::WriteBufferFromS3(
     , schedule(std::move(schedule_))
     , write_settings(write_settings_)
 {
-    allocateBuffer();
 }
 
 void WriteBufferFromS3::nextImpl()
@@ -97,28 +96,28 @@ void WriteBufferFromS3::nextImpl()
     if (!offset())
         return;
 
-    /// Buffer in a bad state after exception
-    if (temporary_buffer->tellp() == -1)
+    /// tellp() == -1 means the buffer in a bad state after exception.
+    if (!temporary_buffer || (temporary_buffer->tellp() == -1))
         allocateBuffer();
 
-    size_t size = offset();
-    temporary_buffer->write(working_buffer.begin(), size);
+    temporary_buffer->write(working_buffer.begin(), offset());
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
-    last_part_size += offset();
     if (write_settings.remote_throttler)
         write_settings.remote_throttler->add(offset());
 
-    /// Data size exceeds singlepart upload threshold, need to use multipart upload.
-    if (multipart_upload_id.empty() && last_part_size > settings.max_single_part_upload_size)
-        createMultipartUpload();
-
-    chassert(upload_part_size > 0);
-    if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
+    auto size = temporary_buffer->tellp();
+    if (size > 0)
     {
-        writePart();
+        size_t usize = size;
 
-        allocateBuffer();
+        /// Data size exceeds singlepart upload threshold, need to use multipart upload.
+        if (multipart_upload_id.empty() && usize > settings.max_single_part_upload_size)
+            createMultipartUpload();
+
+        chassert(upload_part_size > 0);
+        if (!multipart_upload_id.empty() && usize > upload_part_size)
+            writePart();
     }
 
     waitForReadyBackGroundTasks();
@@ -127,8 +126,6 @@ void WriteBufferFromS3::nextImpl()
 void WriteBufferFromS3::allocateBuffer()
 {
     temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
-    temporary_buffer->exceptions(std::ios::badbit);
-    last_part_size = 0;
 }
 
 WriteBufferFromS3::~WriteBufferFromS3()
@@ -219,8 +216,7 @@ void WriteBufferFromS3::createMultipartUpload()
 
 void WriteBufferFromS3::writePart()
 {
-    auto size = temporary_buffer->tellp();
-
+    auto size = temporary_buffer ? temporary_buffer->tellp() : std::streampos{0};
     LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", bucket, key, multipart_upload_id, size);
 
     if (size < 0)
@@ -314,13 +310,16 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
             settings.max_single_part_upload_size);
     }
 
+    auto body = std::exchange(temporary_buffer, nullptr);
+    auto size = body ? body->tellp() : std::streampos{0};
+
     /// Setup request.
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetPartNumber(static_cast<int>(part_number));
     req.SetUploadId(multipart_upload_id);
-    req.SetContentLength(temporary_buffer->tellp());
-    req.SetBody(temporary_buffer);
+    req.SetContentLength(size);
+    req.SetBody(body);
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
@@ -406,9 +405,8 @@ void WriteBufferFromS3::completeMultipartUpload()
 
 void WriteBufferFromS3::makeSinglepartUpload()
 {
-    auto size = temporary_buffer->tellp();
+    auto size = temporary_buffer ? temporary_buffer->tellp() : std::streampos{0};
     bool with_pool = static_cast<bool>(schedule);
-
     LOG_TRACE(log, "Making single part upload. Bucket: {}, Key: {}, Size: {}, WithPool: {}", bucket, key, size, with_pool);
 
     if (size < 0)
@@ -467,10 +465,13 @@ void WriteBufferFromS3::makeSinglepartUpload()
 
 void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 {
+    auto body = std::exchange(temporary_buffer, nullptr);
+    auto size = body ? body->tellp() : std::streampos{0};
+
     req.SetBucket(bucket);
     req.SetKey(key);
-    req.SetContentLength(temporary_buffer->tellp());
-    req.SetBody(temporary_buffer);
+    req.SetContentLength(size);
+    req.SetBody(body);
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
 

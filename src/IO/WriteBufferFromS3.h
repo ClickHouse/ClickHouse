@@ -96,7 +96,6 @@ private:
 
     size_t upload_part_size = 0;
     std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
-    size_t last_part_size = 0;
     size_t part_number = 0;
 
     /// Upload in S3 is made in parts.
