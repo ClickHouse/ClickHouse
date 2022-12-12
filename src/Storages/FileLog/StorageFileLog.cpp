@@ -172,7 +172,7 @@ void StorageFileLog::loadFiles()
             /// data file have been renamed, need update meta file's name
             if (it->second.file_name != file)
             {
-                std::filesystem::rename(getFullMetaPath(it->second.file_name), getFullMetaPath(file));
+                disk->replaceFile(getFullMetaPath(it->second.file_name), getFullMetaPath(file));
                 it->second.file_name = file;
             }
         }
@@ -200,7 +200,7 @@ void StorageFileLog::loadFiles()
                 valid_metas.emplace(inode, meta);
             /// Delete meta file from filesystem
             else
-                std::filesystem::remove(getFullMetaPath(meta.file_name));
+                disk->removeFileIfExists(getFullMetaPath(meta.file_name));
         }
         file_infos.meta_by_inode.swap(valid_metas);
     }
