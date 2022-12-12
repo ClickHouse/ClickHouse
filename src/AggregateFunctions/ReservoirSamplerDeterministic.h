@@ -95,6 +95,11 @@ public:
         return total_values;
     }
 
+    bool empty() const
+    {
+        return samples.empty();
+    }
+
     T quantileNearest(double level)
     {
         if (samples.empty())
