@@ -47,6 +47,8 @@ static String getEngineFull(const DatabasePtr & database)
         /// Database was dropped
         if (!locked_database && name == database->getDatabaseName())
             return {};
+
+        guard.reset();
     }
 
     ASTPtr ast = database->getCreateDatabaseQuery();
