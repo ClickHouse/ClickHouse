@@ -18,7 +18,7 @@ namespace DB
  * */
 struct NoOpEscapingProcessor : KeyValuePairEscapingProcessor<ParseKeyValue::EscapingProcessorOutput>
 {
-    NoOpEscapingProcessor(char) {}
+    explicit NoOpEscapingProcessor(char) {}
 
     Response process(const ResponseViews & response_views) const override
     {
@@ -138,7 +138,8 @@ ParseKeyValue::ParsedArguments ParseKeyValue::parseArguments(const ColumnsWithTy
             key_value_pair_delimiter,
             item_delimiter,
             enclosing_character,
-            {}
+            {
+            }
         };
     }
 
@@ -148,7 +149,8 @@ ParseKeyValue::ParsedArguments ParseKeyValue::parseArguments(const ColumnsWithTy
         key_value_pair_delimiter,
         item_delimiter,
         enclosing_character,
-        {}
+        {
+        }
     };
 }
 
@@ -174,7 +176,9 @@ std::shared_ptr<KeyValuePairExtractor<ParseKeyValue::EscapingProcessorOutput>> P
         builder.withEnclosingCharacter(enclosing_character.value());
     }
 
-    builder.withEscapingProcessor<NoOpEscapingProcessor>().withValueSpecialCharacterAllowList(value_special_characters_allow_list);
+    builder.withEscapingProcessor<NoOpEscapingProcessor>();
+
+    builder.withValueSpecialCharacterAllowList(value_special_characters_allow_list);
 
     return builder.build();
 }
@@ -190,15 +194,15 @@ ColumnPtr ParseKeyValue::parse(std::shared_ptr<KeyValuePairExtractor<ParseKeyVal
 
     for (auto i = 0u; i < data_column->size(); i++)
     {
-        auto row = data_column->getDataAt(i);
+        auto row = data_column->getDataAt(i).toString();
 
         // TODO avoid copying
-        auto response = extractor->extract(row.toString());
+        auto response = extractor->extract(row);
 
-        for (auto & [key, value] : response)
+        for (auto [key, value] : response)
         {
-            keys->insert(std::move(key));
-            values->insert(std::move(value));
+            keys->insert(key);
+            values->insert(value);
 
             row_offset++;
         }
@@ -206,12 +210,15 @@ ColumnPtr ParseKeyValue::parse(std::shared_ptr<KeyValuePairExtractor<ParseKeyVal
         offsets->insert(row_offset);
     }
 
-    ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(keys->getChars(), keys->getOffsets(), "\\", "", keys->getChars(), keys->getOffsets());
-    ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(values->getChars(), values->getOffsets(), "\\", "", values->getChars(), values->getOffsets());
+    auto keys2 = ColumnString::create();
+    auto values2 = ColumnString::create();
 
-    ColumnPtr keys_ptr = std::move(keys);
+    ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(keys->getChars(), keys->getOffsets(), "\\", "", keys2->getChars(), keys2->getOffsets());
+    ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(values->getChars(), values->getOffsets(), "\\", "", values2->getChars(), values2->getOffsets());
 
-    return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
+    ColumnPtr keys_ptr = std::move(keys2);
+
+    return ColumnMap::create(keys_ptr, std::move(values2), std::move(offsets));
 }
 
 REGISTER_FUNCTION(ParseKeyValue)
