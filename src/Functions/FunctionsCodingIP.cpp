@@ -1,3 +1,4 @@
+#include <functional>
 #ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
@@ -834,7 +835,7 @@ public:
                 second_argument->getName(), getName()
             );
 
-        DataTypePtr element = ipv6 ? DataTypePtr(std::make_shared<DataTypeIPv6>()) : DataTypePtr(std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH));
+        DataTypePtr element = std::make_shared<DataTypeIPv6>();
         return std::make_shared<DataTypeTuple>(DataTypes{element, element});
     }
 
@@ -865,72 +866,45 @@ public:
         const auto * col_const_str_in = checkAndGetColumnConst<ColumnFixedString>(column_ip.get());
         const auto * col_str_in = checkAndGetColumn<ColumnFixedString>(column_ip.get());
 
-        if (col_const_ip_in || col_ip_in)
+        std::function<const char *(size_t)> get_ip_data;
+        if (col_const_ip_in)
+            get_ip_data = [col_const_ip_in](size_t) { return col_const_ip_in->getDataAt(0).data; };
+        else if (col_const_str_in)
+            get_ip_data = [col_const_str_in](size_t) { return col_const_str_in->getDataAt(0).data; };
+        else if (col_ip_in)
+            get_ip_data = [col_ip_in](size_t i) { return reinterpret_cast<const char *>(&col_ip_in->getData()[i]); };
+        else if (col_str_in)
+            get_ip_data = [col_str_in](size_t i) { return reinterpret_cast<const char *>(&col_str_in->getChars().data()[i * IPV6_BINARY_LENGTH]); };
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName()
+            );
+
+        auto col_res_lower_range = ColumnIPv6::create();
+        auto col_res_upper_range = ColumnIPv6::create();
+
+        auto & vec_res_lower_range = col_res_lower_range->getData();
+        vec_res_lower_range.resize(input_rows_count);
+
+        auto & vec_res_upper_range = col_res_upper_range->getData();
+        vec_res_upper_range.resize(input_rows_count);
+
+        static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            auto col_res_lower_range = ColumnIPv6::create();
-            auto col_res_upper_range = ColumnIPv6::create();
+            UInt8 cidr = col_const_cidr_in
+                        ? col_const_cidr_in->getValue<UInt8>()
+                        : col_cidr_in->getData()[i];
 
-            auto & vec_res_lower_range = col_res_lower_range->getData();
-            vec_res_lower_range.resize(input_rows_count);
+            cidr = std::min(cidr, max_cidr_mask);
 
-            auto & vec_res_upper_range = col_res_upper_range->getData();
-            vec_res_upper_range.resize(input_rows_count);
-
-            static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                const char * ip = col_const_ip_in
-                                ? col_const_ip_in->getDataAt(0).data
-                                : reinterpret_cast<const char *>(&col_ip_in->getData()[i]);
-
-                UInt8 cidr = col_const_cidr_in
-                            ? col_const_cidr_in->getValue<UInt8>()
-                            : col_cidr_in->getData()[i];
-
-                cidr = std::min(cidr, max_cidr_mask);
-
-                applyCIDRMask(ip, reinterpret_cast<char *>(&vec_res_lower_range[i]), reinterpret_cast<char *>(&vec_res_upper_range[i]), cidr);
-            }
-
-            return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
-        }
-        else if ((col_const_str_in && col_const_str_in->getDataAt(0).size == IPV6_BINARY_LENGTH) || (col_str_in && col_str_in->getDataAt(0).size == IPV6_BINARY_LENGTH))
-        {
-            auto col_res_lower_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
-            auto col_res_upper_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
-
-            auto & vec_res_lower_range = col_res_lower_range->getChars();
-            vec_res_lower_range.resize(input_rows_count * IPV6_BINARY_LENGTH);
-
-            auto & vec_res_upper_range = col_res_upper_range->getChars();
-            vec_res_upper_range.resize(input_rows_count * IPV6_BINARY_LENGTH);
-
-            static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
-
-            for (size_t i = 0, offset = 0; i < input_rows_count; ++i, offset += IPV6_BINARY_LENGTH)
-            {
-                const char * ip = col_const_str_in
-                                ? col_const_str_in->getDataAt(0).data
-                                : reinterpret_cast<const char *>(&col_str_in->getChars().data()[offset]);
-
-                UInt8 cidr = col_const_cidr_in
-                            ? col_const_cidr_in->getValue<UInt8>()
-                            : col_cidr_in->getData()[i];
-
-                cidr = std::min(cidr, max_cidr_mask);
-
-                applyCIDRMask(ip, reinterpret_cast<char *>(&vec_res_lower_range[offset]), reinterpret_cast<char *>(&vec_res_upper_range[offset]), cidr);
-            }
-
-            return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
+            applyCIDRMask(get_ip_data(i), reinterpret_cast<char *>(&vec_res_lower_range[i]), reinterpret_cast<char *>(&vec_res_upper_range[i]), cidr);
         }
 
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column {} of argument of function {}",
-            arguments[0].column->getName(), getName()
-        );
+        return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
     }
 };
 
