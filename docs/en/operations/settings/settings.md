@@ -3437,7 +3437,7 @@ Default value: `true`.
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-The inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
 
 Default value: `false`.
 

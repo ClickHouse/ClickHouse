@@ -16,7 +16,7 @@ struct JSONInferenceInfo
     bool is_object_key = false;
 };
 
-/// Try to determine datatype of the value in buffer/string. If cannot, return nullptr.
+/// Try to determine datatype of the value in buffer/string. If the type cannot be inferred, return nullptr.
 /// In general, it tries to parse a type using the following logic:
 /// If we see '[', we try to parse an array of values and recursively determine datatype for each element.
 /// If we see '(', we try to parse a tuple of values and recursively determine datatype for each element.
@@ -35,7 +35,7 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
 DataTypePtr tryInferDateOrDateTimeFromString(const std::string_view & field, const FormatSettings & settings);
 
 /// Try to parse a number value from a string. By default, it tries to parse Float64,
-/// but if setting try_infer_integers is enables, it also tries to parse Int64.
+/// but if setting try_infer_integers is enabled, it also tries to parse Int64.
 DataTypePtr tryInferNumberFromString(const std::string_view & field, const FormatSettings & settings);
 
 /// It takes two types inferred for the same column and tries to transform them to a common type if possible.
@@ -69,7 +69,7 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 ///     we will convert both types to Object('JSON').
 void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
-/// Check it type is Tuple(...), try to transform nested types to find a common type for them and if all nested types
+/// Check if type is Tuple(...), try to transform nested types to find a common type for them and if all nested types
 /// are the same after transform, we convert this tuple to an Array with common nested type.
 /// For example, if we have Tuple(String, Nullable(Nothing)) we will convert it to Array(String).
 /// It's used when all rows were read and we have Tuple in the result type that can be actually an Array.
