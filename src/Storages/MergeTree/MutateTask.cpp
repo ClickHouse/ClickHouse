@@ -488,6 +488,9 @@ static NameSet collectFilesToSkip(
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
+    /// Do not hardlink this file because it's always rewritten at the end of mutation.
+    files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+
     auto new_stream_counts = getStreamCounts(new_part, new_part->getColumns().getNames());
     auto source_updated_stream_counts = getStreamCounts(source_part, updated_header.getNames());
     auto new_updated_stream_counts = getStreamCounts(new_part, updated_header.getNames());
