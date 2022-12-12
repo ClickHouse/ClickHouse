@@ -48,7 +48,7 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
 
 void registerTableFunctionZeros(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionZeros<true>>({R"(
+    factory.registerFunction<TableFunctionZeros<true>>({.documentation = {R"(
 Generates a stream of zeros (a table with one column 'zero' of type 'UInt8') of specified size.
 
 This table function is used in performance tests, where you want to spend as little time as possible to data generation while testing some other parts of queries.
@@ -62,9 +62,9 @@ This query will test the speed of `randomPrintableASCII` function using single t
 See also the `system.zeros` table.
 )",
 {{"1", "SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomPrintableASCII(10))"}}
-});
+}});
 
-    factory.registerFunction<TableFunctionZeros<false>>({R"(
+    factory.registerFunction<TableFunctionZeros<false>>({.documentation = {R"(
 Generates a stream of zeros (a table with one column 'zero' of type 'UInt8') of specified size.
 
 This table function is used in performance tests, where you want to spend as little time as possible to data generation while testing some other parts of queries.
@@ -78,7 +78,7 @@ This query will test the speed of `randomPrintableASCII` function using multiple
 See also the `system.zeros` table.
 )",
 {{"1", "SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(randomPrintableASCII(10))"}}
-});
+}});
 }
 
 template <bool multithreaded>

@@ -1,3 +1,5 @@
+#include <Access/AccessControl.h>
+
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
@@ -33,6 +35,7 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 
@@ -69,25 +72,27 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 
-#include <Functions/IFunction.h>
+#include <Columns/Collator.h>
+#include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
-#include <base/types.h>
-#include <base/sort.h>
-#include <Columns/Collator.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
-#include <Core/ColumnNumbers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
+#include <base/sort.h>
+#include <base/types.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -112,7 +117,7 @@ namespace ErrorCodes
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
 FilterDAGInfoPtr generateFilterActions(
     const StorageID & table_id,
-    const ASTPtr & row_policy_filter,
+    const ASTPtr & row_policy_filter_expression,
     const ContextPtr & context,
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
@@ -133,9 +138,9 @@ FilterDAGInfoPtr generateFilterActions(
     auto expr_list = select_ast->select();
 
     /// The first column is our filter expression.
-    /// the row_policy_filter should be cloned, because it may be changed by TreeRewriter.
+    /// the row_policy_filter_expression should be cloned, because it may be changed by TreeRewriter.
     /// which make it possible an invalid expression, although it may be valid in whole select.
-    expr_list->children.push_back(row_policy_filter->clone());
+    expr_list->children.push_back(row_policy_filter_expression->clone());
 
     /// Keep columns that are required after the filter actions.
     for (const auto & column_str : prerequisite_columns)
@@ -613,13 +618,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_info.filter_asts.clear();
 
             /// Fix source_header for filter actions.
-            if (row_policy_filter)
+            if (row_policy_filter && !row_policy_filter->empty())
             {
                 filter_info = generateFilterActions(
-                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                     prepared_sets);
 
-                query_info.filter_asts.push_back(row_policy_filter);
+                query_info.filter_asts.push_back(row_policy_filter->expression);
             }
 
             if (query_info.additional_filter_ast)
@@ -1068,6 +1073,9 @@ static InterpolateDescriptionPtr getInterpolateDescription(
 
 static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
 {
+    if (!query.groupBy())
+        return {};
+
     SortDescription order_descr;
     order_descr.reserve(query.groupBy()->children.size());
 
@@ -1471,17 +1479,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         for (const auto & key_name : key_names)
                             order_descr.emplace_back(key_name);
 
+                        SortingStep::Settings sort_settings(*context);
+
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentDataStream(),
                             std::move(order_descr),
-                            settings.max_block_size,
-                            0 /* LIMIT */,
-                            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-                            settings.max_bytes_before_remerge_sort,
-                            settings.remerge_sort_lowered_memory_bytes_ratio,
-                            settings.max_bytes_before_external_sort,
-                            this->context->getTempDataOnDisk(),
-                            settings.min_free_disk_space_for_temporary_data,
+                            0 /* LIMIT */, sort_settings,
                             settings.optimize_sorting_by_input_stream_properties);
                         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
                         plan.addStep(std::move(sorting_step));
@@ -1769,7 +1772,8 @@ static void executeMergeAggregatedImpl(
     const Settings & settings,
     const NamesAndTypesList & aggregation_keys,
     const AggregateDescriptions & aggregates,
-    bool should_produce_results_in_order_of_bucket_number)
+    bool should_produce_results_in_order_of_bucket_number,
+    SortDescription group_by_sort_description)
 {
     auto keys = aggregation_keys.getNames();
     if (has_grouping_sets)
@@ -1799,7 +1803,11 @@ static void executeMergeAggregatedImpl(
         settings.distributed_aggregation_memory_efficient && is_remote_storage,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
-        should_produce_results_in_order_of_bucket_number);
+        should_produce_results_in_order_of_bucket_number,
+        settings.max_block_size,
+        settings.aggregation_in_order_max_block_bytes,
+        std::move(group_by_sort_description),
+        settings.enable_memory_bound_merging_of_aggregation_results);
 
     query_plan.addStep(std::move(merging_aggregated));
 }
@@ -1863,6 +1871,9 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
             // Let's just choose the safe option since we don't know the value of `to_stage` here.
             const bool should_produce_results_in_order_of_bucket_number = true;
 
+            // It is used to determine if we should use memory bound merging strategy. Maybe it makes sense for projections, but so far this case is just left untouched.
+            SortDescription group_by_sort_description;
+
             executeMergeAggregatedImpl(
                 query_plan,
                 query_info.projection->aggregate_overflow_row,
@@ -1872,7 +1883,8 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                 context_->getSettingsRef(),
                 query_info.projection->aggregation_keys,
                 query_info.projection->aggregate_descriptions,
-                should_produce_results_in_order_of_bucket_number);
+                should_produce_results_in_order_of_bucket_number,
+                std::move(group_by_sort_description));
         }
     }
 }
@@ -1888,6 +1900,22 @@ void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t repl
     context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     context->getClientInfo().count_participating_replicas = replica_count;
     context->getClientInfo().number_of_current_replica = replica_num;
+}
+
+RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
+{
+    return row_policy_filter;
+}
+
+void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
+{
+    elem.query_kind = "Select";
+
+    for (const auto & row_policy : row_policy_filter->policies)
+    {
+        auto name = row_policy->getFullName().toString();
+        elem.used_row_policies.emplace(std::move(name));
+    }
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere()
@@ -2456,11 +2484,37 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     auto grouping_sets_params = getAggregatorGroupingSetsParams(*query_analyzer, keys);
 
     SortDescription group_by_sort_description;
+    SortDescription sort_description_for_merging;
 
     if (group_by_info && settings.optimize_aggregation_in_order && !query_analyzer->useGroupingSetKey())
+    {
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
+        sort_description_for_merging = group_by_info->sort_description_for_merging;
+    }
     else
         group_by_info = nullptr;
+
+    if (!group_by_info && settings.force_aggregation_in_order)
+    {
+        /// Not the most optimal implementation here, but this branch handles very marginal case.
+
+        group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
+
+        auto sorting_step = std::make_unique<SortingStep>(
+            query_plan.getCurrentDataStream(),
+            group_by_sort_description,
+            0 /* LIMIT */,
+            SortingStep::Settings(*context),
+            settings.optimize_sorting_by_input_stream_properties);
+        sorting_step->setStepDescription("Enforced sorting for aggregation in order");
+
+        query_plan.addStep(std::move(sorting_step));
+
+        group_by_info = std::make_shared<InputOrderInfo>(
+            group_by_sort_description, group_by_sort_description.size(), 1 /* direction */, 0 /* limit */);
+
+        sort_description_for_merging = group_by_info->sort_description_for_merging;
+    }
 
     auto merge_threads = max_streams;
     auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -2469,8 +2523,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
 
-    const bool should_produce_results_in_order_of_bucket_number
-        = options.to_stage == QueryProcessingStage::WithMergeableState && settings.distributed_aggregation_memory_efficient;
+    const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
+        && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentDataStream(),
@@ -2483,9 +2537,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         temporary_data_merge_threads,
         storage_has_evenly_distributed_read,
         settings.group_by_use_nulls,
-        std::move(group_by_info),
+        std::move(sort_description_for_merging),
         std::move(group_by_sort_description),
-        should_produce_results_in_order_of_bucket_number);
+        should_produce_results_in_order_of_bucket_number,
+        settings.enable_memory_bound_merging_of_aggregation_results);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -2498,8 +2553,14 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
         return;
 
+    const Settings & settings = context->getSettingsRef();
+
+    /// Used to determine if we should use memory bound merging strategy.
+    auto group_by_sort_description
+        = !query_analyzer->useGroupingSetKey() ? getSortDescriptionFromGroupBy(getSelectQuery()) : SortDescription{};
+
     const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
-        && context->getSettingsRef().distributed_aggregation_memory_efficient;
+        && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
 
     executeMergeAggregatedImpl(
         query_plan,
@@ -2510,7 +2571,8 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
         query_analyzer->aggregates(),
-        should_produce_results_in_order_of_bucket_number);
+        should_produce_results_in_order_of_bucket_number,
+        std::move(group_by_sort_description));
 }
 
 
@@ -2644,17 +2706,13 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         // happens in case of `over ()`.
         if (!window.full_sort_description.empty() && (i == 0 || !sortIsPrefix(window, *windows_sorted[i - 1])))
         {
+            SortingStep::Settings sort_settings(*context);
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window.full_sort_description,
-                settings.max_block_size,
                 0 /* LIMIT */,
-                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-                settings.max_bytes_before_remerge_sort,
-                settings.remerge_sort_lowered_memory_bytes_ratio,
-                settings.max_bytes_before_external_sort,
-                context->getTempDataOnDisk(),
-                settings.min_free_disk_space_for_temporary_data,
+                sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
             sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
@@ -2702,18 +2760,14 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 
     const Settings & settings = context->getSettingsRef();
 
+    SortingStep::Settings sort_settings(*context);
+
     /// Merge the sorted blocks.
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         output_order_descr,
-        settings.max_block_size,
         limit,
-        SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-        settings.max_bytes_before_remerge_sort,
-        settings.remerge_sort_lowered_memory_bytes_ratio,
-        settings.max_bytes_before_external_sort,
-        context->getTempDataOnDisk(),
-        settings.min_free_disk_space_for_temporary_data,
+        sort_settings,
         settings.optimize_sorting_by_input_stream_properties);
 
     sorting_step->setStepDescription("Sorting for ORDER BY");
@@ -2749,15 +2803,20 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
     {
         const Settings & settings = context->getSettingsRef();
 
-        UInt64 limit_length = 0;
-        UInt64 limit_offset = 0;
-        bool is_negative = getLimitLengthAndOffset(query, context, limit_length, limit_offset);
         UInt64 limit_for_distinct = 0;
 
-        /// If after this stage of DISTINCT ORDER BY is not executed,
+        /// If after this stage of DISTINCT,
+        /// (1) ORDER BY is not executed
+        /// (2) there is no LIMIT BY (todo: we can check if DISTINCT and LIMIT BY expressions are match)
         /// then you can get no more than limit_length + limit_offset of different rows.
-        if (!is_negative && (!query.orderBy() || !before_order) && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-            limit_for_distinct = limit_length + limit_offset;
+        if ((!query.orderBy() || !before_order) && !query.limitBy())
+        {
+            UInt64 limit_length = 0;
+            UInt64 limit_offset = 0;
+            bool is_negative = getLimitLengthAndOffset(query, context, limit_length, limit_offset);
+            if (!is_negative && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+                limit_for_distinct = limit_length + limit_offset;
+        }
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
