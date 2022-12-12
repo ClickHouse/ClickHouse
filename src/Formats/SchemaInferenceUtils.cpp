@@ -534,7 +534,7 @@ static DataTypePtr tryInferArray(ReadBuffer & buf, const FormatSettings & settin
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
     if (checkIfTypesAreEqual(nested_types))
-        return std::make_shared<DataTypeArray>(nested_types.back());
+        return std::make_shared<DataTypeArray>(std::move(nested_types.back()));
 
     /// If element types are not equal, we should try to find common type.
     /// If after transformation element types are still different, we return Tuple for JSON and
