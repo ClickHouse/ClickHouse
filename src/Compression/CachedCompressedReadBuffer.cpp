@@ -37,14 +37,11 @@ void CachedCompressedReadBuffer::prefetch()
 
 bool CachedCompressedReadBuffer::nextImpl()
 {
-    std::cerr << "============== CachedCompressedReadBuffer::nextImpl()\n";
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
     UInt128 key = cache->hash(path, file_pos);
 
     owned_cell = cache->getOrSet(key, [&]()
     {
-
-        std::cerr << "=========== CachedCompressedReadBuffer::getOrSet()\n";
         initInput();
         file_in->seek(file_pos, SEEK_SET);
 
