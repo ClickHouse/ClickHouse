@@ -7,7 +7,7 @@ sidebar_label: Float32, Float64
 # Float32, Float64
 
 :::warning
-If you need accurate calculations, in particular if you work with financial or business data requiring a high precision you should consider using decimal instead. Floats might lead to innacurate results as illustrated below:
+If you need accurate calculations, in particular if you work with financial or business data requiring a high precision you should consider using Decimal instead. Floats might lead to inaccurate results as illustrated below:
 
 ```
 CREATE TABLE IF NOT EXISTS float_vs_decimal
