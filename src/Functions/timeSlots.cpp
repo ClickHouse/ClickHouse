@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -40,6 +41,9 @@ struct TimeSlotsImpl
         const PaddedPODArray<UInt32> & starts, const PaddedPODArray<DurationType> & durations, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
+        if (time_slot_size == 0)
+            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+
         size_t size = starts.size();
 
         result_offsets.resize(size);
@@ -62,6 +66,9 @@ struct TimeSlotsImpl
         const PaddedPODArray<UInt32> & starts, DurationType duration, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
+        if (time_slot_size == 0)
+            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+
         size_t size = starts.size();
 
         result_offsets.resize(size);
@@ -84,6 +91,9 @@ struct TimeSlotsImpl
         UInt32 start, const PaddedPODArray<DurationType> & durations, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
+        if (time_slot_size == 0)
+            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+
         size_t size = durations.size();
 
         result_offsets.resize(size);
