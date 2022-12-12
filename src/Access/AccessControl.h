@@ -150,7 +150,7 @@ public:
     /// Check complexity requirements for plaintext passwords
 
     void setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_);
-    void setPasswordComplexityRules(std::vector<std::pair<String, String>> rules_);
+    void setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_);
     void checkPasswordComplexityRules(const String & password_) const;
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const;
 

@@ -175,7 +175,7 @@ public:
         }
     }
 
-    void setPasswordComplexityRules(std::vector<std::pair<String, String>> rules_)
+    void setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_)
     {
         Rules new_rules;
 
@@ -187,7 +187,7 @@ public:
                     "Password complexity pattern {} cannot be compiled: {}",
                     original_pattern, matcher->error());
 
-            new_rules.push_back({std::move(matcher), std::move(original_pattern), std::move(exception_message)});
+            new_rules.push_back({std::move(matcher), original_pattern, exception_message});
         }
 
         std::lock_guard lock{mutex};
@@ -643,9 +643,9 @@ void AccessControl::setPasswordComplexityRulesFromConfig(const Poco::Util::Abstr
     password_rules->setPasswordComplexityRulesFromConfig(config_);
 }
 
-void AccessControl::setPasswordComplexityRules(std::vector<std::pair<String, String>> rules_)
+void AccessControl::setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_)
 {
-    password_rules->setPasswordComplexityRules(std::move(rules_));
+    password_rules->setPasswordComplexityRules(rules_);
 }
 
 void AccessControl::checkPasswordComplexityRules(const String & password_) const
