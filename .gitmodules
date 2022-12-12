@@ -290,6 +290,10 @@
 [submodule "contrib/crc32-s390x"]
 	path = contrib/crc32-s390x
 	url = https://github.com/linux-on-ibm-z/crc32-s390x.git
+[submodule "contrib/openssl"]
+	path = contrib/openssl
+	url = https://github.com/openssl/openssl
+	branch = openssl-3.0
 [submodule "contrib/google-benchmark"]
 	path = contrib/google-benchmark
 	url = https://github.com/google/benchmark.git
