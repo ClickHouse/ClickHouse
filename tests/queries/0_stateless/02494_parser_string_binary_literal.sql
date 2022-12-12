@@ -27,12 +27,3 @@ select x'' == b'';
 select x'0' == b'0';
 select X'' == X'';
 select X'0' == X'0';
-
-SELECT b'3'; -- { clientError SYNTAX_ERROR }
-SELECT x'k'; -- { clientError SYNTAX_ERROR }
-
-SELECT b'1; -- { clientError SYNTAX_ERROR }
-SELECT x'a; -- { clientError SYNTAX_ERROR }
-
-SELECT b"0"; -- { clientError SYNTAX_ERROR }
-SELECT x"0"; -- { clientError SYNTAX_ERROR }
