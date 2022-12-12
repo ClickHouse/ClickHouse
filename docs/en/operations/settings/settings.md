@@ -1192,6 +1192,17 @@ Possible values:
 
 Default value: `0`.
 
+## query_result_cache_ignore_nondeterministic_functions {#experimental-query-result-cache-ignore-nondeterministic-function}
+
+If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) are not cached in the query result cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`.
+
 ## query_result_cache_size {#query-result-cache-size}
 
 Maximum size of the query result cache in bytes. 0 means disabled.
