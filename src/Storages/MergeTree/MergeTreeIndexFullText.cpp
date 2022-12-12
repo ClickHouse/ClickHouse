@@ -149,6 +149,22 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     , token_extractor(token_extactor_)
     , prepared_sets(query_info.prepared_sets)
 {
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        if (!query_info.filter_actions_dag)
+        {
+            rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
+            return;
+        }
+
+        RPNBuilder<RPNElement> builder(
+            query_info.filter_actions_dag->getOutputs().at(0),
+            context,
+            [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+        rpn = std::move(builder).extractRPN();
+        return;
+    }
+
     ASTPtr filter_node = buildFilterNode(query_info.query);
 
     if (!filter_node)

@@ -25,6 +25,7 @@ class MergeTreeDataMergerMutator;
 class ReplicatedMergeTreeMergePredicate;
 class ReplicatedMergeTreeMergeStrategyPicker;
 
+using PartitionIdsHint = std::unordered_set<String>;
 
 class ReplicatedMergeTreeQueue
 {
@@ -382,7 +383,7 @@ public:
     size_t countFinishedMutations() const;
 
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
-    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper);
+    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint);
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
     /// with getDataVersion() == data_version. (Either this mutation was already applied or the part
@@ -486,7 +487,7 @@ public:
 class ReplicatedMergeTreeMergePredicate
 {
 public:
-    ReplicatedMergeTreeMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper);
+    ReplicatedMergeTreeMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint_);
 
     /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
     bool operator()(const MergeTreeData::DataPartPtr & left,
@@ -530,6 +531,8 @@ public:
 
 private:
     const ReplicatedMergeTreeQueue & queue;
+
+    PartitionIdsHint partition_ids_hint;
 
     /// A snapshot of active parts that would appear if the replica executes all log entries in its queue.
     ActiveDataPartSet prev_virtual_parts;
