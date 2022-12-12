@@ -311,19 +311,29 @@ private:
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
         }
 
+        std::string signal_description = "Unknown signal";
+
+        /// Some of these are not really signals, but our own indications on failure reason.
+        if (sig == StdTerminate)
+            signal_description = "std::terminate";
+        else if (sig == SanitizerTrap)
+            signal_description = "sanitizer trap";
+        else if (sig >= 0)
+            signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+
         LOG_FATAL(log, "########################################");
 
         if (query_id.empty())
         {
             LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (no query) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+                thread_num, signal_description, sig);
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, query_id, query, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context)
+                thread_num, query_id, query, signal_description, sig);
         }
 
         String error_message;

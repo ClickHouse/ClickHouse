@@ -18,7 +18,6 @@
 #include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
-#include <Disks/DiskMemory.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
