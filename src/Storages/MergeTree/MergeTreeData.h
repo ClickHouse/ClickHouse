@@ -1038,6 +1038,8 @@ public:
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
+    void waitForOutdatedPartsToBeLoaded() const;
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
@@ -1380,7 +1382,6 @@ protected:
     std::atomic_bool outdated_data_parts_loading_canceled = false;
 
     void loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load);
-    void waitForOutdatedPartsToBeLoaded() const;
     void startOutdatedDataPartsLoadingTask();
     void stopOutdatedDataPartsLoadingTask();
 

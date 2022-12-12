@@ -238,6 +238,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
+        case Type::WAIT_LOADING_PARTS:
         {
             parseQueryWithOnCluster(res, pos, expected);
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
