@@ -1126,7 +1126,7 @@ inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
-        const auto & item = x.items[std::size(x.items) - i - 1];
+        const auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
         writeBinaryBigEndian(item, buf);
     }
 }
