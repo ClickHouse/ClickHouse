@@ -1156,6 +1156,9 @@ struct AggregateFunctionAnyHeavyData : Data
 
     bool changeIfBetter(const Self & to, Arena * arena)
     {
+        if (!to.has())
+            return false;
+
         if (this->isEqualTo(to))
         {
             counter += to.counter;
