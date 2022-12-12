@@ -17,7 +17,7 @@ class AsynchronousReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
     IAsynchronousReader & reader;
-    Int32 priority;
+    int64_t base_priority;
 
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
@@ -46,7 +46,7 @@ public:
 
     ~AsynchronousReadBufferFromFileDescriptor() override;
 
-    void prefetch() override;
+    void prefetch(int64_t priority) override;
 
     int getFD() const
     {
@@ -67,7 +67,7 @@ public:
     size_t getFileSize() override;
 
 private:
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, int64_t priority);
 };
 
 }

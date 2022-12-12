@@ -58,11 +58,11 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
-void MergeTreeReaderWide::prefetchBeginOfRange()
+void MergeTreeReaderWide::prefetchBeginOfRange(int64_t priority)
 {
     try
     {
-        prefetchImpl(columns_to_read.size(), all_mark_ranges.front().begin, all_mark_ranges.back().end, false);
+        prefetchImpl(priority, columns_to_read.size(), all_mark_ranges.front().begin, all_mark_ranges.back().end, false);
         /// Arguments explanation:
         /// Current prefetch is done for read tasks before they can be picked by reading threads in IMergeTreeReadPool::getTask method.
         /// 1. columns_to_read.size() == requested_columns.size() == readRows::res_columns.size().
@@ -89,7 +89,7 @@ void MergeTreeReaderWide::prefetchBeginOfRange()
 }
 
 void MergeTreeReaderWide::prefetchImpl(
-    size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
+    int64_t priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
 {
     bool do_prefetch = data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
         ? settings.read_settings.remote_fs_prefetch
@@ -106,7 +106,7 @@ void MergeTreeReaderWide::prefetchImpl(
         {
             auto & cache = caches[columns_to_read[pos].getNameInStorage()];
             prefetch(
-                columns_to_read[pos], serializations[pos], from_mark, continue_reading,
+                priority, columns_to_read[pos], serializations[pos], from_mark, continue_reading,
                 current_task_last_mark, cache);
         }
         catch (Exception & e)
@@ -131,7 +131,7 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
-        prefetchImpl(num_columns, from_mark, current_task_last_mark, continue_reading);
+        prefetchImpl(/* priority */0, num_columns, from_mark, current_task_last_mark, continue_reading);
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -299,6 +299,7 @@ void MergeTreeReaderWide::deserializePrefix(
 }
 
 void MergeTreeReaderWide::prefetch(
+    int64_t priority,
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
     size_t from_mark,
@@ -317,7 +318,7 @@ void MergeTreeReaderWide::prefetch(
             bool seek_to_mark = !continue_reading;
             if (ReadBuffer * buf = getStream(false, substream_path, streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
             {
-                buf->prefetch();
+                buf->prefetch(priority);
             }
 
             prefetched_streams.insert(stream_name);

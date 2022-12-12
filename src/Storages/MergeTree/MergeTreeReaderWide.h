@@ -36,12 +36,12 @@ public:
 
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
-    void prefetchBeginOfRange() override;
+    void prefetchBeginOfRange(int64_t priority) override;
 
 private:
     FileStreams streams;
 
-    void prefetchImpl(size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading);
+    void prefetchImpl(int64_t priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading);
 
     void addStreams(
         const NameAndTypePair & name_and_type,
@@ -56,6 +56,7 @@ private:
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetch(
+        int64_t priority,
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization,
         size_t from_mark,

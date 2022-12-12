@@ -44,7 +44,7 @@ public:
 
     String getFileName() const override;
 
-    void prefetch() override;
+    void prefetch(int64_t priority) override;
 
     void setReadUntilPosition(size_t position) override; /// [..., position).
 
@@ -65,7 +65,7 @@ private:
 
     void appendToPrefetchLog(FilesystemPrefetchState state, int64_t size);
 
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, int64_t priority);
 
     void resetPrefetch(FilesystemPrefetchState state);
 
@@ -73,7 +73,7 @@ private:
 
     IAsynchronousReader & reader;
 
-    Int64 priority;
+    int64_t base_priority;
 
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
 

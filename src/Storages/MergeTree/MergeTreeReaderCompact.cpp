@@ -288,14 +288,14 @@ void MergeTreeReaderCompact::readData(
         last_read_granule.emplace(from_mark, column_position);
 }
 
-void MergeTreeReaderCompact::prefetchBeginOfRange()
+void MergeTreeReaderCompact::prefetchBeginOfRange(int64_t priority)
 {
     if (!initialized)
         initialize();
 
     adjustUpperBound(all_mark_ranges.back().end);
     seekToMark(all_mark_ranges.front().begin, 0);
-    data_buffer->prefetch();
+    data_buffer->prefetch(priority);
 }
 
 void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)

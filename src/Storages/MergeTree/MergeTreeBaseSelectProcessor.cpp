@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Columns/FilterDescription.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Storages/ElapsedTimeProfileEventIncrement.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>

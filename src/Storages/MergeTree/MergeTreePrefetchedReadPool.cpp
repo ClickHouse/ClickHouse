@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Storages/ElapsedTimeProfileEventIncrement.h>
 
 
 namespace ProfileEvents
@@ -114,12 +114,12 @@ std::future<MergeTreeReaderPtr> MergeTreePrefetchedReadPool::createReader(
     /// and we cannot block either, therefore make prefetch inside the pool and put the future
     /// into the read task (MergeTreeReadTask). When a thread calls getTask(), it will wait for
     /// it (if not yet ready) after getting the task.
-    auto task = [reader = std::move(reader), context = getContext()]() mutable -> MergeTreeReaderPtr &&
+    auto task = [=, reader = std::move(reader), context = getContext()]() mutable -> MergeTreeReaderPtr &&
     {
         /// For async read metrics in system.query_log.
         PrefetchIncrement increment(context->getAsyncReadCounters());
 
-        reader->prefetchBeginOfRange();
+        reader->prefetchBeginOfRange(priority);
         return std::move(reader);
     };
     return scheduleFromThreadPool<MergeTreeReaderPtr>(std::move(task), prefetch_threadpool, "ReadPrepare", priority);

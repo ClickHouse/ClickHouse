@@ -202,7 +202,7 @@ public:
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
       */
-    virtual void prefetch() {}
+    virtual void prefetch(int64_t /* priority */) {}
 
     /**
      * Set upper bound for read range [..., position).
