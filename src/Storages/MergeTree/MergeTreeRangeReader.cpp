@@ -592,6 +592,14 @@ void MergeTreeRangeReader::ReadResult::optimize(ColumnPtr current_filter, bool c
             need_filter = true;
         }
 
+        /// Check if we have rows already filtered at the previous step. In such case we must apply the filter because
+        /// otherwise num_rows doesn't match total_rows_per_granule and the next read step will not know how to filter
+        /// newly read columns to match the num_rows.
+        if (num_rows != total_rows_per_granule)
+        {
+            need_filter = true;
+        }
+
         final_filter = std::move(filter);
     }
 }
@@ -1379,9 +1387,10 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (prewhere_info->remove_column)
         result.columns.erase(result.columns.begin() + prewhere_column_pos);
 
+    result.optimize(current_step_filter, merge_tree_reader->canReadIncompleteGranules());
+
 //*////////////////////
-// HACK: Always apply current filter
-    //if (result.need_filter || prewhere_info->need_filter)
+    if (result.need_filter || prewhere_info->need_filter)
     {
         /// Filter has not been applied yet, do it now
         filterColumns(result.columns, current_step_filter);
@@ -1413,8 +1422,6 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     }
 
 //*///////////////////
-
-    result.optimize(current_step_filter, merge_tree_reader->canReadIncompleteGranules());
 
     LOG_TEST(log, "After execute prewhere {}", result.dumpInfo());
 }
