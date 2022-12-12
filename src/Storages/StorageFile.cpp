@@ -186,6 +186,62 @@ void checkCreationIsAllowed(
     }
 }
 
+std::unique_ptr<ReadBuffer> selectReadBuffer(
+    const String & current_path,
+    bool use_table_fd,
+    int table_fd,
+    const struct stat & file_stat,
+    ContextPtr context)
+{
+    auto read_method_string = context->getSettingsRef().storage_file_read_method.value;
+    LocalFSReadMethod read_method;
+    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_string))
+        read_method = *opt_method;
+    else
+        throwFromErrno("Unknown read method " + read_method_string, ErrorCodes::UNKNOWN_READ_METHOD);
+
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
+    {
+        try
+        {
+            std::unique_ptr<ReadBufferFromFileBase> res;
+            if (use_table_fd)
+                res = std::make_unique<MMapReadBufferFromFileDescriptor>(table_fd, 0);
+            else
+                res = std::make_unique<MMapReadBufferFromFile>(current_path, 0);
+
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
+            return res;
+        }
+        catch (const ErrnoException &)
+        {
+            /// Fallback if mmap is not supported.
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMapFailed);
+        }
+    }
+
+    std::unique_ptr<ReadBufferFromFileBase> res;
+    if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
+    {
+        if (use_table_fd)
+            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
+        else
+            res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
+
+        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    }
+    else
+    {
+        if (use_table_fd)
+            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
+        else
+            res = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
+
+        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    }
+    return res;
+}
+
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
     bool use_table_fd,
@@ -194,15 +250,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & compression_method,
     ContextPtr context)
 {
-    std::unique_ptr<ReadBuffer> nested_buffer;
     CompressionMethod method;
-
-    auto read_method_string = context->getSettingsRef().storage_file_read_method.value;
-    LocalFSReadMethod read_method;
-    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_string))
-        read_method = *opt_method;
-    else
-        throwFromErrno("Unknown read method " + read_method_string, ErrorCodes::UNKNOWN_READ_METHOD);
 
     struct stat file_stat{};
 
@@ -223,46 +271,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         method = chooseCompressionMethod(current_path, compression_method);
     }
 
-
-    bool mmap_failed = false;
-    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
-    {
-        try
-        {
-            if (use_table_fd)
-                nested_buffer = std::make_unique<MMapReadBufferFromFileDescriptor>(table_fd, 0);
-            else
-                nested_buffer = std::make_unique<MMapReadBufferFromFile>(current_path, 0);
-
-            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
-        }
-        catch (const ErrnoException &)
-        {
-            /// Fallback if mmap is not supported.
-            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMapFailed);
-            mmap_failed = true;
-        }
-    }
-
-    if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || mmap_failed))
-    {
-        if (use_table_fd)
-            nested_buffer = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
-        else
-            nested_buffer = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
-
-        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    }
-    else if (mmap_failed)
-    {
-        if (use_table_fd)
-            nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
-        else
-            nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
-
-        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    }
-
+    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
     /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
     if (context->getApplicationType() == Context::ApplicationType::LOCAL
