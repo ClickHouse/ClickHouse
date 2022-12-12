@@ -83,7 +83,7 @@ private:
     void finalizeImpl() override;
 
     struct UploadPartTask;
-    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, std::shared_ptr<Aws::StringStream> temporary_buffer, int part_number);
+    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, std::shared_ptr<Aws::StringStream> temporary_buffer);
     void processUploadRequest(UploadPartTask & task);
 
     struct PutObjectTask;
@@ -103,7 +103,7 @@ private:
     const std::optional<std::map<String, String>> object_metadata;
 
     size_t upload_part_size = 0;
-    size_t total_parts_uploaded = 0;
+    size_t part_number = 0;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.

@@ -2665,6 +2665,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
+
         for (const auto & changed_setting : new_changes)
         {
             const auto & setting_name = changed_setting.name;
@@ -4523,6 +4525,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         auto read_buffer = backup_entry->getReadBuffer();
         auto write_buffer = disk->writeFile(temp_part_dir / filename);
         copyData(*read_buffer, *write_buffer);
+        write_buffer->finalize();
         reservation->update(reservation->getSize() - backup_entry->getSize());
     }
 

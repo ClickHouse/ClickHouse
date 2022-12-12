@@ -16,9 +16,11 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
+#include <Access/resolveSetting.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
 #include <IO/Operators.h>
 #include <Poco/AccessExpireCache.h>
@@ -37,7 +39,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
 }
-
 
 namespace
 {
@@ -103,7 +104,7 @@ public:
 
     bool isSettingNameAllowed(std::string_view setting_name) const
     {
-        if (Settings::hasBuiltin(setting_name))
+        if (settingIsBuiltin(setting_name))
             return true;
 
         std::lock_guard lock{mutex};
