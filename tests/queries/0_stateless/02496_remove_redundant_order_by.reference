@@ -22,10 +22,13 @@ Expression (Project names)
 Header: number UInt64
   Sorting (Sorting for ORDER BY)
   Header: number_0 UInt64
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))
     Header: number_0 UInt64
       ReadFromStorage (SystemNumbers)
       Header: number UInt64
+0
+1
+2
 -- ORDER BY cannot remove ORDER BY in subquery WITH FILL
 Expression (Project names)
 Header: number UInt64
@@ -37,7 +40,7 @@ Header: number UInt64
       Header: number_1 UInt64
         Sorting (Sorting for ORDER BY)
         Header: number_1 UInt64
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
           Header: number_1 UInt64
             ReadFromStorage (SystemNumbers)
             Header: number UInt64
@@ -54,7 +57,7 @@ Header: number UInt64
         Header: number_1 UInt64
           Sorting (Sorting for ORDER BY)
           Header: number_1 UInt64
-            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
             Header: number_1 UInt64
               ReadFromStorage (SystemNumbers)
               Header: number UInt64
@@ -69,7 +72,7 @@ Header: t1.number UInt64
     Header: t1.number_0 UInt64
       Sorting (Sorting for ORDER BY)
       Header: number_2 UInt64
-        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
         Header: number_2 UInt64
           ReadFromStorage (SystemNumbers)
           Header: number UInt64
@@ -77,7 +80,7 @@ Header: t1.number UInt64
     Header: t2.number_1 UInt64
       Sorting (Sorting for ORDER BY)
       Header: number_4 UInt64
-        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
         Header: number_4 UInt64
           ReadFromStorage (SystemNumbers)
           Header: number UInt64
@@ -94,11 +97,11 @@ Header: t1.number UInt64
       Join (JOIN FillRightFirst)
       Header: t1.number_0 UInt64
               t2.number_1 UInt64
-        Expression ((Change column names to column identifiers + Project names))
+        Expression ((Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))
         Header: t1.number_0 UInt64
           ReadFromStorage (SystemNumbers)
           Header: number UInt64
-        Expression ((Change column names to column identifiers + Project names))
+        Expression ((Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))
         Header: t2.number_1 UInt64
           ReadFromStorage (SystemNumbers)
           Header: number UInt64
@@ -108,7 +111,7 @@ Header: sum(number) UInt64
   Aggregating
   Header: number_0 UInt64
           sum(number_0) UInt64
-    Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))
     Header: number_0 UInt64
       ReadFromStorage (SystemNumbers)
       Header: number UInt64
@@ -122,7 +125,7 @@ Header: any(number) UInt64
     Header: number_0 UInt64
       Sorting (Sorting for ORDER BY)
       Header: number_1 UInt64
-        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
         Header: number_1 UInt64
           ReadFromStorage (SystemNumbers)
           Header: number UInt64
@@ -137,7 +140,7 @@ Header: a UInt64
       Aggregating
       Header: number_1 UInt64
               sum(number_1) UInt64
-        Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         Header: number_1 UInt64
           ReadFromStorage (SystemNumbers)
           Header: number UInt64
@@ -171,7 +174,7 @@ Header: a UInt64
       Header: number_1 UInt64
         Sorting (Sorting for ORDER BY)
         Header: number_2 UInt64
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
           Header: number_2 UInt64
             ReadFromStorage (SystemNumbers)
             Header: number UInt64

@@ -39,6 +39,20 @@ FROM
 )
 ORDER BY number ASC;
 
+SELECT *
+FROM
+(
+    SELECT *
+    FROM
+    (
+        SELECT *
+        FROM numbers(3)
+        ORDER BY number ASC
+    )
+    ORDER BY number DESC
+)
+ORDER BY number ASC;
+
 SELECT '-- ORDER BY cannot remove ORDER BY in subquery WITH FILL';
 EXPLAIN header=1
 SELECT *
