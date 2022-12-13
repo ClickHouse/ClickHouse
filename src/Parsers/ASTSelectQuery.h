@@ -82,6 +82,7 @@ public:
     ASTPtr clone() const override;
 
     bool distinct = false;
+    bool group_by_all = false;
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
@@ -131,6 +132,7 @@ public:
     std::pair<ASTPtr, bool> arrayJoinExpressionList() const;
 
     const ASTTablesInSelectQueryElement * join() const;
+    bool hasJoin() const;
     bool final() const;
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);

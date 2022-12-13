@@ -155,7 +155,7 @@ public:
                         "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
                         getName(), value_type->getName()};
 
-                WhichDataType value_type_to_check(value_type);
+                WhichDataType value_type_to_check(value_type_without_nullable);
 
                 /// Do not promote decimal because of implementation issues of this function design
                 /// Currently we cannot get result column type in case of decimal we cannot get decimal scale
@@ -202,7 +202,7 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
         for (size_t col = 0, size = values_types.size(); col < size; ++col)
         {
-            const auto & array_column = assert_cast<const ColumnArray&>(*columns[col + 1]);
+            const auto & array_column = assert_cast<const ColumnArray &>(*columns[col + 1]);
             const IColumn & value_column = array_column.getData();
             const IColumn::Offsets & offsets = array_column.getOffsets();
             const size_t values_vec_offset = offsets[row_num - 1];
@@ -216,7 +216,7 @@ public:
             for (size_t i = 0; i < keys_vec_size; ++i)
             {
                 auto value = value_column[values_vec_offset + i];
-                auto key = key_column[keys_vec_offset + i].get<T>();
+                T key = static_cast<T>(key_column[keys_vec_offset + i].get<T>());
 
                 if (!keepKey(key))
                     continue;
@@ -296,19 +296,19 @@ public:
         {
             case 0:
             {
-                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
+                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
                 break;
             }
             case 1:
             {
-                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
+                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
                 break;
             }
         }
 
         for (const auto & elem : merged_maps)
         {
-            keys_serialization->serializeBinary(elem.first, buf);
+            keys_serialization->serializeBinary(elem.first, buf, {});
             for (size_t col = 0; col < values_types.size(); ++col)
                 serialize(col, elem.second);
         }
@@ -328,12 +328,12 @@ public:
         {
             case 0:
             {
-                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
+                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
                 break;
             }
             case 1:
             {
-                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
+                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
                 break;
             }
         }
@@ -341,7 +341,7 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             Field key;
-            keys_serialization->deserializeBinary(key, buf);
+            keys_serialization->deserializeBinary(key, buf, {});
 
             Array values;
             values.resize(values_types.size());
@@ -519,7 +519,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val > x)
         {
             x = val;
@@ -532,7 +532,12 @@ private:
 public:
     explicit FieldVisitorMax(const Field & rhs_) : rhs(rhs_) {}
 
-    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Null &) const
+    {
+        /// Do not update current value, skip nulls
+        return false;
+    }
+
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot compare AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
@@ -554,7 +559,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val < x)
         {
             x = val;
@@ -567,7 +572,13 @@ private:
 public:
     explicit FieldVisitorMin(const Field & rhs_) : rhs(rhs_) {}
 
-    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
+
+    bool operator() (Null &) const
+    {
+        /// Do not update current value, skip nulls
+        return false;
+    }
+
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }

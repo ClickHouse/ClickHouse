@@ -30,7 +30,7 @@ class ASTStorage;
     M(String, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
     M(UInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block", 0) \
     M(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
-    M(HandleKafkaErrorMode, kafka_handle_error_mode, HandleKafkaErrorMode::DEFAULT, "How to handle errors for Kafka engine. Passible values: default, stream.", 0) \
+    M(HandleKafkaErrorMode, kafka_handle_error_mode, HandleKafkaErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default, stream.", 0) \
     M(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
 
     /** TODO: */

@@ -8,21 +8,21 @@ namespace DB
 
 using FunctionToStartOfMillisecond = FunctionDateOrDateTimeToSomething<DataTypeDateTime64, ToStartOfMillisecondImpl>;
 
-void registerFunctionToStartOfMillisecond(FunctionFactory & factory)
+REGISTER_FUNCTION(ToStartOfMillisecond)
 {
     factory.registerFunction<FunctionToStartOfMillisecond>();
 }
 
 using FunctionToStartOfMicrosecond = FunctionDateOrDateTimeToSomething<DataTypeDateTime64, ToStartOfMicrosecondImpl>;
 
-void registerFunctionToStartOfMicrosecond(FunctionFactory & factory)
+REGISTER_FUNCTION(ToStartOfMicrosecond)
 {
     factory.registerFunction<FunctionToStartOfMicrosecond>();
 }
 
 using FunctionToStartOfNanosecond = FunctionDateOrDateTimeToSomething<DataTypeDateTime64, ToStartOfNanosecondImpl>;
 
-void registerFunctionToStartOfNanosecond(FunctionFactory & factory)
+REGISTER_FUNCTION(ToStartOfNanosecond)
 {
     factory.registerFunction<FunctionToStartOfNanosecond>();
 }

@@ -37,6 +37,11 @@ public:
         return getStateType();
     }
 
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
     DataTypePtr getStateType() const override
     {
         return nested_func->getStateType();
@@ -63,6 +68,8 @@ public:
     {
         nested_func->destroy(place);
     }
+
+    void destroyUpToState(AggregateDataPtr __restrict) const noexcept override {}
 
     bool hasTrivialDestructor() const override
     {
@@ -102,6 +109,11 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        assert_cast<ColumnAggregateFunction &>(to).insertFrom(place);
     }
 
     /// Aggregate function or aggregate function state.

@@ -179,25 +179,25 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             if (traits->isStringAsString(column_name))
                 return {avro::StringSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-                        encoder.encodeString(s.toString());
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+                        encoder.encodeString(std::string(s));
                     }
                 };
             else
                 return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-                        encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data), s.size);
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+                        encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
                     }
                 };
         case TypeIndex::FixedString:
         {
             auto size = data_type->getSizeOfValueInMemory();
-            auto schema = avro::FixedSchema(size, "fixed_" + toString(type_name_increment));
+            auto schema = avro::FixedSchema(static_cast<int>(size), "fixed_" + toString(type_name_increment));
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const StringRef & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
-                encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data), s.size);
+                const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
+                encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }
         case TypeIndex::Enum8:
@@ -343,8 +343,8 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
 
             auto keys_serializer = [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const StringRef & s = column.getDataAt(row_num);
-                encoder.encodeString(s.toString());
+                const std::string_view & s = column.getDataAt(row_num).toView();
+                encoder.encodeString(std::string(s));
             };
 
             const auto & values_type = map_type.getValueType();

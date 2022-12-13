@@ -52,7 +52,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override
+    {
+        return false;
+    }
 
     bool isDeterministicInScopeOfQuery() const override
     {
@@ -138,7 +141,7 @@ public:
 
 }
 
-void registerFunctionRunningAccumulate(FunctionFactory & factory)
+REGISTER_FUNCTION(RunningAccumulate)
 {
     factory.registerFunction<FunctionRunningAccumulate>();
 }

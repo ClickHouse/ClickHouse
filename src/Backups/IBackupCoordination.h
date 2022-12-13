@@ -6,6 +6,7 @@
 
 namespace DB
 {
+class Exception;
 enum class AccessEntityType;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
@@ -17,12 +18,11 @@ class IBackupCoordination
 public:
     virtual ~IBackupCoordination() = default;
 
-    /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
-    virtual void setStatus(const String & current_host, const String & new_status, const String & message) = 0;
-    virtual Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts) = 0;
-    virtual Strings setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts, UInt64 timeout_ms) = 0;
-
-    static constexpr const char * kErrorStatus = "error";
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    virtual void setStage(const String & current_host, const String & new_stage, const String & message) = 0;
+    virtual void setError(const String & current_host, const Exception & exception) = 0;
+    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) = 0;
+    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
 
     struct PartNameAndChecksum
     {
@@ -115,9 +115,6 @@ public:
 
     /// Returns the list of all the archive suffixes which were generated.
     virtual Strings getAllArchiveSuffixes() const = 0;
-
-    /// Removes remotely stored information.
-    virtual void drop() {}
 };
 
 }

@@ -56,7 +56,7 @@ namespace
 
 }
 
-void registerFunctionLogTrace(FunctionFactory & factory)
+REGISTER_FUNCTION(LogTrace)
 {
     factory.registerFunction<FunctionLogTrace>();
 }

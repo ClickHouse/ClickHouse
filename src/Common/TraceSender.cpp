@@ -14,7 +14,7 @@ namespace
     /// The performance test query ids can be surprisingly long like
     /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
     /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 128;
+    constexpr size_t QUERY_ID_MAX_LEN = 100;
     static_assert(QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max());
 }
 
@@ -23,7 +23,7 @@ namespace DB
 
 LazyPipeFDs TraceSender::pipe;
 
-void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int64 size)
+void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
 {
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
         + sizeof(UInt8)                      /// String size
@@ -32,23 +32,26 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
         + sizeof(StackTrace::FramePointers)  /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
         + sizeof(UInt64)                     /// thread_id
-        + sizeof(Int64);                     /// size
+        + sizeof(Int64)                      /// size
+        + sizeof(ProfileEvents::Event)       /// event
+        + sizeof(ProfileEvents::Count);      /// increment
 
     /// Write should be atomic to avoid overlaps
     /// (since recursive collect() is possible)
     static_assert(PIPE_BUF >= 512);
-    static_assert(buf_size <= 512, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
+    static_assert(buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
 
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
-    StringRef query_id;
+    std::string_view query_id;
     UInt64 thread_id;
 
     if (CurrentThread::isInitialized())
     {
         query_id = CurrentThread::getQueryId();
-        query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
+        if (query_id.size() > QUERY_ID_MAX_LEN)
+            query_id.remove_suffix(query_id.size() - QUERY_ID_MAX_LEN);
 
         thread_id = CurrentThread::get().thread_id;
     }
@@ -59,8 +62,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
 
-    writeBinary(static_cast<uint8_t>(query_id.size), out);
-    out.write(query_id.data, query_id.size);
+    writeBinary(static_cast<uint8_t>(query_id.size()), out);
+    out.write(query_id.data(), query_id.size());
 
     size_t stack_trace_size = stack_trace.getSize();
     size_t stack_trace_offset = stack_trace.getOffset();
@@ -70,7 +73,9 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
-    writePODBinary(size, out);
+    writePODBinary(extras.size, out);
+    writePODBinary(extras.event, out);
+    writePODBinary(extras.increment, out);
 
     out.next();
 }

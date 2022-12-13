@@ -19,7 +19,8 @@ public:
     virtual ~IBackup() = default;
 
     /// Name of the backup.
-    virtual const String & getName() const = 0;
+    //virtual const String & getName() const = 0;
+    virtual const String & getNameForLogging() const = 0;
 
     enum class OpenMode
     {
@@ -35,6 +36,15 @@ public:
 
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
+
+    /// Returns the number of unique files in the backup.
+    virtual size_t getNumFiles() const = 0;
+
+    /// Returns the total size of unique files in the backup.
+    virtual UInt64 getUncompressedSize() const = 0;
+
+    /// Returns the compressed size of the backup. If the backup is not stored as an archive it returns the same as getUncompressedSize().
+    virtual UInt64 getCompressedSize() const = 0;
 
     /// Returns names of entries stored in a specified directory in the backup.
     /// If `directory` is empty or '/' the functions returns entries in the backup's root.

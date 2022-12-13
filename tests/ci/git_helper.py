@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 import argparse
+import logging
 import os.path as p
 import re
 import subprocess
-from typing import List, Optional
+from typing import Any, List, Optional
+
+logger = logging.getLogger(__name__)
 
 # ^ and $ match subline in `multiple\nlines`
 # \A and \Z match only start and end of the whole string
@@ -18,19 +21,19 @@ TWEAK = 1
 
 
 # Py 3.8 removeprefix and removesuffix
-def removeprefix(string: str, prefix: str):
+def removeprefix(string: str, prefix: str) -> str:
     if string.startswith(prefix):
         return string[len(prefix) :]  # noqa: ignore E203, false positive
     return string
 
 
-def removesuffix(string: str, suffix: str):
+def removesuffix(string: str, suffix: str) -> str:
     if string.endswith(suffix):
         return string[: -len(suffix)]
     return string
 
 
-def commit(name: str):
+def commit(name: str) -> str:
     r = re.compile(SHA_REGEXP)
     if not r.match(name):
         raise argparse.ArgumentTypeError(
@@ -39,7 +42,7 @@ def commit(name: str):
     return name
 
 
-def release_branch(name: str):
+def release_branch(name: str) -> str:
     r = re.compile(RELEASE_BRANCH_REGEXP)
     if not r.match(name):
         raise argparse.ArgumentTypeError("release branch should be as 12.1")
@@ -52,23 +55,30 @@ class Runner:
     def __init__(self, cwd: str = CWD):
         self._cwd = cwd
 
-    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs) -> str:
+    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs: Any) -> str:
         if cwd is None:
             cwd = self.cwd
-        return subprocess.check_output(
-            cmd, shell=True, cwd=cwd, encoding="utf-8", **kwargs
-        ).strip()
+        logger.debug("Running command: %s", cmd)
+        output = str(
+            subprocess.check_output(
+                cmd, shell=True, cwd=cwd, encoding="utf-8", **kwargs
+            ).strip()
+        )
+        return output
 
     @property
     def cwd(self) -> str:
         return self._cwd
 
     @cwd.setter
-    def cwd(self, value: str):
+    def cwd(self, value: str) -> None:
         # Set _cwd only once, then set it to readonly
         if self._cwd != CWD:
             return
         self._cwd = value
+
+    def __call__(self, *args, **kwargs):
+        return self.run(*args, **kwargs)
 
 
 git_runner = Runner()
@@ -109,8 +119,8 @@ class Git:
 
     def update(self):
         """Is used to refresh all attributes after updates, e.g. checkout or commit"""
-        self.branch = self.run("git branch --show-current")
         self.sha = self.run("git rev-parse HEAD")
+        self.branch = self.run("git branch --show-current") or self.sha
         self.sha_short = self.sha[:11]
         # The following command shows the most recent tag in a graph
         # Format should match TAG_REGEXP
@@ -132,7 +142,7 @@ class Git:
         )
 
     @staticmethod
-    def check_tag(value: str):
+    def check_tag(value: str) -> None:
         if value == "":
             return
         if not Git._tag_pattern.match(value):
@@ -143,7 +153,7 @@ class Git:
         return self._latest_tag
 
     @latest_tag.setter
-    def latest_tag(self, value: str):
+    def latest_tag(self, value: str) -> None:
         self.check_tag(value)
         self._latest_tag = value
 
@@ -152,7 +162,7 @@ class Git:
         return self._new_tag
 
     @new_tag.setter
-    def new_tag(self, value: str):
+    def new_tag(self, value: str) -> None:
         self.check_tag(value)
         self._new_tag = value
 

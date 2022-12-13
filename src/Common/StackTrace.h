@@ -67,6 +67,11 @@ public:
 
     void toStringEveryLine(std::function<void(const std::string &)> callback) const;
 
+    /// Displaying the addresses can be disabled for security reasons.
+    /// If you turn off addresses, it will be more secure, but we will be unable to help you with debugging.
+    /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
+    static void setShowAddresses(bool show);
+
 protected:
     void tryCapture();
 

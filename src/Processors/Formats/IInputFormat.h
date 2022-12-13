@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/ISource.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
@@ -55,8 +56,12 @@ public:
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
+    void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
+
 protected:
     ColumnMappingPtr column_mapping{};
+
+    InputFormatErrorsLoggerPtr errors_logger;
 
 private:
     /// Number of currently parsed chunk (if parallel parsing is enabled)

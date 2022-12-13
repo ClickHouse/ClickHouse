@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/ym-dict-functions
+---
 # 使用 Yandex.Metrica 字典函数 {#functions-for-working-with-yandex-metrica-dictionaries}
 
 为了使下面的功能正常工作，服务器配置必须指定获取所有 Yandex.Metrica 字典的路径和地址。Yandex.Metrica 字典在任何这些函数的第一次调用时加载。 如果无法加载引用列表，则会引发异常。

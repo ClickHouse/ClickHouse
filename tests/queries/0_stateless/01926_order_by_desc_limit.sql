@@ -1,5 +1,4 @@
--- Tags: no-random-settings, no-tsan
--- FIXME It became flaky after upgrading to llvm-14 due to obscure freezes in tsan
+-- Tags: no-random-settings
 
 DROP TABLE IF EXISTS order_by_desc;
 
@@ -22,5 +21,5 @@ SYSTEM FLUSH LOGS;
 
 SELECT read_rows < 110000 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()
-AND event_time > now() - INTERVAL 10 SECOND
+AND event_date >= yesterday()
 AND lower(query) LIKE lower('SELECT s FROM order_by_desc ORDER BY u%');

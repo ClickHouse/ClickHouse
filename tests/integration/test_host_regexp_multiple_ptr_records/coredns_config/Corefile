@@ -1,0 +1,8 @@
+. {
+    hosts /example.com {
+        reload "200ms"
+        fallthrough
+    }
+    forward . 127.0.0.11
+    log
+}

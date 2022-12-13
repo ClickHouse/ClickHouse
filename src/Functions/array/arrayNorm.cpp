@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 struct L1Norm
 {
-    static inline String name = "L1";
+    static constexpr auto name = "L1";
 
     struct ConstParams {};
 
@@ -46,7 +46,7 @@ struct L1Norm
 
 struct L2Norm
 {
-    static inline String name = "L2";
+    static constexpr auto name = "L2";
 
     struct ConstParams {};
 
@@ -71,7 +71,7 @@ struct L2Norm
 
 struct L2SquaredNorm : L2Norm
 {
-    static inline String name = "L2Squared";
+    static constexpr auto name = "L2Squared";
 
     template <typename ResultType>
     inline static ResultType finalize(ResultType result, const ConstParams &)
@@ -83,7 +83,7 @@ struct L2SquaredNorm : L2Norm
 
 struct LpNorm
 {
-    static inline String name = "Lp";
+    static constexpr auto name = "Lp";
 
     struct ConstParams
     {
@@ -94,7 +94,7 @@ struct LpNorm
     template <typename ResultType>
     inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams & params)
     {
-        return result + std::pow(fabs(value), params.power);
+        return result + static_cast<ResultType>(std::pow(fabs(value), params.power));
     }
 
     template <typename ResultType>
@@ -106,13 +106,13 @@ struct LpNorm
     template <typename ResultType>
     inline static ResultType finalize(ResultType result, const ConstParams & params)
     {
-        return std::pow(result, params.inverted_power);
+        return static_cast<ResultType>(std::pow(result, params.inverted_power));
     }
 };
 
 struct LinfNorm
 {
-    static inline String name = "Linf";
+    static constexpr auto name = "Linf";
 
     struct ConstParams {};
 
@@ -140,8 +140,7 @@ template <class Kernel>
 class FunctionArrayNorm : public IFunction
 {
 public:
-    static inline auto name = "array" + Kernel::name + "Norm";
-    String getName() const override { return name; }
+    String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayNorm<Kernel>>(); }
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
@@ -255,7 +254,7 @@ private:
             for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
-                    results[s] = Kernel::template accumulate<ResultType>(results[s], data[prev+s], kernel_params);
+                    results[s] = Kernel::template accumulate<ResultType>(results[s], static_cast<ResultType>(data[prev + s]), kernel_params);
             }
 
             ResultType result = 0;
@@ -265,7 +264,7 @@ private:
             /// Process the tail
             for (; prev < off; ++prev)
             {
-                result = Kernel::template accumulate<ResultType>(result, data[prev], kernel_params);
+                result = Kernel::template accumulate<ResultType>(result, static_cast<ResultType>(data[prev]), kernel_params);
             }
             result_data[row] = Kernel::finalize(result, kernel_params);
             row++;

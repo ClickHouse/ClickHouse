@@ -79,7 +79,8 @@ private:
 };
 
 DiskRestartProxy::DiskRestartProxy(DiskPtr & delegate_)
-    : DiskDecorator(delegate_) { }
+    : DiskDecorator(delegate_)
+{}
 
 ReservationPtr DiskRestartProxy::reserve(UInt64 bytes)
 {
@@ -312,22 +313,37 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
     return DiskDecorator::checkUniqueId(id);
 }
 
-String DiskRestartProxy::getCacheBasePath() const
+const String & DiskRestartProxy::getCacheBasePath() const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getCacheBasePath();
 }
 
-PathsWithSize DiskRestartProxy::getObjectStoragePaths(const String & path) const
+StoredObjects DiskRestartProxy::getStorageObjects(const String & path) const
 {
     ReadLock lock (mutex);
-    return DiskDecorator::getObjectStoragePaths(path);
+    return DiskDecorator::getStorageObjects(path);
 }
 
-void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
+void DiskRestartProxy::getRemotePathsRecursive(
+    const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
 {
     ReadLock lock (mutex);
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);
+}
+
+DiskPtr DiskRestartProxy::getNestedDisk() const
+{
+    DiskPtr delegate_copy;
+
+    {
+        ReadLock lock (mutex);
+        delegate_copy = delegate;
+    }
+
+    if (const auto * decorator = dynamic_cast<const DiskDecorator *>(delegate_copy.get()))
+        return decorator->getNestedDisk();
+    return delegate_copy;
 }
 
 void DiskRestartProxy::restart(ContextPtr context)
@@ -353,7 +369,8 @@ void DiskRestartProxy::restart(ContextPtr context)
 
     LOG_INFO(log, "Restart lock acquired. Restarting disk {}", DiskDecorator::getName());
 
-    DiskDecorator::startup(context);
+    /// NOTE: access checking will cause deadlock here, so skip it.
+    DiskDecorator::startup(context, /* skip_access_check= */ true);
 
     LOG_INFO(log, "Disk restarted {}", DiskDecorator::getName());
 }

@@ -5,16 +5,21 @@ import subprocess
 import os
 import csv
 import sys
+import atexit
+from typing import List, Tuple
 
 from github import Github
 
-from env_helper import CACHES_PATH, TEMP_PATH, GITHUB_SERVER_URL, GITHUB_REPOSITORY
-from pr_info import FORCE_TESTS_LABEL, PRInfo, SKIP_SIMPLE_CHECK_LABEL
+from env_helper import CACHES_PATH, TEMP_PATH
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status, get_commit
+from commit_status_helper import (
+    post_commit_status,
+    update_mergeable_check,
+)
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
@@ -25,7 +30,10 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
-NAME = "Fast test (actions)"
+NAME = "Fast test"
+
+# Will help to avoid errors like _csv.Error: field larger than field limit (131072)
+csv.field_size_limit(sys.maxsize)
 
 
 def get_fasttest_cmd(
@@ -43,8 +51,10 @@ def get_fasttest_cmd(
     )
 
 
-def process_results(result_folder):
-    test_results = []
+def process_results(
+    result_folder: str,
+) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
+    test_results = []  # type: List[Tuple[str, str]]
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content of
@@ -71,7 +81,7 @@ def process_results(result_folder):
     results_path = os.path.join(result_folder, "test_results.tsv")
     if os.path.exists(results_path):
         with open(results_path, "r", encoding="utf-8") as results_file:
-            test_results = list(csv.reader(results_file, delimiter="\t"))
+            test_results = list(csv.reader(results_file, delimiter="\t"))  # type: ignore
     if len(test_results) == 0:
         return "error", "Empty test_results.tsv", test_results, additional_files
 
@@ -90,7 +100,9 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
+
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -99,7 +111,7 @@ if __name__ == "__main__":
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     workspace = os.path.join(temp_path, "fasttest-workspace")
     if not os.path.exists(workspace):
@@ -116,7 +128,7 @@ if __name__ == "__main__":
 
     logging.info("Will try to fetch cache for our build")
     ccache_for_pr = get_ccache_if_not_exists(
-        cache_path, s3_helper, pr_info.number, temp_path
+        cache_path, s3_helper, pr_info.number, temp_path, pr_info.release_pr
     )
     upload_master_ccache = ccache_for_pr in (-1, 0)
 
@@ -163,7 +175,7 @@ if __name__ == "__main__":
         "test_log.txt" in test_output_files or "test_result.txt" in test_output_files
     )
     test_result_exists = "test_results.tsv" in test_output_files
-    test_results = []
+    test_results = []  # type: List[Tuple[str, str]]
     if "submodule_log.txt" not in test_output_files:
         description = "Cannot clone repository"
         state = "failure"
@@ -219,16 +231,4 @@ if __name__ == "__main__":
         if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
-            if SKIP_SIMPLE_CHECK_LABEL not in pr_info.labels:
-                url = (
-                    f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
-                    "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
-                )
-                commit = get_commit(gh, pr_info.sha)
-                commit.create_status(
-                    context="Simple Check",
-                    description=f"{NAME} failed",
-                    state="failed",
-                    target_url=url,
-                )
             sys.exit(1)

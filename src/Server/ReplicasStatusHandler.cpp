@@ -108,10 +108,12 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     }
 }
 
-HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix)
 {
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
-    factory->addFiltersFromConfig(server.config(), config_prefix);
+    factory->addFiltersFromConfig(config, config_prefix);
     return factory;
 }
 

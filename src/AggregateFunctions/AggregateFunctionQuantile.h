@@ -1,29 +1,19 @@
 #pragma once
 
 #include <AggregateFunctions/FactoryHelpers.h>
-
-/// These must be exposed in header for the purpose of dynamic compilation.
-#include <AggregateFunctions/QuantileBFloat16Histogram.h>
-#include <AggregateFunctions/QuantileExact.h>
-#include <AggregateFunctions/QuantileExactWeighted.h>
-#include <AggregateFunctions/QuantileInterpolatedWeighted.h>
-#include <AggregateFunctions/QuantileReservoirSampler.h>
-#include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
-#include <AggregateFunctions/QuantileTDigest.h>
-#include <AggregateFunctions/QuantileTiming.h>
-
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/GatherFunctionQuantileVisitor.h>
 
 #include <type_traits>
 
@@ -62,10 +52,9 @@ template <
     typename FloatReturnType,
     /// If true, the function will accept multiple parameters with quantile levels
     ///  and return an Array filled with many values of that quantiles.
-    bool returns_many
->
-class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data,
-    AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
+    bool returns_many>
+class AggregateFunctionQuantile final
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
@@ -82,11 +71,14 @@ private:
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(argument_types_, params)
-        , levels(params, returns_many), level(levels.levels[0]), argument_type(this->argument_types[0])
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
+            argument_types_, params)
+        , levels(params, returns_many)
+        , level(levels.levels[0])
+        , argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
-            throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter or less", getName());
     }
 
     String getName() const override { return Name::name; }
@@ -106,9 +98,22 @@ public:
             return res;
     }
 
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
-        return getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
+        return GatherFunctionQuantileData::toFusedNameOrSelf(getName()) == GatherFunctionQuantileData::toFusedNameOrSelf(rhs.getName())
+            && this->haveEqualArgumentTypes(rhs);
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        /// Return normalized state type: quantiles*(1)(...)
+        Array params{1};
+        AggregateFunctionProperties properties;
+        return std::make_shared<DataTypeAggregateFunction>(
+            AggregateFunctionFactory::instance().get(
+                GatherFunctionQuantileData::toFusedNameOrSelf(getName()), this->argument_types, params, properties),
+            this->argument_types,
+            params);
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -125,9 +130,7 @@ public:
         }
 
         if constexpr (has_second_arg)
-            this->data(place).add(
-                value,
-                columns[1]->getUInt(row_num));
+            this->data(place).add(value, columns[1]->getUInt(row_num));
         else
             this->data(place).add(value);
     }
@@ -150,7 +153,6 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.
         auto & data = this->data(place);
 
         if constexpr (returns_many)
@@ -168,7 +170,7 @@ public:
             {
                 auto & data_to = assert_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
-                data_to.resize(data_to.size() + size);
+                data_to.resize(old_size + size);
 
                 data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
@@ -176,7 +178,7 @@ public:
             {
                 auto & data_to = static_cast<ColVecType &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
-                data_to.resize(data_to.size() + size);
+                data_to.resize(old_size + size);
 
                 data.getMany(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
@@ -196,7 +198,11 @@ public:
         {
             assertBinary(Name::name, types);
             if (!isUnsignedInteger(types[1]))
-                throw Exception("Second argument (weight) for function " + std::string(Name::name) + " must be unsigned integer, but it has type " + types[1]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
+                    Name::name,
+                    types[1]->getName());
         }
         else
             assertUnary(Name::name, types);

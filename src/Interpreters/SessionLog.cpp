@@ -30,21 +30,11 @@ namespace
 {
 using namespace DB;
 
-inline DateTime64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-inline time_t time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
-}
-
 auto eventTime()
 {
     const auto finish_time = std::chrono::system_clock::now();
 
-    return std::make_pair(time_in_seconds(finish_time), time_in_microseconds(finish_time));
+    return std::make_pair(timeInSeconds(finish_time), timeInMicroseconds(finish_time));
 }
 
 using AuthType = AuthenticationType;
@@ -96,6 +86,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
     static_assert(static_cast<int>(AuthenticationType::MAX) == 7);
@@ -182,12 +173,10 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
         auto & names_col = *settings_tuple_col.getColumnPtr(0)->assumeMutable();
         auto & values_col = assert_cast<ColumnString &>(*settings_tuple_col.getColumnPtr(1)->assumeMutable());
 
-        size_t items_added = 0;
         for (const auto & kv : settings)
         {
             names_col.insert(kv.first);
             values_col.insert(kv.second);
-            ++items_added;
         }
 
         auto & offsets = settings_array_col.getOffsets();

@@ -163,7 +163,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
@@ -272,7 +272,7 @@ private:
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
                     dfa_states.back().transition = DFATransition::SpecificEvent;
-                    dfa_states.back().event = event_number - 1;
+                    dfa_states.back().event = static_cast<uint32_t>(event_number - 1);
                     dfa_states.emplace_back();
                     conditions_in_pattern.set(event_number - 1);
                 }

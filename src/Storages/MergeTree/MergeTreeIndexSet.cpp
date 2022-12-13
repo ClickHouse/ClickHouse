@@ -56,11 +56,11 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 
     if (max_rows != 0 && size() > max_rows)
     {
-        size_serialization->serializeBinary(0, ostr);
+        size_serialization->serializeBinary(0, ostr, {});
         return;
     }
 
-    size_serialization->serializeBinary(size(), ostr);
+    size_serialization->serializeBinary(size(), ostr, {});
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
@@ -74,8 +74,9 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
 
-        serialization->serializeBinaryBulkStatePrefix(settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
+        const auto & column = *block.getByPosition(i).column;
+        serialization->serializeBinaryBulkStatePrefix(column, settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(column, 0, size(), settings, state);
         serialization->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
@@ -89,7 +90,7 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
 
     Field field_rows;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
-    size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr);
+    size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr, {});
     size_t rows_to_read = field_rows.get<size_t>();
 
     if (rows_to_read == 0)

@@ -94,21 +94,7 @@ public:
     T operator() (const DecimalField<U> & x) const
     {
         if constexpr (std::is_floating_point_v<T>)
-            return x.getValue(). template convertTo<T>() / x.getScaleMultiplier(). template convertTo<T>();
-        else if constexpr (std::is_same_v<T, UInt128>)
-        {
-            if constexpr (sizeof(U) < 16)
-            {
-                return UInt128(0, (x.getValue() / x.getScaleMultiplier()).value);
-            }
-            else if constexpr (sizeof(U) == 16)
-            {
-                auto tmp = (x.getValue() / x.getScaleMultiplier()).value;
-                return UInt128(tmp >> 64, UInt64(tmp));
-            }
-            else
-                throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
-        }
+            return x.getValue().template convertTo<T>() / x.getScaleMultiplier().template convertTo<T>();
         else
             return (x.getValue() / x.getScaleMultiplier()). template convertTo<T>();
     }
@@ -134,4 +120,3 @@ public:
 };
 
 }
-

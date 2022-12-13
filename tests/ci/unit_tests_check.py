@@ -4,6 +4,8 @@ import logging
 import os
 import sys
 import subprocess
+import atexit
+from typing import List, Tuple
 
 from github import Github
 
@@ -14,7 +16,7 @@ from pr_info import PRInfo
 from build_download_helper import download_unit_tests
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status
+from commit_status_helper import post_commit_status, update_mergeable_check
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
@@ -36,14 +38,16 @@ def get_test_name(line):
     raise Exception(f"No test name in line '{line}'")
 
 
-def process_result(result_folder):
+def process_results(
+    result_folder: str,
+) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
     OK_SIGN = "OK ]"
     FAILED_SIGN = "FAILED  ]"
     SEGFAULT = "Segmentation fault"
     SIGNAL = "received signal SIG"
     PASSED = "PASSED"
 
-    summary = []
+    summary = []  # type: List[Tuple[str, str]]
     total_counter = 0
     failed_counter = 0
     result_log_path = f"{result_folder}/test_result.txt"
@@ -114,7 +118,9 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
+
+    atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
     rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
@@ -147,8 +153,8 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
-    state, description, test_results, additional_logs = process_result(test_output)
+    s3_helper = S3Helper()
+    state, description, test_results, additional_logs = process_results(test_output)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)

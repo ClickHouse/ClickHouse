@@ -13,7 +13,7 @@ namespace
 
 }
 
-void registerFunctionCosh(FunctionFactory & factory)
+REGISTER_FUNCTION(Cosh)
 {
     factory.registerFunction<FunctionCosh>();
 }

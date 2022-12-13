@@ -27,6 +27,10 @@
 #if !defined(USE_MUSL)
     #define JEMALLOC_OVERRIDE_MEMALIGN
     #define JEMALLOC_OVERRIDE_VALLOC
+    #if defined(__linux__)
+        #define JEMALLOC_OVERRIDE_PVALLOC
+        #define JEMALLOC_OVERRIDE___LIBC_PVALLOC
+    #endif
 #endif
 
 /*

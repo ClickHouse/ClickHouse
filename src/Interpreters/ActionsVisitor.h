@@ -5,10 +5,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST.h>
 #include <Core/ColumnNumbers.h>
-
+#include <Core/ColumnWithTypeAndName.h>
 
 namespace DB
 {
@@ -115,25 +114,18 @@ struct AggregationKeysInfo
     GroupByKind group_by_kind;
 };
 
-/// Collect ExpressionAction from AST. Returns PreparedSets and SubqueriesForSets too.
+/// Collect ExpressionAction from AST. Returns PreparedSets
 class ActionsMatcher
 {
 public:
     using Visitor = ConstInDepthNodeVisitor<ActionsMatcher, true>;
-
-    enum class WindowDependancyState
-    {
-        NONE,
-        MAY_DEPEND,
-    };
 
     struct Data : public WithContext
     {
         SizeLimits set_size_limit;
         size_t subquery_depth;
         const NamesAndTypesList & source_columns;
-        PreparedSets & prepared_sets;
-        SubqueriesForSets & subqueries_for_sets;
+        PreparedSetsPtr prepared_sets;
         bool no_subqueries;
         bool no_makeset;
         bool only_consts;
@@ -148,10 +140,7 @@ public:
          * when we add lots of column with same prefix. One counter for all
          * prefixes is good enough.
          */
-        int next_unique_suffix;
-
-        WindowDependancyState window_dependancy_state = WindowDependancyState::NONE;
-        bool window_function_in_subtree = false;
+        size_t next_unique_suffix;
 
         Data(
             ContextPtr context_,
@@ -159,8 +148,7 @@ public:
             size_t subquery_depth_,
             std::reference_wrapper<const NamesAndTypesList> source_columns_,
             ActionsDAGPtr actions_dag,
-            PreparedSets & prepared_sets_,
-            SubqueriesForSets & subqueries_for_sets_,
+            PreparedSetsPtr prepared_sets_,
             bool no_subqueries_,
             bool no_makeset_,
             bool only_consts_,
