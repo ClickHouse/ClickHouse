@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -33,7 +34,7 @@ struct FrameWithParent
 
 using StackWithParent = std::vector<FrameWithParent>;
 
-bool checkForStatefulFunctions(const StackWithParent & stack, const QueryPlan::Node * node_affect_order)
+bool checkIfCanDeleteSorting(const StackWithParent & stack, const QueryPlan::Node * node_affect_order)
 {
     chassert(!stack.empty());
     chassert(typeid_cast<const SortingStep *>(stack.back().node->step.get()));
@@ -42,6 +43,7 @@ bool checkForStatefulFunctions(const StackWithParent & stack, const QueryPlan::N
     for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
     {
         const auto * node = it->node;
+        /// walking though stack until reach node which affects order
         if (node == node_affect_order)
             break;
 
@@ -55,6 +57,10 @@ bool checkForStatefulFunctions(const StackWithParent & stack, const QueryPlan::N
         }
         else
         {
+            const auto * window = typeid_cast<const WindowStep *>(step);
+            if (window)
+                return true;
+
             const auto * trans = typeid_cast<const ITransformingStep *>(step);
             if (!trans)
                 break;
@@ -100,7 +106,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
                         || typeid_cast<FillingStep *>(step_affect_order))
                         return false;
 
-                    bool remove_sorting = false;
+                    bool consider_to_remove_sorting = false;
 
                     /// (1) aggregation
                     if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(step_affect_order); parent_aggr)
@@ -113,20 +119,22 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
                             if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
                                 return false;
                         }
-                        remove_sorting = true;
+                        consider_to_remove_sorting = true;
                     }
                     /// (2) sorting
                     else if (typeid_cast<SortingStep *>(step_affect_order))
                     {
-                        remove_sorting = true;
+                        consider_to_remove_sorting = true;
                     }
 
-                    if (remove_sorting)
+                    if (consider_to_remove_sorting)
                     {
-                        /// if there is expression with stateful function between current step
+                        /// (1) if there is expression with stateful function between current step
                         /// and step which affects order, then we need to keep sorting since
                         /// stateful function output can depend on order
-                        if (checkForStatefulFunctions(stack, node_affect_order))
+                        /// (2) for window function we do ORDER BY in 2 Sorting steps, so do not delete Sorting
+                        /// if window function step is on top
+                        if (checkIfCanDeleteSorting(stack, node_affect_order))
                             return false;
 
                         chassert(typeid_cast<ExpressionStep *>(current_node->children.front()->step.get()));
@@ -135,7 +143,7 @@ void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
                         /// need to remove sorting and its expression from plan
                         parent_node->children.front() = current_node->children.front()->children.front();
                     }
-                    return remove_sorting;
+                    return true;
                 };
                 if (try_to_remove_sorting_step())
                 {
