@@ -1036,17 +1036,9 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
         fs::directory_iterator key_it{key_prefix_it->path()};
         for (; key_it != fs::directory_iterator(); ++key_it)
         {
-            if (key_it->is_regular_file())
+            if (!key_it->is_directory())
             {
-                if (key_prefix_it->path().filename() == "tmp" && startsWith(key_it->path().filename(), "tmp"))
-                {
-                    LOG_DEBUG(log, "Found temporary file '{}', will remove it", key_it->path().string());
-                    fs::remove(key_it->path());
-                }
-                else
-                {
-                    LOG_DEBUG(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
-                }
+                LOG_DEBUG(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
                 continue;
             }
 
@@ -1054,12 +1046,6 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
             fs::directory_iterator offset_it{key_it->path()};
             for (; offset_it != fs::directory_iterator(); ++offset_it)
             {
-                if (offset_it->is_directory())
-                {
-                    LOG_DEBUG(log, "Unexpected directory: {}. Expected a file", offset_it->path().string());
-                    continue;
-                }
-
                 auto offset_with_suffix = offset_it->path().filename().string();
                 auto delim_pos = offset_with_suffix.find('_');
                 bool parsed;
