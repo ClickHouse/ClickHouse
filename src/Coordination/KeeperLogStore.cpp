@@ -90,8 +90,7 @@ bool KeeperLogStore::compact(uint64_t last_log_index)
 bool KeeperLogStore::flush()
 {
     std::lock_guard lock(changelog_lock);
-    changelog.flush();
-    return true;
+    return changelog.flush();
 }
 
 void KeeperLogStore::apply_pack(uint64_t index, nuraft::buffer & pack)

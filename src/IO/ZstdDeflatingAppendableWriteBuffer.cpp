@@ -11,15 +11,13 @@ namespace ErrorCodes
 }
 
 ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
-    std::unique_ptr<WriteBufferFromFile> out_,
+    std::unique_ptr<WriteBuffer> out_,
     int compression_level,
-    bool append_to_existing_file_,
     size_t buf_size,
     char * existing_memory,
     size_t alignment)
     : BufferWithOwnMemory(buf_size, existing_memory, alignment)
     , out(std::move(out_))
-    , append_to_existing_file(append_to_existing_file_)
 {
     cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
@@ -41,11 +39,11 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
     input.size = offset();
     input.pos = 0;
 
-    if (first_write && append_to_existing_file && isNeedToAddEmptyBlock())
-    {
-        addEmptyBlock();
-        first_write = false;
-    }
+    //if (first_write && append_to_existing_file && isNeedToAddEmptyBlock())
+    //{
+    //    addEmptyBlock();
+    //    first_write = false;
+    //}
 
     try
     {
@@ -178,26 +176,26 @@ void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
 
 bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
 {
-    ReadBufferFromFile reader(out->getFileName());
-    auto fsize = reader.getFileSize();
-    if (fsize > 3)
-    {
-        std::array<char, 3> result;
-        reader.seek(fsize - 3, SEEK_SET);
-        reader.readStrict(result.data(), 3);
+    //ReadBufferFromFile reader(out->getFileName());
+    //auto fsize = reader.getFileSize();
+    //if (fsize > 3)
+    //{
+    //    std::array<char, 3> result;
+    //    reader.seek(fsize - 3, SEEK_SET);
+    //    reader.readStrict(result.data(), 3);
 
-        /// If we don't have correct block in the end, then we need to add it manually.
-        /// NOTE: maybe we can have the same bytes in case of data corruption/unfinished write.
-        /// But in this case file still corrupted and we have to remove it.
-        return result != ZSTD_CORRECT_TERMINATION_LAST_BLOCK;
-    }
-    else if (fsize > 0)
-    {
-        throw Exception(
-            ErrorCodes::ZSTD_ENCODER_FAILED,
-            "Trying to write to non-empty file '{}' with tiny size {}. It can lead to data corruption",
-            out->getFileName(), fsize);
-    }
+    //    /// If we don't have correct block in the end, then we need to add it manually.
+    //    /// NOTE: maybe we can have the same bytes in case of data corruption/unfinished write.
+    //    /// But in this case file still corrupted and we have to remove it.
+    //    return result != ZSTD_CORRECT_TERMINATION_LAST_BLOCK;
+    //}
+    //else if (fsize > 0)
+    //{
+    //    throw Exception(
+    //        ErrorCodes::ZSTD_ENCODER_FAILED,
+    //        "Trying to write to non-empty file '{}' with tiny size {}. It can lead to data corruption",
+    //        out->getFileName(), fsize);
+    //}
     return false;
 }
 
