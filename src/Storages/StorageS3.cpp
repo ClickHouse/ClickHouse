@@ -375,19 +375,20 @@ public:
         ObjectInfos * object_infos_,
         Strings * read_keys_)
         : WithContext(context_)
-        , keys(keys_)
         , bucket(bucket_)
         , query(query_)
         , virtual_header(virtual_header_)
     {
+        Strings all_keys = std::move(keys_);
+
         /// Create a virtual block with one row to construct filter
-        if (query && virtual_header && !keys.empty())
+        if (query && virtual_header && !all_keys.empty())
         {
             /// Append "idx" column as the filter result
             virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
             auto block = virtual_header.cloneEmpty();
-            addPathToVirtualColumns(block, fs::path(bucket) / keys.front(), 0);
+            addPathToVirtualColumns(block, fs::path(bucket) / all_keys.front(), 0);
 
             ASTPtr filter_ast;
             VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
@@ -395,8 +396,8 @@ public:
             if (filter_ast)
             {
                 block = virtual_header.cloneEmpty();
-                for (size_t i = 0; i < keys.size(); ++i)
-                    addPathToVirtualColumns(block, fs::path(bucket) / keys[i], i);
+                for (size_t i = 0; i < all_keys.size(); ++i)
+                    addPathToVirtualColumns(block, fs::path(bucket) / all_keys[i], i);
 
                 VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
                 const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
@@ -404,28 +405,32 @@ public:
                 Strings filtered_keys;
                 filtered_keys.reserve(block.rows());
                 for (UInt64 idx : idxs.getData())
-                    filtered_keys.emplace_back(std::move(keys[idx]));
+                    filtered_keys.emplace_back(std::move(all_keys[idx]));
 
-                keys = std::move(filtered_keys);
+                all_keys = std::move(filtered_keys);
             }
+        }
+
+        if (read_keys_)
+            *read_keys_ = all_keys;
+
+        for (auto && key : all_keys)
+        {
+            std::optional<S3::ObjectInfo> info;
 
             /// To avoid extra requests update total_size only if object_infos != nullptr
             /// (which means we eventually need this info anyway, so it should be ok to do it now)
             if (object_infos_)
             {
-                for (const auto & key : keys)
-                {
-                    auto info = S3::getObjectInfo(client_, bucket, key, version_id_, true, false);
-                    total_size += info.size;
+                info = S3::getObjectInfo(client_, bucket, key, version_id_, true, false);
+                total_size += info->size;
 
-                    String path = fs::path(bucket) / key;
-                    object_infos_->emplace(std::move(path), std::move(info));
-                }
+                String path = fs::path(bucket) / key;
+                (*object_infos_)[std::move(path)] = *info;
             }
-        }
 
-        if (read_keys_)
-            *read_keys_ = keys;
+            keys.emplace_back(std::move(key), std::move(info));
+        }
     }
 
     KeyWithInfo next()
@@ -434,7 +439,7 @@ public:
         if (current_index >= keys.size())
             return {};
 
-        return {keys[current_index], {}};
+        return keys[current_index];
     }
 
     size_t getTotalSize() const
@@ -443,7 +448,7 @@ public:
     }
 
 private:
-    Strings keys;
+    KeysWithInfo keys;
     std::atomic_size_t index = 0;
 
     String bucket;
@@ -464,9 +469,8 @@ StorageS3Source::KeysIterator::KeysIterator(
     ObjectInfos * object_infos,
     Strings * read_keys)
     : pimpl(std::make_shared<StorageS3Source::KeysIterator::Impl>(
-        keys_, bucket_, query, virtual_header, context
-        client_, version_id_, keys_, bucket_, query, virtual_header,
-        context, object_infos, read_keys))
+        client_, version_id_, keys_, bucket_, query,
+        virtual_header, context, object_infos, read_keys))
 {
 }
 

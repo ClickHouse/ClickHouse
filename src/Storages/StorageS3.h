@@ -96,8 +96,7 @@ public:
             ObjectInfos * object_infos = nullptr,
             Strings * read_keys = nullptr);
 
-        String next() override;
-
+        KeyWithInfo next() override;
         size_t getTotalSize() const override;
 
     private:

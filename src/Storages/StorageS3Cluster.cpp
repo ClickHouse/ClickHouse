@@ -102,12 +102,8 @@ Pipe StorageS3Cluster::read(
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
         *s3_configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
-<<<<<<< HEAD
 
-    auto callback = std::make_shared<TaskIterator>([iterator] { return iterator->next().key; });
-=======
-    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next(); });
->>>>>>> upstream/master
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().key; });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
