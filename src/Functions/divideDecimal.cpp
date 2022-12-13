@@ -4,6 +4,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int DECIMAL_OVERFLOW;
+    extern const int ILLEGAL_DIVISION;
+}
+
 namespace
 {
 
