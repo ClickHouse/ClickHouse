@@ -926,7 +926,12 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
                 return nullptr;
             nested_types.push_back(nested_type);
         }
+
+        if (tuple_type->haveExplicitNames())
+            return std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
+
         return std::make_shared<DataTypeTuple>(std::move(nested_types));
+
     }
 
     if (which.isMap())
