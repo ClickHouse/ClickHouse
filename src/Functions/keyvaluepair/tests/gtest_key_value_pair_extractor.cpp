@@ -59,7 +59,7 @@ INSTANTIATE_TEST_SUITE_P(
     KeyValuePairExtractorTest,
     ::testing::ValuesIn(std::initializer_list<LazyKeyValuePairExtractorTestCase>{
         {
-            R"(9 ads =nm,  no\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\ picasso, team: psg,)",
+            R"(9 ads =nm, no\:me: neymar, age: 30, daojmskdpoa and a height: 1.75, school: lupe\ picasso, team: psg,)",
             {
                 {
                     R"(no:me)", "neymar"
@@ -101,30 +101,68 @@ INSTANTIATE_TEST_SUITE_P(
         {
             "na,me,: neymar, age:30",
             {
-                {"age", "30"}
+                {
+                    "age", "30"
+                }
             },
             KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         },
-        {"na$me,: neymar, age:30",
-         {{"age", "30"}},
-         KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()},
-        {R"(name: neymar, favorite_quote: Premature\ optimization\ is\ the\ r\$\$t\ of\ all\ evil, age:30)",
-         {{"name", "neymar"}, {"favorite_quote", R"(Premature optimization is the r$$t of all evil)"}, {"age", "30"}},
+        {
+            "na$me,: neymar, age:30",
+            {
+                {
+                    "age", "30"
+                }
+            },
+            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()},
+        {
+            R"(name: neymar, favorite_quote: Premature\ optimization\ is\ the\ r\$\$t\ of\ all\ evil, age:30)",
+            {
+                {
+                    "name", "neymar"
+                },
+                {
+                    "favorite_quote", R"(Premature optimization is the r$$t of all evil)"
+                },
+                {
+                    "age", "30"
+                }
+            },
          KeyValuePairExtractorBuilder()
              .withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>()
              .withEnclosingCharacter('"')
-             .build()}}));
+             .build()
+        }}));
 
 INSTANTIATE_TEST_SUITE_P(
     EnclosedElements,
     KeyValuePairExtractorTest,
     ::testing::ValuesIn(std::initializer_list<LazyKeyValuePairExtractorTestCase>{
-        {R"("name": "Neymar", "age": 30, team: "psg", "favorite_movie": "", height: 1.75)",
-         {{"name", "Neymar"}, {"age", "30"}, {"team", "psg"}, {"favorite_movie", ""}, {"height", "1.75"}},
-         KeyValuePairExtractorBuilder()
-             .withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>()
-             .withValueSpecialCharacterAllowList({'.'})
-             .withEnclosingCharacter('"')
-             .build()}}));
+        {
+            R"("name": "Neymar", "age": 30, team: "psg", "favorite_movie": "", height: 1.75)",
+            {
+                {
+                    "name", "Neymar"
+                },
+                {
+                    "age", "30"
+                },
+                {
+                    "team", "psg"
+                },
+                {
+                    "favorite_movie", ""
+                },
+                {
+                    "height", "1.75"
+                }
+            },
+            KeyValuePairExtractorBuilder()
+                .withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>()
+                .withValueSpecialCharacterAllowList({'.'})
+                .withEnclosingCharacter('"')
+                .build()
+        }
+    }));
 
 }

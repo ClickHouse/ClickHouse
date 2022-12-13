@@ -13,7 +13,7 @@ namespace DB
 
 /*
  * In order to leverage DB::ReplaceStringImpl for a better performance, the default escaping processor needs
- * to be overriden by a no-op escaping processor. DB::ReplaceStringImpl does in-place replacing and leverages the
+ * to be overridden by a no-op escaping processor. DB::ReplaceStringImpl does in-place replacing and leverages the
  * Volnitsky searcher.
  * */
 struct NoOpEscapingProcessor : KeyValuePairEscapingProcessor<ExtractKeyValuePairs::EscapingProcessorOutput>
