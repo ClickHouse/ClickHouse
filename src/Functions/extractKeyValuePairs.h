@@ -2,21 +2,22 @@
 
 #include <unordered_set>
 
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Functions/keyvaluepair/src/KeyValuePairExtractor.h>
 
-namespace DB {
+namespace DB
+{
 
 class ExtractKeyValuePairs : public IFunction
 {
-
     using CharArgument = std::optional<char>;
     using SetArgument = std::unordered_set<char>;
 
-    struct ParsedArguments {
+    struct ParsedArguments
+    {
         ColumnPtr data_column;
         CharArgument escape_character;
         CharArgument key_value_pair_delimiter;
@@ -33,22 +34,19 @@ class ExtractKeyValuePairs : public IFunction
     };
 
 public:
-
     using EscapingProcessorOutput = std::unordered_map<std::string_view, std::string_view>;
 
     ExtractKeyValuePairs();
 
     static constexpr auto name = "extractKeyValuePairs";
 
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<ExtractKeyValuePairs>();
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<ExtractKeyValuePairs>(); }
 
     /// Get the main function name.
     String getName() const override;
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override;
 
@@ -63,11 +61,12 @@ private:
 
     ParsedArguments parseArguments(const ColumnsWithTypeAndName & arguments) const;
 
-    std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> getExtractor(CharArgument escape_character,
-                                                                                 CharArgument key_value_pair_delimiter,
-                                                                                 CharArgument item_delimiter,
-                                                                                 CharArgument enclosing_character,
-                                                                                 SetArgument value_special_characters_allow_list) const;
+    std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> getExtractor(
+        CharArgument escape_character,
+        CharArgument key_value_pair_delimiter,
+        CharArgument item_delimiter,
+        CharArgument enclosing_character,
+        SetArgument value_special_characters_allow_list) const;
 
     RawColumns extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const;
 
