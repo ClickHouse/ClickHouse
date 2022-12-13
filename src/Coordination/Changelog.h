@@ -121,9 +121,9 @@ public:
     void applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer);
 
     /// Fsync latest log to disk and flush buffer
-    void flush();
+    bool flush();
 
-    bool flushAsync();
+    std::shared_ptr<bool> flushAsync();
 
     void shutdown();
 
@@ -197,6 +197,7 @@ private:
     struct Flush
     {
         uint64_t index;
+        std::shared_ptr<bool> failed;
     };
 
     using WriteOperation = std::variant<AppendLog, Flush>;

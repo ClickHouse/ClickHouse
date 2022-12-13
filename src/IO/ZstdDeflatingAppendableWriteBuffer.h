@@ -29,9 +29,8 @@ public:
     static inline constexpr ZSTDLastBlock ZSTD_CORRECT_TERMINATION_LAST_BLOCK = {0x01, 0x00, 0x00};
 
     ZstdDeflatingAppendableWriteBuffer(
-        std::unique_ptr<WriteBufferFromFile> out_,
+        std::unique_ptr<WriteBuffer> out_,
         int compression_level,
-        bool append_to_existing_file_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0);
@@ -63,14 +62,14 @@ private:
 
     /// Read three last bytes from non-empty compressed file and compares them with
     /// ZSTD_CORRECT_TERMINATION_LAST_BLOCK.
-    bool isNeedToAddEmptyBlock();
+    static bool isNeedToAddEmptyBlock();
 
     /// Adding zstd empty block (ZSTD_CORRECT_TERMINATION_LAST_BLOCK) to out.working_buffer
     void addEmptyBlock();
 
-    std::unique_ptr<WriteBufferFromFile> out;
+    std::unique_ptr<WriteBuffer> out;
 
-    bool append_to_existing_file = false;
+    //bool append_to_existing_file = false;
     ZSTD_CCtx * cctx;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
