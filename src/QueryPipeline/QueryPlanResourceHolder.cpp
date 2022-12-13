@@ -1,4 +1,4 @@
-#include <QueryPipeline/PipelineResourcesHolder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 
