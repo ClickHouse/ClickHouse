@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-s3-storage
+# Because parallel parts removal disabled for s3 storage
 
 # NOTE: this done as not .sql since we need to Ordinary database
 # (to account threads in query_log for DROP TABLE query)
@@ -49,6 +50,9 @@ $CLICKHOUSE_CLIENT -nm -q """
     order by key
     partition by key%100
     settings max_part_removal_threads=10, concurrent_part_removal_threshold=99, min_bytes_for_wide_part=0;
+
+    SET insert_keeper_max_retries=1000;
+    SET insert_keeper_retry_max_backoff_ms=10;
 
     insert into rep_data_01810 select * from numbers(100);
     drop table rep_data_01810 settings log_queries=1;

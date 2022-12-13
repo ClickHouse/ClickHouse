@@ -13,3 +13,7 @@ SET optimize_monotonous_functions_in_order_by = 1;
 EXPLAIN SYNTAX SELECT * FROM t_02147 ORDER BY toStartOfHour(date), v;
 EXPLAIN SYNTAX SELECT * FROM t_02147_dist ORDER BY toStartOfHour(date), v;
 EXPLAIN SYNTAX SELECT * FROM t_02147_merge ORDER BY toStartOfHour(date), v;
+
+drop table t_02147;
+CREATE TABLE t_02147 (date DateTime, v UInt32) ENGINE = MergeTree ORDER BY date;
+select *, toString(t.v) as s from t_02147_merge as t order by date, s;
