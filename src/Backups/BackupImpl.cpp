@@ -506,7 +506,7 @@ void BackupImpl::removeLockFile()
         return; /// Internal backup must not remove the lock file (it's still used by the initiator).
 
     if (checkLockFile(false))
-        writer->removeFiles({lock_file_name});
+        writer->removeFile(lock_file_name);
 }
 
 Strings BackupImpl::listFiles(const String & directory, bool recursive) const
