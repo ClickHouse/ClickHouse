@@ -129,15 +129,13 @@ struct ObjectInfo
 
 bool isNotFoundError(Aws::S3::S3Errors error);
 
-using ClientPtr = std::shared_ptr<const Aws::S3::S3Client>;
+Aws::S3::Model::HeadObjectOutcome headObject(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
 
-Aws::S3::Model::HeadObjectOutcome headObject(ClientPtr client_ptr, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
+S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
 
-S3::ObjectInfo getObjectInfo(ClientPtr client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
+size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
 
-size_t getObjectSize(ClientPtr client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
-
-bool objectExists(ClientPtr client_ptr, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
+bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
 
 }
 #endif

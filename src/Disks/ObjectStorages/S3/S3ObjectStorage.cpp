@@ -124,12 +124,12 @@ std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
 {
-    return S3::headObject(client.get(), bucket_from, key, "", true);
+    return S3::headObject(*client.get(), bucket_from, key, "", true);
 }
 
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
-    return S3::objectExists(client.get(), bucket, object.absolute_path, "", true);
+    return S3::objectExists(*client.get(), bucket, object.absolute_path, "", true);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
@@ -458,7 +458,8 @@ void S3ObjectStorage::copyObjectImpl(
 
     auto outcome = client_ptr->CopyObject(request);
 
-    if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "EntityTooLarge")
+    if (!outcome.IsSuccess() && (outcome.GetError().GetExceptionName() == "EntityTooLarge"
+            || outcome.GetError().GetExceptionName() == "InvalidRequest"))
     { // Can't come here with MinIO, MinIO allows single part upload for large objects.
         copyObjectMultipartImpl(src_bucket, src_key, dst_bucket, dst_key, head, metadata);
         return;

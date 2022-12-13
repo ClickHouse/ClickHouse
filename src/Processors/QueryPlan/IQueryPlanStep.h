@@ -31,13 +31,13 @@ public:
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
 
-    /// Sorting scope
+    /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
     enum class SortScope
     {
-        None,
-        Chunk, /// Separate chunks are sorted
-        Stream, /// Each data steam is sorted
-        Global, /// Data is globally sorted
+        None   = 0,
+        Chunk  = 1, /// Separate chunks are sorted
+        Stream = 2, /// Each data steam is sorted
+        Global = 3, /// Data is globally sorted
     };
 
     /// It is not guaranteed that header has columns from sort_description.
