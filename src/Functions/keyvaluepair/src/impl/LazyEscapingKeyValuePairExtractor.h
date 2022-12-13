@@ -40,10 +40,10 @@ public:
 
         while (state != State::END)
         {
-            auto nextState = processState(file, pos, state);
+            auto next_state = processState(file, pos, state);
 
-            pos = nextState.pos;
-            state = nextState.state;
+            pos = next_state.pos;
+            state = next_state.state;
         }
 
         return escaping_processor->process(response_views);
