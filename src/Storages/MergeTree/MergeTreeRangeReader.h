@@ -39,6 +39,8 @@ struct PrewhereExprInfo
 
 class FilterWithCachedCount
 {
+    ConstantFilterDescription const_description;  /// TODO: ConstantFilterDescription only checks always true/false for const columns
+                                                  /// think how to handle when the column in not const but has all 0s or all 1s
     ColumnPtr column = nullptr;
     const IColumn::Filter * data = nullptr;
     mutable size_t cached_count_bytes = -1;
@@ -47,6 +49,7 @@ public:
     explicit FilterWithCachedCount() = default;
 
     explicit FilterWithCachedCount(const ColumnPtr & column_)
+        : const_description(*column_)
 //        : column(column_->convertToFullIfNeeded()) // TODO: is this optimal?
 //        , data(&typeid_cast<const ColumnUInt8 &>(*column).getData())
     {
@@ -57,6 +60,9 @@ public:
     }
 
     bool present() const { return !!column; }
+
+    bool alwaysTrue() const { return const_description.always_true; }
+    bool alwaysFalse() const { return const_description.always_false; }
 
     ColumnPtr getColumn() { return column; }
 
