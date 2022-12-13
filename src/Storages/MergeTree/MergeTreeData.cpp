@@ -2607,7 +2607,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             else
             {
                 const auto & nested = old_metadata.columns.getNested(command.column_name);
-                assert(!nested.empty());
                 for (const auto & nested_column : nested)
                     dropped_columns.emplace(nested_column.name);
             }
