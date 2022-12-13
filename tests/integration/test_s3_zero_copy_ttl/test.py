@@ -68,19 +68,27 @@ def test_ttl_move_and_s3(started_cluster):
     assert node1.query("SELECT COUNT() FROM s3_test_with_ttl") == "30\n"
     assert node2.query("SELECT COUNT() FROM s3_test_with_ttl") == "30\n"
 
-    time.sleep(5)
+    for attempt in reversed(range(5)):
+        time.sleep(5)
 
-    print(
-        node1.query(
-            "SELECT * FROM system.parts WHERE table = 's3_test_with_ttl' FORMAT Vertical"
+        print(
+            node1.query(
+                "SELECT * FROM system.parts WHERE table = 's3_test_with_ttl' FORMAT Vertical"
+            )
         )
-    )
 
-    minio = cluster.minio_client
-    objects = minio.list_objects(cluster.minio_bucket, "data/", recursive=True)
-    counter = 0
-    for obj in objects:
-        print("Objectname:", obj.object_name, "metadata:", obj.metadata)
-        counter += 1
-    print("Total objects", counter)
+        minio = cluster.minio_client
+        objects = minio.list_objects(cluster.minio_bucket, "data/", recursive=True)
+        counter = 0
+        for obj in objects:
+            print(f"Objectname: {obj.object_name}, metadata: {obj.metadata}")
+            counter += 1
+
+        print(f"Total objects: {counter}")
+
+        if counter == 300:
+            break
+
+        print(f"Attempts remaining: {attempt}")
+
     assert counter == 300

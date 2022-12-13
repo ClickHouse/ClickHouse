@@ -2,6 +2,7 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -40,29 +41,8 @@ def smaller_exception(ex):
     return "\n".join(str(ex).split("\n")[0:2])
 
 
-def wait_node(node):
-    for _ in range(100):
-        zk = None
-        try:
-            node.query("SELECT * FROM system.zookeeper WHERE path = '/'")
-            zk = get_fake_zk(node.name, timeout=30.0)
-            zk.create("/test", sequence=True)
-            print("node", node.name, "ready")
-            break
-        except Exception as ex:
-            time.sleep(0.2)
-            print("Waiting until", node.name, "will be ready, exception", ex)
-        finally:
-            if zk:
-                zk.stop()
-                zk.close()
-    else:
-        raise Exception("Can't wait node", node.name, "to become ready")
-
-
 def wait_nodes():
-    for node in [node1, node2]:
-        wait_node(node)
+    keeper_utils.wait_nodes(cluster, [node1, node2])
 
 
 def get_fake_zk(nodename, timeout=30.0):

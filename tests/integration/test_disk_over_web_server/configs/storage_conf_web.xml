@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -6,6 +5,12 @@
                 <type>web</type>
                 <endpoint>http://nginx:80/test1/</endpoint>
             </web>
+            <cached_web>
+                <type>cache</type>
+                <disk>web</disk>
+                <path>cached_web_cache/</path>
+                <max_size>100000000</max_size>
+            </cached_web>
         </disks>
         <policies>
             <web>
@@ -15,6 +20,13 @@
                     </main>
                 </volumes>
             </web>
+            <cached_web>
+                <volumes>
+                    <main>
+                        <disk>cached_web</disk>
+                    </main>
+                </volumes>
+            </cached_web>
         </policies>
     </storage_configuration>
 </clickhouse>
