@@ -1,26 +1,9 @@
--- { echoOn }
-
-SYSTEM DROP QUERY RESULT CACHE;
-SELECT 1 SETTINGS experimental_query_result_cache_active_usage = true, query_result_cache_keep_seconds_alive = 3;
 1
--- expect one non-stale cache entry
-SELECT count(*) FROM system.queryresult_cache;
 1
-SELECT stale FROM system.queryresult_cache;
 0
-SELECT sleep(3);
 0
-SELECT sleep(3);
 0
--- cache entry is stale by now
-SELECT stale FROM system.queryresult_cache;
 1
--- same query as before
-SELECT 1 SETTINGS experimental_query_result_cache_active_usage = true, query_result_cache_keep_seconds_alive = 3;
 1
--- expect one non-stale cache entry
-SELECT count(*) FROM system.queryresult_cache;
 1
-SELECT stale FROM system.queryresult_cache;
 0
-SYSTEM DROP QUERY RESULT CACHE;
