@@ -1,4 +1,4 @@
--- { echoOn }
+-- Tags: no-fasttest
 
 SYSTEM DROP QUERY RESULT CACHE;
 
@@ -22,5 +22,3 @@ SELECT count(*) FROM system.queryresult_cache;
 SELECT stale FROM system.queryresult_cache;
 
 SYSTEM DROP QUERY RESULT CACHE;
-
--- { echoOff }

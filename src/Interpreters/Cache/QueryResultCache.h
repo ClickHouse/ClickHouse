@@ -70,19 +70,19 @@ public:
     class Writer
     {
     public:
-        Writer(Cache & cache_, std::mutex & mutex_, const Key & key_, size_t max_cache_size, size_t & cache_size, size_t max_entry_size_);
+        Writer(std::mutex & mutex_, Cache & cache_, const Key & key_, size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entry_size_in_bytes_);
         ~Writer();
         void buffer(Chunk && chunk);
     private:
-        Cache & cache;
         std::mutex & mutex;
+        Cache & cache;
         const Key key;
-        const size_t max_cache_size;
-        size_t & cache_size;
-        const size_t max_entry_size;
+        size_t & cache_size_in_bytes;
+        const size_t max_cache_size_in_bytes;
+        size_t entry_size_in_bytes;
+        const size_t max_entry_size_in_bytes;
         Chunks chunks;
         bool skip_insert;
-        size_t entry_size;
     };
 
     /// Looks up a result chunk for a key in the cache and (if found) constructs a pipe with the chunk as source.
@@ -96,10 +96,10 @@ public:
         Pipe pipe;
     };
 
-    explicit QueryResultCache(size_t max_cache_size_);
+    explicit QueryResultCache(size_t max_cache_size_in_bytes_);
 
     Reader createReader(const Key & key);
-    Writer createWriter(const Key & key, size_t max_entry_size);
+    Writer createWriter(const Key & key, size_t max_entry_size_in_bytes);
 
     void reset();
 
@@ -115,8 +115,8 @@ private:
     Cache cache;
     TimesExecutedMap times_executed;
 
-    const size_t max_cache_size;
-    size_t cache_size;
+    size_t cache_size_in_bytes;
+    const size_t max_cache_size_in_bytes;
 
     friend class StorageSystemQueryResultCache;
 };

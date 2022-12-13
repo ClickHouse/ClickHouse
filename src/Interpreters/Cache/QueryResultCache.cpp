@@ -32,7 +32,8 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
     return res;
 }
 
-namespace {
+namespace
+{
 
 auto is_stale = [](const QueryResultCache::Key & key)
 {
@@ -41,15 +42,15 @@ auto is_stale = [](const QueryResultCache::Key & key)
 
 }
 
-QueryResultCache::Writer::Writer(Cache & cache_, std::mutex & mutex_, const Key & key_, size_t max_cache_size_, size_t & cache_size_, size_t max_entry_size_)
-    : cache(cache_)
-    , mutex(mutex_)
+QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_, size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entry_size_in_bytes_)
+    : mutex(mutex_)
+    , cache(cache_)
     , key(key_)
-    , max_cache_size(max_cache_size_)
-    , cache_size(cache_size_)
-    , max_entry_size(max_entry_size_)
+    , cache_size_in_bytes(cache_size_in_bytes_)
+    , max_cache_size_in_bytes(max_cache_size_in_bytes_)
+    , entry_size_in_bytes(0)
+    , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , skip_insert(false)
-    , entry_size(0)
 {
     std::lock_guard lock(mutex);
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
@@ -74,20 +75,25 @@ try
     };
 
     auto entry = std::make_shared<Chunk>(to_single_chunk(chunks));
-    const size_t new_entry_size = entry->allocatedBytes();
+    entry_size_in_bytes = entry->allocatedBytes();
 
     std::lock_guard lock(mutex);
 
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
         return; /// same check as in ctor
 
-    /// In case of insufficient space, remove stale entries
-    if (cache_size + new_entry_size > max_cache_size)
+    auto sufficient_space_in_cache = [this](size_t cache_size_in_bytes_)
     {
+        return cache_size_in_bytes_ + entry_size_in_bytes < max_cache_size_in_bytes;
+    };
+
+    if (!sufficient_space_in_cache(cache_size_in_bytes))
+    {
+        /// Remove stale entries
         for (auto it = cache.begin(); it != cache.end();)
             if (is_stale(it->first))
             {
-                cache_size -= it->second->allocatedBytes();
+                cache_size_in_bytes -= it->second->allocatedBytes();
                 it = cache.erase(it);
             }
             else
@@ -95,11 +101,11 @@ try
     }
 
     /// Insert or replace if enough space
-    if (cache_size + new_entry_size < max_cache_size)
+    if (sufficient_space_in_cache(cache_size_in_bytes))
     {
-        cache_size += entry->allocatedBytes();
+        cache_size_in_bytes += entry->allocatedBytes();
         if (auto it = cache.find(key); it != cache.end())
-            cache_size -= it->second->allocatedBytes(); /// key replacement
+            cache_size_in_bytes -= it->second->allocatedBytes(); /// key replacement
 
         /// cache[key] = entry; /// does no replacement for unclear reasons
         cache.erase(key);
@@ -119,8 +125,8 @@ void QueryResultCache::Writer::buffer(Chunk && chunk)
 
     chunks.emplace_back(std::move(chunk));
 
-    entry_size += chunks.back().allocatedBytes();
-    if (entry_size > max_entry_size)
+    entry_size_in_bytes += chunks.back().allocatedBytes();
+    if (entry_size_in_bytes > max_entry_size_in_bytes)
         skip_insert = true;
 
 }
@@ -159,9 +165,9 @@ Pipe && QueryResultCache::Reader::getPipe()
     return std::move(pipe);
 }
 
-QueryResultCache::QueryResultCache(size_t max_cache_size_)
-    : max_cache_size(max_cache_size_)
-    , cache_size(0)
+QueryResultCache::QueryResultCache(size_t max_cache_size_in_bytes_)
+    : cache_size_in_bytes(0)
+    , max_cache_size_in_bytes(max_cache_size_in_bytes_)
 {
 }
 
@@ -172,7 +178,7 @@ QueryResultCache::Reader QueryResultCache::createReader(const Key & key)
 
 QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, size_t max_entry_size)
 {
-    return Writer(cache, mutex, key, max_cache_size, cache_size, max_entry_size);
+    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_entry_size);
 }
 
 void QueryResultCache::reset()
@@ -180,7 +186,7 @@ void QueryResultCache::reset()
     std::lock_guard lock(mutex);
     cache.clear();
     times_executed.clear();
-    cache_size = 0;
+    cache_size_in_bytes = 0;
 }
 
 size_t QueryResultCache::recordQueryRun(const Key & key)
