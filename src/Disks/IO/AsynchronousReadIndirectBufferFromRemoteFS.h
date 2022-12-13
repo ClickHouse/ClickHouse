@@ -66,7 +66,7 @@ private:
 
     ReadSettings read_settings;
 
-    IAsynchronousReader & reader;
+    AsynchronousReaderPtr reader;
 
     Int32 priority;
 
