@@ -357,25 +357,37 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     /// It does not make sense for CREATE query
     if (attach)
     {
-        if (current_zookeeper && current_zookeeper->exists(replica_path + "/host"))
+        try
         {
-            /// Check it earlier if we can (we don't want incompatible version to start).
-            /// If "/host" doesn't exist, then replica is probably dropped and there's nothing to check.
-            ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(current_zookeeper, replica_path);
+            if (current_zookeeper && current_zookeeper->exists(replica_path + "/host"))
+            {
+                /// Check it earlier if we can (we don't want incompatible version to start).
+                /// If "/host" doesn't exist, then replica is probably dropped and there's nothing to check.
+                ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(current_zookeeper, replica_path);
+            }
+
+            if (current_zookeeper && current_zookeeper->exists(replica_path + "/flags/force_restore_data"))
+            {
+                skip_sanity_checks = true;
+                current_zookeeper->remove(replica_path + "/flags/force_restore_data");
+
+                LOG_WARNING(
+                    log,
+                    "Skipping the limits on severity of changes to data parts and columns (flag {}/flags/force_restore_data).",
+                    replica_path);
+            }
+            else if (has_force_restore_data_flag)
+            {
+                skip_sanity_checks = true;
+
+                LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
+            }
         }
-
-        if (current_zookeeper && current_zookeeper->exists(replica_path + "/flags/force_restore_data"))
+        catch (const Coordination::Exception & e)
         {
-            skip_sanity_checks = true;
-            current_zookeeper->remove(replica_path + "/flags/force_restore_data");
-
-            LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag {}/flags/force_restore_data).", replica_path);
-        }
-        else if (has_force_restore_data_flag)
-        {
-            skip_sanity_checks = true;
-
-            LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+            LOG_ERROR(log, "Caught exception while checking table metadata in ZooKeeper, will recheck later: {}", e.displayText());
         }
     }
 
