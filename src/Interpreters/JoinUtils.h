@@ -138,7 +138,7 @@ public:
     NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
               const Block & result_sample_block_,
               size_t left_columns_count,
-              const LeftToRightKeyRemap & left_to_right_key_remap);
+              const TableJoin & table_join);
 
     Block nextImpl() override;
 
