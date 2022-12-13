@@ -2222,7 +2222,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                 for (const auto & child : node->children)
                     function_children.push_back(node_to_result_node.find(child)->second);
 
-                result_node = &result_dag->addFunction(node->function_builder, std::move(function_children), {});
+                result_node = &result_dag->addFunction(node->function_base, std::move(function_children), {});
                 break;
             }
         }
