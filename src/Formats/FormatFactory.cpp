@@ -98,6 +98,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_decimals = settings.output_format_json_quote_decimals;
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
     format_settings.json.read_numbers_as_strings = settings.input_format_json_read_numbers_as_strings;
+    format_settings.json.read_objects_as_strings = settings.input_format_json_read_objects_as_strings;
     format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
@@ -180,6 +181,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
+    format_settings.max_binary_string_size = settings.format_binary_max_string_size;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -588,6 +590,19 @@ void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
     target = true;
 }
 
+void FormatFactory::markFormatSupportsSubcolumns(const String & name)
+{
+    auto & target = dict[name].supports_subcolumns;
+    if (target)
+        throw Exception("FormatFactory: Format " + name + " is already marked as supporting subcolumns", ErrorCodes::LOGICAL_ERROR);
+    target = true;
+}
+
+bool FormatFactory::checkIfFormatSupportsSubcolumns(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.supports_subcolumns;
+}
 
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) const
 {
