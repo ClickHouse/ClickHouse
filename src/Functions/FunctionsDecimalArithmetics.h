@@ -1,4 +1,5 @@
 #pragma once
+
 #include <type_traits>
 #include <Core/AccurateComparison.h>
 
@@ -136,91 +137,6 @@ struct DecimalOpHelpers
             ++scale;
         }
         return result;
-    }
-};
-
-
-struct DivideDecimalsImpl
-{
-    static constexpr auto name = "divideDecimal";
-
-    template <typename FirstType, typename SecondType>
-    static inline Decimal256
-    execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
-    {
-        if (b.value == 0)
-            throw DB::Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
-        if (a.value == 0)
-            return Decimal256(0);
-
-        Int256 sign_a = a.value < 0 ? -1 : 1;
-        Int256 sign_b = b.value < 0 ? -1 : 1;
-
-        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
-
-        while (scale_a < scale_b + result_scale)
-        {
-            a_digits.push_back(0);
-            ++scale_a;
-        }
-
-        while (scale_a > scale_b + result_scale && !a_digits.empty())
-        {
-            a_digits.pop_back();
-            --scale_a;
-        }
-
-        if (a_digits.empty())
-            return Decimal256(0);
-
-        std::vector<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value * sign_b);
-
-        if (divided.size() > DecimalUtils::max_precision<Decimal256>)
-            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
-        return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(divided));
-    }
-};
-
-
-struct MultiplyDecimalsImpl
-{
-    static constexpr auto name = "multiplyDecimal";
-
-    template <typename FirstType, typename SecondType>
-    static inline Decimal256
-    execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
-    {
-        if (a.value == 0 || b.value == 0)
-            return Decimal256(0);
-
-        Int256 sign_a = a.value < 0 ? -1 : 1;
-        Int256 sign_b = b.value < 0 ? -1 : 1;
-
-        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
-        std::vector<UInt8> b_digits = DecimalOpHelpers::toDigits(b.value * sign_b);
-
-        std::vector<UInt8> multiplied = DecimalOpHelpers::multiply(a_digits, b_digits);
-
-        UInt16 product_scale = scale_a + scale_b;
-        while (product_scale < result_scale)
-        {
-            multiplied.push_back(0);
-            ++product_scale;
-        }
-
-        while (product_scale > result_scale&& !multiplied.empty())
-        {
-            multiplied.pop_back();
-            --product_scale;
-        }
-
-        if (multiplied.empty())
-            return Decimal256(0);
-
-        if (multiplied.size() > DecimalUtils::max_precision<Decimal256>)
-            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
-
-        return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(multiplied));
     }
 };
 
@@ -388,11 +304,12 @@ public:
     }
 
 private:
-    //long resolver to call proper templated func
+    // long resolver to call proper templated func
     ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         WhichDataType which_dividend(arguments[0].type.get());
         WhichDataType which_divisor(arguments[1].type.get());
+
         if (which_dividend.isDecimal32())
         {
             using DividendType = DataTypeDecimal32;
@@ -454,4 +371,3 @@ private:
 };
 
 }
-
