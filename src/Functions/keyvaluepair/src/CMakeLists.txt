@@ -1,4 +1,4 @@
-add_library(clickhouse_functions_parsekeyvalue KeyValuePairExtractor.h impl/state/KeyStateHandler.cpp impl/state/KeyStateHandler.h impl/state/State.h impl/state/ValueStateHandler.cpp impl/state/ValueStateHandler.h impl/state/StateHandler.cpp impl/state/StateHandler.h impl/SimpleKeyValuePairEscapingProcessor.h impl/SimpleKeyValuePairEscapingProcessor.cpp KeyValuePairExtractorBuilder.h KeyValuePairEscapingProcessor.h)
-add_headers_and_sources(clickhouse_functions_parsekeyvalue .)
+add_library(clickhouse_functions_extractkeyvaluepairs KeyValuePairExtractor.h impl/state/KeyStateHandler.cpp impl/state/KeyStateHandler.h impl/state/State.h impl/state/ValueStateHandler.cpp impl/state/ValueStateHandler.h impl/state/StateHandler.cpp impl/state/StateHandler.h impl/SimpleKeyValuePairEscapingProcessor.h impl/SimpleKeyValuePairEscapingProcessor.cpp KeyValuePairExtractorBuilder.h KeyValuePairEscapingProcessor.h)
+add_headers_and_sources(clickhouse_functions_extractkeyvaluepairs .)
 
-target_link_libraries(clickhouse_functions_parsekeyvalue PRIVATE dbms)
+target_link_libraries(clickhouse_functions_extractkeyvaluepairs PRIVATE dbms)

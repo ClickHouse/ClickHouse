@@ -10,7 +10,7 @@
 
 namespace DB {
 
-class ExtractKeyValue : public IFunction
+class ExtractKeyValuePairs : public IFunction
 {
 
     using CharArgument = std::optional<char>;
@@ -36,13 +36,13 @@ public:
 
     using EscapingProcessorOutput = std::unordered_map<std::string_view, std::string_view>;
 
-    ExtractKeyValue();
+    ExtractKeyValuePairs();
 
-    static constexpr auto name = "parseKeyValue";
+    static constexpr auto name = "extractKeyValuePairs";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<ExtractKeyValue>();
+        return std::make_shared<ExtractKeyValuePairs>();
     }
 
     /// Get the main function name.
@@ -69,7 +69,7 @@ private:
                                                                                  CharArgument enclosing_character,
                                                                                  SetArgument value_special_characters_allow_list) const;
 
-    RawColumns parse(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const;
+    RawColumns extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const;
 
     ColumnPtr escape(RawColumns & raw_columns) const;
 };
