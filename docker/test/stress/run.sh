@@ -143,7 +143,7 @@ function stop()
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
     echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
-    timout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 }
 
