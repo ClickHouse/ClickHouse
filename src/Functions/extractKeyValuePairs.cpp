@@ -1,4 +1,4 @@
-#include "extractKeyValue.h"
+#include "extractKeyValuePairs.h"
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
@@ -16,7 +16,7 @@ namespace DB
  * to be overriden by a no-op escaping processor. DB::ReplaceStringImpl does in-place replacing and leverages the
  * Volnitsky searcher.
  * */
-struct NoOpEscapingProcessor : KeyValuePairEscapingProcessor<ExtractKeyValue::EscapingProcessorOutput>
+struct NoOpEscapingProcessor : KeyValuePairEscapingProcessor<ExtractKeyValuePairs::EscapingProcessorOutput>
 {
     explicit NoOpEscapingProcessor(char) {}
 
@@ -26,48 +26,48 @@ struct NoOpEscapingProcessor : KeyValuePairEscapingProcessor<ExtractKeyValue::Es
     }
 };
 
-ExtractKeyValue::ExtractKeyValue()
+ExtractKeyValuePairs::ExtractKeyValuePairs()
 : return_type(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()))
 {
 }
 
-String ExtractKeyValue::getName() const
+String ExtractKeyValuePairs::getName() const
 {
     return name;
 }
 
-ColumnPtr ExtractKeyValue::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     auto [data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list] = parseArguments(arguments);
 
     auto extractor = getExtractor(escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list);
 
-    auto raw_columns = parse(extractor, data_column);
+    auto raw_columns = extract(extractor, data_column);
 
     return escape(raw_columns);
 }
 
-bool ExtractKeyValue::isVariadic() const
+bool ExtractKeyValuePairs::isVariadic() const
 {
     return true;
 }
 
-bool ExtractKeyValue::isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const
+bool ExtractKeyValuePairs::isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const
 {
     return false;
 }
 
-size_t ExtractKeyValue::getNumberOfArguments() const
+size_t ExtractKeyValuePairs::getNumberOfArguments() const
 {
     return 0u;
 }
 
-DataTypePtr ExtractKeyValue::getReturnTypeImpl(const DataTypes & /*arguments*/) const
+DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes & /*arguments*/) const
 {
     return return_type;
 }
 
-ExtractKeyValue::ParsedArguments ExtractKeyValue::parseArguments(const ColumnsWithTypeAndName & arguments) const
+ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const ColumnsWithTypeAndName & arguments) const
 {
     if (arguments.empty()) {
         // throw exception
@@ -146,12 +146,9 @@ ExtractKeyValue::ParsedArguments ExtractKeyValue::parseArguments(const ColumnsWi
         };
     }
 
-    auto value_special_characters_allow_list_column = arguments[5].column;
+    auto value_special_characters_allow_list_characters = arguments[5].column->getDataAt(0).toView();
 
-    for (auto i = 0u; i < value_special_characters_allow_list_column->size(); i++)
-    {
-        value_special_characters_allow_list.emplace(value_special_characters_allow_list_column->getDataAt(i).toView().front());
-    }
+    value_special_characters_allow_list.insert(value_special_characters_allow_list_characters.begin(), value_special_characters_allow_list_characters.end());
 
     return ParsedArguments {
         data_column,
@@ -163,11 +160,11 @@ ExtractKeyValue::ParsedArguments ExtractKeyValue::parseArguments(const ColumnsWi
     };
 }
 
-std::shared_ptr<KeyValuePairExtractor<ExtractKeyValue::EscapingProcessorOutput>> ExtractKeyValue::getExtractor(
+std::shared_ptr<KeyValuePairExtractor<ExtractKeyValuePairs::EscapingProcessorOutput>> ExtractKeyValuePairs::getExtractor(
     CharArgument escape_character, CharArgument key_value_pair_delimiter, CharArgument item_delimiter,
     CharArgument enclosing_character, SetArgument value_special_characters_allow_list) const
 {
-    auto builder = KeyValuePairExtractorBuilder<ExtractKeyValue::EscapingProcessorOutput>();
+    auto builder = KeyValuePairExtractorBuilder<ExtractKeyValuePairs::EscapingProcessorOutput>();
 
     if (escape_character) {
         builder.withEscapeCharacter(escape_character.value());
@@ -192,7 +189,7 @@ std::shared_ptr<KeyValuePairExtractor<ExtractKeyValue::EscapingProcessorOutput>>
     return builder.build();
 }
 
-ExtractKeyValue::RawColumns ExtractKeyValue::parse(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const
+ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const
 {
     auto offsets = ColumnUInt64::create();
 
@@ -226,7 +223,7 @@ ExtractKeyValue::RawColumns ExtractKeyValue::parse(std::shared_ptr<KeyValuePairE
     };
 }
 
-ColumnPtr ExtractKeyValue::escape(RawColumns & raw_columns) const
+ColumnPtr ExtractKeyValuePairs::escape(RawColumns & raw_columns) const
 {
     auto & [raw_keys, raw_values, offsets] = raw_columns;
 
@@ -241,9 +238,9 @@ ColumnPtr ExtractKeyValue::escape(RawColumns & raw_columns) const
     return ColumnMap::create(keys_ptr, std::move(escaped_values), std::move(offsets));
 }
 
-REGISTER_FUNCTION(ExtractKeyValue)
+REGISTER_FUNCTION(ExtractKeyValuePairs)
 {
-    factory.registerFunction<ExtractKeyValue>();
+    factory.registerFunction<ExtractKeyValuePairs>();
 }
 
 }
