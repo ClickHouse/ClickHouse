@@ -7,7 +7,8 @@ SimpleKeyValuePairEscapingProcessor::SimpleKeyValuePairEscapingProcessor(char es
 : KeyValuePairEscapingProcessor<std::unordered_map<std::string, std::string>>(), escape_character(escape_character_)
 {}
 
-SimpleKeyValuePairEscapingProcessor::Response SimpleKeyValuePairEscapingProcessor::process(const ResponseViews & response_views) const {
+SimpleKeyValuePairEscapingProcessor::Response SimpleKeyValuePairEscapingProcessor::process(const ResponseViews & response_views) const
+{
     Response response;
 
     response.reserve(response_views.size());
@@ -19,7 +20,8 @@ SimpleKeyValuePairEscapingProcessor::Response SimpleKeyValuePairEscapingProcesso
     return response;
 }
 
-std::string SimpleKeyValuePairEscapingProcessor::escape(std::string_view element_view) const {
+std::string SimpleKeyValuePairEscapingProcessor::escape(std::string_view element_view) const
+{
     [[maybe_unused]] bool escape = false;
     std::string element;
 

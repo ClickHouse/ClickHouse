@@ -5,7 +5,8 @@
 namespace DB
 {
 
-enum State {
+enum State
+{
     WAITING_KEY,
     READING_KEY,
     READING_ENCLOSED_KEY,
@@ -18,12 +19,14 @@ enum State {
     END
 };
 
-struct NextState {
+struct NextState
+{
     std::size_t pos;
     State state;
 };
 
-struct NextStateWithElement {
+struct NextStateWithElement
+{
     NextState state;
     std::string_view element;
 };

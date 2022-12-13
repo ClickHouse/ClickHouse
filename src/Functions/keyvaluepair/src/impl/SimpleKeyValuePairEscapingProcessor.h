@@ -8,7 +8,8 @@
 namespace DB
 {
 
-class SimpleKeyValuePairEscapingProcessor : public KeyValuePairEscapingProcessor<std::unordered_map<std::string, std::string>> {
+class SimpleKeyValuePairEscapingProcessor : public KeyValuePairEscapingProcessor<std::unordered_map<std::string, std::string>>
+{
 public:
     explicit SimpleKeyValuePairEscapingProcessor(char escape_character);
 

@@ -21,7 +21,8 @@ namespace DB
  * to store characters, but noise is no longer an issue.
  * */
 template <typename Response>
-class LazyEscapingKeyValuePairExtractor : public KeyValuePairExtractor<Response> {
+class LazyEscapingKeyValuePairExtractor : public KeyValuePairExtractor<Response>
+{
 public:
     LazyEscapingKeyValuePairExtractor(KeyStateHandler key_state_handler_, ValueStateHandler value_state_handler_,
                                       std::shared_ptr<KeyValuePairEscapingProcessor<Response>> escaping_processor_)

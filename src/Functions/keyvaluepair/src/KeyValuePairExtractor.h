@@ -20,7 +20,8 @@ namespace DB
  * Control characters (key_value_pair_separator, item_delimiter, escape_character and enclosing_character) are customizable
  * */
 template <typename R = std::unordered_map<std::string, std::string>>
-struct KeyValuePairExtractor {
+struct KeyValuePairExtractor
+{
     using Response = R;
 
     virtual ~KeyValuePairExtractor() = default;

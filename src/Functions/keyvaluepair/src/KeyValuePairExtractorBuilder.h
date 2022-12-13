@@ -13,7 +13,8 @@ namespace DB
 {
 
 template <typename Response = std::unordered_map<std::string, std::string>>
-class KeyValuePairExtractorBuilder {
+class KeyValuePairExtractorBuilder
+{
 public:
     KeyValuePairExtractorBuilder & withKeyValuePairDelimiter(char key_value_pair_delimiter_)
     {
