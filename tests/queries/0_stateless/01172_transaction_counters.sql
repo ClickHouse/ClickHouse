@@ -1,4 +1,5 @@
--- Tags: no-ordinary-database
+-- Tags: no-s3-storage, no-ordinary-database
+-- FIXME this test fails with S3 due to a bug in DiskCacheWrapper
 
 drop table if exists txn_counters;
 

@@ -27,7 +27,7 @@ REGISTER_FUNCTION(Logical)
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>({}, FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
+    factory.registerFunction<FunctionNot>(FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
 }
 
 namespace ErrorCodes
@@ -168,7 +168,10 @@ public:
     inline ResultValueType apply(const size_t i) const
     {
         const auto a = !!vec[i];
-        return Op::apply(a, next.apply(i));
+        if constexpr (Op::isSaturable())
+            return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
+        else
+            return Op::apply(a, next.apply(i));
     }
 
 private:
@@ -383,7 +386,7 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
             std::transform(
                     x.getData().cbegin(), x.getData().cend(),
                     column->getData().cbegin(), result.begin(),
-                    [](const auto a, const auto b) { return Op::apply(static_cast<bool>(a), static_cast<bool>(b)); });
+                    [](const auto a, const auto b) { return Op::apply(!!a, !!b); });
         else
             TypedExecutorInvoker<Op, Types ...>::template apply<T>(x, y, result);
     }

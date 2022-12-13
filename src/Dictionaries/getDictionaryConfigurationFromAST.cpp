@@ -44,6 +44,15 @@ struct AttributeConfiguration
 
 using AttributeNameToConfiguration = std::unordered_map<std::string, AttributeConfiguration>;
 
+/// Get value from field and convert it to string.
+/// Also remove quotes from strings.
+String getFieldAsString(const Field & field)
+{
+    if (field.getType() == Field::Types::Which::String)
+        return field.get<String>();
+    return applyVisitor(FieldVisitorToString(), field);
+}
+
 String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
 {
     if (!dict_attr->expression)
@@ -52,7 +61,7 @@ String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_att
     /// EXPRESSION PROPERTY should be expression or string
     String expression_str;
     if (const auto * literal = dict_attr->expression->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-        expression_str = convertFieldToString(literal->value);
+        expression_str = getFieldAsString(literal->value);
     else
         expression_str = queryToString(dict_attr->expression);
 
@@ -235,7 +244,7 @@ void buildAttributeExpressionIfNeeded(
     root->appendChild(expression_element);
 }
 
-/** Transforms single dictionary attribute to configuration
+/** Transofrms single dictionary attribute to configuration
   *  third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77
   * to
   *  <attribute>
@@ -266,7 +275,7 @@ void buildSingleAttribute(
     AutoPtr<Element> null_value_element(doc->createElement("null_value"));
     String null_value_str;
     if (dict_attr->default_value)
-        null_value_str = convertFieldToString(dict_attr->default_value->as<ASTLiteral>()->value);
+        null_value_str = getFieldAsString(dict_attr->default_value->as<ASTLiteral>()->value);
     AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
     null_value_element->appendChild(null_value);
     attribute_element->appendChild(null_value_element);
@@ -443,7 +452,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
-            AutoPtr<Text> value(doc->createTextNode(convertFieldToString(literal->value)));
+            AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
             current_xml_element->appendChild(value);
         }
         else if (const auto * list = pair->second->as<const ASTExpressionList>())
@@ -452,11 +461,6 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * func = pair->second->as<ASTFunction>())
         {
-            /// This branch exists only for compatibility.
-            /// It's not possible to have a function in a dictionary definition since 22.10,
-            /// because query must be normalized on dictionary creation. It's possible only when we load old metadata.
-            /// For debug builds allow it only during server startup to avoid crash in BC check in Stress Tests.
-            assert(!Context::getGlobalContextInstance()->isServerCompletelyStarted());
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
             function->prepare({});
@@ -469,7 +473,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             Field value;
             result->get(0, value);
 
-            AutoPtr<Text> text_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
             current_xml_element->appendChild(text_value);
         }
         else
@@ -515,7 +519,7 @@ void buildSourceConfiguration(
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(getFieldAsString(value)));
             setting_change_element->appendChild(setting_value);
         }
     }

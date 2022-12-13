@@ -15,7 +15,6 @@ public:
     {
         ParsedAST, /// 'EXPLAIN AST SELECT ...'
         AnalyzedSyntax, /// 'EXPLAIN SYNTAX SELECT ...'
-        QueryTree, /// 'EXPLAIN QUERY TREE SELECT ...'
         QueryPlan, /// 'EXPLAIN SELECT ...'
         QueryPipeline, /// 'EXPLAIN PIPELINE ...'
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
@@ -31,8 +30,7 @@ public:
     {
         auto res = std::make_shared<ASTExplainQuery>(*this);
         res->children.clear();
-        if (!children.empty())
-            res->children.push_back(children[0]->clone());
+        res->children.push_back(children[0]->clone());
         cloneOutputOptions(*res);
         return res;
     }
@@ -110,7 +108,6 @@ private:
         {
             case ParsedAST: return "EXPLAIN AST";
             case AnalyzedSyntax: return "EXPLAIN SYNTAX";
-            case QueryTree: return "EXPLAIN QUERY TREE";
             case QueryPlan: return "EXPLAIN";
             case QueryPipeline: return "EXPLAIN PIPELINE";
             case QueryEstimates: return "EXPLAIN ESTIMATE";
@@ -118,7 +115,7 @@ private:
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 };
 

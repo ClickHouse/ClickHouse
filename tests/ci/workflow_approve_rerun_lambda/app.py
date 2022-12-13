@@ -50,6 +50,8 @@ WorkflowDescription = namedtuple(
 
 # See https://api.github.com/orgs/{name}
 TRUSTED_ORG_IDS = {
+    7409213,  # yandex
+    28471076,  # altinity
     54801242,  # clickhouse
 }
 
@@ -61,11 +63,11 @@ TRUSTED_WORKFLOW_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     "BackportPR",
-    "DocsCheck",
-    "DocsReleaseChecks",
+    "Docs",
+    "DocsRelease",
     "MasterCI",
     "PullRequestCI",
-    "ReleaseBranchCI",
+    "ReleaseCI",
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
@@ -102,6 +104,8 @@ TRUSTED_CONTRIBUTORS = {
         "kreuzerkrieg",
         "lehasm",  # DOCSUP
         "michon470",  # DOCSUP
+        "MyroTk",  # Tester in Altinity
+        "myrrc",  # Michael Kot, Altinity
         "nikvas0",
         "nvartolomei",
         "olgarev",  # DOCSUP
@@ -313,7 +317,7 @@ def check_suspicious_changed_files(changed_files):
     return False
 
 
-def approve_run(workflow_description: WorkflowDescription, token: str) -> None:
+def approve_run(workflow_description: WorkflowDescription, token):
     url = f"{workflow_description.api_url}/approve"
     _exec_post_with_retry(url, token)
 
@@ -391,7 +395,7 @@ def rerun_workflow(workflow_description, token):
 
 
 def check_workflow_completed(
-    event_data: dict, workflow_description: WorkflowDescription, token: str
+    event_data, workflow_description: WorkflowDescription, token: str
 ) -> bool:
     if workflow_description.action == "completed":
         attempt = 0
@@ -491,12 +495,6 @@ def main(event):
 def handler(event, _):
     try:
         main(event)
-
-        return {
-            "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
-            "body": '{"status": "OK"}',
-        }
     except Exception:
         print("Received event: ", event)
         raise

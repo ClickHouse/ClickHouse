@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/settings
----
 # settings
 
 Contains information about session settings for current user.

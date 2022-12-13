@@ -21,14 +21,23 @@ JSONColumnsReaderBase::JSONColumnsReaderBase(ReadBuffer & in_) : in(&in_)
 
 bool JSONColumnsReaderBase::checkColumnEnd()
 {
-    return JSONUtils::checkAndSkipArrayEnd(*in);
+    skipWhitespaceIfAny(*in);
+    if (!in->eof() && *in->position() == ']')
+    {
+        ++in->position();
+        skipWhitespaceIfAny(*in);
+        return true;
+    }
+    return false;
 }
 
 bool JSONColumnsReaderBase::checkColumnEndOrSkipFieldDelimiter()
 {
     if (checkColumnEnd())
         return true;
-    JSONUtils::skipComma(*in);
+    skipWhitespaceIfAny(*in);
+    assertChar(',', *in);
+    skipWhitespaceIfAny(*in);
     return false;
 }
 
@@ -36,7 +45,9 @@ bool JSONColumnsReaderBase::checkChunkEndOrSkipColumnDelimiter()
 {
     if (checkChunkEnd())
         return true;
-    JSONUtils::skipComma(*in);
+    skipWhitespaceIfAny(*in);
+    assertChar(',', *in);
+    skipWhitespaceIfAny(*in);
     return false;
 }
 
@@ -72,10 +83,10 @@ JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
     : IInputFormat(header_, in_)
     , format_settings(format_settings_)
     , fields(header_.getNamesAndTypes())
+    , name_to_index(header_.getNamesToIndexesMap())
     , serializations(header_.getSerializations())
     , reader(std::move(reader_))
 {
-    name_to_index = getPort().getHeader().getNamesToIndexesMap();
 }
 
 size_t JSONColumnsBlockInputFormatBase::readColumn(
@@ -125,7 +136,7 @@ Chunk JSONColumnsBlockInputFormatBase::generate()
         {
             /// Check if this name appears in header. If no, skip this column or throw
             /// an exception according to setting input_format_skip_unknown_fields
-            if (!name_to_index.has(*column_name))
+            if (!name_to_index.contains(*column_name))
             {
                 if (!format_settings.skip_unknown_fields)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column found in input data: {}", *column_name);

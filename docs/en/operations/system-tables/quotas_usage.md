@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/quotas_usage
----
 # quotas_usage
 
 Quota usage by all users.
