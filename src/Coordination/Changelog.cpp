@@ -73,26 +73,30 @@ constexpr size_t log_size = 50 * 1024 * 1024;
 class ChangelogWriter
 {
 public:
-    ChangelogWriter(const std::string & filepath_, WriteMode mode, uint64_t start_index_)
-        : filepath(filepath_)
-        , file_buf(std::make_unique<WriteBufferFromFile>(filepath, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY)))
+    ChangelogWriter(std::map<uint64_t, ChangelogFileDescription> & existing_changelogs_, bool compress_logs_, bool force_fsync_,
+    const std::filesystem::path & changelogs_dir_)
+        : existing_changelogs(existing_changelogs_)
         , memory_buf(std::make_unique<WriteBufferMemory>(memory))
-        , start_index(start_index_)
+        , compress_logs(compress_logs_)
+        , force_fsync(force_fsync_)
+        , changelogs_dir(changelogs_dir_)
     {
-        auto compression_method = chooseCompressionMethod(filepath_, "");
-        if (compression_method != CompressionMethod::Zstd && compression_method != CompressionMethod::None)
-        {
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported coordination log serialization format {}", toContentEncodingName(compression_method));
-        }
-        else if (compression_method == CompressionMethod::Zstd)
+        if (compress_logs)
         {
             compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(
                 std::move(memory_buf), /* compression level = */ 3);
         }
         else
         {
-            /// no compression, only file buffer
+            /// no compression, only memory buffer
         }
+    }
+
+    void setFile(ChangelogFileDescription & file_description, WriteMode mode)
+    {
+        file_buf = std::make_unique<WriteBufferFromFile>(file_description.path, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY));
+        start_index = file_description.from_log_index;
+        current_file_description = &file_description;
     }
 
 
@@ -118,12 +122,6 @@ public:
         if (record.header.blob_size != 0)
             getBuffer().write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
 
-        // TODO: Maybe try writing to file after each record
-        return true;
-    }
-
-    void flush(bool force_fsync)
-    {
         if (compressed_buffer)
         {
             /// Flush compressed data to WriteBufferFromFile working_buffer
@@ -137,16 +135,45 @@ public:
         // TODO: rotate if it's larger than max log size
 
         file_buf->write(memory.raw_data(), memory.size());
+
+        cur_memory_buf.restart();
+
+        current_file_description->to_log_index++;
+        return true;
+    }
+
+    void flush()
+    {
         /// Fsync file system if needed
         if (force_fsync)
             file_buf->sync();
-
-        cur_memory_buf.restart();
     }
 
     uint64_t getStartIndex() const
     {
         return start_index;
+    }
+
+    void rotate(uint64_t new_start_log_index)
+    {
+        flush();
+
+        /// Start new one
+        ChangelogFileDescription new_description;
+        new_description.prefix = DEFAULT_PREFIX;
+        new_description.from_log_index = new_start_log_index;
+        new_description.to_log_index = new_start_log_index;
+        new_description.extension = "bin";
+
+        if (compress_logs)
+            new_description.extension += "." + toContentEncodingName(CompressionMethod::Zstd);
+
+        new_description.path = formatChangelogPath(changelogs_dir, new_description);
+
+        LOG_TRACE(&Poco::Logger::get("Changelog"), "Starting new changelog {}", new_description.path);
+        auto [it, inserted] = existing_changelogs.insert(std::make_pair(new_start_log_index, std::move(new_description)));
+
+        setFile(it->second, WriteMode::Rewrite);
     }
 
 private:
@@ -157,16 +184,25 @@ private:
         return *memory_buf;
     }
 
+    std::map<uint64_t, ChangelogFileDescription> & existing_changelogs;
+
     using MemoryBuffer = PODArray<UInt8>;
     using WriteBufferMemory = WriteBufferFromVector<MemoryBuffer>;
     MemoryBuffer memory;
-
-    std::string filepath;
-    std::unique_ptr<WriteBufferFromFile> file_buf;
     std::unique_ptr<WriteBufferMemory> memory_buf;
+
+    ChangelogFileDescription * current_file_description{nullptr};
+    std::unique_ptr<WriteBufferFromFile> file_buf;
+
     std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
 
     bool prealloc_done{false};
+
+    bool compress_logs;
+    
+    bool force_fsync;
+
+    const std::filesystem::path changelogs_dir;
 
     //size_t written{0};
 
@@ -597,7 +633,6 @@ void Changelog::writeThread()
 
             if (log_is_complete)
                 rotate(append_log->index, writer_lock);
-
 
             batch_append_ok &= current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
         }
