@@ -856,7 +856,7 @@ namespace S3
         return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
     }
 
-    Aws::S3::Model::HeadObjectOutcome headObject(ClientPtr client_ptr, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+    Aws::S3::Model::HeadObjectOutcome headObject(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (for_disk_s3)
@@ -869,12 +869,12 @@ namespace S3
         if (!version_id.empty())
             req.SetVersionId(version_id);
 
-        return client_ptr->HeadObject(req);
+        return client.HeadObject(req);
     }
 
-    S3::ObjectInfo getObjectInfo(ClientPtr client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
-        auto outcome = headObject(client_ptr, bucket, key, version_id, for_disk_s3);
+        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
 
         if (outcome.IsSuccess())
         {
@@ -891,14 +891,14 @@ namespace S3
         return {};
     }
 
-    size_t getObjectSize(ClientPtr client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
-        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error, for_disk_s3).size;
+        return getObjectInfo(client, bucket, key, version_id, throw_on_error, for_disk_s3).size;
     }
 
-    bool objectExists(ClientPtr client_ptr, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
     {
-        auto outcome = headObject(client_ptr, bucket, key, version_id, for_disk_s3);
+        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
 
         if (outcome.IsSuccess())
             return true;

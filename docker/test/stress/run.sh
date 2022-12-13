@@ -127,11 +127,18 @@ EOL
 
 function stop()
 {
+    local max_tries=""
+    if [ -n "$1" ]
+    then
+        max_tries="--max-tries $1"
+    fi
+
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    clickhouse stop --do-not-kill && return
+    clickhouse stop $max_tries --do-not-kill && return
+
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
@@ -424,7 +431,7 @@ else
 
     clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
 
-    stop
+    stop 180
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
 
     # Start new server
@@ -489,6 +496,8 @@ else
                -e "Code: 269. DB::Exception: Destination table is myself" \
                -e "Coordination::Exception: Connection loss" \
                -e "MutateFromLogEntryTask" \
+               -e "No connection to ZooKeeper, cannot get shared table ID" \
+               -e "Session expired" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
