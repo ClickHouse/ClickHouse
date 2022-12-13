@@ -1083,43 +1083,6 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
-const std::unordered_map<String, std::shared_ptr<ConstantValue>> & Context::getAnalyzerScalars() const
-{
-    return analyzer_scalars;
-}
-
-
-const std::shared_ptr<ConstantValue> & Context::getAnalyzerScalar(const String & hash) const
-{
-    auto it = analyzer_scalars.find(hash);
-    if (analyzer_scalars.end() == it)
-    {
-        /// This should be a logical error, but it fails the sql_fuzz test too
-        /// often, so 'bad arguments' for now.
-        throw Exception("Scalar doesn't exist (internal bug)", ErrorCodes::BAD_ARGUMENTS);
-    }
-    return it->second;
-}
-
-
-void Context::addAnalyzerScalar(const String & hash, const std::shared_ptr<ConstantValue> & constant_value)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
-
-    analyzer_scalars[hash] = constant_value;
-}
-
-
-bool Context::hasAnalyzerScalar(const String & hash) const
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
-
-    return analyzer_scalars.contains(hash);
-}
-
-
 const Block * Context::tryGetSpecialScalar(const String & name) const
 {
     auto it = special_scalars.find(name);

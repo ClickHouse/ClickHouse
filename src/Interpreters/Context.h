@@ -247,7 +247,6 @@ private:
     TemporaryTablesMapping external_tables_mapping;
 
     Scalars scalars;
-    std::unordered_map<String, std::shared_ptr<ConstantValue>> analyzer_scalars;
 
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;

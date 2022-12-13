@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTWithAlias.h>
+#include <Analyzer/QueryNode.h>
 
 namespace DB
 {
@@ -74,7 +75,7 @@ struct NodePairHash
 
 }
 
-bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
+bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, bool ignore_constant) const
 {
     std::vector<NodePair> nodes_to_process;
     std::unordered_set<NodePair, NodePairHash> equals_pairs;
@@ -96,11 +97,17 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
         assert(rhs_node_to_compare);
 
         if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
-            lhs_node_to_compare->alias != rhs_node_to_compare->alias ||
-            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
-        {
+            lhs_node_to_compare->alias != rhs_node_to_compare->alias)
             return false;
+
+        /// ignore_constant is used for scalar subqueries cache
+        if (ignore_constant && lhs_node_to_compare->as<QueryNode>() && rhs_node_to_compare->as<QueryNode>())
+        {
+            if(!lhs_node_to_compare->as<QueryNode>()->isEqualImplIgnoreConstant(*rhs_node_to_compare))
+                return false;
         }
+        else if (!lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
+                return false;
 
         const auto & lhs_children = lhs_node_to_compare->children;
         const auto & rhs_children = rhs_node_to_compare->children;
@@ -153,7 +160,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
     return true;
 }
 
-IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(bool withAlias) const
+IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
 {
     HashState hash_state;
 
@@ -177,13 +184,10 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(bool withAlias) const
         node_to_identifier.emplace(node_to_process, node_to_identifier.size());
 
         hash_state.update(static_cast<size_t>(node_to_process->getNodeType()));
-        if (withAlias)
+        if (!node_to_process->alias.empty())
         {
-            if (!node_to_process->alias.empty())
-            {
-                hash_state.update(node_to_process->alias.size());
-                hash_state.update(node_to_process->alias);
-            }
+            hash_state.update(node_to_process->alias.size());
+            hash_state.update(node_to_process->alias);
         }
 
         node_to_process->updateTreeHashImpl(hash_state);
@@ -214,12 +218,6 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(bool withAlias) const
     hash_state.get128(result);
 
     return result;
-}
-
-String IQueryTreeNode::getTreeHashAsString(bool withAlias) const
-{
-    Hash hash = getTreeHash(withAlias);
-    return toString(hash.first)+"_"+toString(hash.second);
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const

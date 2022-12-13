@@ -68,6 +68,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Common/ProfileEvents.h>
+#include <Analyzer/HashUtils.h>
 
 namespace ProfileEvents
 {
@@ -663,10 +664,6 @@ struct IdentifierResolveScope
 
     ContextPtr context;
 
-    /// Results of scalar sub queries
-    std::unordered_map<size_t, std::shared_ptr<ConstantValue>> scalars;
-    std::unordered_map<size_t, std::shared_ptr<ConstantValue>> local_scalars;
-
     /// Identifier lookup to result
     std::unordered_map<IdentifierLookup, IdentifierResolveResult, IdentifierLookupHash> identifier_lookup_to_result;
 
@@ -1102,7 +1099,7 @@ private:
 
     static QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
 
-    static void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth, ContextPtr context);
+    void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth, ContextPtr context);
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
@@ -1211,6 +1208,9 @@ private:
 
     /// Global resolve expression node to projection names map
     std::unordered_map<QueryTreeNodePtr, ProjectionNames> resolved_expressions;
+
+    /// Results of scalar sub queries
+    std::unordered_map<QueryTreeNodeConstRawPtrWithHashIgnoreConstant, std::shared_ptr<ConstantValue>> scalars;
 
 };
 
@@ -1697,12 +1697,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
 
     bool hit = false;
     std::shared_ptr<ConstantValue> constant_value;
-    auto hash = node->getTreeHashAsString(false);
 
-    if (context->getQueryContext()->hasAnalyzerScalar(hash))
+    auto scalars_iterator = scalars.find(node.get());
+    if (scalars_iterator != scalars.end())
     {
         hit = true;
-        constant_value = context->getQueryContext()->getAnalyzerScalar(hash);
+        constant_value = scalars_iterator->second;
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
     }
 
@@ -1797,7 +1797,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
         }
 
         constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
-        context->getQueryContext()->addAnalyzerScalar(hash, constant_value);
+        scalars[node.get()] = constant_value;
+
     }
 
     if (query_node)

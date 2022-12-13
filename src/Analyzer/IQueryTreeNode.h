@@ -120,7 +120,7 @@ public:
       * Aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs) const;
+    bool isEqual(const IQueryTreeNode & rhs, bool ignore_constants = false) const;
 
     using Hash = std::pair<UInt64, UInt64>;
     using HashState = SipHash;
@@ -130,9 +130,7 @@ public:
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
       */
-    Hash getTreeHash(bool withAlias = true) const;
-
-    String getTreeHashAsString(bool withAlias = true) const;
+    Hash getTreeHash() const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
