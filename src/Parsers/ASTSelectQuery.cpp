@@ -93,7 +93,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         where()->formatImpl(s, state, frame);
     }
 
-    if (groupBy())
+    if (!group_by_all && groupBy())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
         if (!group_by_with_grouping_sets)
@@ -103,6 +103,9 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
             : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
         }
     }
+
+    if (group_by_all)
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY ALL" << (s.hilite ? hilite_none : "");
 
     if (group_by_with_rollup)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
@@ -192,7 +195,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         limitOffset()->formatImpl(s, state, frame);
     }
 
-    if (settings())
+    if (settings() && assert_cast<ASTSetQuery *>(settings().get())->print_in_format)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings()->formatImpl(s, state, frame);
@@ -342,6 +345,25 @@ std::pair<ASTPtr, bool> ASTSelectQuery::arrayJoinExpressionList() const
 const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 {
     return getFirstTableJoin(*this);
+}
+
+bool ASTSelectQuery::hasJoin() const
+{
+    if (!tables())
+        return false;
+
+    const auto & tables_in_select_query = tables()->as<ASTTablesInSelectQuery &>();
+    if (tables_in_select_query.children.empty())
+        return false;
+
+    for (const auto & child : tables_in_select_query.children)
+    {
+        const auto & tables_element = child->as<ASTTablesInSelectQueryElement &>();
+        if (tables_element.table_join)
+            return true;
+    }
+
+    return false;
 }
 
 static String getTableExpressionAlias(const ASTTableExpression * table_expression)

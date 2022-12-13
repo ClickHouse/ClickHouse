@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_S2_GEOMETRY
 
@@ -154,7 +154,7 @@ public:
 
 }
 
-void registerFunctionS2CapContains(FunctionFactory & factory)
+REGISTER_FUNCTION(S2CapContains)
 {
     factory.registerFunction<FunctionS2CapContains>();
 }

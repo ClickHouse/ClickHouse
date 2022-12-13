@@ -112,7 +112,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t /*max_block_size*/,
-        unsigned /*num_streams*/) override;
+        size_t /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(const Settings &) const override;

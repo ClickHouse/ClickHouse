@@ -1,0 +1,41 @@
+99
+1
+95
+1
+0
+1
+-----lightweight mutation type-----
+1
+1
+1
+UPDATE _row_exists = 0 WHERE (c % 5) = 1	1
+UPDATE _row_exists = 0 WHERE c = 4	1
+MATERIALIZE INDEX i_c	1
+UPDATE b = -1 WHERE a < 3	1
+DROP INDEX i_c	1
+-----Check that select and merge with lightweight delete.-----
+7
+0	-1	0
+2	-1	2
+3	3	3
+5	5	5
+7	7	7
+8	8	8
+9	9	9
+t_light	0	0_1_1_0_10	2
+t_light	1	1_2_2_0_10	2
+t_light	2	2_3_3_0_10	2
+t_light	3	3_4_4_0_10	2
+t_light	4	4_5_5_0_10	2
+7
+t_light	0	0_1_1_1_10	2
+t_light	2	2_3_3_1_10	2
+t_light	3	3_4_4_1_10	2
+t_light	4	4_5_5_1_10	1
+-----Test lightweight delete in multi blocks-----
+1
+1
+1000	-2
+1005	-2
+----Test lighweight delete is disabled if table has projections-----
+500.5	500.5	1000

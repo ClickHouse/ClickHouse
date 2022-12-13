@@ -92,7 +92,7 @@ struct ReverseIndexHashTableCell
 
     /// Special case when we want to compare with something not in index_column.
     /// When we compare something inside column default keyEquals checks only that row numbers are equal.
-    bool keyEquals(const StringRef & object, size_t hash_ [[maybe_unused]], const State & state) const
+    bool keyEquals(StringRef object, size_t hash_ [[maybe_unused]], const State & state) const
     {
         auto index = key;
         if constexpr (has_base_index)
@@ -322,7 +322,7 @@ public:
     static constexpr bool is_numeric_column = isNumericColumn(static_cast<ColumnType *>(nullptr));
     static constexpr bool use_saved_hash = !is_numeric_column;
 
-    UInt64 insert(const StringRef & data);
+    UInt64 insert(StringRef data);
 
     /// Returns the found data's index in the dictionary. If index is not built, builds it.
     UInt64 getInsertionPoint(StringRef data)
@@ -383,7 +383,7 @@ private:
 
     void buildIndex();
 
-    UInt64 getHash(const StringRef & ref) const
+    UInt64 getHash(StringRef ref) const
     {
         if constexpr (is_numeric_column)
         {
@@ -478,7 +478,7 @@ ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
 }
 
 template <typename IndexType, typename ColumnType>
-UInt64 ReverseIndex<IndexType, ColumnType>::insert(const StringRef & data)
+UInt64 ReverseIndex<IndexType, ColumnType>::insert(StringRef data)
 {
     if (!index)
         buildIndex();

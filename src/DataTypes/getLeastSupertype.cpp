@@ -269,7 +269,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!all_arrays)
                 return throwOrReturn<on_error>(types, "because some of them are Array and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeArray>(getLeastSupertype<on_error>(nested_types));
+            auto nested_type = getLeastSupertype<on_error>(nested_types);
+            /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+            /// nested_type will be nullptr, we should return nullptr in this case.
+            if (!nested_type)
+                return nullptr;
+
+            return std::make_shared<DataTypeArray>(nested_type);
         }
     }
 
@@ -311,7 +317,14 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                common_tuple_types[elem_idx] = getLeastSupertype<on_error>(nested_types[elem_idx]);
+            {
+                auto common_type = getLeastSupertype<on_error>(nested_types[elem_idx]);
+                /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+                /// common_type will be nullptr, we should return nullptr in this case.
+                if (!common_type)
+                    return nullptr;
+                common_tuple_types[elem_idx] = common_type;
+            }
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
@@ -343,9 +356,14 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!all_maps)
                 return throwOrReturn<on_error>(types, "because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeMap>(
-                getLeastSupertype<on_error>(key_types),
-                getLeastSupertype<on_error>(value_types));
+            auto keys_common_type = getLeastSupertype<on_error>(key_types);
+            auto values_common_type = getLeastSupertype<on_error>(value_types);
+            /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype for keys or values,
+            /// keys_common_type or values_common_type will be nullptr, we should return nullptr in this case.
+            if (!keys_common_type || !values_common_type)
+                return nullptr;
+
+            return std::make_shared<DataTypeMap>(keys_common_type, values_common_type);
         }
     }
 
@@ -378,7 +396,14 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (have_not_low_cardinality)
                 return getLeastSupertype<on_error>(nested_types);
             else
-                return std::make_shared<DataTypeLowCardinality>(getLeastSupertype<on_error>(nested_types));
+            {
+                auto nested_type = getLeastSupertype<on_error>(nested_types);
+                /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+                /// nested_type will be nullptr, we should return nullptr in this case.
+                if (!nested_type)
+                    return nullptr;
+                return std::make_shared<DataTypeLowCardinality>(nested_type);
+            }
         }
     }
 
@@ -404,7 +429,12 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         if (have_nullable)
         {
-            return std::make_shared<DataTypeNullable>(getLeastSupertype<on_error>(nested_types));
+            auto nested_type = getLeastSupertype<on_error>(nested_types);
+            /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+            /// nested_type will be nullptr, we should return nullptr in this case.
+            if (!nested_type)
+                return nullptr;
+            return std::make_shared<DataTypeNullable>(nested_type);
         }
     }
 
@@ -417,8 +447,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     /// For String and FixedString, or for different FixedStrings, the common type is String.
     /// No other types are compatible with Strings. TODO Enums?
     {
-        UInt32 have_string = type_ids.count(TypeIndex::String);
-        UInt32 have_fixed_string = type_ids.count(TypeIndex::FixedString);
+        size_t have_string = type_ids.count(TypeIndex::String);
+        size_t have_fixed_string = type_ids.count(TypeIndex::FixedString);
 
         if (have_string || have_fixed_string)
         {
@@ -432,10 +462,10 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// For Date and DateTime/DateTime64, the common type is DateTime/DateTime64. No other types are compatible.
     {
-        UInt32 have_date = type_ids.count(TypeIndex::Date);
-        UInt32 have_date32 = type_ids.count(TypeIndex::Date32);
-        UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
-        UInt32 have_datetime64 = type_ids.count(TypeIndex::DateTime64);
+        size_t have_date = type_ids.count(TypeIndex::Date);
+        size_t have_date32 = type_ids.count(TypeIndex::Date32);
+        size_t have_datetime = type_ids.count(TypeIndex::DateTime);
+        size_t have_datetime64 = type_ids.count(TypeIndex::DateTime64);
 
         if (have_date || have_date32 || have_datetime || have_datetime64)
         {
@@ -496,26 +526,24 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// Decimals
     {
-        UInt32 have_decimal32 = type_ids.count(TypeIndex::Decimal32);
-        UInt32 have_decimal64 = type_ids.count(TypeIndex::Decimal64);
-        UInt32 have_decimal128 = type_ids.count(TypeIndex::Decimal128);
+        size_t have_decimal32 = type_ids.count(TypeIndex::Decimal32);
+        size_t have_decimal64 = type_ids.count(TypeIndex::Decimal64);
+        size_t have_decimal128 = type_ids.count(TypeIndex::Decimal128);
 
         if (have_decimal32 || have_decimal64 || have_decimal128)
         {
-            UInt32 num_supported = have_decimal32 + have_decimal64 + have_decimal128;
+            size_t num_supported = have_decimal32 + have_decimal64 + have_decimal128;
 
             std::vector<TypeIndex> int_ids = {TypeIndex::Int8, TypeIndex::UInt8, TypeIndex::Int16, TypeIndex::UInt16,
-                                            TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
-            std::vector<UInt32> num_ints(int_ids.size(), 0);
+                                              TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
 
             TypeIndex max_int = TypeIndex::Nothing;
-            for (size_t i = 0; i < int_ids.size(); ++i)
+            for (auto int_id : int_ids)
             {
-                UInt32 num = type_ids.count(int_ids[i]);
-                num_ints[i] = num;
+                size_t num = type_ids.count(int_id);
                 num_supported += num;
                 if (num)
-                    max_int = int_ids[i];
+                    max_int = int_id;
             }
 
             if (num_supported != type_ids.size())
@@ -524,7 +552,11 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             UInt32 max_scale = 0;
             for (const auto & type : types)
             {
-                UInt32 scale = getDecimalScale(*type, 0);
+                auto type_id = type->getTypeId();
+                if (type_id != TypeIndex::Decimal32 && type_id != TypeIndex::Decimal64 && type_id != TypeIndex::Decimal128)
+                    continue;
+
+                UInt32 scale = getDecimalScale(*type);
                 if (scale > max_scale)
                     max_scale = scale;
             }

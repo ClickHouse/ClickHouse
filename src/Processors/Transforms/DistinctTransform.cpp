@@ -11,7 +11,7 @@ namespace ErrorCodes
 DistinctTransform::DistinctTransform(
     const Block & header_,
     const SizeLimits & set_size_limits_,
-    UInt64 limit_hint_,
+    const UInt64 limit_hint_,
     const Names & columns_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
@@ -33,7 +33,7 @@ void DistinctTransform::buildFilter(
     Method & method,
     const ColumnRawPtrs & columns,
     IColumn::Filter & filter,
-    size_t rows,
+    const size_t rows,
     SetVariants & variants) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
@@ -50,15 +50,22 @@ void DistinctTransform::buildFilter(
 
 void DistinctTransform::transform(Chunk & chunk)
 {
+    if (unlikely(!chunk.hasRows()))
+        return;
+
     /// Convert to full column, because SetVariant for sparse column is not implemented.
     convertToFullIfSparse(chunk);
 
-    auto num_rows = chunk.getNumRows();
+    const auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    /// Stop reading if we already reach the limit.
-    if (no_more_rows || (limit_hint && data.getTotalRowCount() >= limit_hint))
+    /// Special case, - only const columns, return single row
+    if (unlikely(key_columns_pos.empty()))
     {
+        for (auto & column : columns)
+            column = column->cut(0, 1);
+
+        chunk.setColumns(std::move(columns), 1);
         stopReading();
         return;
     }
@@ -67,17 +74,6 @@ void DistinctTransform::transform(Chunk & chunk)
     column_ptrs.reserve(key_columns_pos.size());
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
-
-    if (column_ptrs.empty())
-    {
-        /// Only constants. We need to return single row.
-        no_more_rows = true;
-        for (auto & column : columns)
-            column = column->cut(0, 1);
-
-        chunk.setColumns(std::move(columns), 1);
-        return;
-    }
 
     if (data.empty())
         data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
@@ -108,6 +104,13 @@ void DistinctTransform::transform(Chunk & chunk)
         column = column->filter(filter, -1);
 
     chunk.setColumns(std::move(columns), data.getTotalRowCount() - old_set_size);
+
+    /// Stop reading if we already reach the limit
+    if (limit_hint && data.getTotalRowCount() >= limit_hint)
+    {
+        stopReading();
+        return;
+    }
 }
 
 }

@@ -32,7 +32,14 @@ class ClickHouseHelper:
         }
 
         for i in range(5):
-            response = requests.post(url, params=params, data=json_str, headers=auth)
+            try:
+                response = requests.post(
+                    url, params=params, data=json_str, headers=auth
+                )
+            except Exception as e:
+                error = f"Received exception while sending data to {url} on {i} attempt: {e}"
+                logging.warning(error)
+                continue
 
             logging.info("Response content '%s'", response.content)
 

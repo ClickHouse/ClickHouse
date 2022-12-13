@@ -1,6 +1,6 @@
 enable_language(ASM)
 
-add_executable (memcpy-bench
+clickhouse_add_executable (memcpy-bench
     memcpy-bench.cpp
     FastMemcpy.cpp
     FastMemcpy_Avx.cpp

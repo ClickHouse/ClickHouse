@@ -176,6 +176,7 @@ SELECT toInt16OrZero(NULL);
 SELECT formatReadableSize(NULL);
 SELECT formatReadableQuantity(NULL);
 SELECT formatReadableTimeDelta(NULL);
+SELECT parseTimeDelta(NULL);
 SELECT concatAssumeInjective(NULL);
 SELECT toString(NULL);
 SELECT MACStringToNum(NULL);

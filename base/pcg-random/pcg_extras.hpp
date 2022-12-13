@@ -49,6 +49,8 @@
     #include <cxxabi.h>
 #endif
 
+// NOLINTBEGIN(readability-identifier-naming, modernize-use-using, bugprone-macro-parentheses, google-explicit-constructor)
+
 /*
  * Abstractions for compiler-specific directives
  */
@@ -89,8 +91,6 @@
             pcg128_t(high,low)
     #define PCG_EMULATED_128BIT_MATH 1
 #endif
-
-// NOLINTBEGIN(*)
 
 namespace pcg_extras {
 
@@ -553,6 +553,6 @@ std::ostream& operator<<(std::ostream& out, printable_typename<T>) {
 
 } // namespace pcg_extras
 
-// NOLINTEND(*)
+// NOLINTEND(readability-identifier-naming, modernize-use-using, bugprone-macro-parentheses, google-explicit-constructor)
 
 #endif // PCG_EXTRAS_HPP_INCLUDED

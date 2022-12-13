@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/json
 sidebar_position: 54
 sidebar_label: JSON
 ---
@@ -74,3 +75,7 @@ SELECT * FROM json FORMAT JSONEachRow
 ```text
 {"o":{"a":1,"b":{"c":2,"d":[1,2,3]}}}
 ```
+
+## Related Content
+
+- [Getting Data Into ClickHouse - Part 2 - A JSON detour](https://clickhouse.com/blog/getting-data-into-clickhouse-part-2-json)

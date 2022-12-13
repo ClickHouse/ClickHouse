@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/table-functions/file
 sidebar_position: 37
 sidebar_label: file
 ---

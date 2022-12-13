@@ -32,6 +32,9 @@ protected:
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
 
+    virtual bool supportTotals() const { return false; }
+    virtual bool supportExtremes() const { return false; }
+
     /** Write a row.
       * Default implementation calls methods to write single values and delimiters
       * (except delimiter between rows (writeRowBetweenDelimiter())).

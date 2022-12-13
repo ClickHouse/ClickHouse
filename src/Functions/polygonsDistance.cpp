@@ -109,7 +109,7 @@ template <>
 const char * FunctionPolygonsDistance<SphericalPoint>::name = "polygonsDistanceSpherical";
 
 
-void registerFunctionPolygonsDistance(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonsDistance)
 {
     factory.registerFunction<FunctionPolygonsDistance<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsDistance<SphericalPoint>>();

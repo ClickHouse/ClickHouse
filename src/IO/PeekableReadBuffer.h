@@ -99,7 +99,7 @@ private:
     /// creation (for example if PeekableReadBuffer is often created or if we need to remember small amount of
     /// data after checkpoint), at the beginning we will use small amount of memory on stack and allocate
     /// larger buffer only if reserved memory is not enough.
-    char stack_memory[16];
+    char stack_memory[PADDING_FOR_SIMD];
     bool use_stack_memory = true;
 };
 

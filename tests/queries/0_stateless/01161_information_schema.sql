@@ -6,6 +6,7 @@ create view v (n Nullable(Int32), f Float64) as select n, f from t;
 create materialized view mv engine=Null as select * from system.one;
 create temporary table tmp (d Date, dt DateTime, dtms DateTime64(3));
 
+
 -- FIXME #28687
 select * from information_schema.schemata where schema_name ilike 'information_schema';
 -- SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE (TABLE_SCHEMA=currentDatabase() OR TABLE_SCHEMA='') AND TABLE_NAME NOT LIKE '%inner%';

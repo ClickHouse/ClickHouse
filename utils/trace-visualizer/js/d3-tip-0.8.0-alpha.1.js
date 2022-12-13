@@ -26,7 +26,7 @@
     root.d3.tip = factory(d3, d3)
   }
 }(this, function(d3Collection, d3Selection) {
-  // Public - contructs a new tooltip
+  // Public - constructs a new tooltip
   //
   // Returns a tip
   return function() {

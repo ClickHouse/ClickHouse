@@ -83,7 +83,7 @@ using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundTo
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : PositiveMonotonicity {};
 
-void registerFunctionRoundToExp2(FunctionFactory & factory)
+REGISTER_FUNCTION(RoundToExp2)
 {
     factory.registerFunction<FunctionRoundToExp2>();
 }

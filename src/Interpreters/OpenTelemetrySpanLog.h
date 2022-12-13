@@ -7,24 +7,11 @@
 namespace DB
 {
 
-struct OpenTelemetrySpan
-{
-    UUID trace_id;
-    UInt64 span_id;
-    UInt64 parent_span_id;
-    std::string operation_name;
-    UInt64 start_time_us;
-    UInt64 finish_time_us;
-    Map attributes;
-    // I don't understand how Links work, namely, which direction should they
-    // point to, and how they are related with parent_span_id, so no Links for now.
-};
-
-struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
+struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
 {
     OpenTelemetrySpanLogElement() = default;
-    explicit OpenTelemetrySpanLogElement(const OpenTelemetrySpan & span)
-        : OpenTelemetrySpan(span) {}
+    OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
+        : OpenTelemetry::Span(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
     static NamesAndTypesList getNamesAndTypes();
@@ -39,17 +26,6 @@ class OpenTelemetrySpanLog : public SystemLog<OpenTelemetrySpanLogElement>
 {
 public:
     using SystemLog<OpenTelemetrySpanLogElement>::SystemLog;
-};
-
-struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
-{
-    explicit OpenTelemetrySpanHolder(const std::string & _operation_name);
-    void addAttribute(const std::string& name, UInt64 value);
-    void addAttribute(const std::string& name, const std::string& value);
-    void addAttribute(const Exception & e);
-    void addAttribute(std::exception_ptr e);
-
-    ~OpenTelemetrySpanHolder();
 };
 
 }

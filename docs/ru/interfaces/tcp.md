@@ -1,4 +1,5 @@
 ---
+slug: /ru/interfaces/tcp
 sidebar_position: 18
 sidebar_label: "Родной интерфейс (TCP)"
 ---

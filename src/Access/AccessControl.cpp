@@ -16,11 +16,13 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
+#include <Access/resolveSetting.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
-#include <base/find_symbols.h>
+#include <IO/Operators.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -37,7 +39,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
 }
-
 
 namespace
 {
@@ -79,7 +80,7 @@ public:
             /// No user, probably the user has been dropped while it was in the cache.
             cache.remove(params);
         }
-        auto res = std::shared_ptr<ContextAccess>(new ContextAccess(access_control, params));
+        auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
         cache.add(params, res);
         return res;
@@ -101,9 +102,9 @@ public:
         registered_prefixes = prefixes_;
     }
 
-    bool isSettingNameAllowed(const std::string_view & setting_name) const
+    bool isSettingNameAllowed(std::string_view setting_name) const
     {
-        if (Settings::hasBuiltin(setting_name))
+        if (settingIsBuiltin(setting_name))
             return true;
 
         std::lock_guard lock{mutex};
@@ -116,7 +117,7 @@ public:
         return false;
     }
 
-    void checkSettingNameIsAllowed(const std::string_view & setting_name) const
+    void checkSettingNameIsAllowed(std::string_view setting_name) const
     {
         if (isSettingNameAllowed(setting_name))
             return;
@@ -162,16 +163,17 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     if (config_.has("custom_settings_prefixes"))
         setCustomSettingsPrefixes(config_.getString("custom_settings_prefixes"));
 
+    setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
 
-    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool(
-        "access_control_improvements.users_without_row_policies_can_read_rows",
-        false /* false because we need to be compatible with earlier access configurations */));
-
-    setOnClusterQueriesRequireClusterGrant(config_.getBool(
-        "access_control_improvements.on_cluster_queries_require_cluster_grant",
-        false /* false because we need to be compatible with earlier access configurations */));
+    /// Optional improvements in access control system.
+    /// The default values are false because we need to be compatible with earlier access configurations
+    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", false));
+    setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", false));
+    setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", false));
+    setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", false));
+    setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 }
@@ -391,9 +393,9 @@ void AccessControl::addStoragesFromMainConfig(
 }
 
 
-void AccessControl::reload()
+void AccessControl::reload(ReloadMode reload_mode)
 {
-    MultipleAccessStorage::reload();
+    MultipleAccessStorage::reload(reload_mode);
     changes_notifier->sendNotifications();
 }
 
@@ -453,9 +455,21 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
 
+        WriteBufferFromOwnString message;
+        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
+
+        /// Better exception message for usability.
+        /// It is typical when users install ClickHouse, type some password and instantly forget it.
+        if (credentials.getUserName().empty() || credentials.getUserName() == "default")
+            message << "\n\n"
+                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
+                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
+                << "and deleting this file will reset the password.\n"
+                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
+
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
-        throw Exception(credentials.getUserName() + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
+        throw Exception(message.str(), ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 
@@ -499,6 +513,15 @@ void AccessControl::checkSettingNameIsAllowed(const std::string_view setting_nam
     custom_settings_prefixes->checkSettingNameIsAllowed(setting_name);
 }
 
+void AccessControl::setImplicitNoPasswordAllowed(bool allow_implicit_no_password_)
+{
+    allow_implicit_no_password = allow_implicit_no_password_;
+}
+
+bool AccessControl::isImplicitNoPasswordAllowed() const
+{
+    return allow_implicit_no_password;
+}
 
 void AccessControl::setNoPasswordAllowed(bool allow_no_password_)
 {

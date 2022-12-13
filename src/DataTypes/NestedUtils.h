@@ -13,7 +13,7 @@ namespace Nested
 
     /// Splits name of compound identifier by first/last dot (depending on 'reverse' parameter).
     std::pair<std::string, std::string> splitName(const std::string & name, bool reverse = false);
-    std::pair<std::string_view, std::string_view> splitName(const std::string_view & name, bool reverse = false);
+    std::pair<std::string_view, std::string_view> splitName(std::string_view name, bool reverse = false);
 
     /// Returns the prefix of the name to the first '.'. Or the name is unchanged if there is no dot.
     std::string extractTableName(const std::string & nested_name);
@@ -34,6 +34,9 @@ namespace Nested
 
     /// Get all nested tables names from a block.
     std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case = false);
+
+    /// Extract all column names that are nested for specifying table.
+    Names getAllNestedColumnsForTable(const Block & block, const std::string & table_name);
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.

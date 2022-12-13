@@ -296,7 +296,7 @@ namespace
             CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     class AddingAggregatedChunkInfoTransform : public ISimpleTransform
@@ -471,7 +471,7 @@ void StorageWindowView::alter(
     create_interpreter.setInternal(true);
     create_interpreter.execute();
 
-    DatabaseCatalog::instance().addDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
 
     shutdown_called = false;
 
@@ -895,7 +895,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
@@ -923,7 +923,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
@@ -1018,7 +1018,8 @@ void StorageWindowView::threadFuncFireProc()
         return;
 
     std::lock_guard lock(fire_signal_mutex);
-    UInt32 timestamp_now = std::time(nullptr);
+    /// TODO: consider using time_t instead (for every timestamp in this class)
+    UInt32 timestamp_now = static_cast<UInt32>(std::time(nullptr));
 
     while (next_fire_signal <= timestamp_now)
     {
@@ -1078,7 +1079,7 @@ void StorageWindowView::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t num_streams)
 {
     if (target_table_id.empty())
         return;
@@ -1118,7 +1119,7 @@ Pipe StorageWindowView::watch(
     ContextPtr local_context,
     QueryProcessingStage::Enum & processed_stage,
     size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
 
@@ -1127,7 +1128,7 @@ Pipe StorageWindowView::watch(
     if (query.limit_length)
     {
         has_limit = true;
-        limit = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
+        limit = typeid_cast<ASTLiteral &>(*query.limit_length).value.safeGet<UInt64>();
     }
 
     auto reader = std::make_shared<WindowViewSource>(
@@ -1189,7 +1190,7 @@ StorageWindowView::StorageWindowView(
     target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
 
     if (is_proctime)
-        next_fire_signal = getWindowUpperBound(std::time(nullptr));
+        next_fire_signal = getWindowUpperBound(static_cast<UInt32>(std::time(nullptr)));
 
     std::exchange(has_inner_table, true);
     if (!attach_)
@@ -1565,7 +1566,7 @@ void StorageWindowView::writeIntoWindowView(
 
 void StorageWindowView::startup()
 {
-    DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
+    DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();
@@ -1585,17 +1586,17 @@ void StorageWindowView::shutdown()
     fire_task->deactivate();
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
 }
 
 void StorageWindowView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (!dependencies.empty())
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (!view_ids.empty())
     {
-        StorageID dependent_table_id = dependencies.front();
-        throw Exception("Table has dependency " + dependent_table_id.getNameForLogs(), ErrorCodes::TABLE_WAS_NOT_DROPPED);
+        StorageID view_id = *view_ids.begin();
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table has dependency {}", view_id);
     }
 }
 

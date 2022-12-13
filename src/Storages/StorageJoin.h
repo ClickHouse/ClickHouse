@@ -4,7 +4,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 
 
 namespace DB
@@ -31,8 +31,8 @@ public:
         const Names & key_names_,
         bool use_nulls_,
         SizeLimits limits_,
-        ASTTableJoin::Kind kind_,
-        ASTTableJoin::Strictness strictness_,
+        JoinKind kind_,
+        JoinStrictness strictness_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
@@ -68,7 +68,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -76,26 +76,24 @@ public:
     Block getRightSampleBlock() const
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        Block block = metadata_snapshot->getSampleBlock().sortColumns();
+        Block block = metadata_snapshot->getSampleBlock();
         if (use_nulls && isLeftOrFull(kind))
-        {
             for (auto & col : block)
-            {
                 JoinCommon::convertColumnToNullable(col);
-            }
-        }
         return block;
     }
 
     bool useNulls() const { return use_nulls; }
+
+    const Names & getKeyNames() const { return key_names; }
 
 private:
     Block sample_block;
     const Names key_names;
     bool use_nulls;
     SizeLimits limits;
-    ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
-    ASTTableJoin::Strictness strictness;        /// ANY | ALL
+    JoinKind kind;                    /// LEFT | INNER ...
+    JoinStrictness strictness;        /// ANY | ALL
     bool overwrite;
 
     std::shared_ptr<TableJoin> table_join;
