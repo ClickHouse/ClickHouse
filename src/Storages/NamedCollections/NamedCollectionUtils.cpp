@@ -1,4 +1,4 @@
-#include <Storages/NamedCollectionUtils.h>
+#include <Storages/NamedCollections/NamedCollectionUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
@@ -13,8 +13,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Interpreters/Context.h>
-#include <Storages/NamedCollections.h>
-#include <Storages/NamedCollectionConfiguration.h>
+#include <Storages/NamedCollections/NamedCollections.h>
+#include <Storages/NamedCollections/NamedCollectionConfiguration.h>
 
 
 namespace fs = std::filesystem;
@@ -78,7 +78,7 @@ public:
         /// (`enumerate_result` == <collection_path>).
         const bool collection_is_empty = enumerate_result.size() == 1
             && *enumerate_result.begin() == collection_prefix;
-        std::set<std::string> keys;
+        std::set<std::string, std::less<>> keys;
         if (!collection_is_empty)
         {
             /// Skip collection prefix and add +1 to avoid '.' in the beginning.
@@ -296,7 +296,7 @@ private:
         const auto config = NamedCollectionConfiguration::createConfiguration(
             collection_name, query.changes);
 
-        std::set<std::string> keys;
+        std::set<std::string, std::less<>> keys;
         for (const auto & [name, _] : query.changes)
             keys.insert(name);
 
