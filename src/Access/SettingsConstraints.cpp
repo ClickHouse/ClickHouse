@@ -80,6 +80,9 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 {
     for (const auto & element : profile_elements)
     {
+        if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
+            continue;
+
         if (!element.value.isNull())
         {
             SettingChange value(element.setting_name, element.value);
@@ -98,24 +101,20 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
             check(current_settings, value);
         }
 
+        SettingConstraintWritability new_value = SettingConstraintWritability::WRITABLE;
+        SettingConstraintWritability old_value = SettingConstraintWritability::WRITABLE;
+
         if (element.writability)
+            new_value = *element.writability;
+
+        auto it = constraints.find(element.setting_name);
+        if (it != constraints.end())
+            old_value = it->second.writability;
+
+        if (new_value != old_value)
         {
-            SettingConstraintWritability new_value = *element.writability;
-            SettingConstraintWritability old_value = SettingConstraintWritability::WRITABLE;
-
-            auto it = constraints.find(element.setting_name);
-            if (it != constraints.end())
-                old_value = it->second.writability;
-
-            if (new_value != old_value)
-            {
-                if (old_value == SettingConstraintWritability::CONST)
-                    throw Exception("Setting " + element.setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
-
-                if (new_value == SettingConstraintWritability::CHANGEABLE_IN_READONLY &&
-                    old_value == SettingConstraintWritability::WRITABLE)
-                    throw Exception("Setting " + element.setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
-            }
+            if (old_value == SettingConstraintWritability::CONST)
+                throw Exception("Setting " + element.setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
         }
     }
 }
