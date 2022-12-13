@@ -145,7 +145,7 @@ void WriteBufferFromS3::nextImpl()
     if (part_number == 0 && memory->size < upload_part_size)
     {
         /// This is a case where max_single_part_upload_size < min_upload_part_size.
-        /// For the first part of multipart upload we may need to realloc a buffer from singe part upload a few times.
+        /// For the first part of multipart upload we may need to realloc a buffer from single part upload a few times.
         /// For other parts, buffer size is always upload_part_size.
         reallocBuffer(*this, *memory, upload_part_size);
         return;
