@@ -113,6 +113,14 @@ static void reallocBuffer(WriteBufferFromS3::Memory & memory, size_t max_size)
     memory.size = new_size;
 }
 
+static void reallocBuffer(WriteBuffer & buffer, WriteBufferFromS3::Memory & memory, size_t max_size)
+{
+    size_t prev_size = memory.size;
+    reallocBuffer(memory, max_size);
+    buffer.set(memory.data, memory.size, prev_size);
+    buffer.buffer() = BufferBase::Buffer(memory.data + prev_size, memory.data + memory.size);
+}
+
 void WriteBufferFromS3::nextImpl()
 {
     if (size_t available_bytes = available(); available_bytes > 0)
@@ -123,10 +131,7 @@ void WriteBufferFromS3::nextImpl()
 
     if (multipart_upload_id.empty() && memory->size < request_settings.max_single_part_upload_size)
     {
-        size_t prev_size = memory->size;
-        reallocBuffer(*memory, request_settings.max_single_part_upload_size);
-        set(memory->data, memory->size);
-        buffer() = BufferBase::Buffer(memory->data + prev_size, memory->data + memory->size);
+        reallocBuffer(*this, *memory, request_settings.max_single_part_upload_size);
         return;
     }
 
@@ -136,6 +141,15 @@ void WriteBufferFromS3::nextImpl()
 
     if (multipart_upload_id.empty())
         createMultipartUpload();
+
+    if (part_number == 0 && memory->size < upload_part_size)
+    {
+        /// This is a case where max_single_part_upload_size < min_upload_part_size.
+        /// For the first part of multipart upload we may need to realloc a buffer from singe part upload a few times.
+        /// For other parts, buffer size is always upload_part_size.
+        reallocBuffer(*this, *memory, upload_part_size);
+        return;
+    }
 
     writePart(allocateBuffer());
     waitForReadyBackGroundTasks();
