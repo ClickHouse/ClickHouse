@@ -6,7 +6,8 @@
 namespace DB
 {
 
-struct StateHandler {
+struct StateHandler
+{
     StateHandler(char escape_character, std::optional<char> enclosing_character);
     StateHandler(const StateHandler &) = default;
 

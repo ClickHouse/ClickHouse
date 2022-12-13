@@ -4,8 +4,9 @@ namespace DB
 {
 
 SimpleKeyValuePairEscapingProcessor::SimpleKeyValuePairEscapingProcessor(char escape_character_)
-: KeyValuePairEscapingProcessor<std::unordered_map<std::string, std::string>>(), escape_character(escape_character_)
-{}
+    : KeyValuePairEscapingProcessor<std::unordered_map<std::string, std::string>>(), escape_character(escape_character_)
+{
+}
 
 SimpleKeyValuePairEscapingProcessor::Response SimpleKeyValuePairEscapingProcessor::process(const ResponseViews & response_views) const
 {
@@ -13,7 +14,8 @@ SimpleKeyValuePairEscapingProcessor::Response SimpleKeyValuePairEscapingProcesso
 
     response.reserve(response_views.size());
 
-    for (auto [key_view, value_view] : response_views) {
+    for (auto [key_view, value_view] : response_views)
+    {
         response[escape(key_view)] = escape(value_view);
     }
 
@@ -27,10 +29,14 @@ std::string SimpleKeyValuePairEscapingProcessor::escape(std::string_view element
 
     element.reserve(element_view.size());
 
-    for (char character : element_view) {
-        if (escape) {
+    for (char character : element_view)
+    {
+        if (escape)
+        {
             escape = false;
-        } else if (character == escape_character) {
+        }
+        else if (character == escape_character)
+        {
             escape = true;
             continue;
         }
