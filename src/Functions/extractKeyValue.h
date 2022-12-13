@@ -5,11 +5,12 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/keyvaluepair/src/KeyValuePairExtractor.h>
 
 namespace DB {
 
-class ParseKeyValue : public IFunction
+class ExtractKeyValue : public IFunction
 {
 
     using CharArgument = std::optional<char>;
@@ -24,17 +25,24 @@ class ParseKeyValue : public IFunction
         std::unordered_set<char> value_special_characters_allow_list;
     };
 
+    struct RawColumns
+    {
+        ColumnString::Ptr keys;
+        ColumnString::Ptr values;
+        ColumnUInt64::Ptr offsets;
+    };
+
 public:
 
     using EscapingProcessorOutput = std::unordered_map<std::string_view, std::string_view>;
 
-    ParseKeyValue();
+    ExtractKeyValue();
 
     static constexpr auto name = "parseKeyValue";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<ParseKeyValue>();
+        return std::make_shared<ExtractKeyValue>();
     }
 
     /// Get the main function name.
@@ -61,7 +69,9 @@ private:
                                                                                  CharArgument enclosing_character,
                                                                                  SetArgument value_special_characters_allow_list) const;
 
-    ColumnPtr parse(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const;
+    RawColumns parse(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const;
+
+    ColumnPtr escape(RawColumns & raw_columns) const;
 };
 
 }
