@@ -1,14 +1,14 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/FunctionDateOrDateTimeToSomething.h>
+#include <Functions/FunctionDateOrDateTimeToDateOrDate32.h>
 
 
 namespace DB
 {
 
-using FunctionToStartOfQuarter = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfQuarterImpl>;
+using FunctionToStartOfQuarter = FunctionDateOrDateTimeToDateOrDate32<ToStartOfQuarterImpl>;
 
-void registerFunctionToStartOfQuarter(FunctionFactory & factory)
+REGISTER_FUNCTION(ToStartOfQuarter)
 {
     factory.registerFunction<FunctionToStartOfQuarter>();
 }

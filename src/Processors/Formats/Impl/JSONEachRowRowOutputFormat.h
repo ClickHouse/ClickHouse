@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
-#include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -10,9 +10,8 @@ namespace DB
 {
 
 /** The stream for outputting data in JSON format, by object per line.
-  * Does not validate UTF-8.
   */
-class JSONEachRowRowOutputFormat : public IRowOutputFormat
+class JSONEachRowRowOutputFormat : public RowOutputFormatWithUTF8ValidationAdaptor
 {
 public:
     JSONEachRowRowOutputFormat(
@@ -23,7 +22,6 @@ public:
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
-public:
     /// Content-Type to set when sending HTTP response.
     String getContentType() const override
     {
@@ -38,10 +36,6 @@ protected:
     void writeRowBetweenDelimiter() override;
     void writePrefix() override;
     void writeSuffix() override;
-
-    /// No totals and extremes.
-    void consumeTotals(Chunk) override {}
-    void consumeExtremes(Chunk) override {}
 
     size_t field_number = 0;
 

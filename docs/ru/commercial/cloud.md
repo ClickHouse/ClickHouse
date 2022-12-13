@@ -1,4 +1,5 @@
 ---
+slug: /ru/commercial/cloud
 sidebar_position: 1
 sidebar_label: "Поставщики облачных услуг ClickHouse"
 ---

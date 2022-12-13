@@ -56,7 +56,7 @@ namespace
 
 }
 
-void registerFunctionToBool(FunctionFactory & factory)
+REGISTER_FUNCTION(ToBool)
 {
     factory.registerFunction<FunctionToBool>();
 }

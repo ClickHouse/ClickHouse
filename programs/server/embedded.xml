@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <!-- Config that is used when server is run without config file. -->
 <clickhouse>
     <logger>

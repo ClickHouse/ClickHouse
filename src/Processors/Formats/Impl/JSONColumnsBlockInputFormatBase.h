@@ -60,7 +60,7 @@ protected:
     const FormatSettings format_settings;
     const NamesAndTypes fields;
     /// Maps column names and their positions in header.
-    std::unordered_map<String, size_t> name_to_index;
+    Block::NameMap name_to_index;
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;
@@ -83,10 +83,11 @@ private:
     DataTypePtr readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read);
 
     /// Choose result type for column from two inferred types from different rows.
-    void chooseResulType(DataTypePtr & type, const DataTypePtr & new_type, const String & column_name, size_t row) const;
+    void chooseResulType(DataTypePtr & type, DataTypePtr & new_type, const String & column_name, size_t row) const;
 
     const FormatSettings format_settings;
     std::unique_ptr<JSONColumnsReaderBase> reader;
+    Names column_names_from_settings;
 };
 
 }

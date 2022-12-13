@@ -73,7 +73,7 @@ public:
 
 }
 
-void registerFunctionFinalizeAggregation(FunctionFactory & factory)
+REGISTER_FUNCTION(FinalizeAggregation)
 {
     factory.registerFunction<FunctionFinalizeAggregation>();
 }

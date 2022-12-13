@@ -1,5 +1,6 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/FunctionFactory.h>
+#include <bit>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ struct BitHammingDistanceImpl
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         UInt64 res = static_cast<UInt64>(a) ^ static_cast<UInt64>(b);
-        return __builtin_popcountll(res);
+        return std::popcount(res);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -28,7 +29,7 @@ struct NameBitHammingDistance
 };
 using FunctionBitHammingDistance = BinaryArithmeticOverloadResolver<BitHammingDistanceImpl, NameBitHammingDistance>;
 
-void registerFunctionBitHammingDistance(FunctionFactory & factory)
+REGISTER_FUNCTION(BitHammingDistance)
 {
     factory.registerFunction<FunctionBitHammingDistance>();
 }

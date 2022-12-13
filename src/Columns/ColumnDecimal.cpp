@@ -109,7 +109,7 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = intHashCRC32(*begin, *hash_data);
+        *hash_data = static_cast<UInt32>(intHashCRC32(*begin, *hash_data));
         ++begin;
         ++hash_data;
     }
@@ -298,7 +298,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
         {
             while (mask)
             {
-                size_t index = __builtin_ctzll(mask);
+                size_t index = std::countr_zero(mask);
                 res_data.push_back(data_pos[index]);
             #ifdef __BMI__
                 mask = _blsr_u64(mask);

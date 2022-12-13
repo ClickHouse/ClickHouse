@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/sparkbar
 sidebar_position: 311
 sidebar_label: sparkbar
 ---

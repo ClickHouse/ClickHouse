@@ -5,6 +5,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 
 #include <set>
@@ -25,7 +26,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_POLICY;
     extern const int UNKNOWN_VOLUME;
     extern const int LOGICAL_ERROR;
@@ -39,6 +39,7 @@ StoragePolicy::StoragePolicy(
     const String & config_prefix,
     DiskSelectorPtr disks)
     : name(std::move(name_))
+    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     String volumes_prefix = config_prefix + ".volumes";
@@ -81,11 +82,15 @@ StoragePolicy::StoragePolicy(
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
 
     buildVolumeIndices();
+    LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
 
 StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_)
-    : volumes(std::move(volumes_)), name(std::move(name_)), move_factor(move_factor_)
+    : volumes(std::move(volumes_))
+    , name(std::move(name_))
+    , move_factor(move_factor_)
+    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     if (volumes.empty())
         throw Exception("Storage policy " + backQuote(name) + " must contain at least one Volume.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
@@ -94,6 +99,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
 
     buildVolumeIndices();
+    LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
 
@@ -213,6 +219,8 @@ ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) con
         if (reservation)
             return reservation;
     }
+    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
+
     return {};
 }
 
@@ -302,13 +310,12 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 }
 
 
-size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
+std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & disk_name) const
 {
-    auto it = volume_index_by_disk_name.find(disk_ptr->getName());
+    auto it = volume_index_by_disk_name.find(disk_name);
     if (it != volume_index_by_disk_name.end())
         return it->second;
-    else
-        throw Exception("No disk " + backQuote(disk_ptr->getName()) + " in policy " + backQuote(name), ErrorCodes::UNKNOWN_DISK);
+    return {};
 }
 
 

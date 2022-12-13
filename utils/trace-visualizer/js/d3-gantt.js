@@ -307,7 +307,7 @@
         x = d3.scaleLinear()
             .domain([timeDomainStart, timeDomainEnd])
             .range([0, width])
-            //.clamp(true); // dosn't work with zoom/pan
+            //.clamp(true); // doesn't work with zoom/pan
         xZoomed = x;
         y = d3.scaleBand()
             .domain([...data.bands])

@@ -50,11 +50,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return true;
-    }
-
     /// getMacro may return different values on different shards/replicas, so it's not constant for distributed query
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
@@ -84,7 +79,7 @@ public:
 
 }
 
-void registerFunctionGetMacro(FunctionFactory & factory)
+REGISTER_FUNCTION(GetMacro)
 {
     factory.registerFunction<FunctionGetMacro>();
 }

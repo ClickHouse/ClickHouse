@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/query_views_log
+---
 # query_views_log
 
 Contains information about the dependent views executed when running a query, for example, the view type or the execution time.

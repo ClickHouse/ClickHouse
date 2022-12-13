@@ -2,6 +2,15 @@
 
 #if USE_MSGPACK
 
+/// FIXME: there is some issue with clang-15, that incorrectly detect a
+/// "Attempt to free released memory" in msgpack::unpack(), because of delete
+/// operator for zone (from msgpack/v1/detail/cpp11_zone.hpp), hence NOLINT
+///
+/// NOTE: that I was not able to suppress it locally, only with
+/// NOLINTBEGIN/NOLINTEND
+//
+// NOLINTBEGIN(clang-analyzer-cplusplus.NewDelete)
+
 #include <cstdlib>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
@@ -23,6 +32,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Formats/MsgPackExtensionTypes.h>
+#include <Formats/EscapingRuleUtils.h>
 
 namespace DB
 {
@@ -119,7 +129,7 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
         {
-            assert_cast<ColumnUInt32 &>(column).insertValue(value);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
         }
         case TypeIndex::UInt64:
@@ -139,7 +149,7 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         }
         case TypeIndex::Int32:
         {
-            assert_cast<ColumnInt32 &>(column).insertValue(value);
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
             break;
         }
         case TypeIndex::Int64:
@@ -235,8 +245,10 @@ static void insertNull(IColumn & column, DataTypePtr type)
     assert_cast<ColumnNullable &>(column).insertDefault();
 }
 
-static void insertUUID(IColumn & column, DataTypePtr /*type*/, const char * value, size_t size)
+static void insertUUID(IColumn & column, DataTypePtr type, const char * value, size_t size)
 {
+    if (!isUUID(type))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
     readBinaryBigEndian(uuid.toUnderType().items[0], buf);
@@ -501,7 +513,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {:x} is not supported", object_ext.type());
         }
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()
@@ -539,9 +551,16 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<MsgPackSchemaReader>(buf, settings);
     });
+    factory.registerAdditionalInfoForSchemaCacheGetter("MsgPack", [](const FormatSettings & settings)
+    {
+            String result = getAdditionalFormatInfoForAllRowBasedFormats(settings);
+            return result + fmt::format(", number_of_columns={}", settings.msgpack.number_of_columns);
+    });
 }
 
 }
+
+// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
 
 #else
 

@@ -5,10 +5,11 @@
 namespace DB
 {
 
-String getRandomASCIIString(size_t len, char first, char last)
+String getRandomASCIIString(size_t length)
 {
-    std::uniform_int_distribution<int> distribution(first, last);
-    String res(len, ' ');
+    std::uniform_int_distribution<int> distribution('a', 'z');
+    String res;
+    res.resize(length);
     for (auto & c : res)
         c = distribution(thread_local_rng);
     return res;

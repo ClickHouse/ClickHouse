@@ -9,6 +9,8 @@
 
 #include <Interpreters/sortBlock.h>
 
+#include <Processors/Chunk.h>
+
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
@@ -20,9 +22,15 @@ struct BlockWithPartition
 {
     Block block;
     Row partition;
+    ChunkOffsetsPtr offsets;
 
     BlockWithPartition(Block && block_, Row && partition_)
         : block(block_), partition(std::move(partition_))
+    {
+    }
+
+    BlockWithPartition(Block && block_, Row && partition_, ChunkOffsetsPtr chunk_offsets_)
+        : block(block_), partition(std::move(partition_)), offsets(chunk_offsets_)
     {
     }
 };
@@ -43,9 +51,7 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
-
-    static void deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block);
+    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, ChunkOffsetsPtr chunk_offsets = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -54,7 +60,6 @@ public:
     struct TemporaryPart
     {
         MergeTreeData::MutableDataPartPtr part;
-        DataPartStorageBuilderPtr builder;
 
         struct Stream
         {
@@ -63,6 +68,8 @@ public:
         };
 
         std::vector<Stream> streams;
+
+        scope_guard temporary_directory_lock;
 
         void finalize();
     };
@@ -74,31 +81,20 @@ public:
 
     /// For insertion.
     static TemporaryPart writeProjectionPart(
-        MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
-        const IMergeTreeDataPart * parent_part);
-
-    /// For mutation: MATERIALIZE PROJECTION.
-    static TemporaryPart writeTempProjectionPart(
-        MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
-        const IMergeTreeDataPart * parent_part,
-        size_t block_num);
-
-    /// For WriteAheadLog AddPart.
-    static TemporaryPart writeInMemoryProjectionPart(
         const MergeTreeData & data,
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
-        const IMergeTreeDataPart * parent_part);
+        IMergeTreeDataPart * parent_part);
+
+    /// For mutation: MATERIALIZE PROJECTION.
+    static TemporaryPart writeTempProjectionPart(
+        const MergeTreeData & data,
+        Poco::Logger * log,
+        Block block,
+        const ProjectionDescription & projection,
+        IMergeTreeDataPart * parent_part,
+        size_t block_num);
 
     static Block mergeBlock(
         const Block & block,
@@ -110,18 +106,14 @@ public:
 private:
     static TemporaryPart writeProjectionPartImpl(
         const String & part_name,
-        MergeTreeDataPartType part_type,
-        const String & relative_path,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
         bool is_temp,
-        const IMergeTreeDataPart * parent_part,
+        IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection);
 
     MergeTreeData & data;
-
     Poco::Logger * log;
 };
 

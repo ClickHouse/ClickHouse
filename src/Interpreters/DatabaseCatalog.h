@@ -3,7 +3,7 @@
 #include <Core/UUID.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Databases/TablesLoader.h>
+#include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -31,15 +31,13 @@ class IDatabase;
 class Exception;
 class ColumnsDescription;
 struct ConstraintsDescription;
+class IDisk;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 using Databases = std::map<String, std::shared_ptr<IDatabase>>;
-
-/// Table -> set of table-views that make SELECT from it.
-using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
-using Dependencies = std::vector<StorageID>;
-
+using DiskPtr = std::shared_ptr<IDisk>;
+using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
 /// Allows executing DDL query only in one thread.
 /// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table,
@@ -131,7 +129,7 @@ public:
     static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
 
     /// Returns true if a passed name is one of the predefined databases' names.
-    static bool isPredefinedDatabase(const std::string_view & database_name);
+    static bool isPredefinedDatabase(std::string_view database_name);
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
@@ -186,12 +184,11 @@ public:
     /// Four views (tables, views, columns, schemata) in the "information_schema" database are predefined too.
     bool isPredefinedTable(const StorageID & table_id) const;
 
-    void addDependency(const StorageID & from, const StorageID & where);
-    void removeDependency(const StorageID & from, const StorageID & where);
-    Dependencies getDependencies(const StorageID & from) const;
-
-    /// For Materialized and Live View
-    void updateDependency(const StorageID & old_from, const StorageID & old_where,const StorageID & new_from, const StorageID & new_where);
+    /// View dependencies between a source table and its view.
+    void addViewDependency(const StorageID & source_table_id, const StorageID & view_id);
+    void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
+    std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
+    void updateViewDependency(const StorageID & old_source_table_id, const StorageID & old_view_id, const StorageID & new_source_table_id, const StorageID & new_view_id);
 
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
     /// removeUUIDMapping(...) must be called when it detached,
@@ -221,15 +218,19 @@ public:
 
     void waitTableFinallyDropped(const UUID & uuid);
 
-    void addLoadingDependencies(const QualifiedTableName & table, TableNamesSet && dependencies);
-    void addLoadingDependencies(const DependenciesInfos & new_infos);
-    DependenciesInfo getLoadingDependenciesInfo(const StorageID & table_id) const;
+    /// Referential dependencies between tables: table "A" depends on table "B"
+    /// if "B" is referenced in the definition of "A".
+    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & dependencies);
+    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & dependencies);
+    void addDependencies(const TablesDependencyGraph & extra_graph);
+    std::vector<StorageID> removeDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
 
-    TableNamesSet tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
-    TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database = false) TSA_REQUIRES(databases_mutex);
-    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const;
+    std::vector<StorageID> getDependencies(const StorageID & table_id) const;
+    std::vector<StorageID> getDependents(const StorageID & table_id) const;
 
-    void updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies);
+    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_dependencies);
+
+    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool is_drop_database = false) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -243,6 +244,7 @@ private:
 
     void shutdownImpl();
 
+    void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 
     struct UUIDToStorageMapPart
     {
@@ -271,19 +273,22 @@ private:
     void dropTableFinally(const TableMarkedAsDropped & table);
 
     void cleanupStoreDirectoryTask();
-    bool maybeRemoveDirectory(const fs::path & unused_dir);
+    bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     static constexpr size_t reschedule_time_ms = 100;
     static constexpr time_t drop_error_cooldown_sec = 5;
 
     mutable std::mutex databases_mutex;
 
-    ViewDependencies view_dependencies TSA_GUARDED_BY(databases_mutex);
-
     Databases databases TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
-    DependenciesInfos loading_dependencies TSA_GUARDED_BY(databases_mutex);
+    /// Referential dependencies between tables: table "A" depends on table "B"
+    /// if the table "B" is referenced in the definition of the table "A".
+    TablesDependencyGraph referential_dependencies TSA_GUARDED_BY(databases_mutex);
+
+    /// View dependencies between a source table and its view.
+    TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
 
     Poco::Logger * log;
 

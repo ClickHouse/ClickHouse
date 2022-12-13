@@ -17,7 +17,7 @@ using FunctionILike = FunctionsStringSearch<ILikeImpl>;
 
 }
 
-void registerFunctionILike(FunctionFactory & factory)
+REGISTER_FUNCTION(ILike)
 {
     factory.registerFunction<FunctionILike>();
 }

@@ -25,7 +25,7 @@ using FunctionLGamma = FunctionMathUnary<UnaryFunctionVectorized<LGammaName, lga
 
 }
 
-void registerFunctionLGamma(FunctionFactory & factory)
+REGISTER_FUNCTION(LGamma)
 {
     factory.registerFunction<FunctionLGamma>();
 }

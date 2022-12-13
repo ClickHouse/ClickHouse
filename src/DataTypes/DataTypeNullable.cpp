@@ -85,6 +85,13 @@ DataTypePtr makeNullable(const DataTypePtr & type)
     return std::make_shared<DataTypeNullable>(type);
 }
 
+DataTypePtr makeNullableSafe(const DataTypePtr & type)
+{
+    if (type->canBeInsideNullable())
+        return makeNullable(type);
+    return type;
+}
+
 DataTypePtr removeNullable(const DataTypePtr & type)
 {
     if (type->isNullable())

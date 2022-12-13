@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/multiword-types
 sidebar_position: 61
 sidebar_label: Составные типы
 ---

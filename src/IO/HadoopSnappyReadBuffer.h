@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SNAPPY
 
@@ -85,7 +85,7 @@ public:
             case Status::NEEDS_MORE_INPUT:
                 return "NEEDS_MORE_INPUT";
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     explicit HadoopSnappyReadBuffer(

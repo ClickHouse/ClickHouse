@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -13,7 +13,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
 #include <TableFunctions/TableFunctionHDFSCluster.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -47,7 +48,7 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
     const auto message = fmt::format(
         "The signature of table function {} shall be the following:\n" \
         " - cluster, uri\n",\
-        " - cluster, format\n",\
+        " - cluster, uri, format\n",\
         " - cluster, uri, format, structure\n",\
         " - cluster, uri, format, structure, compression_method",
         getName());
@@ -74,7 +75,10 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
 ColumnsDescription TableFunctionHDFSCluster::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
+    {
+        context->checkAccess(getSourceAccessType());
         return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
+    }
 
     return parseColumnsListFromString(structure, context);
 }
