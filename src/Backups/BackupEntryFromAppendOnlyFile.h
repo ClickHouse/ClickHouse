@@ -11,13 +11,8 @@ namespace DB
 class BackupEntryFromAppendOnlyFile : public BackupEntryFromImmutableFile
 {
 public:
-    /// The constructor is allowed to not set `file_size_` or `checksum_`, in that case it will be calculated from the data.
-    explicit BackupEntryFromAppendOnlyFile(
-        const String & file_path_,
-        const std::optional<UInt64> & file_size_ = {},
-        const std::optional<UInt128> & checksum_ = {},
-        const std::shared_ptr<Poco::TemporaryFile> & temporary_file_ = {});
 
+    /// The constructor is allowed to not set `file_size_` or `checksum_`, in that case it will be calculated from the data.
     BackupEntryFromAppendOnlyFile(
         const DiskPtr & disk_,
         const String & file_path_,

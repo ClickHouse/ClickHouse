@@ -43,7 +43,9 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
-        bool can_execute_);
+        bool can_execute_,
+        bool return_all_columns_ = false,
+        bool return_deleted_rows_ = false);
 
     void validate();
 
@@ -78,6 +80,8 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
+    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
+
 private:
     ASTPtr prepare(bool dry_run);
 
@@ -96,6 +100,8 @@ private:
     ContextPtr context;
     bool can_execute;
     SelectQueryOptions select_limits;
+
+    bool apply_deleted_mask = true;
 
     ASTPtr mutation_ast;
 
@@ -152,6 +158,12 @@ private:
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
+
+    // whether all columns should be returned, not just updated
+    bool return_all_columns;
+
+    // whether we should return deleted or nondeleted rows on DELETE mutation
+    bool return_deleted_rows;
 };
 
 }

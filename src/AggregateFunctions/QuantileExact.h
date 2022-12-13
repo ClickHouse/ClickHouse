@@ -55,7 +55,7 @@ struct QuantileExactBase
         size_t size = 0;
         readVarUInt(size, buf);
         array.resize(size);
-        buf.read(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
+        buf.readStrict(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
 
     Value get(Float64 level)
@@ -87,7 +87,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
     {
         if (!array.empty())
         {
-            size_t n = level < 1 ? level * array.size() : (array.size() - 1);
+            size_t n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
             ::nth_element(array.begin(), array.begin() + n, array.end());  /// NOTE: You can think of the radix-select algorithm.
             return array[n];
         }
@@ -106,7 +106,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
             {
                 auto level = levels[indices[i]];
 
-                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
+                size_t n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
                 result[indices[i]] = array[n];
                 prev_n = n;
@@ -282,7 +282,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                 // else quantile is the nth index of the sorted array obtained by multiplying
                 // level and size of array. Example if level = 0.1 and size of array is 10,
                 // then return array[1].
-                n = level < 1 ? level * array.size() : (array.size() - 1);
+                n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
             }
             ::nth_element(array.begin(), array.begin() + n, array.end());
             return array[n];
@@ -317,7 +317,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                 {
                     // else quantile is the nth index of the sorted array obtained by multiplying
                     // level and size of array. Example if level = 0.1 and size of array is 10.
-                    n = level < 1 ? level * array.size() : (array.size() - 1);
+                    n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
                 }
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
                 result[indices[i]] = array[n];
@@ -356,7 +356,7 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
             {
                 // else quantile is the nth index of the sorted array obtained by multiplying
                 // level and size of array. Example if level = 0.1 and size of array is 10.
-                n = level < 1 ? level * array.size() : (array.size() - 1);
+                n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
             }
             ::nth_element(array.begin(), array.begin() + n, array.end());
             return array[n];
@@ -384,7 +384,7 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
                 {
                     // else quantile is the nth index of the sorted array obtained by multiplying
                     // level and size of array. Example if level = 0.1 and size of array is 10.
-                    n = level < 1 ? level * array.size() : (array.size() - 1);
+                    n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
                 }
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
                 result[indices[i]] = array[n];

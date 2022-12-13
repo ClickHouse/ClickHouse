@@ -46,7 +46,7 @@ public:
 
 }
 
-void registerFunctionHasThreadFuzzer(FunctionFactory & factory)
+REGISTER_FUNCTION(HasThreadFuzzer)
 {
     factory.registerFunction<FunctionHasThreadFuzzer>();
 }

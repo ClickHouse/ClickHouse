@@ -5,11 +5,11 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-#include <Core/Settings.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
 #include <set>
+#include <list>
 
 
 class SipHash;
@@ -26,7 +26,7 @@ namespace ErrorCodes
 using IdentifierNameSet = std::set<String>;
 
 class WriteBuffer;
-
+using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
@@ -35,7 +35,7 @@ class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAS
 public:
     ASTs children;
 
-    virtual ~IAST() = default;
+    virtual ~IAST();
     IAST() = default;
     IAST(const IAST &) = default;
     IAST & operator=(const IAST &) = default;
@@ -92,7 +92,7 @@ public:
       */
     size_t checkDepth(size_t max_depth) const
     {
-        return checkDepthImpl(max_depth, 0);
+        return checkDepthImpl(max_depth);
     }
 
     /** Get total number of tree elements
@@ -185,6 +185,7 @@ public:
         bool one_line;
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+        bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
         // Newline or whitespace.
         char nl_or_ws;
@@ -240,9 +241,12 @@ public:
     }
 
     // A simple way to add some user-readable context to an error message.
-    std::string formatForErrorMessage() const;
-    template <typename AstArray>
-    static std::string formatForErrorMessage(const AstArray & array);
+    String formatWithSecretsHidden(size_t max_length = 0, bool one_line = true) const;
+    String formatForLogging(size_t max_length = 0) const { return formatWithSecretsHidden(max_length, true); }
+    String formatForErrorMessage() const { return formatWithSecretsHidden(0, true); }
+
+    /// If an AST has secret parts then formatForLogging() will replace them with the placeholder '[HIDDEN]'.
+    virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 
     void cloneChildren();
 
@@ -272,24 +276,17 @@ public:
     static const char * hilite_substitution;
     static const char * hilite_none;
 
-private:
-    size_t checkDepthImpl(size_t max_depth, size_t level) const;
-};
+protected:
+    bool childrenHaveSecretParts() const;
 
-template <typename AstArray>
-std::string IAST::formatForErrorMessage(const AstArray & array)
-{
-    WriteBufferFromOwnString buf;
-    for (size_t i = 0; i < array.size(); ++i)
-    {
-        if (i > 0)
-        {
-            const char * delim = ", ";
-            buf.write(delim, strlen(delim));
-        }
-        array[i]->format(IAST::FormatSettings(buf, true /* one line */));
-    }
-    return buf.str();
-}
+private:
+    size_t checkDepthImpl(size_t max_depth) const;
+
+    /** Forward linked list of ASTPtr to delete.
+      * Used in IAST destructor to avoid possible stack overflow.
+      */
+    ASTPtr next_to_delete = nullptr;
+    ASTPtr * next_to_delete_list_head = nullptr;
+};
 
 }

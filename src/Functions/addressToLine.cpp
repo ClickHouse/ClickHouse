@@ -58,7 +58,7 @@ protected:
 
 }
 
-void registerFunctionAddressToLine(FunctionFactory & factory)
+REGISTER_FUNCTION(AddressToLine)
 {
     factory.registerFunction<FunctionAddressToLine>();
 }

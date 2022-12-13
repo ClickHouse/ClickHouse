@@ -41,7 +41,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
 {
     /// Stop anything that maybe in progress,
-    /// to avoid interfer with the subsequent connections.
+    /// to avoid interference with the subsequent connections.
     ///
     /// I.e. some replcas may be in the establishing state,
     /// this means that hedged connection is waiting for TablesStatusResponse,
@@ -362,7 +362,7 @@ void HedgedConnectionsFactory::removeReplicaFromEpoll(int index, int fd)
     timeout_fd_to_replica_index.erase(replicas[index].change_replica_timeout.getDescriptor());
 }
 
-int HedgedConnectionsFactory::numberOfProcessingReplicas() const
+size_t HedgedConnectionsFactory::numberOfProcessingReplicas() const
 {
     if (epoll.empty())
         return 0;
@@ -381,7 +381,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
             && result.is_usable
             && !replicas[i].is_ready
             && (!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry)))
-            indexes.push_back(i);
+            indexes.push_back(static_cast<int>(i));
     }
 
     if (indexes.empty())

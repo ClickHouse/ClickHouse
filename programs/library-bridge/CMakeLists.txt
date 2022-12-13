@@ -1,13 +1,16 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 
 set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
-    library-bridge.cpp
-    LibraryInterface.cpp
+    CatBoostLibraryHandler.cpp
+    CatBoostLibraryHandlerFactory.cpp
+    ExternalDictionaryLibraryAPI.cpp
+    ExternalDictionaryLibraryHandler.cpp
+    ExternalDictionaryLibraryHandlerFactory.cpp
     LibraryBridge.cpp
-    Handlers.cpp
-    HandlerFactory.cpp
-    SharedLibraryHandler.cpp
-    SharedLibraryHandlerFactory.cpp
+    LibraryBridgeHandlerFactory.cpp
+    LibraryBridgeHandlers.cpp
+    SharedLibrary.cpp
+    library-bridge.cpp
 )
 
 if (OS_LINUX)

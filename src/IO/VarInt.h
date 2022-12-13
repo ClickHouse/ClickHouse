@@ -83,14 +83,14 @@ inline void readVarUInt(UInt32 & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);
-    x = tmp;
+    x = static_cast<UInt32>(tmp);
 }
 
 inline void readVarInt(Int32 & x, ReadBuffer & istr)
 {
     Int64 tmp;
     readVarInt(tmp, istr);
-    x = tmp;
+    x = static_cast<Int32>(tmp);
 }
 
 inline void readVarUInt(UInt16 & x, ReadBuffer & istr)

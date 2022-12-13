@@ -17,7 +17,7 @@ using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty,
 
 }
 
-void registerFunctionNotEmpty(FunctionFactory & factory)
+REGISTER_FUNCTION(NotEmpty)
 {
     factory.registerFunction<FunctionNotEmpty>();
 }

@@ -1,8 +1,8 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/deltasumtimestamp
 sidebar_position: 141
+title: deltaSumTimestamp
 ---
-
-# deltaSumTimestamp
 
 Adds the difference between consecutive rows. If the difference is negative, it is ignored.
 

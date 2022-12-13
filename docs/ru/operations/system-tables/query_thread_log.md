@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/query_thread_log
+---
 # system.query_thread_log {#system_tables-query_thread_log}
 
 Содержит информацию о потоках, которые выполняют запросы, например, имя потока, время его запуска, продолжительность обработки запроса.

@@ -94,14 +94,14 @@ struct RepeatImpl
 
     template <typename T>
     static void constStrVectorRepeat(
-        const StringRef & copy_str,
+        std::string_view copy_str,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         const PaddedPODArray<T> & col_num)
     {
         UInt64 data_size = 0;
         res_offsets.resize(col_num.size());
-        UInt64 str_size = copy_str.size;
+        UInt64 str_size = copy_str.size();
         UInt64 col_size = col_num.size();
         for (UInt64 i = 0; i < col_size; ++i)
         {
@@ -116,7 +116,7 @@ struct RepeatImpl
             T repeat_time = col_num[i];
             checkRepeatTime(repeat_time);
             process(
-                reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data)),
+                reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data())),
                 res_data.data() + res_offsets[i - 1],
                 str_size + 1,
                 repeat_time);
@@ -227,7 +227,7 @@ public:
         {
             /// Note that const-const case is handled by useDefaultImplementationForConstants.
 
-            StringRef copy_str = col_const->getDataColumn().getDataAt(0);
+            std::string_view copy_str = col_const->getDataColumn().getDataAt(0).toView();
 
             if (castType(arguments[1].type.get(), [&](const auto & type)
                 {
@@ -252,9 +252,9 @@ public:
 
 }
 
-void registerFunctionRepeat(FunctionFactory & factory)
+REGISTER_FUNCTION(Repeat)
 {
-    factory.registerFunction<FunctionRepeat>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRepeat>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

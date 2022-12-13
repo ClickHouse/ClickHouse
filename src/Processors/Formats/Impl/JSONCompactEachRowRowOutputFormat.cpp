@@ -3,7 +3,7 @@
 #include <Processors/Formats/Impl/JSONCompactEachRowRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
-
+#include <Formats/JSONUtils.h>
 
 namespace DB
 {
@@ -16,7 +16,11 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
         bool with_names_,
         bool with_types_,
         bool yield_strings_)
-        : IRowOutputFormat(header_, out_, params_), settings(settings_), with_names(with_names_), with_types(with_types_), yield_strings(yield_strings_)
+    : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_, params_)
+    , settings(settings_)
+    , with_names(with_names_)
+    , with_types(with_types_)
+    , yield_strings(yield_strings_)
 {
 }
 
@@ -28,33 +32,33 @@ void JSONCompactEachRowRowOutputFormat::writeField(const IColumn & column, const
         WriteBufferFromOwnString buf;
 
         serialization.serializeText(column, row_num, buf, settings);
-        writeJSONString(buf.str(), out, settings);
+        writeJSONString(buf.str(), *ostr, settings);
     }
     else
-        serialization.serializeTextJSON(column, row_num, out, settings);
+        serialization.serializeTextJSON(column, row_num, *ostr, settings);
 }
 
 
 void JSONCompactEachRowRowOutputFormat::writeFieldDelimiter()
 {
-    writeCString(", ", out);
+    writeCString(", ", *ostr);
 }
 
 
 void JSONCompactEachRowRowOutputFormat::writeRowStartDelimiter()
 {
-    writeChar('[', out);
+    writeChar('[', *ostr);
 }
 
 
 void JSONCompactEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("]\n", out);
+    writeCString("]\n", *ostr);
 }
 
 void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    writeChar('\n', out);
+    writeChar('\n', *ostr);
     size_t columns_size = columns.size();
     writeRowStartDelimiter();
     for (size_t i = 0; i < columns_size; ++i)
@@ -69,12 +73,13 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
 
 void JSONCompactEachRowRowOutputFormat::writeLine(const std::vector<String> & values)
 {
+    JSONUtils::makeNamesValidJSONStrings(values, settings, settings.json.validate_utf8);
     writeRowStartDelimiter();
     for (size_t i = 0; i < values.size(); ++i)
     {
-        writeChar('\"', out);
-        writeString(values[i], out);
-        writeChar('\"', out);
+        writeChar('\"', *ostr);
+        writeString(values[i], *ostr);
+        writeChar('\"', *ostr);
         if (i != values.size() - 1)
             writeFieldDelimiter();
     }
@@ -86,10 +91,10 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
     const auto & header = getPort(PortKind::Main).getHeader();
 
     if (with_names)
-        writeLine(header.getNames());
+        writeLine(JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8));
 
     if (with_types)
-        writeLine(header.getDataTypeNames());
+        writeLine(JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8));
 }
 
 void JSONCompactEachRowRowOutputFormat::consumeTotals(DB::Chunk chunk)

@@ -2,7 +2,6 @@
 
 #include <variant>
 #include <optional>
-#include <shared_mutex>
 #include <deque>
 #include <vector>
 
@@ -27,13 +26,12 @@
 #include <Core/Block.h>
 
 #include <Storages/IStorage_fwd.h>
-#include <Storages/IKVStorage.h>
+#include <Interpreters/IKeyValueEntity.h>
 
 namespace DB
 {
 
 class TableJoin;
-class DictionaryReader;
 
 namespace JoinStuff
 {
@@ -54,10 +52,10 @@ public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
+    template <JoinKind KIND, JoinStrictness STRICTNESS>
     void reinit(size_t size_);
 
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
+    template <JoinKind KIND, JoinStrictness STRICTNESS>
     void reinit(const Block * block_ptr);
 
     bool getUsedSafe(size_t i) const;
@@ -171,13 +169,12 @@ public:
     /// Used by joinGet function that turns StorageJoin into a dictionary.
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
-    bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
+    bool isFilled() const override { return from_storage_join; }
 
     JoinPipelineType pipelineType() const override
     {
-        /// No need to process anything in the right stream if it's a dictionary will just join the left stream with it.
-        bool is_filled = from_storage_join || data->type == Type::DICT;
-        if (is_filled)
+        /// No need to process anything in the right stream if hash table was already filled
+        if (from_storage_join)
             return JoinPipelineType::FilledRight;
 
         /// Default pipeline processes right stream at first and then left.
@@ -189,7 +186,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(
+    IBlocksStreamPtr getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
@@ -199,10 +196,10 @@ public:
 
     bool alwaysReturnsEmptySet() const final;
 
-    ASTTableJoin::Kind getKind() const { return kind; }
-    ASTTableJoin::Strictness getStrictness() const { return strictness; }
+    JoinKind getKind() const { return kind; }
+    JoinStrictness getStrictness() const { return strictness; }
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
-    ASOF::Inequality getAsofInequality() const { return asof_inequality; }
+    ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
@@ -233,7 +230,6 @@ public:
     {
         EMPTY,
         CROSS,
-        DICT,
         #define M(NAME) NAME,
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -261,7 +257,6 @@ public:
             {
                 case Type::EMPTY:            break;
                 case Type::CROSS:            break;
-                case Type::DICT:             break;
 
             #define M(NAME) \
                 case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
@@ -276,7 +271,6 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
-                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->size() : 0;
@@ -284,7 +278,7 @@ public:
             #undef M
             }
 
-            __builtin_unreachable();
+            UNREACHABLE();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -293,7 +287,6 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
-                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
@@ -301,7 +294,7 @@ public:
             #undef M
             }
 
-            __builtin_unreachable();
+            UNREACHABLE();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -310,7 +303,6 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
-                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
@@ -318,7 +310,7 @@ public:
             #undef M
             }
 
-            __builtin_unreachable();
+            UNREACHABLE();
         }
     };
 
@@ -343,6 +335,8 @@ public:
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
+
+        bool released = false;
     };
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
@@ -357,9 +351,12 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
+    BlocksList releaseJoinedBlocks();
 
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
     bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
+
+    void debugKeys() const;
 
 private:
     template<bool> friend class NotJoinedHash;
@@ -367,15 +364,15 @@ private:
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
-    ASTTableJoin::Kind kind;
-    ASTTableJoin::Strictness strictness;
+    const JoinKind kind;
+    const JoinStrictness strictness;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<TypeIndex> asof_type;
-    ASOF::Inequality asof_inequality;
+    const ASOFJoinInequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
     /// Flags that indicate that particular row already used in join.
@@ -412,7 +409,7 @@ private:
     Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure(Block & saved_block_sample);
 
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
     void joinBlockImpl(
         Block & block,
         const Block & block_with_columns_to_add,
@@ -421,10 +418,9 @@ private:
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
-    static Type chooseMethod(ASTTableJoin::Kind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
-    bool overDictionary() const;
 };
 
 }

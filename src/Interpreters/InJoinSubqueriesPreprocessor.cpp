@@ -9,6 +9,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -105,7 +106,7 @@ private:
                     throw Exception("Logical error: unexpected function name " + concrete->name, ErrorCodes::LOGICAL_ERROR);
             }
             else if (table_join)
-                table_join->locality = ASTTableJoin::Locality::Global;
+                table_join->locality = JoinLocality::Global;
             else
                 throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
         }
@@ -189,7 +190,7 @@ private:
             return;
 
         ASTTableJoin * table_join = node.table_join->as<ASTTableJoin>();
-        if (table_join->locality != ASTTableJoin::Locality::Global)
+        if (table_join->locality != JoinLocality::Global)
         {
             if (auto * table = node.table_expression->as<ASTTableExpression>())
             {
@@ -224,6 +225,8 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
 {
     if (!ast)
         return;
+
+    checkStackSize();
 
     ASTSelectQuery * query = ast->as<ASTSelectQuery>();
     if (!query || !query->tables())

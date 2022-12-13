@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/replicas
+---
 # system.replicas {#system_tables-replicas}
 
 Содержит информацию и статус для реплицируемых таблиц, расположенных на локальном сервере.

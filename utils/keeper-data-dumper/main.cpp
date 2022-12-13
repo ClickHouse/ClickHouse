@@ -62,7 +62,8 @@ int main(int argc, char *argv[])
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, argv[1], settings);
+    KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>();
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, argv[1], settings, keeper_context, nullptr);
     state_machine->init();
     size_t last_commited_index = state_machine->last_commit_index();
 
@@ -78,7 +79,10 @@ int main(int argc, char *argv[])
     for (size_t i = last_commited_index + 1; i < changelog.next_slot(); ++i)
     {
         if (changelog.entry_at(i)->get_val_type() == nuraft::log_val_type::app_log)
+        {
+            state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
             state_machine->commit(i, changelog.entry_at(i)->get_buf());
+        }
     }
 
     dumpMachine(state_machine);

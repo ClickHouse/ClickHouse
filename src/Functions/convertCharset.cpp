@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_ICU
 #    include <Columns/ColumnConst.h>
@@ -214,7 +214,7 @@ public:
 
 }
 
-void registerFunctionConvertCharset(FunctionFactory & factory)
+REGISTER_FUNCTION(ConvertCharset)
 {
     factory.registerFunction<FunctionConvertCharset>();
 }

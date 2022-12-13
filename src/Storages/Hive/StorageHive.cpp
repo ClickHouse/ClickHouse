@@ -20,7 +20,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -218,7 +217,10 @@ public:
                     auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
                     {
                         auto buf = std::make_unique<ReadBufferFromHDFS>(
-                            hdfs_namenode_url, current_path, getContext()->getGlobalContext()->getConfigRef());
+                            hdfs_namenode_url,
+                            current_path,
+                            getContext()->getGlobalContext()->getConfigRef(),
+                            getContext()->getReadSettings());
 
                         bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)
@@ -725,7 +727,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
                             hive_file->getPath(),
                             hive_file->describeMinMaxIndex(sub_minmax_idxes[i]));
 
-                        skip_splits.insert(i);
+                        skip_splits.insert(static_cast<int>(i));
                     }
                 }
                 hive_file->setSkipSplits(skip_splits);
@@ -747,7 +749,7 @@ Pipe StorageHive::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     lazyInitialize();
 
@@ -771,7 +773,6 @@ Pipe StorageHive::read(
     sources_info->partition_name_types = partition_name_types;
 
     const auto header_block = storage_snapshot->metadata->getSampleBlock();
-    bool support_subset_columns = supportsSubcolumns();
 
     auto settings = context_->getSettingsRef();
     auto case_insensitive_matching = [&]() -> bool
@@ -791,15 +792,14 @@ Pipe StorageHive::read(
             sample_block.insert(header_block.getByName(column));
             continue;
         }
-        else if (support_subset_columns)
+
+        auto subset_column = nested_columns_extractor.extractColumn(column);
+        if (subset_column)
         {
-            auto subset_column = nested_columns_extractor.extractColumn(column);
-            if (subset_column)
-            {
-                sample_block.insert(std::move(*subset_column));
-                continue;
-            }
+            sample_block.insert(std::move(*subset_column));
+            continue;
         }
+
         if (column == "_path")
             sources_info->need_path_column = true;
         if (column == "_file")
@@ -827,7 +827,7 @@ Pipe StorageHive::read(
 }
 
 HiveFiles StorageHive::collectHiveFiles(
-    unsigned max_threads,
+    size_t max_threads,
     const SelectQueryInfo & query_info,
     const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
@@ -935,7 +935,13 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
-    HiveFiles hive_files = collectHiveFiles(settings.max_threads, query_info, hive_table_metadata, fs, context_, prune_level);
+    HiveFiles hive_files = collectHiveFiles(
+        settings.max_threads,
+        query_info,
+        hive_table_metadata,
+        fs,
+        context_,
+        prune_level);
 
     UInt64 total_rows = 0;
     for (const auto & hive_file : hive_files)

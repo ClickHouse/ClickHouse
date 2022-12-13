@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Columns/IColumnUnique.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ReverseIndex.h>
@@ -7,16 +8,17 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <base/range.h>
+#include <Common/FieldVisitors.h>
 
+#include <base/range.h>
 #include <base/unaligned.h>
-#include "Columns/ColumnConst.h"
 
 
 namespace DB
@@ -70,10 +72,6 @@ public:
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
-    {
-        return getNestedColumn()->getDataAtWithTerminatingZero(n);
-    }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
@@ -107,9 +105,30 @@ public:
         return column_holder->allocatedBytes() + reverse_index.allocatedBytes()
             + (nested_null_mask ? nested_null_mask->allocatedBytes() : 0);
     }
-    void forEachSubcolumn(IColumn::ColumnCallback callback) override
+
+    void forEachSubcolumn(IColumn::ColumnCallback callback) const override
     {
         callback(column_holder);
+    }
+
+    void forEachSubcolumn(IColumn::MutableColumnCallback callback) override
+    {
+        callback(column_holder);
+        reverse_index.setColumn(getRawColumnPtr());
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+    }
+
+    void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
+    {
+        callback(*column_holder);
+        column_holder->forEachSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
+    {
+        callback(*column_holder);
+        column_holder->forEachSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
@@ -136,15 +155,16 @@ public:
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
+    /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
     {
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
-        auto& nested = *getNestedColumn();
+        const IColumn & nested = *getNestedColumn();
 
         for (size_t i = 0; i < nested.size(); ++i)
-            if (nested.getDataAt(i) == value)
+            if (!nested.isNullAt(i) && nested.getDataAt(i) == value)
                 return i;
 
         return {};
@@ -311,14 +331,44 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
+    class FieldVisitorGetData : public StaticVisitor<>
+    {
+    public:
+        StringRef res;
+
+        [[noreturn]] static void throwUnsupported()
+        {
+            throw Exception("Unsupported field type", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        [[noreturn]] void operator() (const Null &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Array &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Tuple &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Map &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Object &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const AggregateFunctionStateData &) { throwUnsupported(); }
+        void operator() (const String & x) { res = {x.data(), x.size()}; }
+        void operator() (const UInt64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const UInt128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const UInt256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Int64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Int128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Int256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const UUID & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Float64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal32> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal64> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal128> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal256> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const bool & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+    };
+
     if (x.isNull())
         return getNullValueIndex();
 
-    if (valuesHaveFixedSize())
-        return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
-
-    const auto & val = x.get<String>();
-    return uniqueInsertData(val.data(), val.size());
+    FieldVisitorGetData visitor;
+    applyVisitor(visitor, x);
+    return uniqueInsertData(visitor.res.data, visitor.res.size);
 }
 
 template <typename ColumnType>
@@ -509,10 +559,10 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     if (secondary_index)
         next_position += secondary_index->size();
 
-    auto insert_key = [&](const StringRef & ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
+    auto insert_key = [&](StringRef ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
     {
         auto inserted_pos = cur_index.insert(ref);
-        positions[num_added_rows] = inserted_pos;
+        positions[num_added_rows] = static_cast<IndexType>(inserted_pos);
         if (inserted_pos == next_position)
             return update_position(next_position);
 
@@ -524,9 +574,9 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         auto row = start + num_added_rows;
 
         if (null_map && (*null_map)[row])
-            positions[num_added_rows] = getNullValueIndex();
+            positions[num_added_rows] = static_cast<IndexType>(getNullValueIndex());
         else if (column->compareAt(getNestedTypeDefaultValueIndex(), row, *src_column, 1) == 0)
-            positions[num_added_rows] = getNestedTypeDefaultValueIndex();
+            positions[num_added_rows] = static_cast<IndexType>(getNestedTypeDefaultValueIndex());
         else
         {
             auto ref = src_column->getDataAt(row);
@@ -538,7 +588,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
                 if (insertion_point == reverse_index.lastInsertionPoint())
                     res = insert_key(ref, *secondary_index);
                 else
-                    positions[num_added_rows] = insertion_point;
+                    positions[num_added_rows] = static_cast<IndexType>(insertion_point);
             }
             else
                 res = insert_key(ref, reverse_index);
@@ -548,7 +598,6 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         }
     }
 
-    // checkIndexes(*positions_column, column->size() + (overflowed_keys ? overflowed_keys->size() : 0));
     return std::move(positions_column);
 }
 

@@ -26,12 +26,18 @@ NamesAndTypesList ProcessorProfileLogElement::getNamesAndTypes()
 
         {"id", std::make_shared<DataTypeUInt64>()},
         {"parent_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"plan_step", std::make_shared<DataTypeUInt64>()},
+        {"plan_group", std::make_shared<DataTypeUInt64>()},
 
         {"query_id", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"elapsed_us", std::make_shared<DataTypeUInt64>()},
         {"input_wait_elapsed_us", std::make_shared<DataTypeUInt64>()},
         {"output_wait_elapsed_us", std::make_shared<DataTypeUInt64>()},
+        {"input_rows", std::make_shared<DataTypeUInt64>()},
+        {"input_bytes", std::make_shared<DataTypeUInt64>()},
+        {"output_rows", std::make_shared<DataTypeUInt64>()},
+        {"output_bytes", std::make_shared<DataTypeUInt64>()},
     };
 }
 
@@ -52,11 +58,17 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insert(parent_ids_array);
     }
 
+    columns[i++]->insert(plan_step);
+    columns[i++]->insert(plan_group);
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insertData(processor_name.data(), processor_name.size());
     columns[i++]->insert(elapsed_us);
     columns[i++]->insert(input_wait_elapsed_us);
     columns[i++]->insert(output_wait_elapsed_us);
+    columns[i++]->insert(input_rows);
+    columns[i++]->insert(input_bytes);
+    columns[i++]->insert(output_rows);
+    columns[i++]->insert(output_bytes);
 }
 
 ProcessorsProfileLog::ProcessorsProfileLog(ContextPtr context_, const String & database_name_,

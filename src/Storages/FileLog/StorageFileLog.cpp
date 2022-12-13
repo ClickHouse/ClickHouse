@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_METADATA_ALREADY_EXISTS;
+    extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
 }
@@ -72,6 +73,25 @@ StorageFileLog::StorageFileLog(
 
     try
     {
+        if (!attach)
+        {
+            std::error_code ec;
+            std::filesystem::create_directories(metadata_base_path, ec);
+
+            if (ec)
+            {
+                if (ec == std::make_error_code(std::errc::file_exists))
+                {
+                    throw Exception(ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
+                        "Metadata files already exist by path: {}, remove them manually if it is intended",
+                        metadata_base_path);
+                }
+                else
+                    throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                        "Could not create directory {}, reason: {}", metadata_base_path, ec.message());
+            }
+        }
+
         loadMetaFiles(attach);
         loadFiles();
 
@@ -116,19 +136,6 @@ void StorageFileLog::loadMetaFiles(bool attach)
         }
         /// Load all meta info to file_infos;
         deserialize();
-    }
-    /// Create table, just create meta data directory
-    else
-    {
-        if (std::filesystem::exists(metadata_base_path))
-        {
-            throw Exception(
-                ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
-                "Metadata files already exist by path: {}, remove them manually if it is intended",
-                metadata_base_path);
-        }
-        /// We do not create the metadata_base_path directory at creation time, create it at the moment of serializing
-        /// meta files, such that can avoid unnecessarily create this directory if create table failed.
     }
 }
 
@@ -218,10 +225,6 @@ void StorageFileLog::loadFiles()
 
 void StorageFileLog::serialize() const
 {
-    if (!std::filesystem::exists(metadata_base_path))
-    {
-        std::filesystem::create_directories(metadata_base_path);
-    }
     for (const auto & [inode, meta] : file_infos.meta_by_inode)
     {
         auto full_name = getFullMetaPath(meta.file_name);
@@ -242,10 +245,6 @@ void StorageFileLog::serialize() const
 
 void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 {
-    if (!std::filesystem::exists(metadata_base_path))
-    {
-        std::filesystem::create_directories(metadata_base_path);
-    }
     auto full_name = getFullMetaPath(file_meta.file_name);
     if (!std::filesystem::exists(full_name))
     {
@@ -316,7 +315,7 @@ Pipe StorageFileLog::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
-    unsigned /* num_streams */)
+    size_t /* num_streams */)
 {
     /// If there are MVs depended on this table, we just forbid reading
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
@@ -379,8 +378,7 @@ void StorageFileLog::drop()
 {
     try
     {
-        if (std::filesystem::exists(metadata_base_path))
-            std::filesystem::remove_all(metadata_base_path);
+        std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -549,23 +547,23 @@ size_t StorageFileLog::getPollTimeoutMillisecond() const
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (dependencies.empty())
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
         return true;
 
-    for (const auto & storage : dependencies)
+    for (const auto & view_id : view_ids)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(storage, getContext());
-        if (!table)
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
+        if (!view)
             return false;
 
         // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(storage))
+        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -576,7 +574,7 @@ size_t StorageFileLog::getTableDependentCount() const
 {
     auto table_id = getStorageID();
     // Check if at least one direct dependency is attached
-    return DatabaseCatalog::instance().getDependencies(table_id).size();
+    return DatabaseCatalog::instance().getDependentViews(table_id).size();
 }
 
 void StorageFileLog::threadFunc()

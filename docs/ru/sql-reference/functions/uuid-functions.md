@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/uuid-functions
 sidebar_position: 53
 sidebar_label: "Функции для работы с UUID"
 ---

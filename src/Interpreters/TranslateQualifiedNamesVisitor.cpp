@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
 }
-bool TranslateQualifiedNamesMatcher::Data::matchColumnName(const std::string_view & name, const String & column_name, DataTypePtr column_type)
+bool TranslateQualifiedNamesMatcher::Data::matchColumnName(std::string_view name, const String & column_name, DataTypePtr column_type)
 {
     if (name.size() < column_name.size())
         return false;
@@ -149,7 +149,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
     if (!func_arguments) return;
 
     String func_name_lowercase = Poco::toLower(node.name);
-    if (func_name_lowercase == "count" &&
+    if ((func_name_lowercase == "count" || func_name_lowercase == "countstate") &&
         func_arguments->children.size() == 1 &&
         func_arguments->children[0]->as<ASTAsterisk>())
         func_arguments->children.clear();

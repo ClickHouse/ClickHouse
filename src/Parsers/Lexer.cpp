@@ -1,3 +1,4 @@
+#include <base/defines.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
@@ -39,45 +40,10 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             continue;
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 }
 
-/// Consume underscore-grouped numeric chars.
-/// Leading, consecutive and trailing underscores are not allowed.
-void consumeNumericPart(const char *& pos, const char * end, bool hex)
-{
-    if (pos >= end || *pos == '_')
-        return;
-
-    for (;;)
-    {
-        while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
-            ++pos;
-
-        if (pos + 1 < end && *pos == '_' && (hex ? isHexDigit(pos[1]) : isNumericASCII(pos[1])))
-            ++pos;
-        else
-            break;
-    }
-}
-
-void consumeNumericPart(const char *& pos, const char * end)
-{
-    if (pos >= end || *pos == '_')
-        return;
-
-    for (;;)
-    {
-        while (pos < end && isNumericASCII(*pos))
-            ++pos;
-
-        if (pos + 1 < end && *pos == '_' && isNumericASCII(pos[1]))
-            ++pos;
-        else
-            break;
-    }
-}
 }
 
 
@@ -135,54 +101,92 @@ Token Lexer::nextTokenImpl()
 
             /// Disambiguation: if previous token was dot, then we could parse only simple integer,
             ///  for chained tuple access operators (x.1.1) to work.
-            ///  Otherwise it will be tokenized as x . 1.1, not as x . 1 . 1
+            //  Otherwise it will be tokenized as x . 1.1, not as x . 1 . 1
             if (prev_significant_token_type == TokenType::Dot)
             {
                 ++pos;
-                while (pos < end && isNumericASCII(*pos))
+                while (pos < end && (isNumericASCII(*pos) || isNumberSeparator(false, false, pos, end)))
                     ++pos;
             }
             else
             {
+                bool start_of_block = false;
                 /// 0x, 0b
                 bool hex = false;
                 if (pos + 2 < end && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b' || pos[1] == 'X' || pos[1] == 'B'))
                 {
+                    bool is_valid = false;
                     if (pos[1] == 'x' || pos[1] == 'X')
-                        hex = true;
-                    pos += 2;
+                    {
+                        if (isHexDigit(pos[2]))
+                        {
+                            hex = true;
+                            is_valid = true; // hex
+                        }
+                    }
+                    else if (pos[2] == '0' || pos[2] == '1')
+                        is_valid = true; // bin
+                    if (is_valid)
+                    {
+                        pos += 2;
+                        start_of_block = true;
+                    }
+                    else
+                        ++pos; // consume the leading zero - could be an identifier
                 }
+                else
+                    ++pos;
 
-                consumeNumericPart(pos, end, hex);
+                while (pos < end && ((hex ? isHexDigit(*pos) : isNumericASCII(*pos)) || isNumberSeparator(start_of_block, hex, pos, end)))
+                {
+                    ++pos;
+                    start_of_block = false;
+                }
 
                 /// decimal point
                 if (pos < end && *pos == '.')
                 {
+                    start_of_block = true;
                     ++pos;
-                    consumeNumericPart(pos, end, hex);
+                    while (pos < end && ((hex ? isHexDigit(*pos) : isNumericASCII(*pos)) || isNumberSeparator(start_of_block, hex, pos, end)))
+                    {
+                        ++pos;
+                        start_of_block = false;
+                    }
                 }
 
                 /// exponentiation (base 10 or base 2)
                 if (pos + 1 < end && (hex ? (*pos == 'p' || *pos == 'P') : (*pos == 'e' || *pos == 'E')))
                 {
+                    start_of_block = true;
                     ++pos;
 
                     /// sign of exponent. It is always decimal.
                     if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                         ++pos;
 
-                    consumeNumericPart(pos, end);
+                    while (pos < end && (isNumericASCII(*pos) || isNumberSeparator(start_of_block, false, pos, end)))
+                    {
+                        ++pos;
+                        start_of_block = false;
+                    }
                 }
             }
 
-            /// XXX: No longer try to treat numeric literals as prefixes of identifiers since #39129.
+            /// Try to parse it to a identifier(1identifier_name), otherwise it return ErrorWrongNumber
             if (pos < end && isWordCharASCII(*pos))
             {
                 ++pos;
                 while (pos < end && isWordCharASCII(*pos))
                     ++pos;
 
-                return Token(TokenType::ErrorWrongNumber, token_begin, pos);
+                for (const char * iterator = token_begin; iterator < pos; ++iterator)
+                {
+                    if (!isWordCharASCII(*iterator) && *iterator != '$')
+                        return Token(TokenType::ErrorWrongNumber, token_begin, pos);
+                }
+
+                return Token(TokenType::BareWord, token_begin, pos);
             }
 
             return Token(TokenType::Number, token_begin, pos);
@@ -224,29 +228,29 @@ Token Lexer::nextTokenImpl()
                     || prev_significant_token_type == TokenType::Number))
                 return Token(TokenType::Dot, token_begin, ++pos);
 
-            /// decimal
+            bool start_of_block = true;
             ++pos;
-            consumeNumericPart(pos, end);
+            while (pos < end && (isNumericASCII(*pos) || isNumberSeparator(start_of_block, false, pos, end)))
+            {
+                ++pos;
+                start_of_block = false;
+            }
 
             /// exponentiation
             if (pos + 1 < end && (*pos == 'e' || *pos == 'E'))
             {
+                start_of_block = true;
                 ++pos;
 
                 /// sign of exponent
                 if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                     ++pos;
 
-                consumeNumericPart(pos, end);
-            }
-
-            if (pos < end && isWordCharASCII(*pos))
-            {
-                ++pos;
-                while (pos < end && isWordCharASCII(*pos))
+                while (pos < end && (isNumericASCII(*pos) || isNumberSeparator(start_of_block, false, pos, end)))
+                {
                     ++pos;
-
-                return Token(TokenType::ErrorWrongNumber, token_begin, pos);
+                    start_of_block = false;
+                }
             }
 
             return Token(TokenType::Number, token_begin, pos);
@@ -370,7 +374,7 @@ Token Lexer::nextTokenImpl()
             ++pos;
             if (pos < end && *pos == '|')
                 return Token(TokenType::Concatenation, token_begin, ++pos);
-            return Token(TokenType::ErrorSinglePipeMark, token_begin, pos);
+            return Token(TokenType::PipeMark, token_begin, pos);
         }
         case '@':
         {
@@ -446,7 +450,7 @@ APPLY_FOR_TOKENS(M)
 #undef M
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
