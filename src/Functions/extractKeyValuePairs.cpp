@@ -163,8 +163,7 @@ std::shared_ptr<KeyValuePairExtractor<ExtractKeyValuePairs::EscapingProcessorOut
     return builder.build();
 }
 
-ExtractKeyValuePairs::RawColumns
-ExtractKeyValuePairs::extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const
+ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const
 {
     auto offsets = ColumnUInt64::create();
 
@@ -201,10 +200,10 @@ ColumnPtr ExtractKeyValuePairs::escape(RawColumns & raw_columns) const
     auto escaped_keys = ColumnString::create();
     auto escaped_values = ColumnString::create();
 
-    ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(
-        raw_keys->getChars(), raw_keys->getOffsets(), "\\", "", escaped_keys->getChars(), escaped_keys->getOffsets());
-    ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(
-        raw_values->getChars(), raw_values->getOffsets(), "\\", "", escaped_values->getChars(), escaped_values->getOffsets());
+    using ReplaceString = ReplaceStringImpl<ReplaceStringTraits::Replace::All>;
+
+    ReplaceString::vector(raw_keys->getChars(), raw_keys->getOffsets(), "\\", "", escaped_keys->getChars(), escaped_keys->getOffsets());
+    ReplaceString::vector(raw_values->getChars(), raw_values->getOffsets(), "\\", "", escaped_values->getChars(), escaped_values->getOffsets());
 
     ColumnPtr keys_ptr = std::move(escaped_keys);
 
