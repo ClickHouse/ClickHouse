@@ -246,8 +246,11 @@ def test_change_grpc_port(cluster, zk):
             grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
         ):
             grpc_query(grpc_channel, "SELECT 1")
+        grpc_channel.close()
+
         grpc_channel_on_new_port = get_grpc_channel(cluster, port=9090)
         assert grpc_query(grpc_channel_on_new_port, "SELECT 1") == "1\n"
+        grpc_channel_on_new_port.close()
 
 
 def test_remove_tcp_port(cluster, zk):
@@ -300,6 +303,8 @@ def test_remove_grpc_port(cluster, zk):
             grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
         ):
             grpc_query(grpc_channel, "SELECT 1")
+
+        grpc_channel.close()
 
 
 def test_change_listen_host(cluster, zk):
