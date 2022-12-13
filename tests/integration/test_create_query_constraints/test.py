@@ -39,17 +39,14 @@ def test_create_query_const_constraints():
         "CREATE ROLE inner_role SETTINGS max_threads = 1", user="u_const"
     )
     assert expected_error in instance.query_and_get_error(
-        "CREATE SETTINGS PROFILE inner_profile SETTINGS max_threads = 1",
-        user="u_const"
+        "CREATE SETTINGS PROFILE inner_profile SETTINGS max_threads = 1", user="u_const"
     )
 
     instance.query(
-        "CREATE USER inner_user_1 SETTINGS max_threads CONST",
-        user="u_const"
+        "CREATE USER inner_user_1 SETTINGS max_threads CONST", user="u_const"
     )
     instance.query(
-        "CREATE USER inner_user_2 SETTINGS max_threads = 1 CONST", 
-        user="u_const"
+        "CREATE USER inner_user_2 SETTINGS max_threads = 1 CONST", user="u_const"
     )
     instance.query("DROP USER u_const, inner_user_1, inner_user_2")
 
@@ -72,7 +69,7 @@ def test_create_query_minmax_constraints():
     )
     assert expected_error in instance.query_and_get_error(
         "CREATE SETTINGS PROFILE inner_profile SETTINGS max_threads MIN 1 MAX 3",
-        user="u_minmax"
+        user="u_minmax",
     )
 
     expected_error = "Setting max_threads shouldn't be greater than"
@@ -88,9 +85,8 @@ def test_create_query_minmax_constraints():
     )
     assert expected_error in instance.query_and_get_error(
         "CREATE SETTINGS PROFILE inner_profile SETTINGS max_threads MIN 4 MAX 8",
-        user="u_minmax"
+        user="u_minmax",
     )
 
     instance.query("CREATE USER inner_user SETTINGS max_threads = 3", user="u_minmax")
     instance.query("DROP USER u_minmax, inner_user")
-
