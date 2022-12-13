@@ -50,6 +50,7 @@ const int S3_WARN_MAX_PARTS = 10000;
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 struct WriteBufferFromS3::UploadPartTask
@@ -122,12 +123,6 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::allocateBuffer()
 {
-    if (total_parts_uploaded != 0 && total_parts_uploaded % request_settings.upload_part_size_multiply_parts_count_threshold == 0)
-    {
-        upload_part_size *= request_settings.upload_part_size_multiply_factor;
-        upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
-    }
-
     temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
     temporary_buffer->exceptions(std::ios::badbit);
     last_part_size = 0;
@@ -257,13 +252,10 @@ void WriteBufferFromS3::writePart()
     {
         UploadPartTask * task = nullptr;
 
-        int part_number;
         {
             std::lock_guard lock(bg_tasks_mutex);
-
             task = &upload_object_tasks.emplace_back();
             ++num_added_bg_tasks;
-            part_number = num_added_bg_tasks;
         }
 
         /// Notify waiting thread when task finished
@@ -281,7 +273,7 @@ void WriteBufferFromS3::writePart()
 
         try
         {
-            fillUploadRequest(task->req, part_number);
+            fillUploadRequest(task->req);
 
             schedule([this, task, task_finish_notify]()
             {
@@ -308,23 +300,44 @@ void WriteBufferFromS3::writePart()
         UploadPartTask task;
         auto & tags = TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags); /// Suppress warning because schedule == false.
 
-        fillUploadRequest(task.req, static_cast<int>(tags.size() + 1));
+        fillUploadRequest(task.req);
         processUploadRequest(task);
         tags.push_back(task.tag);
     }
 }
 
-void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, int part_number)
+void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & req)
 {
+    /// Increase part number.
+    ++part_number;
+    if (!multipart_upload_id.empty() && (part_number > request_settings.max_part_number))
+    {
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
+            "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_part_upload_size = {}",
+            request_settings.max_part_number, count(), request_settings.min_upload_part_size, request_settings.max_upload_part_size,
+            request_settings.upload_part_size_multiply_factor, request_settings.upload_part_size_multiply_parts_count_threshold,
+            request_settings.max_single_part_upload_size);
+    }
+
+    /// Setup request.
     req.SetBucket(bucket);
     req.SetKey(key);
-    req.SetPartNumber(part_number);
+    req.SetPartNumber(static_cast<int>(part_number));
     req.SetUploadId(multipart_upload_id);
     req.SetContentLength(temporary_buffer->tellp());
     req.SetBody(temporary_buffer);
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
+
+    /// Maybe increase `upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
+    if (!multipart_upload_id.empty() && (part_number % request_settings.upload_part_size_multiply_parts_count_threshold == 0))
+    {
+        upload_part_size *= request_settings.upload_part_size_multiply_factor;
+        upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
+    }
 }
 
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
@@ -343,8 +356,6 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
     }
     else
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
-
-    total_parts_uploaded++;
 }
 
 void WriteBufferFromS3::completeMultipartUpload()

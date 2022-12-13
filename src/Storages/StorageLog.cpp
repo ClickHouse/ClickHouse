@@ -1032,6 +1032,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
             copyData(*in, *out);
+            out->finalize();
         }
 
         if (use_marks_file)
