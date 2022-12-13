@@ -40,6 +40,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
@@ -48,6 +49,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -60,6 +62,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int EMPTY_NESTED_TABLE;
     extern const int EXPECTED_ALL_OR_ANY;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -147,7 +150,7 @@ struct CustomizeAggregateFunctionsSuffixData
     void visit(ASTFunction & func, ASTPtr &) const
     {
         const auto & instance = AggregateFunctionFactory::instance();
-        if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix))
+        if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix) && !endsWith(func.name, customized_func_suffix + "If"))
         {
             auto properties = instance.tryGetProperties(func.name);
             if (properties && !properties->returns_default_when_only_null)
@@ -324,6 +327,35 @@ struct ExistsExpressionData
 };
 
 using ExistsExpressionVisitor = InDepthNodeVisitor<OneTypeMatcher<ExistsExpressionData>, false>;
+
+struct ReplacePositionalArgumentsData
+{
+    using TypeToVisit = ASTSelectQuery;
+
+    static void visit(ASTSelectQuery & select_query, ASTPtr &)
+    {
+        if (select_query.groupBy())
+        {
+            for (auto & expr : select_query.groupBy()->children)
+                replaceForPositionalArguments(expr, &select_query, ASTSelectQuery::Expression::GROUP_BY);
+        }
+        if (select_query.orderBy())
+        {
+            for (auto & expr : select_query.orderBy()->children)
+            {
+                auto & elem = assert_cast<ASTOrderByElement &>(*expr).children.at(0);
+                replaceForPositionalArguments(elem, &select_query, ASTSelectQuery::Expression::ORDER_BY);
+            }
+        }
+        if (select_query.limitBy())
+        {
+            for (auto & expr : select_query.limitBy()->children)
+                replaceForPositionalArguments(expr, &select_query, ASTSelectQuery::Expression::LIMIT_BY);
+        }
+    }
+};
+
+using ReplacePositionalArgumentsVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplacePositionalArgumentsData>, false>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -756,6 +788,10 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
             if (is_asof)
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                                 "Cannot get JOIN keys from JOIN ON section: {}", queryToString(table_join.on_expression));
+
+            if (const auto storage_join = analyzed_join.getStorageJoin())
+                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+                    "StorageJoin keys should match JOIN keys, expected JOIN ON [{}]", fmt::join(storage_join->getKeyNames(), ", "));
 
             bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
             if (!join_on_const_ok)
@@ -1292,7 +1328,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some logic inside JOINs
     if (settings.optimize_normalize_count_variants)
-        TreeOptimizer::optimizeCountConstantAndSumOne(query);
+        TreeOptimizer::optimizeCountConstantAndSumOne(query, getContext());
 
     if (tables_with_columns.size() > 1)
     {
@@ -1314,25 +1350,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     {
         for (const auto & [name, _] : table_join->columnsFromJoinedTable())
             all_source_columns_set.insert(name);
-    }
-
-    if (getContext()->getSettingsRef().enable_positional_arguments)
-    {
-        if (select_query->groupBy())
-        {
-            for (auto & expr : select_query->groupBy()->children)
-                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::GROUP_BY);
-        }
-        if (select_query->orderBy())
-        {
-            for (auto & expr : select_query->orderBy()->children)
-                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::ORDER_BY);
-        }
-        if (select_query->limitBy())
-        {
-            for (auto & expr : select_query->limitBy()->children)
-                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
-        }
     }
 
     normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
@@ -1359,7 +1376,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
     /// Only apply AST optimization for initial queries.
-    if (getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && !select_options.ignore_ast_optimizations)
+    const bool ast_optimizations_allowed
+        = getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && !select_options.ignore_ast_optimizations;
+    if (ast_optimizations_allowed)
         TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
     /// array_join_alias_to_name, array_join_result_to_source.
@@ -1396,6 +1415,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         /// If query is changed, we need to redo some work to correct name resolution.
         if (is_changed)
         {
+            /// We should re-apply the optimization, because an expression substituted from alias column might be a function of a group key.
+            if (ast_optimizations_allowed && settings.optimize_group_by_function_keys)
+                TreeOptimizer::optimizeGroupByFunctionKeys(select_query);
+
             result.aggregates = getAggregates(query, *select_query);
             result.window_function_asts = getWindowFunctions(query, *select_query);
             result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
@@ -1473,10 +1496,7 @@ void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_)
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-    {
-        UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
-        UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
-    }
+        UserDefinedSQLFunctionVisitor::visit(query);
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
@@ -1489,6 +1509,12 @@ void TreeRewriter::normalize(
 
     ExistsExpressionVisitor::Data exists;
     ExistsExpressionVisitor(exists).visit(query);
+
+    if (context_->getSettingsRef().enable_positional_arguments)
+    {
+        ReplacePositionalArgumentsVisitor::Data data_replace_positional_arguments;
+        ReplacePositionalArgumentsVisitor(data_replace_positional_arguments).visit(query);
+    }
 
     if (settings.transform_null_in)
     {

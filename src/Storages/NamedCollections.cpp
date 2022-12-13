@@ -1,17 +1,11 @@
 #include "NamedCollections.h"
 
-#include <base/find_symbols.h>
-#include <Common/assert_cast.h>
-#include <Common/FieldVisitorToString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Storages/NamedCollectionConfiguration.h>
+#include <Storages/NamedCollectionUtils.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <ranges>
 
 
@@ -20,103 +14,18 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_NAMED_COLLECTION;
+    extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
-    extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+    extern const int NAMED_COLLECTION_IS_IMMUTABLE;
 }
 
-namespace
-{
-    constexpr auto NAMED_COLLECTIONS_CONFIG_PREFIX = "named_collections";
+namespace Configuration = NamedCollectionConfiguration;
 
-    std::string getCollectionPrefix(const std::string & collection_name)
-    {
-        return fmt::format("{}.{}", NAMED_COLLECTIONS_CONFIG_PREFIX, collection_name);
-    }
-
-    /// Enumerate keys paths of the config recursively.
-    /// E.g. if `enumerate_paths` = {"root.key1"} and config like
-    /// <root>
-    ///     <key0></key0>
-    ///     <key1>
-    ///         <key2></key2>
-    ///         <key3>
-    ///            <key4></key4>
-    ///         </key3>
-    ///     </key1>
-    /// </root>
-    /// the `result` will contain two strings: "root.key1.key2" and "root.key1.key3.key4"
-    void collectKeys(
-        const Poco::Util::AbstractConfiguration & config,
-        std::queue<std::string> enumerate_paths,
-        std::set<std::string> & result)
-    {
-        if (enumerate_paths.empty())
-            return;
-
-        auto initial_paths = std::move(enumerate_paths);
-        enumerate_paths = {};
-        while (!initial_paths.empty())
-        {
-            auto path = initial_paths.front();
-            initial_paths.pop();
-
-            Poco::Util::AbstractConfiguration::Keys keys;
-            config.keys(path, keys);
-
-            if (keys.empty())
-            {
-                result.insert(path);
-            }
-            else
-            {
-                for (const auto & key : keys)
-                    enumerate_paths.emplace(path + '.' + key);
-            }
-        }
-
-        collectKeys(config, enumerate_paths, result);
-    }
-}
 
 NamedCollectionFactory & NamedCollectionFactory::instance()
 {
     static NamedCollectionFactory instance;
     return instance;
-}
-
-void NamedCollectionFactory::initialize(const Poco::Util::AbstractConfiguration & config_)
-{
-    std::lock_guard lock(mutex);
-    if (is_initialized)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Named collection factory already initialized");
-    }
-
-    config = &config_;
-    is_initialized = true;
-}
-
-void NamedCollectionFactory::reload(const Poco::Util::AbstractConfiguration & config_)
-{
-    std::lock_guard lock(mutex);
-    config = &config_;
-    loaded_named_collections.clear();
-}
-
-void NamedCollectionFactory::assertInitialized(
-    std::lock_guard<std::mutex> & /* lock */) const
-{
-    if (!is_initialized)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Named collection factory must be initialized before being used");
-    }
 }
 
 bool NamedCollectionFactory::exists(const std::string & collection_name) const
@@ -127,62 +36,84 @@ bool NamedCollectionFactory::exists(const std::string & collection_name) const
 
 bool NamedCollectionFactory::existsUnlocked(
     const std::string & collection_name,
-    std::lock_guard<std::mutex> & lock) const
+    std::lock_guard<std::mutex> & /* lock */) const
 {
-    assertInitialized(lock);
-    /// Named collections can be added via SQL command or via config.
-    /// Named collections from config are loaded on first access,
-    /// therefore it might not be in `named_collections` map yet.
-    return loaded_named_collections.contains(collection_name)
-        || config->has(getCollectionPrefix(collection_name));
+    return loaded_named_collections.contains(collection_name);
 }
 
 NamedCollectionPtr NamedCollectionFactory::get(const std::string & collection_name) const
 {
     std::lock_guard lock(mutex);
-    assertInitialized(lock);
-
-    if (!existsUnlocked(collection_name, lock))
+    auto collection = tryGetUnlocked(collection_name, lock);
+    if (!collection)
     {
         throw Exception(
-            ErrorCodes::UNKNOWN_NAMED_COLLECTION,
+            ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
             "There is no named collection `{}`",
             collection_name);
     }
-
-    return getImpl(collection_name, lock);
+    return collection;
 }
 
 NamedCollectionPtr NamedCollectionFactory::tryGet(const std::string & collection_name) const
 {
     std::lock_guard lock(mutex);
-    assertInitialized(lock);
-
-    if (!existsUnlocked(collection_name, lock))
-        return nullptr;
-
-    return getImpl(collection_name, lock);
+    return tryGetUnlocked(collection_name, lock);
 }
 
-NamedCollectionPtr NamedCollectionFactory::getImpl(
+MutableNamedCollectionPtr NamedCollectionFactory::getMutable(
+    const std::string & collection_name) const
+{
+    std::lock_guard lock(mutex);
+    auto collection = tryGetUnlocked(collection_name, lock);
+    if (!collection)
+    {
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
+            "There is no named collection `{}`",
+            collection_name);
+    }
+    else if (!collection->isMutable())
+    {
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,
+            "Cannot get collection `{}` for modification, "
+            "because collection was defined as immutable",
+            collection_name);
+    }
+    return collection;
+}
+
+MutableNamedCollectionPtr NamedCollectionFactory::tryGetUnlocked(
     const std::string & collection_name,
     std::lock_guard<std::mutex> & /* lock */) const
 {
     auto it = loaded_named_collections.find(collection_name);
     if (it == loaded_named_collections.end())
-    {
-        it = loaded_named_collections.emplace(
-            collection_name,
-            NamedCollection::create(*config, collection_name)).first;
-    }
+        return nullptr;
     return it->second;
 }
 
 void NamedCollectionFactory::add(
     const std::string & collection_name,
-    NamedCollectionPtr collection)
+    MutableNamedCollectionPtr collection)
 {
     std::lock_guard lock(mutex);
+    return addUnlocked(collection_name, collection, lock);
+}
+
+void NamedCollectionFactory::add(NamedCollectionsMap collections)
+{
+    std::lock_guard lock(mutex);
+    for (const auto & [collection_name, collection] : collections)
+        addUnlocked(collection_name, collection, lock);
+}
+
+void NamedCollectionFactory::addUnlocked(
+    const std::string & collection_name,
+    MutableNamedCollectionPtr collection,
+    std::lock_guard<std::mutex> & /* lock */)
+{
     auto [it, inserted] = loaded_named_collections.emplace(collection_name, collection);
     if (!inserted)
     {
@@ -196,93 +127,104 @@ void NamedCollectionFactory::add(
 void NamedCollectionFactory::remove(const std::string & collection_name)
 {
     std::lock_guard lock(mutex);
-    assertInitialized(lock);
-
-    if (!existsUnlocked(collection_name, lock))
+    bool removed = removeIfExistsUnlocked(collection_name, lock);
+    if (!removed)
     {
         throw Exception(
-            ErrorCodes::UNKNOWN_NAMED_COLLECTION,
+            ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
             "There is no named collection `{}`",
             collection_name);
     }
-
-    if (config->has(collection_name))
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Collection {} is defined in config and cannot be removed",
-            collection_name);
-    }
-
-    [[maybe_unused]] auto removed = loaded_named_collections.erase(collection_name);
-    assert(removed);
 }
 
-NamedCollectionFactory::NamedCollections NamedCollectionFactory::getAll() const
+void NamedCollectionFactory::removeIfExists(const std::string & collection_name)
 {
     std::lock_guard lock(mutex);
-    assertInitialized(lock);
+    removeIfExistsUnlocked(collection_name, lock);
+}
 
-    NamedCollections result(loaded_named_collections);
+bool NamedCollectionFactory::removeIfExistsUnlocked(
+    const std::string & collection_name,
+    std::lock_guard<std::mutex> & lock)
+{
+    auto collection = tryGetUnlocked(collection_name, lock);
+    if (!collection)
+        return false;
 
-    Poco::Util::AbstractConfiguration::Keys config_collections_names;
-    config->keys(NAMED_COLLECTIONS_CONFIG_PREFIX, config_collections_names);
-
-    for (const auto & collection_name : config_collections_names)
+    if (!collection->isMutable())
     {
-        if (result.contains(collection_name))
-            continue;
-
-        result.emplace(collection_name, NamedCollection::create(*config, collection_name));
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,
+            "Cannot get collection `{}` for modification, "
+            "because collection was defined as immutable",
+            collection_name);
     }
+    loaded_named_collections.erase(collection_name);
+    return true;
+}
 
-    return result;
+void NamedCollectionFactory::removeById(NamedCollectionUtils::SourceId id)
+{
+    std::lock_guard lock(mutex);
+    std::erase_if(
+        loaded_named_collections,
+        [&](const auto & value) { return value.second->getSourceId() == id; });
+}
+
+NamedCollectionsMap NamedCollectionFactory::getAll() const
+{
+    std::lock_guard lock(mutex);
+    return loaded_named_collections;
 }
 
 class NamedCollection::Impl
 {
 private:
-    using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
-
-    ///  Named collection configuration
-    ///  <collection1>
-    ///      ...
-    ///  </collection1>
     ConfigurationPtr config;
     Keys keys;
 
+    Impl(ConfigurationPtr config_, const Keys & keys_) : config(config_) , keys(keys_) {}
+
 public:
-    Impl(const Poco::Util::AbstractConfiguration & config_,
-         const std::string & collection_name_,
-         const Keys & keys_)
-        : config(createEmptyConfiguration(collection_name_))
-        , keys(keys_)
+    static ImplPtr create(
+         const Poco::Util::AbstractConfiguration & config,
+         const std::string & collection_name,
+         const std::string & collection_path,
+         const Keys & keys)
     {
-        auto collection_path = getCollectionPrefix(collection_name_);
+        auto collection_config = NamedCollectionConfiguration::createEmptyConfiguration(collection_name);
         for (const auto & key : keys)
-            copyConfigValue<String>(config_, collection_path + '.' + key, *config, key);
+            Configuration::copyConfigValue<String>(
+                config, collection_path + '.' + key, *collection_config, key);
+
+        return std::unique_ptr<Impl>(new Impl(collection_config, keys));
     }
 
     template <typename T> T get(const Key & key) const
     {
-        return getConfigValue<T>(*config, key);
+        return Configuration::getConfigValue<T>(*config, key);
     }
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const
     {
-        return getConfigValueOrDefault<T>(*config, key, &default_value);
+        return Configuration::getConfigValueOrDefault<T>(*config, key, &default_value);
     }
 
     template <typename T> void set(const Key & key, const T & value, bool update_if_exists)
     {
-        setConfigValue<T>(*config, key, value, update_if_exists);
+        Configuration::setConfigValue<T>(*config, key, value, update_if_exists);
         if (!keys.contains(key))
             keys.insert(key);
     }
 
+    ImplPtr createCopy(const std::string & collection_name_) const
+    {
+        return create(*config, collection_name_, "", keys);
+    }
+
     void remove(const Key & key)
     {
-        removeConfigValue(*config, key);
+        Configuration::removeConfigValue(*config, key);
         [[maybe_unused]] auto removed = keys.erase(key);
         assert(removed);
     }
@@ -290,11 +232,6 @@ public:
     Keys getKeys() const
     {
         return keys;
-    }
-
-    ImplPtr copy() const
-    {
-        return std::make_unique<Impl>(*this);
     }
 
     std::string dumpStructure() const
@@ -347,184 +284,106 @@ public:
         }
         return wb.str();
     }
-
-private:
-    template <typename T> static T getConfigValue(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & path)
-    {
-        return getConfigValueOrDefault<T>(config, path);
-    }
-
-    template <typename T> static T getConfigValueOrDefault(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & path,
-        const T * default_value = nullptr)
-    {
-        if (!config.has(path))
-        {
-            if (!default_value)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}`", path);
-            return *default_value;
-        }
-
-        if constexpr (std::is_same_v<T, String>)
-            return config.getString(path);
-        else if constexpr (std::is_same_v<T, UInt64>)
-            return config.getUInt64(path);
-        else if constexpr (std::is_same_v<T, Int64>)
-            return config.getInt64(path);
-        else if constexpr (std::is_same_v<T, Float64>)
-            return config.getDouble(path);
-        else
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Unsupported type in getConfigValueOrDefault(). "
-                "Supported types are String, UInt64, Int64, Float64");
-    }
-
-    template<typename T> static void setConfigValue(
-        Poco::Util::AbstractConfiguration & config,
-        const std::string & path,
-        const T & value,
-        bool update = false)
-    {
-        if (!update && config.has(path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key `{}` already exists", path);
-
-        if constexpr (std::is_same_v<T, String>)
-            config.setString(path, value);
-        else if constexpr (std::is_same_v<T, UInt64>)
-            config.setUInt64(path, value);
-        else if constexpr (std::is_same_v<T, Int64>)
-            config.setInt64(path, value);
-        else if constexpr (std::is_same_v<T, Float64>)
-            config.setDouble(path, value);
-        else
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Unsupported type in setConfigValue(). "
-                "Supported types are String, UInt64, Int64, Float64");
-    }
-
-    template <typename T> static void copyConfigValue(
-        const Poco::Util::AbstractConfiguration & from_config,
-        const std::string & from_path,
-        Poco::Util::AbstractConfiguration & to_config,
-        const std::string & to_path)
-    {
-        if (!from_config.has(from_path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}`", from_path);
-
-        if (to_config.has(to_path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key `{}` already exists", to_path);
-
-        if constexpr (std::is_same_v<T, String>)
-            to_config.setString(to_path, from_config.getString(from_path));
-        else if constexpr (std::is_same_v<T, std::string>)
-            to_config.setString(to_path, from_config.getString(from_path));
-        else if constexpr (std::is_same_v<T, UInt64>)
-            to_config.setUInt64(to_path, from_config.getUInt64(from_path));
-        else if constexpr (std::is_same_v<T, Int64>)
-            to_config.setInt64(to_path, from_config.getInt64(from_path));
-        else if constexpr (std::is_same_v<T, Float64>)
-            to_config.setDouble(to_path, from_config.getDouble(from_path));
-        else
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Unsupported type in copyConfigValue(). "
-                "Supported types are String, UInt64, Int64, Float64");
-    }
-
-    static void removeConfigValue(
-        Poco::Util::AbstractConfiguration & config,
-        const std::string & path)
-    {
-        if (!config.has(path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}`", path);
-        config.remove(path);
-    }
-
-    static ConfigurationPtr createEmptyConfiguration(const std::string & root_name)
-    {
-        using DocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
-        DocumentPtr xml_document(new Poco::XML::Document());
-        xml_document->appendChild(xml_document->createElement(root_name));
-        ConfigurationPtr config(new Poco::Util::XMLConfiguration(xml_document));
-        return config;
-    }
 };
 
 NamedCollection::NamedCollection(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & collection_path,
-    const Keys & keys)
-    : NamedCollection(std::make_unique<Impl>(config, collection_path, keys))
-{
-}
-
-NamedCollection::NamedCollection(ImplPtr pimpl_)
+    ImplPtr pimpl_,
+    const std::string & collection_name_,
+    SourceId source_id_,
+    bool is_mutable_)
     : pimpl(std::move(pimpl_))
+    , collection_name(collection_name_)
+    , source_id(source_id_)
+    , is_mutable(is_mutable_)
 {
 }
 
-NamedCollectionPtr NamedCollection::create(
+MutableNamedCollectionPtr NamedCollection::create(
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & collection_name)
+    const std::string & collection_name,
+    const std::string & collection_path,
+    const Keys & keys,
+    SourceId source_id,
+    bool is_mutable)
 {
-    const auto collection_prefix = getCollectionPrefix(collection_name);
-    std::queue<std::string> enumerate_input;
-    std::set<std::string> enumerate_result;
-
-    enumerate_input.push(collection_prefix);
-    collectKeys(config, std::move(enumerate_input), enumerate_result);
-
-    /// Collection does not have any keys.
-    /// (`enumerate_result` == <collection_path>).
-    const bool collection_is_empty = enumerate_result.size() == 1;
-    std::set<std::string> keys;
-    if (!collection_is_empty)
-    {
-        /// Skip collection prefix and add +1 to avoid '.' in the beginning.
-        for (const auto & path : enumerate_result)
-            keys.emplace(path.substr(collection_prefix.size() + 1));
-    }
-    return std::make_unique<NamedCollection>(config, collection_name, keys);
+    auto impl = Impl::create(config, collection_name, collection_path, keys);
+    return std::unique_ptr<NamedCollection>(
+        new NamedCollection(std::move(impl), collection_name, source_id, is_mutable));
 }
 
 template <typename T> T NamedCollection::get(const Key & key) const
 {
+    std::lock_guard lock(mutex);
     return pimpl->get<T>(key);
 }
 
 template <typename T> T NamedCollection::getOrDefault(const Key & key, const T & default_value) const
 {
+    std::lock_guard lock(mutex);
     return pimpl->getOrDefault<T>(key, default_value);
 }
 
-template <typename T> void NamedCollection::set(const Key & key, const T & value, bool update_if_exists)
+template <typename T, bool Locked> void NamedCollection::set(const Key & key, const T & value)
 {
-    pimpl->set<T>(key, value, update_if_exists);
+    assertMutable();
+    std::unique_lock lock(mutex, std::defer_lock);
+    if constexpr (!Locked)
+        lock.lock();
+    pimpl->set<T>(key, value, false);
 }
 
-void NamedCollection::remove(const Key & key)
+template <typename T, bool Locked> void NamedCollection::setOrUpdate(const Key & key, const T & value)
 {
+    assertMutable();
+    std::unique_lock lock(mutex, std::defer_lock);
+    if constexpr (!Locked)
+        lock.lock();
+    pimpl->set<T>(key, value, true);
+}
+
+template <bool Locked> void NamedCollection::remove(const Key & key)
+{
+    assertMutable();
+    std::unique_lock lock(mutex, std::defer_lock);
+    if constexpr (!Locked)
+        lock.lock();
     pimpl->remove(key);
 }
 
-std::shared_ptr<NamedCollection> NamedCollection::duplicate() const
+void NamedCollection::assertMutable() const
 {
-    return std::make_shared<NamedCollection>(pimpl->copy());
+    if (!is_mutable)
+    {
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,
+            "Cannot change named collection because it is immutable");
+    }
+}
+
+MutableNamedCollectionPtr NamedCollection::duplicate() const
+{
+    std::lock_guard lock(mutex);
+    auto impl = pimpl->createCopy(collection_name);
+    return std::unique_ptr<NamedCollection>(
+        new NamedCollection(
+            std::move(impl), collection_name, NamedCollectionUtils::SourceId::NONE, true));
 }
 
 NamedCollection::Keys NamedCollection::getKeys() const
 {
+    std::lock_guard lock(mutex);
     return pimpl->getKeys();
 }
 
 std::string NamedCollection::dumpStructure() const
 {
+    std::lock_guard lock(mutex);
     return pimpl->dumpStructure();
+}
+
+std::unique_lock<std::mutex> NamedCollection::lock()
+{
+    return std::unique_lock(mutex);
 }
 
 template String NamedCollection::get<String>(const NamedCollection::Key & key) const;
@@ -537,9 +396,25 @@ template UInt64 NamedCollection::getOrDefault<UInt64>(const NamedCollection::Key
 template Int64 NamedCollection::getOrDefault<Int64>(const NamedCollection::Key & key, const Int64 & default_value) const;
 template Float64 NamedCollection::getOrDefault<Float64>(const NamedCollection::Key & key, const Float64 & default_value) const;
 
-template void NamedCollection::set<String>(const NamedCollection::Key & key, const String & value, bool update_if_exists);
-template void NamedCollection::set<UInt64>(const NamedCollection::Key & key, const UInt64 & value, bool update_if_exists);
-template void NamedCollection::set<Int64>(const NamedCollection::Key & key, const Int64 & value, bool update_if_exists);
-template void NamedCollection::set<Float64>(const NamedCollection::Key & key, const Float64 & value, bool update_if_exists);
+template void NamedCollection::set<String, true>(const NamedCollection::Key & key, const String & value);
+template void NamedCollection::set<String, false>(const NamedCollection::Key & key, const String & value);
+template void NamedCollection::set<UInt64, true>(const NamedCollection::Key & key, const UInt64 & value);
+template void NamedCollection::set<UInt64, false>(const NamedCollection::Key & key, const UInt64 & value);
+template void NamedCollection::set<Int64, true>(const NamedCollection::Key & key, const Int64 & value);
+template void NamedCollection::set<Int64, false>(const NamedCollection::Key & key, const Int64 & value);
+template void NamedCollection::set<Float64, true>(const NamedCollection::Key & key, const Float64 & value);
+template void NamedCollection::set<Float64, false>(const NamedCollection::Key & key, const Float64 & value);
+
+template void NamedCollection::setOrUpdate<String, true>(const NamedCollection::Key & key, const String & value);
+template void NamedCollection::setOrUpdate<String, false>(const NamedCollection::Key & key, const String & value);
+template void NamedCollection::setOrUpdate<UInt64, true>(const NamedCollection::Key & key, const UInt64 & value);
+template void NamedCollection::setOrUpdate<UInt64, false>(const NamedCollection::Key & key, const UInt64 & value);
+template void NamedCollection::setOrUpdate<Int64, true>(const NamedCollection::Key & key, const Int64 & value);
+template void NamedCollection::setOrUpdate<Int64, false>(const NamedCollection::Key & key, const Int64 & value);
+template void NamedCollection::setOrUpdate<Float64, true>(const NamedCollection::Key & key, const Float64 & value);
+template void NamedCollection::setOrUpdate<Float64, false>(const NamedCollection::Key & key, const Float64 & value);
+
+template void NamedCollection::remove<true>(const Key & key);
+template void NamedCollection::remove<false>(const Key & key);
 
 }
