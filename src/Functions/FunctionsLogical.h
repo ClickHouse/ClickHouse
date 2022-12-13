@@ -130,7 +130,7 @@ struct NotImpl
 
     static inline ResultType apply(A a)
     {
-        return !static_cast<bool>(a);
+        return !a;
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -193,7 +193,7 @@ public:
         auto * next = b.GetInsertBlock();
         auto * stop = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
         b.SetInsertPoint(stop);
-        auto * phi = b.CreatePHI(b.getInt8Ty(), static_cast<unsigned>(values.size()));
+        auto * phi = b.CreatePHI(b.getInt8Ty(), values.size());
         for (size_t i = 0; i < types.size(); ++i)
         {
             b.SetInsertPoint(next);

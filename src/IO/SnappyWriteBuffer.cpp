@@ -1,7 +1,7 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SNAPPY
-#include <cstring>
+#include <string.h>
 
 #include <snappy.h>
 

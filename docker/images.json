@@ -1,9 +1,12 @@
 {
+    "docker/packager/deb": {
+        "name": "clickhouse/deb-builder",
+        "dependent": []
+    },
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
         "dependent": [
-            "docker/test/split_build_smoke_test",
-            "docker/test/codebrowser"
+            "docker/test/split_build_smoke_test"
         ]
     },
     "docker/test/compatibility/centos": {
@@ -29,7 +32,6 @@
     "docker/test/util": {
         "name": "clickhouse/test-util",
         "dependent": [
-            "docker/packager/binary",
             "docker/test/base",
             "docker/test/fasttest"
         ]
@@ -57,10 +59,6 @@
     },
     "docker/test/split_build_smoke_test": {
         "name": "clickhouse/split-build-smoke-test",
-        "dependent": []
-    },
-    "docker/test/codebrowser": {
-        "name": "clickhouse/codebrowser",
         "dependent": []
     },
     "docker/test/integration/runner": {
@@ -146,7 +144,13 @@
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
         "dependent": [
+            "docker/docs/check",
+            "docker/docs/release"
         ]
+    },
+    "docker/docs/check": {
+        "name": "clickhouse/docs-check",
+        "dependent": []
     },
     "docker/docs/release": {
         "name": "clickhouse/docs-release",

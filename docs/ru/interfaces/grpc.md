@@ -1,7 +1,6 @@
 ---
-slug: /ru/interfaces/grpc
-sidebar_position: 18
-sidebar_label: gRPC интерфейс
+toc_priority: 18
+toc_title: gRPC интерфейс
 ---
 
 # Интерфейс gRPC {#grpc-interface}

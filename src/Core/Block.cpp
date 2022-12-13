@@ -8,13 +8,11 @@
 
 #include <Common/assert_cast.h>
 
-#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 
 #include <iterator>
 #include <base/sort.h>
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -36,7 +34,7 @@ static ReturnType onError(const std::string & message [[maybe_unused]], int code
         throw Exception(message, code);
     else
         return false;
-}
+};
 
 
 template <typename ReturnType>
@@ -47,8 +45,7 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different names of columns:\n"
             + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
-    if ((actual.type && !expected.type) || (!actual.type && expected.type)
-        || (actual.type && expected.type && !actual.type->equals(*expected.type)))
+    if (!actual.type->equals(*expected.type))
         return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different types:\n"
             + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
@@ -69,27 +66,9 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
                 actual_column = &column_sparse->getValuesColumn();
     }
 
-    const auto * actual_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(actual_column);
-    const auto * expected_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(expected.column.get());
-    if (actual_column_maybe_agg && expected_column_maybe_agg)
-    {
-        if (!actual_column_maybe_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_column_maybe_agg->getAggregateFunction()))
-            return onError<ReturnType>(
-                fmt::format(
-                    "Block structure mismatch in {} stream: different columns:\n{}\n{}",
-                    context_description,
-                    actual.dumpStructure(),
-                    expected.dumpStructure()),
-                code);
-    }
-    else if (actual_column->getName() != expected.column->getName())
-        return onError<ReturnType>(
-            fmt::format(
-                "Block structure mismatch in {} stream: different columns:\n{}\n{}",
-                context_description,
-                actual.dumpStructure(),
-                expected.dumpStructure()),
-            code);
+    if (actual_column->getName() != expected.column->getName())
+        return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different columns:\n"
+            + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
     if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
     {
@@ -290,18 +269,8 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
+const ColumnWithTypeAndName * Block::findByName(const std::string & name) const
 {
-    if (case_insensitive)
-    {
-        auto found = std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); });
-        if (found == data.end())
-        {
-            return nullptr;
-        }
-        return &*found;
-    }
-
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
     {
@@ -311,23 +280,19 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool c
 }
 
 
-const ColumnWithTypeAndName & Block::getByName(const std::string & name, bool case_insensitive) const
+const ColumnWithTypeAndName & Block::getByName(const std::string & name) const
 {
-    const auto * result = findByName(name, case_insensitive);
+    const auto * result = findByName(name);
     if (!result)
-        throw Exception(
-            "Not found column " + name + " in block. There are only columns: " + dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
+            , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
     return *result;
 }
 
 
-bool Block::has(const std::string & name, bool case_insensitive) const
+bool Block::has(const std::string & name) const
 {
-    if (case_insensitive)
-        return std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); })
-            != data.end();
-
     return index_by_name.end() != index_by_name.find(name);
 }
 
@@ -336,8 +301,8 @@ size_t Block::getPositionByName(const std::string & name) const
 {
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
-        throw Exception(
-            "Not found column " + name + " in block. There are only columns: " + dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
+            , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
     return it->second;
 }
@@ -517,15 +482,6 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
     Block res;
 
     size_t num_columns = data.size();
-
-    if (num_columns != columns.size())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot clone block with columns because block has {} columns, but {} columns given",
-            num_columns, columns.size());
-    }
-
     res.reserve(num_columns);
 
     for (size_t i = 0; i < num_columns; ++i)
@@ -542,12 +498,8 @@ Block Block::cloneWithColumns(const Columns & columns) const
     size_t num_columns = data.size();
 
     if (num_columns != columns.size())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot clone block with columns because block has {} columns, but {} columns given",
-            num_columns, columns.size());
-    }
+        throw Exception("Cannot clone block with columns because block has " + toString(num_columns) + " columns, "
+                        "but " + toString(columns.size()) + " columns given.", ErrorCodes::LOGICAL_ERROR);
 
     res.reserve(num_columns);
 
@@ -620,16 +572,6 @@ NamesAndTypesList Block::getNamesAndTypesList() const
     return res;
 }
 
-NamesAndTypes Block::getNamesAndTypes() const
-{
-    NamesAndTypes res;
-    res.reserve(columns());
-
-    for (const auto & elem : data)
-        res.emplace_back(elem.name, elem.type);
-
-    return res;
-}
 
 Names Block::getNames() const
 {
@@ -654,7 +596,6 @@ DataTypes Block::getDataTypes() const
     return res;
 }
 
-
 Names Block::getDataTypeNames() const
 {
     Names res;
@@ -662,18 +603,6 @@ Names Block::getDataTypeNames() const
 
     for (const auto & elem : data)
         res.push_back(elem.type->getName());
-
-    return res;
-}
-
-
-Block::NameMap Block::getNamesToIndexesMap() const
-{
-    NameMap res;
-    res.reserve(index_by_name.size());
-
-    for (const auto & [name, index] : index_by_name)
-        res[name] = index;
 
     return res;
 }
@@ -789,17 +718,6 @@ void Block::updateHash(SipHash & hash) const
     for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)
         for (const auto & col : data)
             col.column->updateHashWithValue(row_no, hash);
-}
-
-Serializations Block::getSerializations() const
-{
-    Serializations res;
-    res.reserve(data.size());
-
-    for (const auto & column : data)
-        res.push_back(column.type->getDefaultSerialization());
-
-    return res;
 }
 
 void convertToFullIfSparse(Block & block)

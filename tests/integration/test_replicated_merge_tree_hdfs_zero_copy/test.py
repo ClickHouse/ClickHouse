@@ -1,16 +1,9 @@
-import pytest
-
-# FIXME This test is too flaky
-# https://github.com/ClickHouse/ClickHouse/issues/42561
-
-pytestmark = pytest.mark.skip
-
 import logging
 from string import Template
 import time
 
+import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 from pyhdfs import HdfsClient
 
@@ -84,7 +77,7 @@ def test_hdfs_zero_copy_replication_insert(cluster):
         )
 
         node1.query("INSERT INTO hdfs_test VALUES (now() - INTERVAL 3 DAY, 10)")
-        node2.query("SYSTEM SYNC REPLICA hdfs_test", timeout=30)
+        node2.query("SYSTEM SYNC REPLICA hdfs_test")
         assert node1.query("SELECT count() FROM hdfs_test FORMAT Values") == "(1)"
         assert node2.query("SELECT count() FROM hdfs_test FORMAT Values") == "(1)"
         assert (
@@ -199,7 +192,7 @@ def test_hdfs_zero_copy_replication_move(cluster, storage_policy, init_objects):
         node1.query(
             "INSERT INTO move_test VALUES (now() - INTERVAL 3 DAY, 10), (now() - INTERVAL 1 DAY, 11)"
         )
-        node2.query("SYSTEM SYNC REPLICA move_test", timeout=30)
+        node2.query("SYSTEM SYNC REPLICA move_test")
 
         assert (
             node1.query("SELECT id FROM move_test ORDER BY dt FORMAT Values")
@@ -269,10 +262,10 @@ def test_hdfs_zero_copy_with_ttl_move(cluster, storage_policy):
         node1.query("INSERT INTO ttl_move_test VALUES (now() - INTERVAL 1 DAY, 11)")
 
         node1.query("OPTIMIZE TABLE ttl_move_test FINAL")
-        node2.query("SYSTEM SYNC REPLICA ttl_move_test", timeout=30)
+        node2.query("SYSTEM SYNC REPLICA ttl_move_test")
 
-        assert_eq_with_retry(node1, "SELECT count() FROM ttl_move_test", "2")
-        assert_eq_with_retry(node2, "SELECT count() FROM ttl_move_test", "2")
+        assert node1.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(2)"
+        assert node2.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(2)"
         assert (
             node1.query("SELECT id FROM ttl_move_test ORDER BY id FORMAT Values")
             == "(10),(11)"
@@ -304,11 +297,10 @@ def test_hdfs_zero_copy_with_ttl_delete(cluster):
         node1.query("INSERT INTO ttl_delete_test VALUES (now() - INTERVAL 1 DAY, 11)")
 
         node1.query("OPTIMIZE TABLE ttl_delete_test FINAL")
-        node2.query("SYSTEM SYNC REPLICA ttl_delete_test", timeout=30)
+        node2.query("SYSTEM SYNC REPLICA ttl_delete_test")
 
-        assert_eq_with_retry(node1, "SELECT count() FROM ttl_delete_test", "1")
-        assert_eq_with_retry(node2, "SELECT count() FROM ttl_delete_test", "1")
-
+        assert node1.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1)"
+        assert node2.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1)"
         assert (
             node1.query("SELECT id FROM ttl_delete_test ORDER BY id FORMAT Values")
             == "(11)"

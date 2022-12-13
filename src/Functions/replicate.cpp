@@ -59,7 +59,7 @@ ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & argument
     return ColumnArray::create(first_column->replicate(offsets_data)->convertToFullColumnIfConst(), offsets);
 }
 
-REGISTER_FUNCTION(Replicate)
+void registerFunctionReplicate(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReplicate>();
 }

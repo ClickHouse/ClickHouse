@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/quotas_usage
----
 # system.quotas_usage {#system_tables-quotas_usage}
 
 所有用户配额使用情况.

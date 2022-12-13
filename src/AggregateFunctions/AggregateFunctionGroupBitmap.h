@@ -45,8 +45,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<T> &>(to).getData().push_back(
-            static_cast<T>(this->data(place).rbs.size()));
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
 };
 
@@ -143,8 +142,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<T> &>(to).getData().push_back(
-            static_cast<T>(this->data(place).rbs.size()));
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
 };
 

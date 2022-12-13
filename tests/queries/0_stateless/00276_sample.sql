@@ -1,6 +1,5 @@
 DROP TABLE IF EXISTS sample_00276;
 
-set allow_deprecated_syntax_for_merge_tree=1;
 SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 10;
 
