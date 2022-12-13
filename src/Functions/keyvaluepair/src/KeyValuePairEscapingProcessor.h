@@ -12,7 +12,7 @@ struct KeyValuePairEscapingProcessor
     KeyValuePairEscapingProcessor() = default;
     virtual ~KeyValuePairEscapingProcessor() = default;
 
-    virtual Response process(const ResponseViews&) const = 0;
+    virtual Response process(const ResponseViews &) const = 0;
 };
 
 }

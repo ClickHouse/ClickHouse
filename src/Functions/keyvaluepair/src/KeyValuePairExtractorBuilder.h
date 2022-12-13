@@ -3,11 +3,11 @@
 #include <memory>
 #include <optional>
 #include <unordered_set>
-#include "KeyValuePairExtractor.h"
 #include <Functions/keyvaluepair/src/impl/LazyEscapingKeyValuePairExtractor.h>
 #include <Functions/keyvaluepair/src/impl/SimpleKeyValuePairEscapingProcessor.h>
 #include <Functions/keyvaluepair/src/impl/state/KeyStateHandler.h>
 #include <Functions/keyvaluepair/src/impl/state/ValueStateHandler.h>
+#include "KeyValuePairExtractor.h"
 
 namespace DB
 {
@@ -60,7 +60,7 @@ public:
 
         if (!escaping_processor)
         {
-            throw std::runtime_error {"Escaping processor must be set, cannot build KeyValuePairExtractor without one"};
+            throw std::runtime_error{"Escaping processor must be set, cannot build KeyValuePairExtractor without one"};
         }
 
         return std::make_shared<LazyEscapingKeyValuePairExtractor<Response>>(key_state_handler, value_state_handler, escaping_processor);

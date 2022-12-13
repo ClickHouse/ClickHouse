@@ -24,9 +24,13 @@ template <typename Response>
 class LazyEscapingKeyValuePairExtractor : public KeyValuePairExtractor<Response>
 {
 public:
-    LazyEscapingKeyValuePairExtractor(KeyStateHandler key_state_handler_, ValueStateHandler value_state_handler_,
-                                      std::shared_ptr<KeyValuePairEscapingProcessor<Response>> escaping_processor_)
-    : key_state_handler(key_state_handler_), value_state_handler(value_state_handler_), escaping_processor(escaping_processor_){}
+    LazyEscapingKeyValuePairExtractor(
+        KeyStateHandler key_state_handler_,
+        ValueStateHandler value_state_handler_,
+        std::shared_ptr<KeyValuePairEscapingProcessor<Response>> escaping_processor_)
+        : key_state_handler(key_state_handler_), value_state_handler(value_state_handler_), escaping_processor(escaping_processor_)
+    {
+    }
 
     [[nodiscard]] Response extract(const std::string & file) override
     {
@@ -34,7 +38,8 @@ public:
 
         std::size_t pos = 0;
 
-        while (state != State::END) {
+        while (state != State::END)
+        {
             auto nextState = processState(file, pos, state);
 
             pos = nextState.pos;
@@ -47,7 +52,8 @@ public:
 private:
     NextState processState(const std::string & file, std::size_t pos, State state)
     {
-        switch (state) {
+        switch (state)
+        {
             case State::WAITING_KEY:
                 return key_state_handler.wait(file, pos);
             case State::READING_KEY:
@@ -67,10 +73,7 @@ private:
             case State::FLUSH_PAIR:
                 return flushPair(file, pos);
             case END:
-                return {
-                    pos,
-                    state
-                };
+                return {pos, state};
         }
     }
 
@@ -78,10 +81,7 @@ private:
     {
         response_views[key_state_handler.get()] = value_state_handler.get();
 
-        return {
-            pos,
-            pos == file.size() ? State::END : State::WAITING_KEY
-        };
+        return {pos, pos == file.size() ? State::END : State::WAITING_KEY};
     }
 
     KeyStateHandler key_state_handler;
@@ -92,4 +92,3 @@ private:
 };
 
 }
-
