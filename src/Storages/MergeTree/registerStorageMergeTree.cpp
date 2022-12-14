@@ -517,11 +517,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
-    std::unique_ptr<MergeTreeSettings> storage_settings;
-    if (replicated)
-        storage_settings = std::make_unique<MergeTreeSettings>(args.getContext()->getReplicatedMergeTreeSettings());
-    else
-        storage_settings = std::make_unique<MergeTreeSettings>(args.getContext()->getMergeTreeSettings());
+    const auto & initial_storage_settings = replicated ? args.getContext()->getReplicatedMergeTreeSettings() : args.getContext()->getMergeTreeSettings();
+    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
     if (is_extended_storage_def)
     {
@@ -609,7 +606,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
+        {
+            if (!args.attach)
+                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, args.storage_def->settings->changes);
             metadata.settings_changes = args.storage_def->settings->ptr();
+        }
     }
     else
     {
@@ -658,7 +659,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
+        {
             storage_settings->index_granularity = ast->value.safeGet<UInt64>();
+            if (!args.attach)
+            {
+                SettingsChanges changes;
+                changes.emplace_back("index_granularity", Field(storage_settings->index_granularity));
+                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, changes);
+            }
+        }
         else
             throw Exception(
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),

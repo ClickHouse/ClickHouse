@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
 script to create releases for ClickHouse
@@ -13,12 +13,11 @@ On another hand, PyGithub is used for convenient getting commit's status from AP
 from contextlib import contextmanager
 from typing import Any, Iterator, List, Literal, Optional
 import argparse
+import json
 import logging
 import subprocess
 
 from git_helper import commit, release_branch
-from github_helper import GitHub
-from mark_release_ready import RELEASE_READY_STATUS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -31,6 +30,7 @@ from version_helper import (
     update_contributors,
 )
 
+RELEASE_READY_STATUS = "Ready for release"
 
 git = Git()
 
@@ -112,31 +112,30 @@ class Release:
         return VersionType.STABLE
 
     def check_commit_release_ready(self):
-        # First, get the auth token from gh cli
-        auth_status = self.run(
-            "gh auth status -t", stderr=subprocess.STDOUT
-        ).splitlines()
-        token = ""
-        for line in auth_status:
-            if "✓ Token:" in line:
-                token = line.split()[-1]
-        if not token:
-            logging.error("Can not extract token from `gh auth`")
-            raise subprocess.SubprocessError("Can not extract token from `gh auth`")
-        gh = GitHub(token, per_page=100)
-        repo = gh.get_repo(str(self.repo))
+        per_page = 100
+        page = 1
+        while True:
+            statuses = json.loads(
+                self.run(
+                    f"gh api 'repos/{self.repo}/commits/{self.release_commit}"
+                    f"/statuses?per_page={per_page}&page={page}'"
+                )
+            )
 
-        # Statuses are ordered by descending updated_at, so the first necessary
-        # status in the list is the most recent
-        statuses = repo.get_commit(self.release_commit).get_statuses()
-        for status in statuses:
-            if status.context == RELEASE_READY_STATUS:
-                if status.state == "success":
+            if not statuses:
+                break
+
+            for status in statuses:
+                if status["context"] == RELEASE_READY_STATUS:
+                    if not status["state"] == "success":
+                        raise Exception(
+                            f"the status {RELEASE_READY_STATUS} is {status['state']}"
+                            ", not success"
+                        )
+
                     return
 
-                raise Exception(
-                    f"the status {RELEASE_READY_STATUS} is {status.state}, not success"
-                )
+            page += 1
 
         raise Exception(
             f"the status {RELEASE_READY_STATUS} "
@@ -389,7 +388,8 @@ class Release:
             body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
             self.run(
                 f"gh pr create --repo {self.repo} --title 'Update version after "
-                f"release' --head {helper_branch} --body-file '{body_file}'"
+                f"release' --head {helper_branch} --body-file '{body_file}' "
+                "--label 'do not test' --assignee @me"
             )
             # Here the testing part is done
             yield

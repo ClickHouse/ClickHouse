@@ -795,7 +795,7 @@ public:
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            serialization.serializeBinary(value, buf);
+            serialization.serializeBinary(value, buf, {});
         }
         else
             writeBinary(false, buf);
@@ -807,7 +807,7 @@ public:
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            serialization.deserializeBinary(value, buf);
+            serialization.deserializeBinary(value, buf, {});
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)
@@ -1163,6 +1163,9 @@ struct AggregateFunctionAnyHeavyData : Data
 
     bool changeIfBetter(const Self & to, Arena * arena)
     {
+        if (!to.has())
+            return false;
+
         if (this->isEqualTo(to))
         {
             counter += to.counter;

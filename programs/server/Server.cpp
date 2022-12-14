@@ -60,7 +60,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Storages/NamedCollections.h>
+#include <Storages/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -202,6 +202,46 @@ int mainEntryClickHouseServer(int argc, char ** argv)
 
 namespace
 {
+
+void setupTmpPath(Poco::Logger * log, const std::string & path)
+try
+{
+    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
+
+    fs::create_directories(path);
+
+    /// Clearing old temporary files.
+    fs::directory_iterator dir_end;
+    size_t unknown_files = 0;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
+    {
+        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
+        {
+            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+            fs::remove(it->path());
+        }
+        else
+        {
+            unknown_files++;
+            if (unknown_files < 100)
+                LOG_DEBUG(log, "Found unknown {} {} in temporary path",
+                    it->is_regular_file() ? "file" : (it->is_directory() ? "directory" : "element"),
+                    it->path().string());
+        }
+    }
+
+    if (unknown_files)
+        LOG_DEBUG(log, "Found {} unknown files in temporary path", unknown_files);
+}
+catch (...)
+{
+    DB::tryLogCurrentException(
+        log,
+        fmt::format(
+            "Caught exception while setup temporary path: {}. It is ok to skip this exception as cleaning old temporary files is not "
+            "necessary",
+            path));
+}
 
 size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
 {
@@ -695,6 +735,24 @@ try
     }
 #endif
 
+#if USE_OPENSSL_INTREE
+    /// When building openssl into clickhouse, clickhouse owns the configuration
+    /// Therefore, the clickhouse openssl configuration should be kept separate from
+    /// the OS. Default to the one in the standard config directory, unless overridden
+    /// by a key in the config.
+    if (config().has("opensslconf"))
+    {
+        std::string opensslconf_path = config().getString("opensslconf");
+        setenv("OPENSSL_CONF", opensslconf_path.c_str(), true);
+    }
+    else
+    {
+        const String config_path = config().getString("config-file", "config.xml");
+        const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+        setenv("OPENSSL_CONF", config_dir.string() + "openssl.conf", true);
+    }
+#endif
+
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -742,7 +800,7 @@ try
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
-    NamedCollectionFactory::instance().initialize(config());
+    NamedCollectionUtils::loadFromConfig(config());
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -997,21 +1055,13 @@ try
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
     /// Storage with temporary data for processing of heavy queries.
-    if (auto temporary_policy = config().getString("tmp_policy", ""); !temporary_policy.empty())
-    {
-        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
-        global_context->setTemporaryStoragePolicy(temporary_policy, max_size);
-    }
-    else if (auto temporary_cache = config().getString("tmp_cache", ""); !temporary_cache.empty())
-    {
-        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
-        global_context->setTemporaryStorageInCache(temporary_cache, max_size);
-    }
-    else
     {
         std::string temporary_path = config().getString("tmp_path", path / "tmp/");
+        std::string temporary_policy = config().getString("tmp_policy", "");
         size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
-        global_context->setTemporaryStoragePath(temporary_path, max_size);
+        const VolumePtr & volume = global_context->setTemporaryStorage(temporary_path, temporary_policy, max_size);
+        for (const DiskPtr & disk : volume->getDisks())
+            setupTmpPath(log, disk->getPath());
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -1135,6 +1185,8 @@ try
     {
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
+
+    NamedCollectionUtils::loadFromSQL(global_context);
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
@@ -1304,7 +1356,8 @@ try
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
-            NamedCollectionFactory::instance().reload(*config);
+            NamedCollectionUtils::reloadFromConfig(*config);
+
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -1410,7 +1463,7 @@ try
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Caught exception while setting up access control.");
+        tryLogCurrentException(log);
         throw;
     }
 
