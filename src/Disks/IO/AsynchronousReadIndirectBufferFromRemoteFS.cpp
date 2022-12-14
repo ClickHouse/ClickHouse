@@ -4,7 +4,6 @@
 #include <Common/logger_useful.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <IO/ReadSettings.h>
 
 
 namespace CurrentMetrics
@@ -42,6 +41,7 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t min_bytes_for_seek_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
+    , read_settings(settings_)
     , reader(reader_)
     , priority(settings_.priority)
     , impl(impl_)
@@ -125,6 +125,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
         return;
 
     /// Prefetch even in case hasPendingData() == true.
+    chassert(prefetch_buffer.size() == read_settings.remote_fs_buffer_size);
     prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size());
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
@@ -199,6 +200,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
 
+        chassert(memory.size() == read_settings.remote_fs_buffer_size);
         auto result = asyncReadInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;
