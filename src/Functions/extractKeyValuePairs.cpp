@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 /*
  * In order to leverage DB::ReplaceStringImpl for a better performance, the default escaping processor needs
  * to be overridden by a no-op escaping processor. DB::ReplaceStringImpl does in-place replacing and leverages the
@@ -70,8 +75,7 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
 {
     if (arguments.empty())
     {
-        // throw exception
-        return {};
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function " + String(name) + "requires at least one argument");
     }
 
     std::unordered_set<char> value_special_characters_allow_list;
