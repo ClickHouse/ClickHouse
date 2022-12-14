@@ -578,7 +578,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
     list(APPEND ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c")
 endif()
 
-if (ENABLE_EXTERNAL_OPENSSL)
+if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
     list(REMOVE_ITEM ALL_SRCS "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/aes.c")
     list(APPEND ALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/aes.c")
 endif ()

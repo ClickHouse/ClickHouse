@@ -626,6 +626,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
             copyData(*in, *out);
+            out->finalize();
         }
 
         /// Append the index.

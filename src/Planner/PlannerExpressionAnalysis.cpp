@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -96,7 +97,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    group_by_with_constant_keys |= grouping_set_key_node->hasConstantValue();
+                    group_by_with_constant_keys |= (grouping_set_key_node->as<ConstantNode>() != nullptr);
 
                     auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, grouping_set_key_node);
                     aggregation_keys.reserve(expression_dag_nodes.size());
@@ -147,7 +148,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
         else
         {
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
-                group_by_with_constant_keys |= group_by_key_node->hasConstantValue();
+                group_by_with_constant_keys |= (group_by_key_node->as<ConstantNode>() != nullptr);
 
             auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, query_node.getGroupByNode());
             aggregation_keys.reserve(expression_dag_nodes.size());

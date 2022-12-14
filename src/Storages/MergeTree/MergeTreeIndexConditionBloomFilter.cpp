@@ -18,7 +18,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -100,6 +99,22 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_)
     : WithContext(context_), header(header_), query_info(info_), hash_functions(hash_functions_)
 {
+    if (context_->getSettingsRef().allow_experimental_analyzer)
+    {
+        if (!query_info.filter_actions_dag)
+        {
+            rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
+            return;
+        }
+
+        RPNBuilder<RPNElement> builder(
+            query_info.filter_actions_dag->getOutputs().at(0),
+            context_,
+            [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+        rpn = std::move(builder).extractRPN();
+        return;
+    }
+
     ASTPtr filter_node = buildFilterNode(query_info.query);
 
     if (!filter_node)
