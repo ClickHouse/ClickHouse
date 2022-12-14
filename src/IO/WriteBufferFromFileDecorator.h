@@ -19,10 +19,8 @@ public:
 
     void preFinalize() override
     {
-        swap(*impl);
-        impl->next();
+        next();
         impl->preFinalize();
-        swap(*impl);
         is_prefinalized = true;
     }
 

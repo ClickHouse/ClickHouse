@@ -123,6 +123,7 @@ static void reallocBuffer(WriteBuffer & buffer, WriteBufferFromS3::Memory & memo
 
 void WriteBufferFromS3::nextImpl()
 {
+    written_bytes_in_memory = pos - memory->data;
     if (size_t available_bytes = available(); available_bytes > 0)
     {
         buffer() = BufferBase::Buffer(pos, pos + available_bytes);
@@ -165,6 +166,7 @@ std::shared_ptr<Aws::StringStream> WriteBufferFromS3::allocateBuffer()
     memory->data = static_cast<char *>(memory->allocator.alloc(memory->size));
 
     set(memory->data, memory->size);
+    written_bytes_in_memory = 0;
 
     temporary_buffer->exceptions(std::ios::badbit);
     return temporary_buffer;
@@ -192,15 +194,14 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
 void WriteBufferFromS3::preFinalize()
 {
+    next();
     is_prefinalized = true;
-    bytes += offset();
-    buffer() = BufferBase::Buffer(pos, pos + available());
 
-    size_t size = pos - memory->data;
-    if (size == 0)
-        return;
+    // if (written_bytes_in_memory == 0)
+    //     return;
 
-    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", std::move(memory), size);
+    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", std::move(memory), written_bytes_in_memory);
+    written_bytes_in_memory = 0;
 
     if (multipart_upload_id.empty())
     {
@@ -223,7 +224,7 @@ void WriteBufferFromS3::finalizeImpl()
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
 
-    if (request_settings.check_objects_after_upload)
+    if (true) //request_settings.check_objects_after_upload)
     {
         LOG_TRACE(log, "Checking object {} exists after upload", key);
 

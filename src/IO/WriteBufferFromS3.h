@@ -95,6 +95,7 @@ private:
     void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
 
     std::unique_ptr<Memory> memory;
+    size_t written_bytes_in_memory = 0;
 
     const String bucket;
     const String key;
