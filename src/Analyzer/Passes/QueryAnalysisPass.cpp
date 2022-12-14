@@ -1700,15 +1700,15 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
-    std::shared_ptr<ConstantValue> constant_value;
-
     auto scalars_iterator = scalars.find(node.get());
     if (scalars_iterator != scalars.end())
     {
-        constant_value = scalars_iterator->second;
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+        node = std::make_shared<ConstantNode>(scalars_iterator->second, node);
         return;
     }
+
+    ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
 
     auto subquery_context = Context::createCopy(context);
 
@@ -1719,8 +1719,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
     auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, options, subquery_context);
-
-    ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
 
     auto io = interpreter->execute();
 
@@ -1753,7 +1751,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
             type = makeNullable(type);
         }
 
-        constant_value = std::make_shared<ConstantValue>(Null(), std::move(type));
+        auto constant_value = std::make_shared<ConstantValue>(Null(), std::move(type));
         node = std::make_shared<ConstantNode>(std::move(constant_value), node);
         return;
     }
@@ -1794,9 +1792,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
         scalar_type = std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames());
     }
 
-    constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
-    node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+    auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
     scalars[node.get()] = constant_value;
+    node = std::make_shared<ConstantNode>(std::move(constant_value), node);
 }
 
 void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope)
