@@ -49,7 +49,6 @@ template <typename Value>
 using QueryTreeNodeConstRawPtrWithHashMap = std::unordered_map<QueryTreeNodeConstRawPtrWithHash, Value>;
 
 
-
 template <typename QueryTreeNodePtrType>
 struct QueryTreeNodeWithHashIgnoreConstant
 {

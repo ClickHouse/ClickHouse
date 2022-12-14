@@ -1694,12 +1694,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     auto * query_node = node->as<QueryNode>();
     auto * union_node = node->as<UnionNode>();
     if (!query_node && !union_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
             "Node must have query or union type. Actual {} {}",
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
-    bool hit = false;
     std::shared_ptr<ConstantValue> constant_value;
 
     auto scalars_iterator = scalars.find(node.get());
@@ -1708,98 +1708,96 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
         hit = true;
         constant_value = scalars_iterator->second;
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+        return;
     }
 
-    if (!hit)
+    auto subquery_context = Context::createCopy(context);
+
+    Settings subquery_settings = context->getSettings();
+    subquery_settings.max_result_rows = 1;
+    subquery_settings.extremes = false;
+    subquery_context->setSettings(subquery_settings);
+
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
+    auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, options, subquery_context);
+
+    ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
+
+    auto io = interpreter->execute();
+
+    PullingAsyncPipelineExecutor executor(io.pipeline);
+    io.pipeline.setProgressCallback(context->getProgressCallback());
+
+    Block block;
+    Field scalar_value;
+    DataTypePtr scalar_type;
+
+    while (block.rows() == 0 && executor.pull(block))
     {
-        auto subquery_context = Context::createCopy(context);
-
-        Settings subquery_settings = context->getSettings();
-        subquery_settings.max_result_rows = 1;
-        subquery_settings.extremes = false;
-        subquery_context->setSettings(subquery_settings);
-
-        auto options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, options, subquery_context);
-
-        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
-
-        auto io = interpreter->execute();
-
-        PullingAsyncPipelineExecutor executor(io.pipeline);
-        io.pipeline.setProgressCallback(context->getProgressCallback());
-
-        Block block;
-        Field scalar_value;
-        DataTypePtr scalar_type;
-
-        while (block.rows() == 0 && executor.pull(block))
-        {
-        }
-
-        if (block.rows() == 0)
-        {
-            auto types = interpreter->getSampleBlock().getDataTypes();
-            if (types.size() != 1)
-                types = {std::make_shared<DataTypeTuple>(types)};
-
-            auto & type = types[0];
-            if (!type->isNullable())
-            {
-                if (!type->canBeInsideNullable())
-                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
-                                    "Scalar subquery returned empty result of type {} which cannot be Nullable.",
-                                    type->getName());
-
-                type = makeNullable(type);
-            }
-
-            constant_value = std::make_shared<ConstantValue>(Null(), std::move(type));
-            node = std::make_shared<ConstantNode>(std::move(constant_value), node);
-            return;
-        }
-
-        if (block.rows() != 1)
-            throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
-
-        Block tmp_block;
-        while (tmp_block.rows() == 0 && executor.pull(tmp_block))
-        {
-        }
-
-        if (tmp_block.rows() != 0)
-            throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than zero row");
-
-        block = materializeBlock(block);
-        size_t columns = block.columns();
-
-        if (columns == 1)
-        {
-            auto & column = block.getByPosition(0);
-            /// Here we wrap type to nullable if we can.
-            /// It is needed cause if subquery return no rows, it's result will be Null.
-            /// In case of many columns, do not check it cause tuple can't be nullable.
-            if (!column.type->isNullable() && column.type->canBeInsideNullable())
-            {
-                column.type = makeNullable(column.type);
-                column.column = makeNullable(column.column);
-            }
-
-            column.column->get(0, scalar_value);
-            scalar_type = column.type;
-        }
-        else
-        {
-            auto tuple_column = ColumnTuple::create(block.getColumns());
-            tuple_column->get(0, scalar_value);
-            scalar_type = std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames());
-        }
-
-        constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
-        node = std::make_shared<ConstantNode>(std::move(constant_value), node);
-        scalars[node.get()] = constant_value;
-
     }
+
+    if (block.rows() == 0)
+    {
+        auto types = interpreter->getSampleBlock().getDataTypes();
+        if (types.size() != 1)
+            types = {std::make_shared<DataTypeTuple>(types)};
+
+        auto & type = types[0];
+        if (!type->isNullable())
+        {
+            if (!type->canBeInsideNullable())
+                throw Exception(
+                    ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                    "Scalar subquery returned empty result of type {} which cannot be Nullable.",
+                    type->getName());
+
+            type = makeNullable(type);
+        }
+
+        constant_value = std::make_shared<ConstantValue>(Null(), std::move(type));
+        node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+        return;
+    }
+
+    if (block.rows() != 1)
+        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+    Block tmp_block;
+    while (tmp_block.rows() == 0 && executor.pull(tmp_block))
+    {
+    }
+
+    if (tmp_block.rows() != 0)
+        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than zero row");
+
+    block = materializeBlock(block);
+    size_t columns = block.columns();
+
+    if (columns == 1)
+    {
+        auto & column = block.getByPosition(0);
+        /// Here we wrap type to nullable if we can.
+        /// It is needed cause if subquery return no rows, it's result will be Null.
+        /// In case of many columns, do not check it cause tuple can't be nullable.
+        if (!column.type->isNullable() && column.type->canBeInsideNullable())
+        {
+            column.type = makeNullable(column.type);
+            column.column = makeNullable(column.column);
+        }
+
+        column.column->get(0, scalar_value);
+        scalar_type = column.type;
+    }
+    else
+    {
+        auto tuple_column = ColumnTuple::create(block.getColumns());
+        tuple_column->get(0, scalar_value);
+        scalar_type = std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames());
+    }
+
+    constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
+    node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+    scalars[node.get()] = constant_value;
 }
 
 void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope)
