@@ -63,18 +63,23 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 
 Types of sources (`source_type`):
 
--   [Local file](#dicts-external_dicts_dict_sources-local_file)
--   [Executable File](#dicts-external_dicts_dict_sources-executable)
--   [Executable Pool](#dicts-external_dicts_dict_sources-executable_pool)
--   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
--   DBMS
-    -   [ODBC](#odbc)
-    -   [MySQL](#mysql)
-    -   [ClickHouse](#clickhouse)
-    -   [MongoDB](#mongodb)
-    -   [Redis](#redis)
-    -   [Cassandra](#cassandra)
-    -   [PostgreSQL](#postgresql)
+- [Dictionary Sources](#dictionary-sources)
+  - [Local File](#local-file)
+  - [Executable File](#executable-file)
+  - [Executable Pool](#executable-pool)
+  - [Http(s)](#https)
+    - [Known Vulnerability of the ODBC Dictionary Functionality](#known-vulnerability-of-the-odbc-dictionary-functionality)
+    - [Example of Connecting Postgresql](#example-of-connecting-postgresql)
+    - [Example of Connecting MS SQL Server](#example-of-connecting-ms-sql-server)
+  - [DBMS](#dbms)
+    - [ODBC](#odbc)
+    - [Mysql](#mysql)
+    - [ClickHouse](#clickhouse)
+    - [Mongodb](#mongodb)
+    - [Redis](#redis)
+    - [Cassandra](#cassandra)
+    - [PostgreSQL](#postgresql)
+  - [Related Content](#related-content)
 
 ## Local File
 
@@ -824,3 +829,7 @@ Setting fields:
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
+
+## Related Content
+
+- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
