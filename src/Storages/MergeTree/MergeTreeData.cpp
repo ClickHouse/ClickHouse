@@ -84,6 +84,7 @@
 #include <base/sort.h>
 
 #include <algorithm>
+#include <atomic>
 #include <iomanip>
 #include <optional>
 #include <set>
@@ -1762,9 +1763,12 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         {
             const DataPartPtr & part = *it;
 
+            part->last_removal_attemp_time.store(time_now, std::memory_order_relaxed);
+
             /// Do not remove outdated part if it may be visible for some transaction
             if (!part->version.canBeRemoved())
             {
+                part->removal_state.store(DataPartRemovalState::VISIBLE_TO_TRANSACTIONS, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
@@ -1772,6 +1776,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             /// Grab only parts that are not used by anyone (SELECTs for example).
             if (!part.unique())
             {
+                part->removal_state.store(DataPartRemovalState::NON_UNIQUE_OWNERSHIP, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
@@ -1782,10 +1787,12 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
                 || isInMemoryPart(part)     /// Remove in-memory parts immediately to not store excessive data in RAM
                 || (part->version.creation_csn == Tx::RolledBackCSN && getSettings()->remove_rolled_back_parts_immediately))
             {
+                part->removal_state.store(DataPartRemovalState::REMOVED, std::memory_order_relaxed);
                 parts_to_delete.emplace_back(it);
             }
             else
             {
+                part->removal_state.store(DataPartRemovalState::NOT_REACHED_REMOVAL_TIME, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
