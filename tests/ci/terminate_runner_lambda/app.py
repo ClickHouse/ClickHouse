@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 
-import requests
 import argparse
-import jwt
 import sys
 import json
 import time
 from collections import namedtuple
+from typing import Any, Dict, List, Tuple
+
+import boto3  # type: ignore
+import requests  # type: ignore
+import jwt
 
 
-def get_key_and_app_from_aws():
-    import boto3
-
+def get_key_and_app_from_aws() -> Tuple[str, int]:
     secret_name = "clickhouse_github_secret_key"
     session = boto3.session.Session()
     client = session.client(
@@ -22,7 +23,7 @@ def get_key_and_app_from_aws():
     return data["clickhouse-app-key"], int(data["clickhouse-app-id"])
 
 
-def get_installation_id(jwt_token):
+def get_installation_id(jwt_token: str) -> int:
     headers = {
         "Authorization": f"Bearer {jwt_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -33,10 +34,12 @@ def get_installation_id(jwt_token):
     for installation in data:
         if installation["account"]["login"] == "ClickHouse":
             installation_id = installation["id"]
-    return installation_id
+            break
+
+    return installation_id  # type: ignore
 
 
-def get_access_token(jwt_token, installation_id):
+def get_access_token(jwt_token: str, installation_id: int) -> str:
     headers = {
         "Authorization": f"Bearer {jwt_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -47,15 +50,16 @@ def get_access_token(jwt_token, installation_id):
     )
     response.raise_for_status()
     data = response.json()
-    return data["token"]
+    return data["token"]  # type: ignore
 
 
 RunnerDescription = namedtuple(
     "RunnerDescription", ["id", "name", "tags", "offline", "busy"]
 )
+RunnerDescriptions = List[RunnerDescription]
 
 
-def list_runners(access_token):
+def list_runners(access_token: str) -> RunnerDescriptions:
     headers = {
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -94,9 +98,9 @@ def list_runners(access_token):
     return result
 
 
-def how_many_instances_to_kill(event_data):
+def how_many_instances_to_kill(event_data: dict) -> Dict[str, int]:
     data_array = event_data["CapacityToTerminate"]
-    to_kill_by_zone = {}
+    to_kill_by_zone = {}  # type: Dict[str, int]
     for av_zone in data_array:
         zone_name = av_zone["AvailabilityZone"]
         to_kill = av_zone["Capacity"]
@@ -104,15 +108,16 @@ def how_many_instances_to_kill(event_data):
             to_kill_by_zone[zone_name] = 0
 
         to_kill_by_zone[zone_name] += to_kill
+
     return to_kill_by_zone
 
 
-def get_candidates_to_be_killed(event_data):
+def get_candidates_to_be_killed(event_data: dict) -> Dict[str, List[str]]:
     data_array = event_data["Instances"]
-    instances_by_zone = {}
+    instances_by_zone = {}  # type: Dict[str, List[str]]
     for instance in data_array:
         zone_name = instance["AvailabilityZone"]
-        instance_id = instance["InstanceId"]
+        instance_id = instance["InstanceId"]  # type: str
         if zone_name not in instances_by_zone:
             instances_by_zone[zone_name] = []
         instances_by_zone[zone_name].append(instance_id)
@@ -120,24 +125,9 @@ def get_candidates_to_be_killed(event_data):
     return instances_by_zone
 
 
-def delete_runner(access_token, runner):
-    headers = {
-        "Authorization": f"token {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-
-    response = requests.delete(
-        f"https://api.github.com/orgs/ClickHouse/actions/runners/{runner.id}",
-        headers=headers,
-    )
-    response.raise_for_status()
-    print(
-        f"Response code deleting {runner.name} with id {runner.id} is {response.status_code}"
-    )
-    return response.status_code == 204
-
-
-def main(github_secret_key, github_app_id, event):
+def main(
+    github_secret_key: str, github_app_id: int, event: dict
+) -> Dict[str, List[str]]:
     print("Got event", json.dumps(event, sort_keys=True, indent=4))
     to_kill_by_zone = how_many_instances_to_kill(event)
     instances_by_zone = get_candidates_to_be_killed(event)
@@ -153,20 +143,22 @@ def main(github_secret_key, github_app_id, event):
     access_token = get_access_token(encoded_jwt, installation_id)
 
     runners = list_runners(access_token)
+    # We used to delete potential hosts to terminate from GitHub runners pool,
+    # but the documentation states:
+    # --- Returning an instance first in the response data does not guarantee its termination
+    # so they will be cleaned out by ci_runners_metrics_lambda eventually
 
-    to_delete_runners = []
     instances_to_kill = []
-    for zone in to_kill_by_zone:
-        num_to_kill = to_kill_by_zone[zone]
+    for zone, num_to_kill in to_kill_by_zone.items():
         candidates = instances_by_zone[zone]
         if num_to_kill > len(candidates):
             raise Exception(
                 f"Required to kill {num_to_kill}, but have only {len(candidates)} candidates in AV {zone}"
             )
 
-        delete_for_av = []
+        delete_for_av = []  # type: RunnerDescriptions
         for candidate in candidates:
-            if candidate not in set([runner.name for runner in runners]):
+            if candidate not in set(runner.name for runner in runners):
                 print(
                     f"Candidate {candidate} was not in runners list, simply delete it"
                 )
@@ -193,28 +185,17 @@ def main(github_secret_key, github_app_id, event):
             print(
                 f"Checked all candidates for av {zone}, get to delete {len(delete_for_av)}, but still cannot get required {num_to_kill}"
             )
-        to_delete_runners += delete_for_av
+
+        instances_to_kill += [runner.name for runner in delete_for_av]
 
     print("Got instances to kill: ", ", ".join(instances_to_kill))
-    print(
-        "Going to delete runners:",
-        ", ".join([runner.name for runner in to_delete_runners]),
-    )
-    for runner in to_delete_runners:
-        if delete_runner(access_token, runner):
-            print(
-                f"Runner with name {runner.name} and id {runner.id} successfuly deleted from github"
-            )
-            instances_to_kill.append(runner.name)
-        else:
-            print(f"Cannot delete {runner.name} from github")
 
     response = {"InstanceIDs": instances_to_kill}
     print(response)
     return response
 
 
-def handler(event, context):
+def handler(event: dict, context: Any) -> Dict[str, List[str]]:
     private_key, app_id = get_key_and_app_from_aws()
     return main(private_key, app_id, event)
 
