@@ -103,12 +103,12 @@ protected:
     }
 };
 
-class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy, true>
+class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy>
 {
     std::vector<QueryPlan::Node *> nodes_affect_order;
 
 public:
-    explicit RemoveRedundantOrderBy(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantOrderBy, true>(root_) { }
+    explicit RemoveRedundantOrderBy(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantOrderBy>(root_) { }
 
     bool visitTopDown(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
@@ -118,56 +118,7 @@ public:
         /// then check if we can remove the sorting step (and corresponding expression step)
         if (!nodes_affect_order.empty() && typeid_cast<SortingStep *>(current_step))
         {
-            auto try_to_remove_sorting_step = [&]() -> bool
-            {
-                QueryPlan::Node * node_affect_order = nodes_affect_order.back();
-                IQueryPlanStep * step_affect_order = node_affect_order->step.get();
-                /// if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-                /// if ORDER BY is with FILL WITH, it is non-removable
-                if (typeid_cast<LimitStep *>(step_affect_order) || typeid_cast<LimitByStep *>(step_affect_order)
-                    || typeid_cast<FillingStep *>(step_affect_order))
-                    return false;
-
-                bool consider_to_remove_sorting = false;
-
-                /// (1) aggregation
-                if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(step_affect_order); parent_aggr)
-                {
-                    auto const & aggregates = parent_aggr->getParams().aggregates;
-                    for (const auto & aggregate : aggregates)
-                    {
-                        auto aggregate_function_properties
-                            = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName());
-                        if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
-                            return false;
-                    }
-                    consider_to_remove_sorting = true;
-                }
-                /// (2) sorting
-                else if (typeid_cast<SortingStep *>(step_affect_order))
-                {
-                    consider_to_remove_sorting = true;
-                }
-
-                if (consider_to_remove_sorting)
-                {
-                    /// (1) if there is expression with stateful function between current step
-                    /// and step which affects order, then we need to keep sorting since
-                    /// stateful function output can depend on order
-                    /// (2) for window function we do ORDER BY in 2 Sorting steps, so do not delete Sorting
-                    /// if window function step is on top
-                    if (!checkIfCanDeleteSorting(node_affect_order))
-                        return false;
-
-                    chassert(typeid_cast<ExpressionStep *>(current_node->children.front()->step.get()));
-                    chassert(!current_node->children.front()->children.empty());
-
-                    /// need to remove sorting and its expression from plan
-                    parent_node->children.front() = current_node->children.front()->children.front();
-                }
-                return true;
-            };
-            if (try_to_remove_sorting_step())
+            if (tryRemoveSorting(current_node, parent_node))
             {
                 logStep("removed from plan", current_node);
 
@@ -208,8 +159,65 @@ public:
     }
 
 private:
-    bool checkIfCanDeleteSorting(const QueryPlan::Node * node_affect_order)
+    bool tryRemoveSorting(QueryPlan::Node * sorting_node, QueryPlan::Node * parent_node)
     {
+        if (!canRemoveCurrentSorting())
+            return false;
+
+        chassert(typeid_cast<ExpressionStep *>(sorting_node->children.front()->step.get()));
+        chassert(!sorting_node->children.front()->children.empty());
+
+        /// need to remove sorting and its expression from plan
+        parent_node->children.front() = sorting_node->children.front()->children.front();
+
+        return true;
+    }
+
+    bool canRemoveCurrentSorting()
+    {
+        chassert(!stack.empty());
+        chassert(typeid_cast<const SortingStep *>(stack.back().node->step.get()));
+
+        return checkNodeAffectingOrder(nodes_affect_order.back()) && checkPathFromCurrentSortingNode(nodes_affect_order.back());
+    }
+
+    static bool checkNodeAffectingOrder(QueryPlan::Node * node_affect_order)
+    {
+        IQueryPlanStep * step_affect_order = node_affect_order->step.get();
+
+        /// if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
+        /// if ORDER BY is with FILL WITH, it is non-removable
+        if (typeid_cast<LimitStep *>(step_affect_order) || typeid_cast<LimitByStep *>(step_affect_order)
+            || typeid_cast<FillingStep *>(step_affect_order))
+            return false;
+
+        /// (1) aggregation
+        if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(step_affect_order); parent_aggr)
+        {
+            auto const & aggregates = parent_aggr->getParams().aggregates;
+            for (const auto & aggregate : aggregates)
+            {
+                auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName());
+                if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
+                    return false;
+            }
+            return true;
+        }
+        /// (2) sorting
+        else if (typeid_cast<SortingStep *>(step_affect_order))
+            return true;
+
+        return false;
+    }
+
+    bool checkPathFromCurrentSortingNode(const QueryPlan::Node * node_affect_order)
+    {
+        /// (1) if there is expression with stateful function between current step
+        /// and step which affects order, then we need to keep sorting since
+        /// stateful function output can depend on order
+        /// (2) for window function we do ORDER BY in 2 Sorting steps, so do not delete Sorting
+        /// if window function step is on top
+
         chassert(!stack.empty());
         chassert(typeid_cast<const SortingStep *>(stack.back().node->step.get()));
 
