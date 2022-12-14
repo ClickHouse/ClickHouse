@@ -33,10 +33,17 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
     {
         try
         {
-            chassert(!database->is_probably_dropped);   // FIXME
+            chassert(!database->is_probably_dropped);
             auto zookeeper = getAndSetZooKeeper();
             if (database->is_readonly)
                 database->tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::ATTACH);
+            if (database->is_probably_dropped)
+            {
+                /// The flag was set in tryConnectToZooKeeperAndInitDatabase
+                LOG_WARNING(log, "Exiting main thread, because the database was probably dropped");
+                /// NOTE It will not stop cleanup thread until DDLWorker::shutdown() call (cleanup thread will just do nothing)
+                break;
+            }
             initializeReplication();
             initialized = true;
             return true;

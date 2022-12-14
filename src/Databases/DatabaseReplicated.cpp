@@ -401,7 +401,7 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    if (!ddl_worker)
+    if (!ddl_worker || is_probably_dropped)
         return false;
     return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 }
@@ -473,9 +473,10 @@ void DatabaseReplicated::startupTables(ThreadPool & thread_pool, LoadingStrictne
     chassert(!TSA_SUPPRESS_WARNING_FOR_READ(tables_metadata_digest));
     TSA_SUPPRESS_WARNING_FOR_WRITE(tables_metadata_digest) = digest;
 
-    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     if (is_probably_dropped)
         return;
+
+    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
 }
 
@@ -491,7 +492,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool
     LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
 
     /// Database is probably being dropped
-    if (!local_context->getZooKeeperMetadataTransaction() && !ddl_worker->isCurrentlyActive())
+    if (!local_context->getZooKeeperMetadataTransaction() && (!ddl_worker || !ddl_worker->isCurrentlyActive()))
         return true;
 
     UInt64 local_digest = 0;
@@ -1074,8 +1075,6 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
-    if (is_probably_dropped)
-        return;
     if (ddl_worker)
         ddl_worker->shutdown();
 }
@@ -1091,7 +1090,7 @@ void DatabaseReplicated::shutdown()
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
+    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
     if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
