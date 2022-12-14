@@ -13,7 +13,7 @@ class SimpleKeyValuePairEscapingProcessor : public KeyValuePairEscapingProcessor
 public:
     explicit SimpleKeyValuePairEscapingProcessor(char escape_character);
 
-    [[nodiscard]] Response process(const ResponseViews & input) const override;
+    [[nodiscard]] Response process(const ResponseViews & response_views) const override;
 
 private:
     [[maybe_unused]] const char escape_character;

@@ -9,7 +9,7 @@ StateHandler::StateHandler(char escape_character_, std::optional<char> enclosing
 {
 }
 
-std::string_view StateHandler::createElement(const std::string & file, std::size_t begin, std::size_t end) const
+std::string_view StateHandler::createElement(const std::string & file, std::size_t begin, std::size_t end)
 {
     return std::string_view{file.begin() + begin, file.begin() + end};
 }

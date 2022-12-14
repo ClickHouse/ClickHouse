@@ -59,18 +59,18 @@ public:
 private:
     DataTypePtr return_type;
 
-    ParsedArguments parseArguments(const ColumnsWithTypeAndName & arguments) const;
+    static ParsedArguments parseArguments(const ColumnsWithTypeAndName & arguments);
 
-    std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> getExtractor(
+    static std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> getExtractor(
         CharArgument escape_character,
         CharArgument key_value_pair_delimiter,
         CharArgument item_delimiter,
         CharArgument enclosing_character,
-        SetArgument value_special_characters_allow_list) const;
+        SetArgument value_special_characters_allow_list);
 
-    RawColumns extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const;
+    static RawColumns extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column);
 
-    ColumnPtr escape(RawColumns & raw_columns) const;
+    static ColumnPtr escape(RawColumns & raw_columns);
 };
 
 }
