@@ -14,7 +14,7 @@ if (OS_FREEBSD)
     return()
 endif()
 
-corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
+clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
 
 # -Wno-dollar-in-identifier-extension: cxx bridge complies names with '$'
 # -Wno-unused-macros: unused CXXBRIDGE1_RUST_STRING
