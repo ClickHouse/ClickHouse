@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -50,7 +51,7 @@ public:
             if (0 == frame.next_child)
             {
                 logStep("top-down", current_node);
-                if (! visitTopDown(current_node, parent_node))
+                if (!visitTopDown(current_node, parent_node))
                     continue;
             }
             /// Traverse all children
@@ -155,7 +156,7 @@ public:
                     /// stateful function output can depend on order
                     /// (2) for window function we do ORDER BY in 2 Sorting steps, so do not delete Sorting
                     /// if window function step is on top
-                    if (checkIfCanDeleteSorting(node_affect_order))
+                    if (!checkIfCanDeleteSorting(node_affect_order))
                         return false;
 
                     chassert(typeid_cast<ExpressionStep *>(current_node->children.front()->step.get()));
@@ -226,13 +227,15 @@ private:
             if (expr)
             {
                 if (expr->getExpression()->hasStatefulFunctions())
-                    return true;
+                    return false;
             }
             else
             {
-                const auto * window = typeid_cast<const WindowStep *>(step);
-                if (window)
-                    return true;
+                if (typeid_cast<const WindowStep *>(step))
+                    return false;
+
+                if (typeid_cast<const UnionStep *>(step))
+                    return false;
 
                 const auto * trans = typeid_cast<const ITransformingStep *>(step);
                 if (!trans)
@@ -242,9 +245,8 @@ private:
                     break;
             }
         }
-        return false;
+        return true;
     }
-
 };
 
 void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
