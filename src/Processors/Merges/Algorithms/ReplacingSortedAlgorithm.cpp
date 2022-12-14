@@ -72,7 +72,15 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
             /// Write the data for the previous primary key.
             if (!selected_row.empty())
-                insertRow();
+            {
+                if (is_deleted_column_number!=-1)
+                {
+                    if (!(cleanup && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num]))
+                        insertRow();
+                }
+                else
+                    insertRow();
+            }
 
             selected_row.clear();
         }
@@ -82,10 +90,9 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (out_row_sources_buf)
             current_row_sources.emplace_back(current.impl->order, true);
 
-        UInt8 is_deleted = 0;
         if ((is_deleted_column_number!=-1))
         {
-            is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[current->getRow()];
+            const UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[current->getRow()];
             if ((is_deleted != 1) && (is_deleted != 0))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: is_deleted = {} (must be 1 or 0).", toString(is_deleted));
         }
@@ -100,9 +107,6 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         {
             max_pos = current_pos;
             setRowRef(selected_row, current);
-            if (cleanup && is_deleted)
-                if (assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num])
-                    selected_row.clear();
         }
 
         if (!current->isLast())
@@ -123,7 +127,15 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
     /// We will write the data for the last primary key.
     if (!selected_row.empty())
-        insertRow();
+    {
+        if (is_deleted_column_number!=-1)
+        {
+            if (!(cleanup && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num]))
+                insertRow();
+        }
+        else
+            insertRow();
+    }
 
     return Status(merged_data.pull(), true);
 }

@@ -1,3 +1,29 @@
+== Test SELECT ... FINAL - no is_deleted ==
+d1	5	0
+d2	1	0
+d3	1	0
+d4	3	0
+d5	1	0
+d6	2	1
+d1	5	0
+d2	1	0
+d3	1	0
+d4	3	0
+d5	1	0
+d6	2	1
+== Test SELECT ... FINAL - no is_deleted SETTINGS clean_deleted_rows=Always ==
+d1	5	0
+d2	1	0
+d3	1	0
+d4	3	0
+d5	1	0
+d6	2	1
+d1	5	0
+d2	1	0
+d3	1	0
+d4	3	0
+d5	1	0
+d6	2	1
 == Test SELECT ... FINAL ==
 d1	5	0
 d2	1	0
