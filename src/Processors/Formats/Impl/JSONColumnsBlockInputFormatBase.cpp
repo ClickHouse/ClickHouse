@@ -6,6 +6,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

@@ -88,7 +88,7 @@ private:
     /// Read whole column in the block (up to max_rows_to_read rows) and extract the data type.
     DataTypePtr readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read);
 
-    const FormatSettings & format_settings;
+    const FormatSettings format_settings;
     String hints_str;
     std::unordered_map<String, DataTypePtr> hints;
     std::unique_ptr<JSONColumnsReaderBase> reader;
