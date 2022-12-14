@@ -4,7 +4,7 @@ namespace DB
 {
 
 SimpleKeyValuePairEscapingProcessor::SimpleKeyValuePairEscapingProcessor(char escape_character_)
-    : KeyValuePairEscapingProcessor<std::unordered_map<std::string, std::string>>(), escape_character(escape_character_)
+    : escape_character(escape_character_)
 {
 }
 
