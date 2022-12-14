@@ -69,6 +69,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     String active_id = toString(ServerUUID::get());
     zookeeper->handleEphemeralNodeExistence(active_path, active_id);
     zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+    active_node_holder.reset();
     active_node_holder_zookeeper = zookeeper;
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 

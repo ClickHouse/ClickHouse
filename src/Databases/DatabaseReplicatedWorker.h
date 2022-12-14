@@ -51,10 +51,11 @@ private:
     String current_task;
     std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
 
-    /// It will remove "active" node when database is detached
-    zkutil::EphemeralNodeHolderPtr active_node_holder;
+
     /// EphemeralNodeHolder has reference to ZooKeeper, it may become dangling
     ZooKeeperPtr active_node_holder_zookeeper;
+    /// It will remove "active" node when database is detached
+    zkutil::EphemeralNodeHolderPtr active_node_holder;
 };
 
 }
