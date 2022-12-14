@@ -24,7 +24,7 @@ SimpleKeyValuePairEscapingProcessor::Response SimpleKeyValuePairEscapingProcesso
 
 std::string SimpleKeyValuePairEscapingProcessor::escape(std::string_view element_view) const
 {
-    [[maybe_unused]] bool escape = false;
+    bool escape = false;
     std::string element;
 
     element.reserve(element_view.size());

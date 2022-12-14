@@ -71,7 +71,7 @@ DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes & /*argument
     return return_type;
 }
 
-ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const ColumnsWithTypeAndName & arguments) const
+ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const ColumnsWithTypeAndName & arguments)
 {
     if (arguments.empty())
     {
@@ -136,7 +136,7 @@ std::shared_ptr<KeyValuePairExtractor<ExtractKeyValuePairs::EscapingProcessorOut
     CharArgument key_value_pair_delimiter,
     CharArgument item_delimiter,
     CharArgument enclosing_character,
-    SetArgument value_special_characters_allow_list) const
+    SetArgument value_special_characters_allow_list)
 {
     auto builder = KeyValuePairExtractorBuilder<ExtractKeyValuePairs::EscapingProcessorOutput>();
 
@@ -167,7 +167,7 @@ std::shared_ptr<KeyValuePairExtractor<ExtractKeyValuePairs::EscapingProcessorOut
     return builder.build();
 }
 
-ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column) const
+ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column)
 {
     auto offsets = ColumnUInt64::create();
 
@@ -197,7 +197,7 @@ ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<K
     return {std::move(keys), std::move(values), std::move(offsets)};
 }
 
-ColumnPtr ExtractKeyValuePairs::escape(RawColumns & raw_columns) const
+ColumnPtr ExtractKeyValuePairs::escape(RawColumns & raw_columns)
 {
     auto & [raw_keys, raw_values, offsets] = raw_columns;
 
@@ -255,13 +255,13 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             Query:
 
             ``` sql
-            select extractKeyValuePairs('9 ads =nm,  no\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\ picasso, team: psg,', '\\', ':', ',', '"', '.');
+            select extractKeyValuePairs('9 ads =nm, no\:me: neymar, age: 30, daojmskdpoa and a height: 1.75, school: lupe\ picasso, team: psg,', '\\', ':', ',', '"', '.');
             ```
 
             Result:
 
             ``` text
-            ┌─extractKeyValuePairs('9 ads =nm,  no\\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\\ picasso, team: psg,', '\\', ':', ',', '"', '.')─┐
+            ┌─extractKeyValuePairs('9 ads =nm, no\\:me: neymar, age: 30, daojmskdpoa and a height: 1.75, school: lupe\\ picasso, team: psg,', '\\', ':', ',', '"', '.')─┐
             │ {'no:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}                                                                            │
             └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
             ```)")
