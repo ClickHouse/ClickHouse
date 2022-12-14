@@ -218,12 +218,53 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 {
     factory.registerFunction<ExtractKeyValuePairs>(
         Documentation(
-            R"(Lorem Ipsum is simply dummy text of the printing and typesetting industry.
-            Lorem Ipsum has been the industry's standard dummy text ever since the 1500s,
-            when an unknown printer took a galley of type and scrambled it to make a type specimen book.
-            It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged.
-            It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages,
-            and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.)")
+            R"(Extracts key value pairs from any string. The string does not need to be 100% structured in a key value pair format,
+            it might contain noise (e.g. log files). The key value pair format to be interpreted should be specified via function arguments.
+            A key value pair consists of a key followed by a key_value_pair_delimiter and a value.
+            Special characters (e.g. $!@#¨) must be escaped. Enclosed/ quoted keys and values are accepted.
+
+            The below grammar is a simplified representation of what is expected/ supported (does not include escaping and character allow_listing):
+
+            * line = (reserved_char* key_value_pair)*  reserved_char*
+            * key_value_pair = key kv_separator value
+            * key = <quoted_string> |  asciichar asciialphanumeric*
+            * kv_separator = ':'
+            * value = <quoted_string> | asciialphanum*
+            * item_delimiter = ','
+
+            Both key and values accepts underscores as well.
+
+            **Syntax**
+            ``` sql
+            extractKeyValuePairs(data, [escape_character], [key_value_pair_delimiter], [item_delimiter], [enclosing_character], [value_special_characters_allow_list])
+            ```
+
+            **Arguments**
+            - data - string to extract key value pairs from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+            - escape_character - character to be used as escape. Defaults to '\\'. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+            - key_value_pair_delimiter - character to be used as delimiter between the key and the value. Defaults to ':'. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+            - item_delimiter - character to be used as delimiter between pairs. Defaults to ','. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+            - enclosing_character - character to be used as enclosing/quoting character. Defaults to '\"'. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+            - value_special_characters_allow_list - special (e.g. $!@#¨) value characters to ignore during value parsing and include without the need to escape. Should be specified without separators. Defaults to empty. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+            **Returned values**
+            - The extracted key value pairs in a Map(String, String).
+
+            **Example**
+
+            Query:
+
+            ``` sql
+            select extractKeyValuePairs('9 ads =nm,  no\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\ picasso, team: psg,', '\\', ':', ',', '"', '.');
+            ```
+
+            Result:
+
+            ``` text
+            ┌─extractKeyValuePairs('9 ads =nm,  no\\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\\ picasso, team: psg,', '\\', ':', ',', '"', '.')─┐
+            │ {'no:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}                                                                            │
+            └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            ```)")
         );
 }
 
