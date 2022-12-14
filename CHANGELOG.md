@@ -83,7 +83,7 @@
 #### Build/Testing/Packaging Improvement
 
 * Systemd integration now correctly notifies systemd that the service is really started and is ready to serve requests. [#43400](https://github.com/ClickHouse/ClickHouse/pull/43400) ([Коренберг Марк](https://github.com/socketpair)).
-* Added the option to build ClickHouse with OpenSSL using the OpenSSL FIPS Module (https://www.openssl.org/docs/man3.0/man7/fips_module.html). This build type has not been tested to validate security and is not supported. [#43991](https://github.com/ClickHouse/ClickHouse/pull/43991) ([Boris Kuschel](https://github.com/bkuschel)).
+* Added the option to build ClickHouse with OpenSSL using the [OpenSSL FIPS Module](https://www.openssl.org/docs/man3.0/man7/fips_module.html). This build type has not been tested to validate security and is not supported. [#43991](https://github.com/ClickHouse/ClickHouse/pull/43991) ([Boris Kuschel](https://github.com/bkuschel)).
 * Upgrade to the new `DeflateQpl` compression codec which has been implemented in a previous PR (details: https://github.com/ClickHouse/ClickHouse/pull/39494). This patch improves codec on below aspects: 1. QPL v0.2.0 to QPL v0.3.0 [Intel® Query Processing Library (QPL)](https://github.com/intel/qpl) 2. Improve CMake file for fixing QPL build issues for QPL v0.3.0. 3. Link the QPL library with libaccel-config at build time instead of runtime loading on QPL v0.2.0 (dlopen) 4. Fixed log print issue in CompressionCodecDeflateQpl.cpp. [#44024](https://github.com/ClickHouse/ClickHouse/pull/44024) ([jasperzhu](https://github.com/jinjunzh)).
 
 #### Bug Fix (user-visible misbehavior in official stable or prestable release)
