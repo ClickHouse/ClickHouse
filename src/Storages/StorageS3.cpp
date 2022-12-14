@@ -379,7 +379,7 @@ public:
         , query(query_)
         , virtual_header(virtual_header_)
     {
-        Strings all_keys = std::move(keys_);
+        Strings all_keys = keys_;
 
         /// Create a virtual block with one row to construct filter
         if (query && virtual_header && !all_keys.empty())
