@@ -2,6 +2,14 @@
 #include <Core/Types.h>
 #include <Common/DateLUT.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+}
+
 class DateLUTImpl;
 
 /** Mixin-class that manages timezone info for timezone-aware DateTime implementations
@@ -15,7 +23,7 @@ public:
 
     explicit TimezoneMixin(const String & time_zone_name = "")
         : has_explicit_time_zone(!time_zone_name.empty())
-        , time_zone(DateLUT::instance(time_zone_name))
+        , time_zone(DateLUT::instance(checkTimezoneName(time_zone_name)))
         , utc_time_zone(DateLUT::instance("UTC"))
     {
     }
@@ -29,4 +37,17 @@ protected:
 
     const DateLUTImpl & time_zone;
     const DateLUTImpl & utc_time_zone;
+
+private:
+    static const String & checkTimezoneName(const String & timezone_name)
+    {
+        const char * forbidden_patterns[] = {"/", "../", "./", "~/"};
+        for (const auto & pattern : forbidden_patterns)
+        {
+            if (timezone_name.starts_with(pattern))
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Timezone name cannot start with '{}'", pattern);
+        }
+        
+        return timezone_name;
+    }
 };
