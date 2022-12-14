@@ -790,6 +790,9 @@ class TestCase:
     ):
         description = ""
 
+        if debug_log:
+            debug_log = "\n".join(debug_log.splitlines()[:100])
+
         if proc:
             if proc.returncode is None:
                 try:
