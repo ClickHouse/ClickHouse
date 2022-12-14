@@ -3,6 +3,7 @@
 #include <Common/NamePrompter.h>
 #include <Core/BaseSettings.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingsChangesHistory.h>
 #include <Core/Defines.h>
 #include <IO/ReadSettings.h>
 
@@ -921,7 +922,7 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
     void setDefaultValue(const String & name) { resetToDefault(name); }
 
 private:
-    void applyCompatibilitySetting();
+    void applyCompatibilitySetting(const String & compatibility);
 
     std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
 };
