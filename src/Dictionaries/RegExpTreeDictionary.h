@@ -12,10 +12,13 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
+#include "Core/ColumnWithTypeAndName.h"
+#include "Core/Field.h"
 
 #include <DataTypes/IDataType.h>
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnString.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -98,7 +101,17 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        const ColumnPtr & default_values_column) const override
+        {
+            return getColumns(Strings({attribute_name}), DataTypes({result_type}), key_columns, key_types, Columns({default_values_column}))[0];
+        }
+
+    Columns getColumns(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Columns & default_values_columns) const override;
 
 private:
     const DictionaryStructure structure;
@@ -113,84 +126,35 @@ private:
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
-    //////////////////////////////////////////////////////////////////////
-
-    template <typename Value>
-    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
-
-    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
-
-    struct Attribute final
-    {
-        AttributeUnderlyingType type;
-        std::unordered_set<UInt64> nullable_set;
-
-        std::variant<
-            ContainerType<UInt8>,
-            ContainerType<UInt16>,
-            ContainerType<UInt32>,
-            ContainerType<UInt64>,
-            ContainerType<UInt128>,
-            ContainerType<UInt256>,
-            ContainerType<Int8>,
-            ContainerType<Int16>,
-            ContainerType<Int32>,
-            ContainerType<Int64>,
-            ContainerType<Int128>,
-            ContainerType<Int256>,
-            ContainerType<Decimal32>,
-            ContainerType<Decimal64>,
-            ContainerType<Decimal128>,
-            ContainerType<Decimal256>,
-            ContainerType<DateTime64>,
-            ContainerType<Float32>,
-            ContainerType<Float64>,
-            ContainerType<UUID>,
-            ContainerType<StringRef>,
-            ContainerType<Array>>
-            container;
-    };
-
-    std::unordered_map<std::string, Attribute> names_to_attributes;
-    std::unordered_map<UInt64, UInt64> keys_to_ids;
-
     std::vector<std::string> regexps;
-    std::unordered_map<UInt64, UInt64> ids_to_parent_ids;
-    std::unordered_map<UInt64, UInt64> ids_to_child_ids;
-
-    Arena string_arena;
-
-    //////////////////////////////////////////////////////////////////////
-
-    void createAttributes();
-
-    void resizeAttributes(size_t size);
+    std::vector<UInt64>      regexp_ids;
 
     void calculateBytesAllocated();
 
-    void setRegexps(const Block & block);
-
-    void setIdToParentId(const Block & block);
-
-    void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
-
-    void blockToAttributes(const Block & block);
-
     void loadData();
 
-    std::unordered_set<UInt64> matchSearchAllIndices(const std::string & key) const;
+    void initRegexNodes(Block & block);
+    void initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id);
+    void initGraph();
 
-    template <typename AttributeType, typename SetValueFunc, typename DefaultValueExtractor>
-    void getColumnImpl(
-        const Attribute & attribute,
-        std::optional<UInt64> match_index,
-        bool is_nullable,
-        SetValueFunc && set_value_func,
-        DefaultValueExtractor & default_value_extractor) const;
+    std::unordered_map<String, MutableColumnPtr> matchSearchAllIndices(
+        const ColumnString::Chars & keys_data,
+        const ColumnString::Offsets & keys_offsets,
+        const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+        const std::unordered_map<String, ColumnPtr> & defaults) const;
 
-    UInt64 getRoot(const std::unordered_set<UInt64> & indices) const;
+    bool setAttributes(
+        UInt64 id,
+        std::unordered_map<String, Field> & attributes_to_set,
+        const String & data,
+        std::unordered_set<UInt64> & visited_nodes,
+        const std::unordered_map<String, const DictionaryAttribute &> & attributes) const;
 
-    std::optional<UInt64> getLastMatchIndex(std::unordered_set<UInt64> matches, const Attribute & attribute) const;
+    struct RegexTreeNode;
+    using RegexTreeNodePtr = std::unique_ptr<RegexTreeNode>;
+
+    std::unordered_map<UInt64, RegexTreeNodePtr> regex_nodes;
+    std::unordered_map<UInt64, UInt64> topology_order;
 };
 
 }
