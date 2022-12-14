@@ -128,6 +128,7 @@ CREATE TABLE system.databases
     `data_path` String,
     `metadata_path` String,
     `uuid` UUID,
+    `engine_full` String,
     `comment` String,
     `database` String
 )
