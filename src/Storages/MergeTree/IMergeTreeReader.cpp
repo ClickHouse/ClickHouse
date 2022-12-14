@@ -78,13 +78,21 @@ size_t IMergeTreeReader::readRows(size_t from_mark, size_t current_task_last_mar
         res_columns.erase(res_columns.begin() + part_offset_column_index);
     }
 
-    const size_t rows_read = readPhysicalRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, res_columns);
+    size_t rows_read = readPhysicalRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, res_columns);
     const size_t start_row = continue_reading ? last_read_end_offset : data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
-    const size_t end_row = start_row + rows_read;
-    last_read_end_offset = end_row;
 
     if (part_offset_column_index != -1)
     {
+        /// In case when all requested physical columns are not present in part rows_read will be zero.
+        /// But we still need to fill offset column with values.
+        if (rows_read == 0)
+        {
+            const size_t total_rows = data_part_info_for_read->getIndexGranularity().getTotalRows();
+            rows_read = start_row + max_rows_to_read < total_rows ? max_rows_to_read : total_rows - start_row;
+        }
+
+        const size_t end_row = start_row + rows_read;
+
         if (!part_offset_column)
             part_offset_column = ColumnUInt64::create();
 
@@ -98,6 +106,8 @@ size_t IMergeTreeReader::readRows(size_t from_mark, size_t current_task_last_mar
 
         res_columns.insert(res_columns.begin() + part_offset_column_index, std::move(part_offset_column));
     }
+
+    last_read_end_offset = start_row + rows_read;
 
     return rows_read;
 }
