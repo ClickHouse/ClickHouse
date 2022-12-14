@@ -47,11 +47,12 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr from, DataTypePtr result_ty
     auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
 
     auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
-    QueryTreeNodes arguments{std::move(from), std::move(enum_literal_node)};
+    QueryTreeNodes arguments{ std::move(from), std::move(enum_literal_node) };
 
     auto function_node = std::make_shared<FunctionNode>("_CAST");
-    function_node->resolveAsFunction(std::move(cast_function), std::move(result_type));
     function_node->getArguments().getNodes() = std::move(arguments);
+
+    function_node->resolveAsFunction(cast_function->build(function_node->getArgumentTypes()));
 
     return function_node;
 }
@@ -86,10 +87,10 @@ void wrapIntoToString(FunctionNode & function_node, QueryTreeNodePtr arg, Contex
     assert(isString(function_node.getResultType()));
 
     auto to_string_function = FunctionFactory::instance().get("toString", std::move(context));
-    QueryTreeNodes arguments{std::move(arg)};
-
-    function_node.resolveAsFunction(std::move(to_string_function), std::make_shared<DataTypeString>());
+    QueryTreeNodes arguments{ std::move(arg) };
     function_node.getArguments().getNodes() = std::move(arguments);
+
+    function_node.resolveAsFunction(to_string_function->build(function_node.getArgumentTypes()));
 }
 
 class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitor<ConvertStringsToEnumVisitor>
