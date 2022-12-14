@@ -388,6 +388,7 @@ class ClickHouseCluster:
         self.with_postgres_cluster = False
         self.with_kafka = False
         self.with_kerberized_kafka = False
+        self.with_kerberos_kdc = False
         self.with_rabbitmq = False
         self.with_nats = False
         self.with_odbc_drivers = False
@@ -453,6 +454,12 @@ class ClickHouseCluster:
         self.kerberized_kafka_port = get_free_port()
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(
             self.kerberized_kafka_host
+        )
+
+        # available when with_kerberos_kdc == True
+        self.kerberos_kdc_host = "kerberoskdc"
+        self.keberos_docker_id = self.get_instance_docker_id(
+            self.kerberos_kdc_host
         )
 
         # available when with_mongo == True
@@ -1059,6 +1066,31 @@ class ClickHouseCluster:
         ]
         return self.base_kerberized_kafka_cmd
 
+
+    def setup_kerberos_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_kerberos_kdc = True
+        env_variables["KERBEROS_AUTH_DIR"] = instance.path + "/"
+        env_variables["KERBEROS_KDC_HOST"] = self.kerberos_kdc_host
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_kerberos_kdc.yml"),
+            ]
+        )
+        self.base_kerberos_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_kerberos_kdc.yml"),
+        ]
+        return self.base_kerberos_cmd
+
+
     def setup_redis_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_redis = True
         env_variables["REDIS_HOST"] = self.redis_host
@@ -1329,6 +1361,7 @@ class ClickHouseCluster:
         with_mysql_cluster=False,
         with_kafka=False,
         with_kerberized_kafka=False,
+        with_kerberos_kdc=False,
         with_rabbitmq=False,
         with_nats=False,
         clickhouse_path_dir=None,
@@ -1420,6 +1453,7 @@ class ClickHouseCluster:
             with_mysql_cluster=with_mysql_cluster,
             with_kafka=with_kafka,
             with_kerberized_kafka=with_kerberized_kafka,
+            with_kerberos_kdc=with_kerberos_kdc,
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
             with_nginx=with_nginx,
@@ -1550,6 +1584,13 @@ class ClickHouseCluster:
         if with_kerberized_kafka and not self.with_kerberized_kafka:
             cmds.append(
                 self.setup_kerberized_kafka_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_kerberos_kdc and not self.with_kerberos_kdc:
+            cmds.append(
+                self.setup_kerberos_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -2124,6 +2165,11 @@ class ClickHouseCluster:
                 logging.debug("Waiting for Kafka to start up")
                 time.sleep(1)
 
+    def wait_kerberos_kdc_is_available(self, kafka_docker_id):
+        logging.debug("Waiting for Kerberos KDC to start up")
+        # temp code: sleep 50 seconds
+        time.sleep(50)
+
     def wait_hdfs_to_start(self, timeout=300, check_marker=False):
         start = time.time()
         while time.time() - start < timeout:
@@ -2472,6 +2518,16 @@ class ClickHouseCluster:
                 self.wait_kafka_is_available(
                     self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100
                 )
+
+            if self.with_kerberos_kdc and self.base_kerberos_cmd:
+                logging.debug("Setup Kerberos KDC")
+                run_and_check(
+                    self.base_kerberos_cmd
+                    + common_opts
+                    + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.wait_kerberos_kdc_is_available(self.keberos_docker_id)
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 logging.debug("Setup RabbitMQ")
@@ -2872,6 +2928,7 @@ class ClickHouseInstance:
         with_mysql_cluster,
         with_kafka,
         with_kerberized_kafka,
+        with_kerberos_kdc,
         with_rabbitmq,
         with_nats,
         with_nginx,
@@ -2955,6 +3012,7 @@ class ClickHouseInstance:
         self.with_postgres_cluster = with_postgres_cluster
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
+        self.with_kerberos_kdc = with_kerberos_kdc
         self.with_rabbitmq = with_rabbitmq
         self.with_nats = with_nats
         self.with_nginx = with_nginx
@@ -2988,7 +3046,7 @@ class ClickHouseInstance:
         else:
             self.odbc_ini_path = ""
 
-        if with_kerberized_kafka or with_kerberized_hdfs:
+        if with_kerberized_kafka or with_kerberized_hdfs or with_kerberos_kdc:
             self.keytab_path = (
                 "- "
                 + os.path.dirname(self.docker_compose_path)
@@ -3906,7 +3964,7 @@ class ClickHouseInstance:
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
-        if self.with_kerberized_kafka or self.with_kerberized_hdfs:
+        if self.with_kerberized_kafka or self.with_kerberized_hdfs or self.with_kerberos_kdc:
             shutil.copytree(
                 self.kerberos_secrets_dir, p.abspath(p.join(self.path, "secrets"))
             )
@@ -3977,6 +4035,9 @@ class ClickHouseInstance:
 
         if self.with_kerberized_kafka:
             depends_on.append("kerberized_kafka1")
+
+        if self.with_kerberos_kdc:
+            depends_on.append("kerberoskdc")
 
         if self.with_kerberized_hdfs:
             depends_on.append("kerberizedhdfs1")
