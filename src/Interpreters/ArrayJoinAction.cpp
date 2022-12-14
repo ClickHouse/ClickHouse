@@ -18,35 +18,43 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-const DataTypeArray * getArrayJoinDataType(const DataTypePtr & type)
+std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-        return array_type;
+        return std::shared_ptr<const DataTypeArray>{type, array_type};
     else if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
         const auto & nested_type = map_type->getNestedType();
-        return typeid_cast<const DataTypeArray *>(nested_type.get());
+        const auto * nested_array_type = typeid_cast<const DataTypeArray *>(nested_type.get());
+        return std::shared_ptr<const DataTypeArray>{nested_type, nested_array_type};
     }
     else
         return nullptr;
 }
 
-const ColumnArray * getArrayJoinColumn(const ColumnPtr & column)
+ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
-    if (const ColumnArray * array = typeid_cast<const ColumnArray *>(column.get()))
-        return array;
+    if (typeid_cast<const ColumnArray *>(column.get()))
+        return column;
     else if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
-        return typeid_cast<const ColumnArray *>(&map->getNestedColumn());
+        return map->getNestedColumnPtr();
     else
         return nullptr;
+}
+
+const ColumnArray * getArrayJoinColumnRawPtr(const ColumnPtr & column)
+{
+    if (const auto & col_arr = getArrayJoinColumn(column))
+        return typeid_cast<const ColumnArray *>(col_arr.get());
+    return nullptr;
 }
 
 ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_col)
 {
     ColumnWithTypeAndName array_col;
     array_col.name = src_col.name;
-    array_col.type = getArrayJoinDataType(src_col.type)->shared_from_this();
-    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst())->getPtr();
+    array_col.type = getArrayJoinDataType(src_col.type);
+    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst());
     return array_col;
 }
 
@@ -75,7 +83,7 @@ void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
         if (!columns.contains(current.name))
             continue;
 
-        if (const auto * type = getArrayJoinDataType(current.type))
+        if (const auto & type = getArrayJoinDataType(current.type))
         {
             current.column = nullptr;
             current.type = type->getNestedType();
@@ -91,7 +99,7 @@ void ArrayJoinAction::execute(Block & block)
         throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
 
     ColumnPtr any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
-    const auto * any_array = getArrayJoinColumn(any_array_map_ptr);
+    const auto * any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
     if (!any_array)
         throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
 
@@ -133,7 +141,7 @@ void ArrayJoinAction::execute(Block & block)
             any_array_map_ptr = src_col.column->convertToFullColumnIfConst();
         }
 
-        any_array = getArrayJoinColumn(any_array_map_ptr);
+        any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
         if (!any_array)
             throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
     }
@@ -148,7 +156,7 @@ void ArrayJoinAction::execute(Block & block)
         }
 
         any_array_map_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();
-        any_array = getArrayJoinColumn(any_array_map_ptr);
+        any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
         if (!any_array)
             throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
     }
@@ -161,7 +169,7 @@ void ArrayJoinAction::execute(Block & block)
 
         if (columns.contains(current.name))
         {
-            if (const auto * type = getArrayJoinDataType(current.type))
+            if (const auto & type = getArrayJoinDataType(current.type))
             {
                 ColumnPtr array_ptr;
                 if (typeid_cast<const DataTypeArray *>(current.type.get()))

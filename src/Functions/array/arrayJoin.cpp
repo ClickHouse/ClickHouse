@@ -53,7 +53,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto * arr = getArrayJoinDataType(arguments[0]);
+        const auto & arr = getArrayJoinDataType(arguments[0]);
         if (!arr)
             throw Exception("Argument for function " + getName() + " must be Array or Map", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return arr->getNestedType();

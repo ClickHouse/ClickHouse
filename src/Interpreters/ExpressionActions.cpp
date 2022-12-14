@@ -620,7 +620,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
 
-            const auto * array = getArrayJoinColumn(array_join_key.column);
+            const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)
                 throw Exception("ARRAY JOIN of not array nor map: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
 
@@ -1008,7 +1008,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
 
         if (array_join->columns.contains(column.name))
         {
-            const auto * array = getArrayJoinDataType(column.type);
+            const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
             /// Arrays are materialized
             column.column = nullptr;
