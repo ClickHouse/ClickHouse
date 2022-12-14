@@ -136,6 +136,7 @@ function stop()
     if [ -n "$1" ]
     then
         # temporarily disable it in BC check
+        clickhouse stop --force
         return
     fi
 
