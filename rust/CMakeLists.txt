@@ -22,5 +22,22 @@ macro(configure_rustc)
 endmacro()
 configure_rustc()
 
+function(clickhouse_import_crate)
+    # This is a workaround for Corrosion case sensitive build type matching in
+    # _generator_add_cargo_targets(), that leads to different paths in
+    # IMPORTED_LOCATION and real path of the library.
+    #
+    # It uses CMAKE_CONFIGURATION_TYPES and $<CONFIG>, so here we preserve the
+    # case of ${CMAKE_BUILD_TYPE} in ${CMAKE_CONFIGURATION_TYPES}.
+    if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
+        set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};release")
+    else()
+        set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};debug")
+    endif()
+    # NOTE: we may use LTO for rust too
+
+    corrosion_import_crate(NO_STD ${ARGN})
+endfunction()
+
 add_subdirectory (BLAKE3)
 add_subdirectory (skim)
