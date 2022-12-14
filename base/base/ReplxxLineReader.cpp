@@ -413,8 +413,18 @@ ReplxxLineReader::ReplxxLineReader(
         return rx.invoke(Replxx::ACTION::REPAINT, code);
     };
 
-    /// NOTE: You can use Ctrl-S for non-fuzzy complete.
     rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+
+    /// Rebind regular incremental search to C-T.
+    ///
+    /// NOTE: C-T by default this is a binding to swap adjustent chars
+    /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
+    rx.bind_key(Replxx::KEY::control('T'), [this](char32_t)
+    {
+        /// Reverse search is detected by C-R.
+        uint32_t reverse_search = Replxx::KEY::control('R');
+        return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
+    });
 #endif
 }
 
