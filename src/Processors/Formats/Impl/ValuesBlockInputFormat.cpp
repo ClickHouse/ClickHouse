@@ -593,7 +593,6 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
     {
         if (!data_types.empty())
         {
-            skipWhitespaceIfAny(buf);
             assertChar(',', buf);
             skipWhitespaceIfAny(buf);
         }
@@ -601,6 +600,7 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
         readQuotedField(value, buf);
         auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
+        skipWhitespaceIfAny(buf);
     }
 
     assertChar(')', buf);

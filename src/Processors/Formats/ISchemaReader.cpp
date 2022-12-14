@@ -252,7 +252,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     if (names_to_types.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
-    NamesAndTypesList result;
+    NamesAndTypesList result = getStaticNamesAndTypes();
     for (auto & name : names_order)
     {
         auto & type = names_to_types[name];

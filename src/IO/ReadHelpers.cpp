@@ -1456,6 +1456,10 @@ static void readQuotedStringFieldInto(Vector & s, ReadBuffer & buf)
             }
         }
     }
+
+    if (buf.eof())
+        return;
+
     ++buf.position();
     s.push_back('\'');
 }

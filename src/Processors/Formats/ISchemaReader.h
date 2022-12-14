@@ -119,6 +119,11 @@ protected:
     /// If it's impossible to determine the type for some column, return nullptr for it.
     /// Set eof = true if can't read more data.
     virtual NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) = 0;
+
+    /// Get special static types that have the same name/type for each row.
+    /// For example, in JSONObjectEachRow format we have static column with
+    /// type String and name from a settings for object keys.
+    virtual NamesAndTypesList getStaticNamesAndTypes() { return {}; }
 };
 
 /// Base class for schema inference for formats that don't need any data to
