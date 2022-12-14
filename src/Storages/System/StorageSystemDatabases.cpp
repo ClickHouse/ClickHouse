@@ -5,6 +5,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
