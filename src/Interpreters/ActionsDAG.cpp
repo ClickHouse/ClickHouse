@@ -142,7 +142,7 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string al
 
 const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::string result_name)
 {
-    const DataTypeArray * array_type = getArrayJoinDataType(child.result_type);
+    const auto & array_type = getArrayJoinDataType(child.result_type);
     if (!array_type)
         throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 
@@ -464,7 +464,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
             auto key = arguments.at(0);
             key.column = key.column->convertToFullColumnIfConst();
 
-            const auto * array = getArrayJoinColumn(key.column);
+            const auto * array = getArrayJoinColumnRawPtr(key.column);
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                                 "ARRAY JOIN of not array nor map: {}", node->result_name);
