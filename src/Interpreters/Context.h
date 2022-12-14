@@ -249,9 +249,7 @@ private:
     String insert_format; /// Format, used in insert query.
 
     TemporaryTablesMapping external_tables_mapping;
-
     Scalars scalars;
-
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
 
@@ -583,11 +581,6 @@ public:
     const Block & getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
-
-    const std::unordered_map<String, std::shared_ptr<ConstantValue>> & getAnalyzerScalars() const;
-    const std::shared_ptr<ConstantValue> & getAnalyzerScalar(const String & hash) const;
-    void addAnalyzerScalar(const String & hash, const std::shared_ptr<ConstantValue> & constant_value);
-    bool hasAnalyzerScalar(const String & hash) const;
 
     const Block * tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
