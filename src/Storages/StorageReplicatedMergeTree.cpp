@@ -6564,7 +6564,7 @@ void StorageReplicatedMergeTree::getClearBlocksInPartitionOpsImpl(
 {
     Strings blocks;
     if (Coordination::Error::ZOK != zookeeper.tryGetChildren(fs::path(zookeeper_path) / blocks_dir_name, blocks))
-        throw Exception(zookeeper_path + "/" + blocks_dir_name + "doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+        throw Exception(ErrorCodes::NOT_FOUND_NODE, "Node {}/{} doesn't exist", zookeeper_path, blocks_dir_name);
 
     String partition_prefix = partition_id + "_";
     Strings paths_to_get;
