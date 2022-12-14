@@ -514,8 +514,8 @@ public:
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
 
     /// Returns the part with the given name and state or nullptr if no such part.
-    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
-    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states, DataPartsLock * acquired_lock = nullptr);
+    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock * acquired_lock = nullptr);
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
