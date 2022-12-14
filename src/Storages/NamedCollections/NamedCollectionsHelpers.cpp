@@ -74,7 +74,7 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
             continue;
 
         const auto & [key, value] = *value_override;
-        collection_copy->set<String>(key, toString(value));
+        collection_copy->setOrUpdate<String>(key, toString(value));
     }
 
     return collection_copy;
