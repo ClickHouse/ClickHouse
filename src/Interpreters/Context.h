@@ -239,6 +239,7 @@ private:
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
+    bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
@@ -629,7 +630,7 @@ public:
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
 
-    void killCurrentQuery();
+    void killCurrentQuery() const;
 
     bool hasInsertionTable() const { return !insertion_table.empty(); }
     void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
@@ -661,6 +662,7 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes) const;
     void checkSettingsConstraints(SettingsChanges & changes) const;
     void clampToSettingsConstraints(SettingsChanges & changes) const;
+    void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
     void resetSettingsToDefaultValue(const std::vector<String> & names);

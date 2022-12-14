@@ -718,11 +718,12 @@ ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter,
 NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
                      const Block & result_sample_block_,
                      size_t left_columns_count,
-                     const LeftToRightKeyRemap & left_to_right_key_remap)
+                     const TableJoin & table_join)
     : filler(std::move(filler_))
     , saved_block_sample(filler->getEmptyBlock())
     , result_sample_block(materializeBlock(result_sample_block_))
 {
+    const auto & left_to_right_key_remap = table_join.leftToRightKeyRemap();
     for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
     {
         /// We need right 'x' for 'RIGHT JOIN ... USING(x)'
@@ -739,14 +740,21 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
 
     /// `saved_block_sample` may contains non unique column names, get any of them
     /// (e.g. in case of `... JOIN (SELECT a, a, b FROM table) as t2`)
-    for (const auto & [name, right_pos] : saved_block_sample.getNamesToIndexesMap())
+    for (const auto & [right_name, right_pos] : saved_block_sample.getNamesToIndexesMap())
     {
+        String column_name(right_name);
+        if (table_join.getStorageJoin())
+        {
+            /// StorageJoin operates with original non qualified column names, so apply renaming here
+            column_name = table_join.renamedRightColumnName(column_name);
+        }
+
         /// Start from left_columns_count to don't remap left keys twice. We need only qualified right keys here
         /// `result_sample_block` may contains non unique column names, need to set index for all of them
         for (size_t result_pos = left_columns_count; result_pos < result_sample_block.columns(); ++result_pos)
         {
             const auto & result_name = result_sample_block.getByPosition(result_pos).name;
-            if (result_name == name)
+            if (result_name == column_name)
                 setRightIndex(right_pos, result_pos);
         }
     }

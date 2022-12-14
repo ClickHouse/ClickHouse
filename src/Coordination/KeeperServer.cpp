@@ -325,7 +325,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
         auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
         if (!asio_listener)
-            return;
+            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {}", state_manager->getPort());
         asio_listeners.emplace_back(std::move(asio_listener));
     }
     else
@@ -924,14 +924,22 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
 {
     KeeperLogInfo log_info;
     auto log_store = state_manager->load_log_store();
-    log_info.first_log_idx = log_store->start_index();
-    log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
-    log_info.last_log_idx = raft_instance->get_last_log_idx();
-    log_info.last_log_term = raft_instance->get_last_log_term();
-    log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
-    log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
-    log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();
-    log_info.last_snapshot_idx = raft_instance->get_last_snapshot_idx();
+    if (log_store)
+    {
+        log_info.first_log_idx = log_store->start_index();
+        log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
+    }
+
+    if (raft_instance)
+    {
+        log_info.last_log_idx = raft_instance->get_last_log_idx();
+        log_info.last_log_term = raft_instance->get_last_log_term();
+        log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
+        log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
+        log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();
+        log_info.last_snapshot_idx = raft_instance->get_last_snapshot_idx();
+    }
+
     return log_info;
 }
 
