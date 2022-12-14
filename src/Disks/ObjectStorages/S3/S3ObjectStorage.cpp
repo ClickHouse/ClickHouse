@@ -366,7 +366,8 @@ void S3ObjectStorage::copyObjectImpl(
 
     auto outcome = client_ptr->CopyObject(request);
 
-    if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "EntityTooLarge")
+    if (!outcome.IsSuccess() && (outcome.GetError().GetExceptionName() == "EntityTooLarge"
+            || outcome.GetError().GetExceptionName() == "InvalidRequest"))
     { // Can't come here with MinIO, MinIO allows single part upload for large objects.
         copyObjectMultipartImpl(src_bucket, src_key, dst_bucket, dst_key, head, metadata);
         return;
