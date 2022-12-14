@@ -120,17 +120,7 @@ public:
         return current_context;
     }
 
-    const ContextPtr & getContext()
-    {
-        return current_context;
-    }
-
     const Settings & getSettings() const
-    {
-        return current_context->getSettingsRef();
-    }
-
-    const Settings & getSettings()
     {
         return current_context->getSettingsRef();
     }
