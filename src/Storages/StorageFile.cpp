@@ -5,6 +5,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -592,22 +593,8 @@ public:
 
                 if (num_rows)
                 {
-                    auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
-                    size_t total_rows_approx = static_cast<size_t>(std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row));
-                    total_rows_approx_accumulated += total_rows_approx;
-                    ++total_rows_count_times;
-                    total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
-
-                    /// We need to add diff, because total_rows_approx is incremental value.
-                    /// It would be more correct to send total_rows_approx as is (not a diff),
-                    /// but incrementation of total_rows_to_read does not allow that.
-                    /// A new field can be introduces for that to be sent to client, but it does not worth it.
-                    if (total_rows_approx > total_rows_approx_prev)
-                    {
-                        size_t diff = total_rows_approx - total_rows_approx_prev;
-                        addTotalRowsApprox(diff);
-                        total_rows_approx_prev = total_rows_approx;
-                    }
+                    updateRowsProgressApprox(
+                        *this, chunk, files_info->total_bytes_to_read, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
                 }
                 return chunk;
             }
@@ -648,7 +635,7 @@ private:
 
     UInt64 total_rows_approx_accumulated = 0;
     size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_prev = 0;
+    UInt64 total_rows_approx_max = 0;
 };
 
 

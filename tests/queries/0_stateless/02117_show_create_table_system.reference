@@ -104,6 +104,7 @@ CREATE TABLE system.data_skipping_indices
     `table` String,
     `name` String,
     `type` String,
+    `type_full` String,
     `expr` String,
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
@@ -127,6 +128,7 @@ CREATE TABLE system.databases
     `data_path` String,
     `metadata_path` String,
     `uuid` UUID,
+    `engine_full` String,
     `comment` String,
     `database` String
 )
@@ -330,6 +332,9 @@ CREATE TABLE system.merge_tree_settings
     `value` String,
     `changed` UInt8,
     `description` String,
+    `min` Nullable(String),
+    `max` Nullable(String),
+    `readonly` UInt8,
     `type` String
 )
 ENGINE = SystemMergeTreeSettings
@@ -889,6 +894,9 @@ CREATE TABLE system.replicated_merge_tree_settings
     `value` String,
     `changed` UInt8,
     `description` String,
+    `min` Nullable(String),
+    `max` Nullable(String),
+    `readonly` UInt8,
     `type` String
 )
 ENGINE = SystemReplicatedMergeTreeSettings

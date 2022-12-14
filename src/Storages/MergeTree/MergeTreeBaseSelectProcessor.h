@@ -169,6 +169,18 @@ protected:
     std::deque<MergeTreeReadTaskPtr> delayed_tasks;
     std::deque<MarkRanges> buffered_ranges;
 
+    /// This setting is used in base algorithm only to additionally limit the number of granules to read.
+    /// It is changed in ctor of MergeTreeThreadSelectAlgorithm.
+    ///
+    /// The reason why we have it here is because MergeTreeReadPool takes the full task
+    /// ignoring min_marks_to_read setting in case of remote disk (see MergeTreeReadPool::getTask).
+    /// In this case, we won't limit the number of rows to read based on adaptive granularity settings.
+    ///
+    /// Big reading tasks are better for remote disk and prefetches.
+    /// So, for now it's easier to limit max_rows_to_read.
+    /// Somebody need to refactor this later.
+    size_t min_marks_to_read = 0;
+
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
 
