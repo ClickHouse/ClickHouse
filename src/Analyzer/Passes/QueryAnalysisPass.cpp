@@ -1705,7 +1705,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     auto scalars_iterator = scalars.find(node.get());
     if (scalars_iterator != scalars.end())
     {
-        hit = true;
         constant_value = scalars_iterator->second;
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
         return;
