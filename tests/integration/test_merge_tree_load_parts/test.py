@@ -83,7 +83,21 @@ def test_merge_tree_load_parts(started_cluster):
         set(part_dirs.strip().split("\n")) - {"detached", "format_version.txt"}
     )
 
-    assert len(part_dirs) == 1 and part_dirs[0].startswith("44_1_20")
+    MAX_RETRY = 10
+    part_dirs_ok = False
+    for _ in range(MAX_RETRY):
+        part_dirs = node1.exec_in_container(
+            ["bash", "-c", f"ls {table_path}"], user="root"
+        )
+        part_dirs = list(
+            set(part_dirs.strip().split("\n")) - {"detached", "format_version.txt"}
+        )
+        part_dirs_ok = len(part_dirs) == 1 and part_dirs[0].startswith("44_1_20")
+        if part_dirs_ok:
+            break
+        time.sleep(2)
+
+    assert part_dirs_ok
 
 
 def test_merge_tree_load_parts_corrupted(started_cluster):
