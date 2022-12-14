@@ -386,7 +386,7 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
         CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
 
     /// Replica was already readonly, but we should decrement the metric, because we are detaching/dropping table.
-    /// if first pass wasn't done we don't have to decrement because it wasn't incemented in the first place
+    /// if first pass wasn't done we don't have to decrement because it wasn't incremented in the first place
     /// the task should be deactivated if it's full shutdown so no race is present
     if (!first_time && on_shutdown)
     {
