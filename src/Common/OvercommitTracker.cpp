@@ -37,6 +37,8 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
 
     if (OvercommitTrackerBlockerInThread::isBlocked())
         return OvercommitResult::NONE;
+
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::ThreadsInOvercommitTracker);
     // NOTE: Do not change the order of locks
     //
     // global mutex must be acquired before overcommit_m, because
@@ -80,14 +82,10 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
 
     required_memory += amount;
     auto wait_start_time = std::chrono::system_clock::now();
-    bool timeout;
+    bool timeout = !cv.wait_for(lk, max_wait_time, [this, id]()
     {
-        CurrentMetrics::Increment metric_increment(CurrentMetrics::ThreadsInOvercommitTracker);
-        timeout = !cv.wait_for(lk, max_wait_time, [this, id]()
-        {
-            return id < id_to_release || cancellation_state == QueryCancellationState::NONE;
-        });
-    }
+        return id < id_to_release || cancellation_state == QueryCancellationState::NONE;
+    });
     auto wait_end_time = std::chrono::system_clock::now();
     ProfileEvents::increment(ProfileEvents::MemoryOvercommitWaitTimeMicroseconds, (wait_end_time - wait_start_time) / 1us);
 
