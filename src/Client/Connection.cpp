@@ -309,6 +309,21 @@ void Connection::receiveHello()
             readVarUInt(server_version_patch, *in);
         else
             server_version_patch = server_revision;
+
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
+        {
+            UInt64 rules_size;
+            readVarUInt(rules_size, *in);
+            password_complexity_rules.reserve(rules_size);
+
+            for (size_t i = 0; i < rules_size; ++i)
+            {
+                String original_pattern, exception_message;
+                readStringBinary(original_pattern, *in);
+                readStringBinary(exception_message, *in);
+                password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
+            }
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();

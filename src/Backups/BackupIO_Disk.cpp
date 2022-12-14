@@ -75,6 +75,13 @@ std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_nam
     return disk->writeFile(file_path);
 }
 
+void BackupWriterDisk::removeFile(const String & file_name)
+{
+    disk->removeFileIfExists(path / file_name);
+    if (disk->isDirectory(path) && disk->isDirectoryEmpty(path))
+        disk->removeDirectory(path);
+}
+
 void BackupWriterDisk::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)

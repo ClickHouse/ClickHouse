@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
@@ -211,7 +216,9 @@ public:
     DataTypePtr getResultType() const override
     {
         if (!function)
-            return {};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Function node with name '{}' is not resolved",
+                function_name);
         return function->getResultType();
     }
 
