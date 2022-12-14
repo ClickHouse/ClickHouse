@@ -11,10 +11,10 @@ class MergeTreeReadPool;
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
   * to perform.
   */
-class MergeTreeThreadSelectProcessor final : public MergeTreeBaseSelectProcessor
+class MergeTreeThreadSelectAlgorithm final : public IMergeTreeSelectAlgorithm
 {
 public:
-    MergeTreeThreadSelectProcessor(
+    MergeTreeThreadSelectAlgorithm(
         size_t thread_,
         const std::shared_ptr<MergeTreeReadPool> & pool_,
         size_t min_marks_to_read_,
@@ -32,7 +32,7 @@ public:
 
     String getName() const override { return "MergeTreeThread"; }
 
-    ~MergeTreeThreadSelectProcessor() override;
+    ~MergeTreeThreadSelectAlgorithm() override;
 
 protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
@@ -49,7 +49,6 @@ private:
     size_t thread;
 
     std::shared_ptr<MergeTreeReadPool> pool;
-    size_t min_marks_to_read;
 
     /// Last part read in this thread
     std::string last_readed_part_name;
