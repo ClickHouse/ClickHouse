@@ -51,7 +51,6 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
         return 0;
 
     chassert(!distinct_node->children.empty());
-    chassert(typeid_cast<ExpressionStep *>(distinct_node->children.front()->step.get()));
 
     /// delete current distinct
     parent_node->children[0] = distinct_node->children.front();
