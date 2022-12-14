@@ -7,6 +7,8 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include "Core/ColumnWithTypeAndName.h"
+#include "DataTypes/DataTypeArray.h"
 
 #if USE_YAML_CPP
 
@@ -19,8 +21,8 @@
 
 #include <base/types.h>
 
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 
@@ -99,49 +101,6 @@ namespace DB
 {
 
 /**
-*   Sections in YAMLRegExpTreeDictionary
-*
-*   Example:
-*   ```
-*   attributes:
-*       attr1:
-*           ...
-*       attr2:
-*           ...
-*
-*   configuration:
-*       - match:
-*           ...
-*   ```
-*/
-
-inline const String kAttributes = "attributes";
-inline const String kConfiguration = "configuration";
-
-/**
-*   Attributes allowed fields
-*
-*   Example:
-*   ```
-*   attr1:
-*       type: String
-*   attr2:
-*       type: Float
-*   ```
-*/
-
-inline const String kType = "type";
-
-/**
-*   Allowed data types
-*/
-
-inline const String kUInt = "UInt";
-inline const String kInt = "Int";
-inline const String kFloat = "Float";
-inline const String kString = "String";
-
-/**
 *   Configuration allowed fields
 *
 *   Example:
@@ -151,15 +110,17 @@ inline const String kString = "String";
 *       set:
 *           attr1: "Vecna"
 *           attr2: 22.8
-*       match:  # nested match for subpattern
+*       -match:  # nested match for subpattern
 *           regexp: "Windows"
+*       -match:  # nested match for subpattern
+*           regexp: "Linux"
 *           ...
 *   ```
 */
 
-inline const String kMatch = "match";
-inline const String kRegExp = "regexp";
-inline const String kSet = "set";
+static const std::string kMatch = "match";
+static const std::string kRegExp = "regexp";
+static const std::string kSet = "set";
 
 /**
 *   The data can be loaded from table (using any available dictionary source) with the following structure:
@@ -167,16 +128,15 @@ inline const String kSet = "set";
 *   id UInt64,
 *   parent_id UInt64,
 *   regexp String,
-*   attr_1 DataType,
-*   ...
-*   attr_n DataType
-*   ```
+*   keys array<String>,
+*   values array<String>,
 */
 
-inline const String kId = "id";
-inline const String kParentId = "parent_id";
+const std::string kId = "id";
+const std::string kParentId = "parent_id";
+const std::string kKeys = "keys";
+const std::string kValues = "values";
 
-//////////////////////////////////////////////////////////////////////
 
 namespace ErrorCodes
 {
@@ -186,127 +146,31 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-//////////////////////////////////////////////////////////////////////
-
-Field toUInt(const String & value)
-{
-    const auto result = static_cast<UInt64>(std::strtoul(value.c_str(), nullptr, 10));
-    return Field(result);
-}
-
-Field toInt(const String & value)
-{
-    const auto result = static_cast<Int64>(std::strtol(value.c_str(), nullptr, 10));
-    return Field(result);
-}
-
-Field toFloat(const String & value)
-{
-    const auto result = static_cast<Float64>(std::strtof(value.c_str(), nullptr));
-    return Field(result);
-}
-
-Field toString(const String & value)
-{
-    return Field(value);
-}
-
-class Attribute
-{
-public:
-    explicit Attribute(
-        const String & name_, const bool is_nullable_, const DataTypePtr & data_type_, const String & attribute_type_)
-        : name(name_)
-        , is_nullable(is_nullable_)
-        , data_type(data_type_)
-        , attribute_type(attribute_type_)
-        , column_ptr(data_type_->createColumn())
-    {
-    }
-
-    void insert(const String & value)
-    {
-        if (attribute_type == kUInt)
-        {
-            column_ptr->insert(toUInt(value));
-        }
-        else if (attribute_type == kInt)
-        {
-            column_ptr->insert(toInt(value));
-        }
-        else if (attribute_type == kFloat)
-        {
-            column_ptr->insert(toFloat(value));
-        }
-        else if (attribute_type == kString)
-        {
-            column_ptr->insert(toString(value));
-        }
-        else
-        {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Unknown type for attribute {}", attribute_type);
-        }
-    }
-
-    void insertNull()
-    {
-        if (!is_nullable)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying insert null to not nullable column {} of type {}", name, attribute_type);
-        }
-
-        null_indices.insert(column_ptr->size());
-        column_ptr->insertDefault();
-    }
-
-    String getName() const { return name; }
-
-    DataTypePtr getDataType() const
-    {
-        if (isNullable())
-        {
-            return makeNullable(data_type);
-        }
-        return data_type;
-    }
-
-    ColumnPtr getColumn()
-    {
-        auto result = column_ptr->convertToFullIfNeeded();
-
-        if (isNullable())
-        {
-            auto null_mask = ColumnUInt8::create(column_ptr->size(), false);
-            for (size_t i = 0; i < column_ptr->size(); ++i)
-            {
-                null_mask->getData()[i] = null_indices.contains(i);
-            }
-
-            return ColumnNullable::create(result, std::move(null_mask));
-        }
-
-        return result;
-    }
-
-private:
-    String name;
-
-    bool is_nullable;
-    std::unordered_set<UInt64> null_indices;
-
-    DataTypePtr data_type;
-    String attribute_type;
-
-    MutableColumnPtr column_ptr;
-
-    bool isNullable() const { return is_nullable && !null_indices.empty(); }
+struct MatchNode {
+    UInt64 id;
+    UInt64 parent_id;
+    String reg_exp;
+    std::vector<Field> keys;
+    std::vector<Field> values;
 };
 
-//////////////////////////////////////////////////////////////////////
+struct ResultColumns {
+    MutableColumnPtr ids;
+    MutableColumnPtr parent_ids;
+    MutableColumnPtr reg_exps;
+    MutableColumnPtr keys;
+    MutableColumnPtr values;
+    ResultColumns()
+    {
+        ids = ColumnUInt64::create();
+        parent_ids = ColumnUInt64::create();
+        reg_exps = ColumnString::create();
+        keys = ColumnArray::create(ColumnString::create());
+        values = ColumnArray::create(ColumnString::create());
+    }
+};
 
-using StringToString = std::unordered_map<String, String>;
 using StringToNode = std::unordered_map<String, YAML::Node>;
-using StringToAttribute = std::unordered_map<String, Attribute>;
 
 YAML::Node loadYAML(const String & filepath)
 {
@@ -330,86 +194,23 @@ StringToNode parseYAMLMap(const YAML::Node & node)
 
     for (const auto & pair : node)
     {
-        const auto key = pair.first.as<String>();
+        const String & key = pair.first.as<String>();
         result[key] = pair.second;
     }
 
     return result;
 }
 
-Attribute makeAttribute(const String & name, const String & type)
-{
-    DataTypePtr data_type;
 
-    if (type == kUInt)
-    {
-        data_type = std::make_shared<DataTypeUInt64>();
-    }
-    else if (type == kInt)
-    {
-        data_type = std::make_shared<DataTypeInt64>();
-    }
-    else if (type == kFloat)
-    {
-        data_type = std::make_shared<DataTypeFloat64>();
-    }
-    else if (type == kString)
-    {
-        data_type = std::make_shared<DataTypeString>();
-    }
-    else
-    {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Unknown type for attribute {}", type);
-    }
-
-    return Attribute(name, true, data_type, type);
-}
-
-Attribute makeAttribute(const String & name, const YAML::Node & node)
-{
-    if (!node.IsMap())
-    {
-        throw Exception(
-            ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Invalid structure for attribute {}, expected `{}` mapping", name, kType);
-    }
-
-    auto attribute_params = parseYAMLMap(node);
-
-    if (!attribute_params.contains(kType))
-    {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Missing type for attribute {}", name);
-    }
-
-    const auto type_node = attribute_params[kType];
-    if (!type_node.IsScalar())
-    {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Value for `type` must be scalar, attribute {}", name);
-    }
-
-    const auto type = type_node.as<String>();
-
-    return makeAttribute(name, type);
-}
-
-StringToAttribute getAttributes(const YAML::Node & node)
-{
-    StringToAttribute result;
-
-    const auto attributes = parseYAMLMap(node);
-    for (const auto & [name, value] : attributes)
-    {
-        result.insert({name, makeAttribute(name, value)});
-    }
-
-    return result;
-}
-
-void getValuesFromSet(const YAML::Node & node, StringToString & attributes_to_insert)
+/// this function extracts attributes.
+/// TODO: we should support nested columns.
+void getValuesFromSet(const YAML::Node & node, MatchNode & attributes_to_insert)
 {
     if (!node.IsMap())
     {
         throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` must be map", kSet);
     }
+
     const auto attributes = parseYAMLMap(node);
 
     for (const auto & [key, value] : attributes)
@@ -419,129 +220,104 @@ void getValuesFromSet(const YAML::Node & node, StringToString & attributes_to_in
             throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Value of attribute {} must be scalar", key);
         }
 
-        attributes_to_insert[key] = value.as<String>();
+        attributes_to_insert.keys.push_back(key);
+        attributes_to_insert.values.push_back(value.as<String>());
     }
 }
 
-void insertValues(StringToString & attributes_to_insert, StringToAttribute & names_to_attributes)
+void insertValues(const MatchNode & node, ResultColumns & result_columns)
 {
-    for (auto & [attribute_name, attribute] : names_to_attributes)
-    {
-        if (attributes_to_insert.contains(attribute_name))
-        {
-            attribute.insert(attributes_to_insert[attribute_name]);
-        }
-        else
-        {
-            attribute.insertNull();
-        }
-    }
+    result_columns.ids->insert(node.id);
+    result_columns.parent_ids->insert(node.parent_id);
+    result_columns.reg_exps->insert(node.reg_exp);
+    result_columns.keys->insert(Array(node.keys.begin(), node.keys.end()));
+    result_columns.values->insert(Array(node.values.begin(), node.values.end()));
 }
 
-UInt64 processMatch(const bool is_root, UInt64 parent_id, const YAML::Node & node, StringToAttribute & names_to_attributes)
+void parseMatchList(const bool is_root, UInt64 & id, const YAML::Node & node, ResultColumns & names_to_attributes);
+
+void parseMatchNode(const bool is_root, UInt64 & id, const YAML::Node & node, ResultColumns & result)
 {
     if (!node.IsMap())
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Single `{}` node must be mapping", kMatch);
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` node must be map type", kMatch);
     }
 
     auto match = parseYAMLMap(node);
 
-    StringToString attributes_to_insert;
+    MatchNode attributes_to_insert;
 
-    if (!is_root)
+    if (is_root)
     {
-        attributes_to_insert[kParentId] = std::to_string(parent_id);
+        attributes_to_insert.id = ++id;
+        attributes_to_insert.parent_id = id;
     }
-    attributes_to_insert[kId] = std::to_string(++parent_id);
+    else
+    {
+        attributes_to_insert.parent_id = id;
+        attributes_to_insert.id = ++id;
+    }
 
     if (!match.contains(kRegExp))
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Single `{}` node must contain {}", kMatch, kRegExp);
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Single `{}` node must contain key {}", kMatch, kRegExp);
     }
     const auto & regexp_node = match[kRegExp];
 
     if (!regexp_node.IsScalar())
-    {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` should be a {}", kRegExp, kString);
-    }
-    attributes_to_insert[kRegExp] = regexp_node.as<String>();
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` should be a String", kRegExp);
+
+    attributes_to_insert.reg_exp = regexp_node.as<String>();
 
     if (match.contains(kSet))
-    {
         getValuesFromSet(match[kSet], attributes_to_insert);
-    }
 
-    insertValues(attributes_to_insert, names_to_attributes);
+    insertValues(attributes_to_insert, result);
 
-    if (!match.contains(kMatch))
-    {
-        return parent_id;
-    }
-
-    return processMatch(false, parent_id, match[kMatch], names_to_attributes);
+    if (match.contains(kMatch))
+        parseMatchList(false, id, match[kMatch], result);
 }
 
-void parseConfiguration(const YAML::Node & node, StringToAttribute & names_to_attributes)
+void parseMatchList(const bool is_root, UInt64 & id, const YAML::Node & node, ResultColumns & names_to_attributes)
 {
-    names_to_attributes.insert({kId, Attribute(kId, false, std::make_shared<DataTypeUInt64>(), kUInt)});
-    names_to_attributes.insert({kParentId, Attribute(kParentId, true, std::make_shared<DataTypeUInt64>(), kUInt)});
-    names_to_attributes.insert({kRegExp, Attribute(kRegExp, false, std::make_shared<DataTypeString>(), kString)});
-
     if (!node.IsSequence())
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Configuration must be sequence of matches");
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Configuration must be a yaml list of match rules");
     }
-
-    UInt64 uid = 0;
 
     for (const auto & child_node : node)
     {
         if (!child_node.IsMap())
         {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Element of {} configuration sequence must be mapping", kMatch);
+            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Element of {} configuration list must be yaml map type", kMatch);
         }
 
         auto match = parseYAMLMap(child_node);
 
         if (!match.contains(kMatch))
         {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Match mapping should contain key {}", kMatch);
+            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Match rule must contain key {}", kMatch);
         }
 
-        uid = processMatch(true, uid, match[kMatch], names_to_attributes);
+        parseMatchNode(is_root, id, match[kMatch], names_to_attributes);
     }
 }
 
 Block parseYAMLAsRegExpTree(const YAML::Node & node)
 {
-    if (!node.IsMap())
-    {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Expected `{}` and `{}` mapping", kAttributes, kConfiguration);
-    }
+    ResultColumns result_cols;
+    UInt64 id = 0;
+    parseMatchList(true, id, node, result_cols);
 
-    auto regexp_tree = parseYAMLMap(node);
-
-    if (!regexp_tree.contains(kAttributes))
-    {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Missing `{}` section", kAttributes);
-    }
-    auto names_to_attributes = getAttributes(regexp_tree[kAttributes]);
-
-    if (!regexp_tree.contains(kConfiguration))
-    {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Missing `{}` section", kConfiguration);
-    }
-    parseConfiguration(regexp_tree[kConfiguration], names_to_attributes);
+    Block result_block;
 
     ColumnsWithTypeAndName columns;
-    columns.reserve(names_to_attributes.size());
 
-    for (auto & [name, attribute] : names_to_attributes)
-    {
-        auto column = ColumnWithTypeAndName(attribute.getColumn(), attribute.getDataType(), attribute.getName());
-        columns.push_back(std::move(column));
-    }
+    columns.push_back(ColumnWithTypeAndName(std::move(result_cols.ids), DataTypePtr(new DataTypeUInt64()), kId));
+    columns.push_back(ColumnWithTypeAndName(std::move(result_cols.parent_ids), DataTypePtr(new DataTypeUInt64()), kParentId));
+    columns.push_back(ColumnWithTypeAndName(std::move(result_cols.reg_exps), DataTypePtr(new DataTypeString()), kRegExp));
+    columns.push_back(ColumnWithTypeAndName(std::move(result_cols.keys), DataTypePtr(new DataTypeArray(DataTypePtr(new DataTypeString()))), kKeys));
+    columns.push_back(ColumnWithTypeAndName(std::move(result_cols.values), DataTypePtr(new DataTypeArray(DataTypePtr(new DataTypeString()))), kValues));
 
     return Block(std::move(columns));
 }
