@@ -1196,3 +1196,36 @@ Result:
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
 The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+
+## extractKeyValuePairs
+
+Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged.
+
+**Syntax**
+
+``` sql
+extractKeyValuePairs()
+```
+
+**Arguments**
+-   Lorem Ipsum
+-   Lorem Ipsum
+
+**Returned values**
+-   The Lorem Ipsum String.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT extractKeyValuePairs()
+```
+
+Result:
+
+``` text
+┌─concatWithSeparator()─┐
+│ Lorem Ipsum String                           │
+└───────────────────────────────────┘
+```
