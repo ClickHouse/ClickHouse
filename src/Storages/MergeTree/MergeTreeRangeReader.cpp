@@ -1225,8 +1225,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
             /// If some columns absent in part, then evaluate default values
             if (should_evaluate_missing_defaults)
-                // TODO: must pass proper block here, not block_before_prewhere!
-                merge_tree_reader->evaluateMissingDefaults(read_result.block_before_prewhere, columns);
+            {
+                Block additional_columns = prev_reader->getSampleBlock().cloneWithColumns(read_result.columns);
+                for (const auto & col : read_result.block_before_prewhere)
+                    additional_columns.insert(col);
+
+                merge_tree_reader->evaluateMissingDefaults(additional_columns, columns);
+            }
 
             /// If result not empty, then apply on-fly alter conversions if any required
             merge_tree_reader->performRequiredConversions(columns);
@@ -1375,11 +1380,22 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         }
 /////////////*/
 
-        /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
-        result.block_before_prewhere = block;
+        {
+            /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
+            Block block_before_prewhere = block;
 
-        if (prewhere_info->actions)
-           prewhere_info->actions->execute(block);
+            if (prewhere_info->actions)
+                prewhere_info->actions->execute(block);
+
+            result.block_before_prewhere.clear();
+            for (auto & col : block_before_prewhere)
+            {
+                /// Exclude columns that are present in the result block to avoid storing them and filtering twice
+                if (block.has(col.name))
+                    continue;
+                result.block_before_prewhere.insert(col);
+            }
+        }
 
         prewhere_column_pos = block.getPositionByName(prewhere_info->column_name);
 
