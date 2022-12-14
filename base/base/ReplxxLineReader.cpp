@@ -402,7 +402,15 @@ ReplxxLineReader::ReplxxLineReader(
                 words.push_back(hs.get().text());
         }
 
-        std::string new_query(skim(words));
+        std::string new_query;
+        try
+        {
+            new_query = std::string(skim(words));
+        }
+        catch (const std::exception & e)
+        {
+            rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
+        }
         if (!new_query.empty())
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
 
