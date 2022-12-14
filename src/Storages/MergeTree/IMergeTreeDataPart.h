@@ -46,6 +46,16 @@ class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
 
+
+enum class DataPartRemovalState
+{
+    NOT_ATTEMPTED,
+    VISIBLE_TO_TRANSACTIONS,
+    NON_UNIQUE_OWNERSHIP,
+    NOT_REACHED_REMOVAL_TIME,
+    REMOVED,
+};
+
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
@@ -445,6 +455,10 @@ public:
     void writeDeleteOnDestroyMarker();
     void removeDeleteOnDestroyMarker();
     void removeVersionMetadata();
+
+    mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
+
+    mutable std::atomic<time_t> last_removal_attemp_time = 0;
 
 protected:
 
