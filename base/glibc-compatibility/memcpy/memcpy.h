@@ -1,4 +1,5 @@
-#include <stddef.h>
+#include <cstddef>
+#include <cstdint>
 
 #include <emmintrin.h>
 
@@ -93,6 +94,8 @@
   * See https://habr.com/en/company/yandex/blog/457612/
   */
 
+namespace detail
+{
 
 static inline void * inline_memcpy(void * __restrict dst_, const void * __restrict src_, size_t size)
 {
@@ -213,4 +216,281 @@ tail:
     }
 
     return ret;
+}
+
+}
+
+
+template <uint8_t SIZE>
+static inline void * MemcpyFixed(void * dest, const void * src)
+{
+    return detail::inline_memcpy(dest, src, SIZE);
+}
+
+/// The idea is taken from https://github.com/duckdb/duckdb/blob/master/src/include/duckdb/common/fast_mem.hpp
+static inline void * inline_memcpy(void * __restrict dest, const void * __restrict src, size_t size)
+{
+    switch (size)
+    {
+        case 0:
+            return dest;
+        case 1:
+            return MemcpyFixed<1>(dest, src);
+        case 2:
+            return MemcpyFixed<2>(dest, src);
+        case 3:
+            return MemcpyFixed<3>(dest, src);
+        case 4:
+            return MemcpyFixed<4>(dest, src);
+        case 5:
+            return MemcpyFixed<5>(dest, src);
+        case 6:
+            return MemcpyFixed<6>(dest, src);
+        case 7:
+            return MemcpyFixed<7>(dest, src);
+        case 8:
+            return MemcpyFixed<8>(dest, src);
+        case 9:
+            return MemcpyFixed<9>(dest, src);
+        case 10:
+            return MemcpyFixed<10>(dest, src);
+        case 11:
+            return MemcpyFixed<11>(dest, src);
+        case 12:
+            return MemcpyFixed<12>(dest, src);
+        case 13:
+            return MemcpyFixed<13>(dest, src);
+        case 14:
+            return MemcpyFixed<14>(dest, src);
+        case 15:
+            return MemcpyFixed<15>(dest, src);
+        case 16:
+            return MemcpyFixed<16>(dest, src);
+        case 17:
+            return MemcpyFixed<17>(dest, src);
+        case 18:
+            return MemcpyFixed<18>(dest, src);
+        case 19:
+            return MemcpyFixed<19>(dest, src);
+        case 20:
+            return MemcpyFixed<20>(dest, src);
+        case 21:
+            return MemcpyFixed<21>(dest, src);
+        case 22:
+            return MemcpyFixed<22>(dest, src);
+        case 23:
+            return MemcpyFixed<23>(dest, src);
+        case 24:
+            return MemcpyFixed<24>(dest, src);
+        case 25:
+            return MemcpyFixed<25>(dest, src);
+        case 26:
+            return MemcpyFixed<26>(dest, src);
+        case 27:
+            return MemcpyFixed<27>(dest, src);
+        case 28:
+            return MemcpyFixed<28>(dest, src);
+        case 29:
+            return MemcpyFixed<29>(dest, src);
+        case 30:
+            return MemcpyFixed<30>(dest, src);
+        case 31:
+            return MemcpyFixed<31>(dest, src);
+        case 32:
+            return MemcpyFixed<32>(dest, src);
+        case 33:
+            return MemcpyFixed<33>(dest, src);
+        case 34:
+            return MemcpyFixed<34>(dest, src);
+        case 35:
+            return MemcpyFixed<35>(dest, src);
+        case 36:
+            return MemcpyFixed<36>(dest, src);
+        case 37:
+            return MemcpyFixed<37>(dest, src);
+        case 38:
+            return MemcpyFixed<38>(dest, src);
+        case 39:
+            return MemcpyFixed<39>(dest, src);
+        case 40:
+            return MemcpyFixed<40>(dest, src);
+        case 41:
+            return MemcpyFixed<41>(dest, src);
+        case 42:
+            return MemcpyFixed<42>(dest, src);
+        case 43:
+            return MemcpyFixed<43>(dest, src);
+        case 44:
+            return MemcpyFixed<44>(dest, src);
+        case 45:
+            return MemcpyFixed<45>(dest, src);
+        case 46:
+            return MemcpyFixed<46>(dest, src);
+        case 47:
+            return MemcpyFixed<47>(dest, src);
+        case 48:
+            return MemcpyFixed<48>(dest, src);
+        case 49:
+            return MemcpyFixed<49>(dest, src);
+        case 50:
+            return MemcpyFixed<50>(dest, src);
+        case 51:
+            return MemcpyFixed<51>(dest, src);
+        case 52:
+            return MemcpyFixed<52>(dest, src);
+        case 53:
+            return MemcpyFixed<53>(dest, src);
+        case 54:
+            return MemcpyFixed<54>(dest, src);
+        case 55:
+            return MemcpyFixed<55>(dest, src);
+        case 56:
+            return MemcpyFixed<56>(dest, src);
+        case 57:
+            return MemcpyFixed<57>(dest, src);
+        case 58:
+            return MemcpyFixed<58>(dest, src);
+        case 59:
+            return MemcpyFixed<59>(dest, src);
+        case 60:
+            return MemcpyFixed<60>(dest, src);
+        case 61:
+            return MemcpyFixed<61>(dest, src);
+        case 62:
+            return MemcpyFixed<62>(dest, src);
+        case 63:
+            return MemcpyFixed<63>(dest, src);
+        case 64:
+            return MemcpyFixed<64>(dest, src);
+        case 65:
+            return MemcpyFixed<65>(dest, src);
+        case 66:
+            return MemcpyFixed<66>(dest, src);
+        case 67:
+            return MemcpyFixed<67>(dest, src);
+        case 68:
+            return MemcpyFixed<68>(dest, src);
+        case 69:
+            return MemcpyFixed<69>(dest, src);
+        case 70:
+            return MemcpyFixed<70>(dest, src);
+        case 71:
+            return MemcpyFixed<71>(dest, src);
+        case 72:
+            return MemcpyFixed<72>(dest, src);
+        case 73:
+            return MemcpyFixed<73>(dest, src);
+        case 74:
+            return MemcpyFixed<74>(dest, src);
+        case 75:
+            return MemcpyFixed<75>(dest, src);
+        case 76:
+            return MemcpyFixed<76>(dest, src);
+        case 77:
+            return MemcpyFixed<77>(dest, src);
+        case 78:
+            return MemcpyFixed<78>(dest, src);
+        case 79:
+            return MemcpyFixed<79>(dest, src);
+        case 80:
+            return MemcpyFixed<80>(dest, src);
+        case 81:
+            return MemcpyFixed<81>(dest, src);
+        case 82:
+            return MemcpyFixed<82>(dest, src);
+        case 83:
+            return MemcpyFixed<83>(dest, src);
+        case 84:
+            return MemcpyFixed<84>(dest, src);
+        case 85:
+            return MemcpyFixed<85>(dest, src);
+        case 86:
+            return MemcpyFixed<86>(dest, src);
+        case 87:
+            return MemcpyFixed<87>(dest, src);
+        case 88:
+            return MemcpyFixed<88>(dest, src);
+        case 89:
+            return MemcpyFixed<89>(dest, src);
+        case 90:
+            return MemcpyFixed<90>(dest, src);
+        case 91:
+            return MemcpyFixed<91>(dest, src);
+        case 92:
+            return MemcpyFixed<92>(dest, src);
+        case 93:
+            return MemcpyFixed<93>(dest, src);
+        case 94:
+            return MemcpyFixed<94>(dest, src);
+        case 95:
+            return MemcpyFixed<95>(dest, src);
+        case 96:
+            return MemcpyFixed<96>(dest, src);
+        case 97:
+            return MemcpyFixed<97>(dest, src);
+        case 98:
+            return MemcpyFixed<98>(dest, src);
+        case 99:
+            return MemcpyFixed<99>(dest, src);
+        case 100:
+            return MemcpyFixed<100>(dest, src);
+        case 101:
+            return MemcpyFixed<101>(dest, src);
+        case 102:
+            return MemcpyFixed<102>(dest, src);
+        case 103:
+            return MemcpyFixed<103>(dest, src);
+        case 104:
+            return MemcpyFixed<104>(dest, src);
+        case 105:
+            return MemcpyFixed<105>(dest, src);
+        case 106:
+            return MemcpyFixed<106>(dest, src);
+        case 107:
+            return MemcpyFixed<107>(dest, src);
+        case 108:
+            return MemcpyFixed<108>(dest, src);
+        case 109:
+            return MemcpyFixed<109>(dest, src);
+        case 110:
+            return MemcpyFixed<110>(dest, src);
+        case 111:
+            return MemcpyFixed<111>(dest, src);
+        case 112:
+            return MemcpyFixed<112>(dest, src);
+        case 113:
+            return MemcpyFixed<113>(dest, src);
+        case 114:
+            return MemcpyFixed<114>(dest, src);
+        case 115:
+            return MemcpyFixed<115>(dest, src);
+        case 116:
+            return MemcpyFixed<116>(dest, src);
+        case 117:
+            return MemcpyFixed<117>(dest, src);
+        case 118:
+            return MemcpyFixed<118>(dest, src);
+        case 119:
+            return MemcpyFixed<119>(dest, src);
+        case 120:
+            return MemcpyFixed<120>(dest, src);
+        case 121:
+            return MemcpyFixed<121>(dest, src);
+        case 122:
+            return MemcpyFixed<122>(dest, src);
+        case 123:
+            return MemcpyFixed<123>(dest, src);
+        case 124:
+            return MemcpyFixed<124>(dest, src);
+        case 125:
+            return MemcpyFixed<125>(dest, src);
+        case 126:
+            return MemcpyFixed<126>(dest, src);
+        case 127:
+            return MemcpyFixed<127>(dest, src);
+        case 128:
+            return MemcpyFixed<128>(dest, src);
+        default:
+            return detail::inline_memcpy(dest, src, size);
+    }
 }
