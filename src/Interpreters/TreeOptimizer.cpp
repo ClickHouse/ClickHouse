@@ -758,9 +758,9 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         OptimizeIfChainsVisitor().visit(query);
 }
 
-void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query)
+void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query, ContextPtr context)
 {
-    RewriteCountVariantsVisitor::visit(query);
+    RewriteCountVariantsVisitor(context).visit(query);
 }
 
 ///eliminate functions of other GROUP BY keys
@@ -835,7 +835,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         optimizeAnyFunctions(query);
 
     if (settings.optimize_normalize_count_variants)
-        optimizeCountConstantAndSumOne(query);
+        optimizeCountConstantAndSumOne(query, context);
 
     if (settings.optimize_multiif_to_if)
         optimizeMultiIfToIf(query);

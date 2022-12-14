@@ -30,38 +30,9 @@ using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 
 
-/*
- * FileSegmentKind is used to specify the eviction policy for file segments.
- */
-enum class FileSegmentKind
-{
-    /* `Regular` file segment is still in cache after usage, and can be evicted
-     * (unless there're some holders).
-     */
-    Regular,
-
-    /* `Persistent` file segment can't be evicted from cache,
-     * it should be removed manually.
-     */
-    Persistent,
-
-    /* `Temporary` file segment is removed right after relesing.
-     * Also corresponding files are removed during cache loading (if any).
-     */
-    Temporary,
-};
-
-String toString(FileSegmentKind type);
-
 struct CreateFileSegmentSettings
 {
-    FileSegmentKind type = FileSegmentKind::Regular;
-
-    CreateFileSegmentSettings() = default;
-
-    explicit CreateFileSegmentSettings(FileSegmentKind type_)
-        : type(type_)
-    {}
+    bool is_persistent = false;
 };
 
 class FileSegment : private boost::noncopyable, public std::enable_shared_from_this<FileSegment>
@@ -156,8 +127,7 @@ public:
 
     size_t offset() const { return range().left; }
 
-    FileSegmentKind getKind() const { return segment_kind; }
-    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
+    bool isPersistent() const { return is_persistent; }
 
     using UniqueId = std::pair<FileCacheKey, size_t>;
     UniqueId getUniqueId() const { return std::pair(key(), offset()); }
@@ -214,17 +184,17 @@ public:
     void assertCorrectness() const;
 
     /**
+     * ========== Methods for _only_ file segment's `writer` ======================
+     */
+
+    void synchronousWrite(const char * from, size_t size, size_t offset);
+
+    /**
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
     /// Try to reserve exactly `size` bytes.
-    /// Returns true if reservation was successful, false otherwise.
     bool reserve(size_t size_to_reserve);
-
-    /// Try to reserve at max `size` bytes.
-    /// Returns actual size reserved.
-    /// In strict mode throws an error on attempt to reserve space too much space
-    size_t tryReserve(size_t size_to_reserve, bool strict = false);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
@@ -277,9 +247,9 @@ private:
     void assertIsDownloaderUnlocked(const std::string & operation, std::unique_lock<std::mutex> & segment_lock) const;
     void assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
-    /// Function might check if the caller of the method
-    /// is the last alive holder of the segment. Therefore, completion and destruction
+    /// complete() without any completion state is called from destructor of
+    /// FileSegmentsHolder. complete() might check if the caller of the method
+    /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
     void completeWithoutStateUnlocked(std::lock_guard<std::mutex> & cache_lock);
     void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
@@ -325,12 +295,12 @@ private:
     /// In general case, all file segments are owned by cache.
     bool is_detached = false;
 
-    bool is_downloaded = false;
+    bool is_downloaded{false};
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    FileSegmentKind segment_kind;
+    bool is_persistent;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
@@ -342,8 +312,6 @@ struct FileSegmentsHolder : private boost::noncopyable
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
 
     FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
-
-    void reset() { file_segments.clear(); }
 
     ~FileSegmentsHolder();
 
