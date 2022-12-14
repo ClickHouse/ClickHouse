@@ -21,8 +21,10 @@
 namespace DB
 {
 
-QueryNode::QueryNode()
+QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
     : IQueryTreeNode(children_size)
+    , context(std::move(context_))
+    , settings_changes(std::move(settings_changes_))
 {
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
@@ -31,6 +33,10 @@ QueryNode::QueryNode()
     children[order_by_child_index] = std::make_shared<ListNode>();
     children[limit_by_child_index] = std::make_shared<ListNode>();
 }
+
+QueryNode::QueryNode(ContextMutablePtr context_)
+    : QueryNode(context_, {} /*settings_changes*/)
+{}
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
@@ -70,12 +76,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
-
-    if (constant_value)
-    {
-        buffer << ", constant_value: " << constant_value->getValue().dump();
-        buffer << ", constant_value_type: " << constant_value->getType()->getName();
-    }
 
     if (hasWith())
     {
@@ -185,13 +185,6 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
-    if (constant_value && rhs_typed.constant_value && *constant_value != *rhs_typed.constant_value)
-        return false;
-    else if (constant_value && !rhs_typed.constant_value)
-        return false;
-    else if (!constant_value && rhs_typed.constant_value)
-        return false;
-
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
         cte_name == rhs_typed.cte_name &&
@@ -248,22 +241,11 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
-
-    if (constant_value)
-    {
-        auto constant_dump = applyVisitor(FieldVisitorToString(), constant_value->getValue());
-        state.update(constant_dump.size());
-        state.update(constant_dump);
-
-        auto constant_value_type_name = constant_value->getType()->getName();
-        state.update(constant_value_type_name.size());
-        state.update(constant_value_type_name);
-    }
 }
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
 {
-    auto result_query_node = std::make_shared<QueryNode>();
+    auto result_query_node = std::make_shared<QueryNode>(context);
 
     result_query_node->is_subquery = is_subquery;
     result_query_node->is_cte = is_cte;
@@ -276,7 +258,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
-    result_query_node->constant_value = constant_value;
 
     return result_query_node;
 }

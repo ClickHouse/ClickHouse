@@ -4,7 +4,6 @@
 
 #include <replxx.hxx>
 
-
 class ReplxxLineReader : public LineReader
 {
 public:
@@ -27,7 +26,6 @@ private:
     void addToHistory(const String & line) override;
     int executeEditor(const std::string & path);
     void openEditor();
-    void openInteractiveHistorySearch();
 
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_t highlighter;
@@ -37,5 +35,4 @@ private:
     bool bracketed_paste_enabled = false;
 
     std::string editor;
-    std::string fuzzy_finder;
 };
