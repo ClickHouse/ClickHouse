@@ -3,8 +3,13 @@
 #include <chrono>
 #include <mutex>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <Interpreters/ProcessList.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric ThreadsInOvercommitTracker;
+}
 
 namespace ProfileEvents
 {
@@ -75,10 +80,14 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
 
     required_memory += amount;
     auto wait_start_time = std::chrono::system_clock::now();
-    bool timeout = !cv.wait_for(lk, max_wait_time, [this, id]()
+    bool timeout;
     {
-        return id < id_to_release || cancellation_state == QueryCancellationState::NONE;
-    });
+        CurrentMetrics::Increment metric_increment(CurrentMetrics::ThreadsInOvercommitTracker);
+        timeout = !cv.wait_for(lk, max_wait_time, [this, id]()
+        {
+            return id < id_to_release || cancellation_state == QueryCancellationState::NONE;
+        });
+    }
     auto wait_end_time = std::chrono::system_clock::now();
     ProfileEvents::increment(ProfileEvents::MemoryOvercommitWaitTimeMicroseconds, (wait_end_time - wait_start_time) / 1us);
 
