@@ -103,12 +103,14 @@ protected:
     }
 };
 
-class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy>
+constexpr bool debug_logging_enabled = true;
+
+class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy, debug_logging_enabled>
 {
     std::vector<QueryPlan::Node *> nodes_affect_order;
 
 public:
-    explicit RemoveRedundantOrderBy(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantOrderBy>(root_) { }
+    explicit RemoveRedundantOrderBy(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantOrderBy, debug_logging_enabled>(root_) { }
 
     bool visitTopDown(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
@@ -212,19 +214,19 @@ private:
 
     bool checkPathFromCurrentSortingNode(const QueryPlan::Node * node_affect_order)
     {
+        chassert(!stack.empty());
+        chassert(typeid_cast<const SortingStep *>(stack.back().node->step.get()));
+
         /// (1) if there is expression with stateful function between current step
         /// and step which affects order, then we need to keep sorting since
         /// stateful function output can depend on order
-        /// (2) for window function we do ORDER BY in 2 Sorting steps, so do not delete Sorting
-        /// if window function step is on top
-
-        chassert(!stack.empty());
-        chassert(typeid_cast<const SortingStep *>(stack.back().node->step.get()));
 
         /// skip element on top of stack since it's sorting
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {
-            const auto * node = it->node;
+            const QueryPlan::Node * node = it->node;
+            logStep("checking for stateful function", node);
+
             /// walking though stack until reach node which affects order
             if (node == node_affect_order)
                 break;
@@ -239,12 +241,6 @@ private:
             }
             else
             {
-                if (typeid_cast<const WindowStep *>(step))
-                    return false;
-
-                if (typeid_cast<const UnionStep *>(step))
-                    return false;
-
                 const auto * trans = typeid_cast<const ITransformingStep *>(step);
                 if (!trans)
                     break;
@@ -253,6 +249,27 @@ private:
                     break;
             }
         }
+
+        /// (2) for window function we do ORDER BY in 2 Sorting steps,
+        /// so do not delete Sorting if window function step is on top
+        /// (3) rough check for disributed query via Union step check
+        for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
+        {
+            const QueryPlan::Node * node = it->node;
+            logStep("checking path from current sorting", node);
+
+            /// walking though stack until reach node which affects order
+            if (node == node_affect_order)
+                break;
+
+            const auto * step = node->step.get();
+            if (typeid_cast<const WindowStep *>(step))
+                return false;
+
+            if (typeid_cast<const UnionStep *>(step))
+                return false;
+        }
+
         return true;
     }
 };
