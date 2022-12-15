@@ -206,6 +206,22 @@ def check_kafka_is_available(kafka_id, kafka_port):
     p.communicate()
     return p.returncode == 0
 
+def check_kerberos_kdc_is_available(kerberos_kdc_id):
+    p = subprocess.Popen(
+        (
+            "docker",
+            "exec",
+            "-i",
+            kerberos_kdc_id,
+            "/etc/rc.d/init.d/krb5kdc",
+            "status",
+        ),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
 
 def check_rabbitmq_is_available(rabbitmq_id):
     p = subprocess.Popen(
@@ -458,7 +474,7 @@ class ClickHouseCluster:
 
         # available when with_kerberos_kdc == True
         self.kerberos_kdc_host = "kerberoskdc"
-        self.keberos_docker_id = self.get_instance_docker_id(
+        self.keberos_kdc_docker_id = self.get_instance_docker_id(
             self.kerberos_kdc_host
         )
 
@@ -2165,10 +2181,18 @@ class ClickHouseCluster:
                 logging.debug("Waiting for Kafka to start up")
                 time.sleep(1)
 
-    def wait_kerberos_kdc_is_available(self, kafka_docker_id):
-        logging.debug("Waiting for Kerberos KDC to start up")
-        # temp code: sleep 50 seconds
-        time.sleep(50)
+    def wait_kerberos_kdc_is_available(self, kerberos_kdc_docker_id, max_retries=50):
+        retries = 0
+        while True:
+            if check_kerberos_kdc_is_available(kerberos_kdc_docker_id):
+                break
+            else:
+                retries += 1
+                if retries > max_retries:
+                    raise Exception("Kerberos KDC is not available")
+                logging.debug("Waiting for Kerberos KDC to start up")
+                time.sleep(1)
+
 
     def wait_hdfs_to_start(self, timeout=300, check_marker=False):
         start = time.time()
@@ -2527,7 +2551,7 @@ class ClickHouseCluster:
                     + ["--renew-anon-volumes"]
                 )
                 self.up_called = True
-                self.wait_kerberos_kdc_is_available(self.keberos_docker_id)
+                self.wait_kerberos_kdc_is_available(self.keberos_kdc_docker_id)
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 logging.debug("Setup RabbitMQ")
