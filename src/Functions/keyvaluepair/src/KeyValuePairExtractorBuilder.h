@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 template <typename Response = std::unordered_map<std::string, std::string>>
 class KeyValuePairExtractorBuilder
 {
