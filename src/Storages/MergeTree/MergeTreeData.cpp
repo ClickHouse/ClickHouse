@@ -2600,7 +2600,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 }
             }
 
-            dropped_columns.emplace(command.column_name);
+            if (old_metadata.columns.has(command.column_name))
+            {
+                dropped_columns.emplace(command.column_name);
+            }
+            else
+            {
+                const auto & nested = old_metadata.columns.getNested(command.column_name);
+                for (const auto & nested_column : nested)
+                    dropped_columns.emplace(nested_column.name);
+            }
+
         }
         else if (command.type == AlterCommand::RESET_SETTING)
         {

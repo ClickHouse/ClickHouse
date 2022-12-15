@@ -201,8 +201,8 @@ def attach_check_all_parts_table(started_cluster):
 def test_attach_check_all_parts(attach_check_all_parts_table):
     q("ALTER TABLE test.attach_partition DETACH PARTITION 0")
 
-    wait_for_delete_inactive_parts(instance, "test.attach_partition")
     wait_for_delete_empty_parts(instance, "test.attach_partition")
+    wait_for_delete_inactive_parts(instance, "test.attach_partition")
 
     path_to_detached = path_to_data + "data/test/attach_partition/detached/"
     instance.exec_in_container(["mkdir", "{}".format(path_to_detached + "0_5_5_0")])
