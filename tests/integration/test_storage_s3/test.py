@@ -1714,7 +1714,7 @@ def test_ast_auth_headers(started_cluster):
         f"select count() from s3('http://resolver:8080/{bucket}/{filename}', 'CSV')"
     )
 
-    assert "Forbidden Error" in result
+    assert "HTTP response code: 403" in result
     assert "S3_ERROR" in result
 
     result = instance.query(
