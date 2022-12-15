@@ -56,7 +56,14 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
     if (finalized)
         return false;
 
+
+
     auto & file_segments = file_segments_holder.file_segments;
+
+    LOG_DEBUG(
+            &Poco::Logger::get("FileSegmentRangeWriter"),
+            "Finalizing size: {}, path {}",
+            size, source_path);
 
     if (current_file_segment_it == file_segments.end())
     {
@@ -116,6 +123,11 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
         file_segment->completePartAndResetDownloader();
         throw;
     }
+
+    LOG_DEBUG(
+        &Poco::Logger::get("FileSegmentRangeWriter"),
+        "Finalizing done (size: {}, file segment info: {}, path {})",
+        size, file_segment->getInfoForLog(), source_path);
 
     file_segment->completePartAndResetDownloader();
     current_file_segment_write_offset += size;
@@ -228,7 +240,10 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
 
 void CachedOnDiskWriteBufferFromFile::nextImpl()
 {
+    /// Write data to cache.
     size_t size = offset();
+    cacheData(working_buffer.begin(), size);
+    current_download_offset += size;
 
     try
     {
@@ -244,10 +259,6 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 
         throw;
     }
-
-    /// Write data to cache.
-    cacheData(working_buffer.begin(), size);
-    current_download_offset += size;
 }
 
 void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
