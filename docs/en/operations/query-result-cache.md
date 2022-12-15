@@ -21,8 +21,8 @@ Query caches are generally either transactionally consistent or inconsistent.
 - In transactionally inconsistent caches, slight inaccuracies in query results are accepted under the assumption that all cache entries are
   assigned a validity period after which they expire (e.g. 1 minute) and that the underlying data changes only little during this period.
   This approach is overall more suitable for OLAP databases. As an example where transactionally inconsistent caching is sufficient,
-  consider an hourly sales report in a reporting tool (represented by a SELECT query) which is simultaneously accessed by multiple users.
-  Sales data changes typically slowly enough that the database only needs to compute . Further queries can be served
+  consider an hourly sales report in a reporting tool which is simultaneously accessed by multiple users. Sales data changes typically
+  slowly enough that the database only needs to compute the first report (represented by a SELECT query). Further queries can be served
   directly from the query result cache. In this example, a reasonable validity period could be 30 min.
 
 Transactionally inconsistent caching is traditionally provided by client tools or proxy packages interacting with the database. As a result,
