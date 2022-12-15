@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int REMOTE_FS_OBJECT_CACHE_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -65,7 +64,7 @@ FileSegment::FileSegment(
         default:
         {
             throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                ErrorCodes::LOGICAL_ERROR,
                 "Can only create cell with either EMPTY, DOWNLOADED or SKIP_CACHE state");
         }
     }
@@ -277,7 +276,7 @@ void FileSegment::resetRemoteFileReader()
 void FileSegment::write(const char * from, size_t size, size_t offset)
 {
     if (!size)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing zero size is not allowed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
 
     {
         std::unique_lock segment_lock(mutex);
@@ -293,7 +292,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         size_t first_non_downloaded_offset = getFirstNonDownloadedOffsetUnlocked(segment_lock);
         if (offset != first_non_downloaded_offset)
             throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                ErrorCodes::LOGICAL_ERROR,
                 "Attempt to write {} bytes to offset: {}, but current write offset is {}",
                 size, offset, first_non_downloaded_offset);
 
@@ -303,7 +302,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
         if (free_reserved_size < size)
             throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                ErrorCodes::LOGICAL_ERROR,
                 "Not enough space is reserved. Available: {}, expected: {}", free_reserved_size, size);
 
         if (current_downloaded_size == range().size())
@@ -363,7 +362,7 @@ FileSegment::State FileSegment::wait()
         return download_state;
 
     if (download_state == State::EMPTY)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cannot wait on a file segment with empty state");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot wait on a file segment with empty state");
 
     if (download_state == State::DOWNLOADING)
     {
@@ -381,7 +380,7 @@ FileSegment::State FileSegment::wait()
 bool FileSegment::reserve(size_t size_to_reserve)
 {
     if (!size_to_reserve)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
 
     size_t expected_downloaded_size;
 
@@ -395,7 +394,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
 
         if (expected_downloaded_size + size_to_reserve > range().size())
             throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                ErrorCodes::LOGICAL_ERROR,
                 "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
                 size_to_reserve, range().toString(), downloaded_size);
 
@@ -432,9 +431,6 @@ void FileSegment::setDownloadedUnlocked([[maybe_unused]] std::unique_lock<std::m
 {
     if (is_downloaded)
         return;
-
-    setDownloadState(State::DOWNLOADED);
-    is_downloaded = true;
 
     if (cache_writer)
     {
@@ -497,7 +493,7 @@ void FileSegment::completeWithState(State state)
     {
         cv.notify_all();
         throw Exception(
-            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            ErrorCodes::LOGICAL_ERROR,
             "Cannot complete file segment with state: {}", stateToString(state));
     }
 
@@ -551,8 +547,7 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         {
             if (is_last_holder)
                 cache->remove(key(), offset(), cache_lock, segment_lock);
-
-            return;
+            break;
         }
         case State::DOWNLOADED:
         {
@@ -604,6 +599,7 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         }
     }
 
+    is_completed = true;
     LOG_TEST(log, "Completed file segment: {}", getInfoForLogUnlocked(segment_lock));
 }
 
@@ -737,6 +733,12 @@ bool FileSegment::isDetached() const
 {
     std::unique_lock segment_lock(mutex);
     return is_detached;
+}
+
+bool FileSegment::isCompleted() const
+{
+    std::unique_lock segment_lock(mutex);
+    return is_completed;
 }
 
 void FileSegment::detach(std::lock_guard<std::mutex> & /* cache_lock */, std::unique_lock<std::mutex> & segment_lock)
