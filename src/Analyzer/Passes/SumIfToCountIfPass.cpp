@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 
 namespace DB
@@ -47,21 +48,21 @@ public:
             if (function_node_arguments_nodes.size() != 2)
                 return;
 
-            auto constant_value = function_node_arguments_nodes[0]->getConstantValueOrNull();
-            if (!constant_value)
+            const auto * constant_node = function_node_arguments_nodes[0]->as<ConstantNode>();
+            if (!constant_node)
                 return;
 
-            const auto & constant_value_literal = constant_value->getValue();
+            const auto & constant_value_literal = constant_node->getValue();
             if (!isInt64OrUInt64FieldType(constant_value_literal.getType()))
                 return;
 
-            if (constant_value_literal.get<UInt64>() != 1)
+            if (constant_value_literal.get<UInt64>() != 1 || context->getSettingsRef().aggregate_functions_null_for_empty)
                 return;
 
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNode(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
             return;
         }
 
@@ -80,14 +81,14 @@ public:
         if (nested_if_function_arguments_nodes.size() != 3)
             return;
 
-        auto if_true_condition_constant_value = nested_if_function_arguments_nodes[1]->getConstantValueOrNull();
-        auto if_false_condition_constant_value = nested_if_function_arguments_nodes[2]->getConstantValueOrNull();
+        const auto * if_true_condition_constant_node = nested_if_function_arguments_nodes[1]->as<ConstantNode>();
+        const auto * if_false_condition_constant_node = nested_if_function_arguments_nodes[2]->as<ConstantNode>();
 
-        if (!if_true_condition_constant_value || !if_false_condition_constant_value)
+        if (!if_true_condition_constant_node || !if_false_condition_constant_node)
             return;
 
-        const auto & if_true_condition_constant_value_literal = if_true_condition_constant_value->getValue();
-        const auto & if_false_condition_constant_value_literal = if_false_condition_constant_value->getValue();
+        const auto & if_true_condition_constant_value_literal = if_true_condition_constant_node->getValue();
+        const auto & if_false_condition_constant_value_literal = if_false_condition_constant_node->getValue();
 
         if (!isInt64OrUInt64FieldType(if_true_condition_constant_value_literal.getType()) ||
             !isInt64OrUInt64FieldType(if_false_condition_constant_value_literal.getType()))
@@ -102,15 +103,16 @@ public:
             function_node_arguments_nodes[0] = std::move(nested_if_function_arguments_nodes[0]);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNode(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
             return;
         }
 
         /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))`.
         if (if_true_condition_value == 0 && if_false_condition_value == 1)
         {
-            auto condition_result_type = nested_if_function_arguments_nodes[0]->getResultType();
             DataTypePtr not_function_result_type = std::make_shared<DataTypeUInt8>();
+
+            const auto & condition_result_type = nested_if_function_arguments_nodes[0]->getResultType();
             if (condition_result_type->isNullable())
                 not_function_result_type = makeNullable(not_function_result_type);
 
@@ -123,23 +125,21 @@ public:
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNode(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
             return;
         }
     }
 
 private:
-    static inline void resolveAggregateFunctionNode(FunctionNode & function_node, const String & aggregate_function_name)
+    static inline void resolveAsCountIfAggregateFunction(FunctionNode & function_node, const DataTypePtr & argument_type)
     {
-        auto function_result_type = function_node.getResultType();
-        auto function_aggregate_function = function_node.getAggregateFunction();
-
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name,
-            function_aggregate_function->getArgumentTypes(),
-            function_aggregate_function->getParameters(),
+        auto aggregate_function = AggregateFunctionFactory::instance().get("countIf",
+            {argument_type},
+            function_node.getAggregateFunction()->getParameters(),
             properties);
 
+        auto function_result_type = function_node.getResultType();
         function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
     }
 

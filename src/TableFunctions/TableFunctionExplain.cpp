@@ -91,7 +91,7 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
 
 void registerTableFunctionExplain(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExplain>({R"(
+    factory.registerFunction<TableFunctionExplain>({.documentation = {R"(
 Returns result of EXPLAIN query.
 
 The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
@@ -103,7 +103,7 @@ Example:
 
 )",
 {{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'"}}
-});
+}});
 
 }
 
