@@ -855,7 +855,7 @@ public:
     void dropMMappedFileCache() const;
 
     /// Create a cache of query results for statements which run repeatedly.
-    void setQueryResultCache(size_t cache_size_in_bytes);
+    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
     void dropQueryResultCache() const;
 

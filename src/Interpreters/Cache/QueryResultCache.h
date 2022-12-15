@@ -105,10 +105,10 @@ public:
         Pipe pipe;
     };
 
-    explicit QueryResultCache(size_t max_cache_size_in_bytes_);
+    QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_);
 
     Reader createReader(const Key & key);
-    Writer createWriter(const Key & key, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, std::chrono::milliseconds min_query_duration);
+    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_duration);
 
     void reset();
 
@@ -124,8 +124,11 @@ private:
     Cache cache;
     TimesExecutedMap times_executed;
 
-    size_t cache_size_in_bytes;
+    size_t cache_size_in_bytes; /// updated in each cache insert/delete
     const size_t max_cache_size_in_bytes;
+    const size_t max_cache_entries;
+    const size_t max_cache_entry_size_in_bytes;
+    const size_t max_cache_entry_size_in_rows;
 
     friend class StorageSystemQueryResultCache;
 };

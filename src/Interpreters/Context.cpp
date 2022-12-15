@@ -1912,14 +1912,14 @@ void Context::dropIndexMarkCache() const
         shared->index_mark_cache->reset();
 }
 
-void Context::setQueryResultCache(size_t cache_size_in_bytes)
+void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records)
 {
     auto lock = getLock();
 
     if (shared->query_result_cache)
         throw Exception("Query result cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->query_result_cache = std::make_shared<QueryResultCache>(cache_size_in_bytes);
+    shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_records);
 }
 
 QueryResultCachePtr Context::getQueryResultCache() const

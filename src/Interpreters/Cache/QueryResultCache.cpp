@@ -182,9 +182,12 @@ Pipe && QueryResultCache::Reader::getPipe()
     return std::move(pipe);
 }
 
-QueryResultCache::QueryResultCache(size_t max_cache_size_in_bytes_)
+QueryResultCache::QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_)
     : cache_size_in_bytes(0)
     , max_cache_size_in_bytes(max_cache_size_in_bytes_)
+    , max_cache_entries(max_cache_entries_)
+    , max_cache_entry_size_in_bytes(max_cache_entry_size_in_bytes_)
+    , max_cache_entry_size_in_rows(max_cache_entry_size_in_rows_)
 {
 }
 
@@ -193,9 +196,9 @@ QueryResultCache::Reader QueryResultCache::createReader(const Key & key)
     return Reader(cache, mutex, key);
 }
 
-QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, std::chrono::milliseconds min_query_duration)
+QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, std::chrono::milliseconds min_query_duration)
 {
-    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_duration);
+    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_cache_entries, max_cache_entry_size_in_bytes, max_cache_entry_size_in_rows, min_query_duration);
 }
 
 void QueryResultCache::reset()
