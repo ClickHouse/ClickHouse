@@ -71,6 +71,8 @@ private:
     static RawColumns extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column);
 
     static ColumnPtr escape(RawColumns & raw_columns);
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override;
 };
 
 }

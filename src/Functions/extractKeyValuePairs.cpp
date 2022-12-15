@@ -214,6 +214,11 @@ ColumnPtr ExtractKeyValuePairs::escape(RawColumns & raw_columns)
     return ColumnMap::create(keys_ptr, std::move(escaped_values), std::move(offsets));
 }
 
+ColumnNumbers ExtractKeyValuePairs::getArgumentsThatAreAlwaysConstant() const
+{
+    return {1, 2, 3, 4, 5};
+}
+
 REGISTER_FUNCTION(ExtractKeyValuePairs)
 {
     factory.registerFunction<ExtractKeyValuePairs>(

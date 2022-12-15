@@ -79,7 +79,7 @@ private:
 
     NextState flushPair(const std::string & file, std::size_t pos)
     {
-        response_views[key_state_handler.get()] = value_state_handler.get();
+        response_views[key_state_handler.getElement()] = value_state_handler.getElement();
 
         return {pos, pos == file.size() ? State::END : State::WAITING_KEY};
     }

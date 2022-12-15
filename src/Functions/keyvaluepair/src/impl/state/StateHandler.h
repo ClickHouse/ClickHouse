@@ -16,7 +16,7 @@ struct StateHandler
     const char escape_character = '\\';
     const std::optional<char> enclosing_character;
 
-    [[nodiscard]] virtual std::string_view get() const = 0;
+    [[nodiscard]] virtual std::string_view getElement() const = 0;
 
 protected:
     [[nodiscard]] static std::string_view createElement(const std::string & file, std::size_t begin, std::size_t end);

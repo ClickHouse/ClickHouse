@@ -23,7 +23,7 @@ public:
     [[nodiscard]] NextState readEnclosed(const std::string & file, size_t pos);
     [[nodiscard]] NextState readEmpty(const std::string & file, size_t pos);
 
-    [[nodiscard]] std::string_view get() const override;
+    [[nodiscard]] std::string_view getElement() const override;
 
 private:
     const char item_delimiter;
