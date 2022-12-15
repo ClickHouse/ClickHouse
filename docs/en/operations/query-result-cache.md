@@ -14,7 +14,7 @@ The query result cache is an experimental feature which can speed up repeated ex
 Query caches are generally either transactionally consistent or inconsistent.
 
 - In transactionally consistent caches, the database invalidates/discards cached query results if the result of the SELECT query changes or
-  even potentially changes. In ClickHouse, operations which change the data include for example inserts/updates/deletes in/of/from tables or
+  potentially changes. In ClickHouse, operations which change the data include for example inserts/updates/deletes in/of/from tables or
   collapsing merges. Transactionally consistent caching is especially suitable for OLTP databases, for example
   [MySQL](https://dev.mysql.com/doc/refman/5.6/en/query-cache.html) (which removed query result cache after v8.0) and
   [Oracle](https://docs.oracle.com/database/121/TGDBA/tune_result_cache.htm).
