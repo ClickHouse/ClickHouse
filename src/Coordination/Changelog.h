@@ -61,7 +61,7 @@ struct ChangelogFileDescription
     std::string path;
 
     /// How many entries should be stored in this log
-    uint64_t expectedEntriesCountInLog() const
+    uint64_t storedLogCount() const
     {
         return to_log_index - from_log_index + 1;
     }
@@ -162,7 +162,7 @@ private:
     /// Remove all logs from disk
     void removeAllLogs();
     /// Init writer for existing log with some entries already written
-    void initWriter(const ChangelogFileDescription & description);
+    void initWriter(ChangelogFileDescription & description);
 
     /// Clean useless log files in a background thread
     void cleanLogThread();
@@ -170,9 +170,7 @@ private:
     const std::filesystem::path changelogs_dir;
     const std::filesystem::path changelogs_detached_dir;
     const uint64_t rotate_interval;
-    const bool force_sync;
     Poco::Logger * log;
-    bool compress_logs;
 
     std::mutex writer_mutex;
     /// Current writer for changelog file
