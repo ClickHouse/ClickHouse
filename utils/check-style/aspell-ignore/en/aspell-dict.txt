@@ -102,6 +102,8 @@ NYPD
 NuRaft
 ObjectId
 Ok
+OLAP
+OLTP
 OpenSUSE
 OpenStack
 OpenTelemetry
@@ -483,6 +485,7 @@ tmp
 tokenization
 toml
 toolset
+transactionally
 tskv
 tsv
 tui
