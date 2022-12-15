@@ -43,7 +43,7 @@ auto is_stale = [](const QueryResultCache::Key & key)
 }
 
 QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
-    size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entries_, size_t max_entry_size_in_bytes_)
+    size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entries_, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
     : mutex(mutex_)
     , cache(cache_)
     , key(key_)
@@ -52,6 +52,8 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
     , max_entries(max_entries_)
     , new_entry_size_in_bytes(0)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
+    , new_entry_size_in_rows(0)
+    , max_entry_size_in_rows(max_entry_size_in_rows_)
     , skip_insert(false)
 {
     std::lock_guard lock(mutex);
@@ -131,7 +133,9 @@ void QueryResultCache::Writer::buffer(Chunk && chunk)
     chunks.emplace_back(std::move(chunk));
 
     new_entry_size_in_bytes += chunks.back().allocatedBytes();
-    if (new_entry_size_in_bytes > max_entry_size_in_bytes)
+    new_entry_size_in_rows += chunks.back().getNumRows();
+
+    if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
         skip_insert = true;
 
 }
@@ -181,9 +185,9 @@ QueryResultCache::Reader QueryResultCache::createReader(const Key & key)
     return Reader(cache, mutex, key);
 }
 
-QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, size_t max_entries, size_t max_entry_size)
+QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
 {
-    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_entries, max_entry_size);
+    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
 }
 
 void QueryResultCache::reset()
