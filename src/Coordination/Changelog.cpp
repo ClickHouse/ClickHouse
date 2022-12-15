@@ -29,10 +29,10 @@ namespace
 
 constexpr auto DEFAULT_PREFIX = "changelog";
 
-std::string formatChangelogPath(const std::string & prefix, const ChangelogFileDescription & name)
+std::string formatChangelogPath(const std::string & prefix, const ChangelogFileDescription & name, bool with_to_log)
 {
     std::filesystem::path path(prefix);
-    path /= std::filesystem::path(name.prefix + "_" + std::to_string(name.from_log_index) + "_" + std::to_string(name.to_log_index) + "." + name.extension);
+    path /= std::filesystem::path(name.prefix + "_" + std::to_string(name.from_log_index) + (with_to_log ? "_" + std::to_string(name.to_log_index) : "") + "." + name.extension);
     return path;
 }
 
@@ -74,11 +74,12 @@ class ChangelogWriter
 {
 public:
     ChangelogWriter(std::map<uint64_t, ChangelogFileDescription> & existing_changelogs_, bool compress_logs_, bool force_fsync_,
-    const std::filesystem::path & changelogs_dir_)
+    const std::filesystem::path & changelogs_dir_, uint64_t rotate_interval_)
         : existing_changelogs(existing_changelogs_)
         , memory_buf(std::make_unique<WriteBufferMemory>(memory))
         , compress_logs(compress_logs_)
         , force_fsync(force_fsync_)
+        , rotate_interval(rotate_interval_)
         , changelogs_dir(changelogs_dir_)
     {
         if (compress_logs)
@@ -97,11 +98,17 @@ public:
         file_buf = std::make_unique<WriteBufferFromFile>(file_description.path, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY));
         start_index = file_description.from_log_index;
         current_file_description = &file_description;
+        prealloc_done = false;
     }
 
 
     bool appendRecord(ChangelogRecord && record)
     {
+        const bool log_is_complete = record.header.index - getStartIndex() == rotate_interval;
+
+        if (log_is_complete)
+            rotate(record.header.index);
+
         if (!prealloc_done) [[unlikely]]
         {
             int res = fallocate(file_buf->getFD(), FALLOC_FL_KEEP_SIZE, 0, log_size); 
@@ -145,7 +152,7 @@ public:
     void flush()
     {
         /// Fsync file system if needed
-        if (force_fsync)
+        if (force_fsync && file_buf)
             file_buf->sync();
     }
 
@@ -158,6 +165,15 @@ public:
     {
         flush();
 
+        if (current_file_description)
+        {
+            const auto old_path = current_file_description->path;
+            auto new_path = formatChangelogPath(changelogs_dir, *current_file_description, true);
+
+            std::filesystem::rename(old_path, new_path);
+            current_file_description->path = std::move(new_path);
+        }
+
         /// Start new one
         ChangelogFileDescription new_description;
         new_description.prefix = DEFAULT_PREFIX;
@@ -168,7 +184,7 @@ public:
         if (compress_logs)
             new_description.extension += "." + toContentEncodingName(CompressionMethod::Zstd);
 
-        new_description.path = formatChangelogPath(changelogs_dir, new_description);
+        new_description.path = formatChangelogPath(changelogs_dir, new_description, false);
 
         LOG_TRACE(&Poco::Logger::get("Changelog"), "Starting new changelog {}", new_description.path);
         auto [it, inserted] = existing_changelogs.insert(std::make_pair(new_start_log_index, std::move(new_description)));
@@ -201,6 +217,8 @@ private:
     bool compress_logs;
     
     bool force_fsync;
+
+    uint64_t rotate_interval;
 
     const std::filesystem::path changelogs_dir;
 
@@ -342,9 +360,7 @@ Changelog::Changelog(
     : changelogs_dir(changelogs_dir_)
     , changelogs_detached_dir(changelogs_dir / "detached")
     , rotate_interval(rotate_interval_)
-    , force_sync(force_sync_)
     , log(log_)
-    , compress_logs(compress_logs_)
     , write_operations(std::numeric_limits<size_t>::max())
 {
     /// Load all files in changelog directory
@@ -367,6 +383,8 @@ Changelog::Changelog(
     clean_log_thread = ThreadFromGlobalPool([this] { cleanLogThread(); });
 
     write_thread = ThreadFromGlobalPool([this] { writeThread(); });
+
+    current_writer = std::make_unique<ChangelogWriter>(existing_changelogs, compress_logs_, force_sync_, changelogs_dir, rotate_interval_);
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
@@ -438,10 +456,10 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                 max_log_id = last_log_read_result->last_read_index;
 
             /// How many entries we have in the last changelog
-            uint64_t expected_entries_in_log = changelog_description.expectedEntriesCountInLog();
+            uint64_t log_count = changelog_description.storedLogCount();
 
             /// Unfinished log
-            if (last_log_read_result->error || last_log_read_result->total_entries_read_from_log < expected_entries_in_log)
+            if (last_log_read_result->error || last_log_read_result->total_entries_read_from_log < log_count)
             {
                 last_log_is_not_complete = true;
                 break;
@@ -479,7 +497,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         assert(existing_changelogs.find(last_log_read_result->log_start_index)->first == existing_changelogs.rbegin()->first);
 
         /// Continue to write into incomplete existing log if it doesn't finished with error
-        auto description = existing_changelogs[last_log_read_result->log_start_index];
+        auto & description = existing_changelogs[last_log_read_result->log_start_index];
 
         if (last_log_read_result->last_read_index == 0 || last_log_read_result->error) /// If it's broken log then remove it
         {
@@ -502,13 +520,10 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 }
 
 
-void Changelog::initWriter(const ChangelogFileDescription & description)
+void Changelog::initWriter(ChangelogFileDescription & description)
 {
-    if (description.expectedEntriesCountInLog() != rotate_interval)
-        LOG_TRACE(log, "Looks like rotate_logs_interval was changed, current {}, expected entries in last log {}", rotate_interval, description.expectedEntriesCountInLog());
-
     LOG_TRACE(log, "Continue to write into {}", description.path);
-    current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, description.from_log_index);
+    current_writer->setFile(description, WriteMode::Append);
 }
 
 namespace
@@ -571,29 +586,6 @@ void Changelog::removeAllLogs()
     logs.clear();
 }
 
-void Changelog::rotate(uint64_t new_start_log_index, std::lock_guard<std::mutex> &)
-{
-    /// Flush previous log
-    if (current_writer)
-        current_writer->flush(force_sync);
-
-    /// Start new one
-    ChangelogFileDescription new_description;
-    new_description.prefix = DEFAULT_PREFIX;
-    new_description.from_log_index = new_start_log_index;
-    new_description.to_log_index = new_start_log_index + rotate_interval - 1;
-    new_description.extension = "bin";
-
-    if (compress_logs)
-        new_description.extension += "." + toContentEncodingName(CompressionMethod::Zstd);
-
-    new_description.path = formatChangelogPath(changelogs_dir, new_description);
-
-    LOG_TRACE(log, "Starting new changelog {}", new_description.path);
-    existing_changelogs[new_start_log_index] = new_description;
-    current_writer = std::make_unique<ChangelogWriter>(new_description.path, WriteMode::Rewrite, new_start_log_index);
-}
-
 ChangelogRecord Changelog::buildRecord(uint64_t index, const LogEntryPtr & log_entry)
 {
     ChangelogRecord record;
@@ -628,12 +620,6 @@ void Changelog::writeThread()
             std::lock_guard writer_lock(writer_mutex);
             assert(current_writer);
 
-            const auto & current_changelog_description = existing_changelogs[current_writer->getStartIndex()];
-            const bool log_is_complete = append_log->index - current_writer->getStartIndex() == current_changelog_description.expectedEntriesCountInLog();
-
-            if (log_is_complete)
-                rotate(append_log->index, writer_lock);
-
             batch_append_ok &= current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
         }
         else
@@ -644,8 +630,7 @@ void Changelog::writeThread()
             {
                 {
                     std::lock_guard writer_lock(writer_mutex);
-                    if (current_writer)
-                        current_writer->flush(force_sync);
+                    current_writer->flush();
                 }
 
                 {
@@ -698,15 +683,15 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
         {
             auto index_changelog = existing_changelogs.lower_bound(index);
 
-            ChangelogFileDescription description;
+            ChangelogFileDescription * description;
 
             if (index_changelog->first == index) /// exactly this file starts from index
-                description = index_changelog->second;
+                description = &index_changelog->second;
             else
-                description = std::prev(index_changelog)->second;
+                description = &std::prev(index_changelog)->second;
 
-            /// Initialize writer from this log file
-            current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, index_changelog->first);
+            current_writer->flush();
+            current_writer->setFile(*description, WriteMode::Append);
 
             /// Remove all subsequent files if overwritten something in previous one
             auto to_remove_itr = existing_changelogs.upper_bound(index);
