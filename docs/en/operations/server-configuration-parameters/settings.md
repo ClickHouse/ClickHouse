@@ -1258,6 +1258,70 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_log>
 ```
 
+## query_result_cache_size {#server_configuration_parameters_query-result-cache-size}
+
+Maximum size of the [query result cache](../query-result-cache.md) in bytes.
+
+Possible values:
+
+-   Positive integer >= 0.
+
+Default value: `1073741824` (ca. 1 GB.)
+
+**Example**
+
+```xml
+<query_result_cache_size>1073741824</query_result_cache_size>
+```
+
+## query_result_cache_max_entries {#server_configuration_parameters_query-result-cache-max-entries}
+
+Maximum number of SELECT query results in the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `1024`
+
+**Example**
+
+```xml
+<query_result_cache_max_entries>1024</query_result_cache_max_entries>
+```
+
+## query_result_cache_max_entry_size {#server_configuration_parameters_query-result-cache-max-entry-size}
+
+Maximum size in bytes SELECT query results may have to be saved in the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `33554432` (ca. 33 MB)
+
+**Example**
+
+```xml
+<query_result_cache_max_entry_size>33554432</query_result_cache_max_entry_size>
+```
+
+## query_result_cache_max_entry_records {#server_configuration_parameters_query-result-cache-max-entry-records}
+
+Maximum number of records SELECT query results may have to be saved in the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `33554432` (ca. 33 mil. records)
+
+**Example**
+
+```xml
+<query_result_cache_max_entry_records>33554432</query_result_cache_max_entry_records>
+```
+
 ## query_thread_log {#server_configuration_parameters-query_thread_log}
 
 Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#settings-log-query-threads) setting.

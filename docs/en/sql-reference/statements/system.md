@@ -105,9 +105,7 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 
 ## DROP QUERY RESULT CACHE
 
-Resets the query result cache.
-The uncompressed data cache is enabled/disabled with the query/user/profile-level settings [experimental_query_result_cache_active_usage](../../operations/settings/settings.md#setting-experimental_query_result_cache_active_usage) and [experimental_query_result_cache_size_passive_usage](../../operations/settings/settings.md#settings-experimental_query_result_cache_passive_usage).
-Its size can be configured using the server-level setting [query_result_cache_size](../../operations/settings/setting#query-result-cache-size).
+Resets the [query result cache](../../operations/query-result-cache.md).
 
 ## FLUSH LOGS
 
