@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
@@ -182,17 +187,6 @@ public:
       */
     void resolveAsWindowFunction(AggregateFunctionPtr window_function_value, DataTypePtr result_type_value);
 
-    /// Perform constant folding for function node
-    void performConstantFolding(ConstantValuePtr constant_folded_value)
-    {
-        constant_value = std::move(constant_folded_value);
-    }
-
-    ConstantValuePtr getConstantValueOrNull() const override
-    {
-        return constant_value;
-    }
-
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::FUNCTION;
@@ -200,6 +194,11 @@ public:
 
     DataTypePtr getResultType() const override
     {
+        if (!result_type)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Function node with name '{}' is not resolved",
+                function_name);
+
         return result_type;
     }
 
@@ -219,7 +218,6 @@ private:
     FunctionOverloadResolverPtr function;
     AggregateFunctionPtr aggregate_function;
     DataTypePtr result_type;
-    ConstantValuePtr constant_value;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;

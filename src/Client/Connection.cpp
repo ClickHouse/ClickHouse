@@ -148,7 +148,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
-        if (timeouts.tcp_keep_alive_timeout.totalSeconds())
+        int tcp_keep_alive_timeout_in_sec = timeouts.tcp_keep_alive_timeout.totalSeconds();
+        if (tcp_keep_alive_timeout_in_sec)
         {
             socket->setKeepAlive(true);
             socket->setOption(IPPROTO_TCP,
@@ -157,7 +158,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 #else
                 TCP_KEEPIDLE  // __APPLE__
 #endif
-                , timeouts.tcp_keep_alive_timeout);
+                , tcp_keep_alive_timeout_in_sec);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
@@ -308,6 +309,21 @@ void Connection::receiveHello()
             readVarUInt(server_version_patch, *in);
         else
             server_version_patch = server_revision;
+
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
+        {
+            UInt64 rules_size;
+            readVarUInt(rules_size, *in);
+            password_complexity_rules.reserve(rules_size);
+
+            for (size_t i = 0; i < rules_size; ++i)
+            {
+                String original_pattern, exception_message;
+                readStringBinary(original_pattern, *in);
+                readStringBinary(exception_message, *in);
+                password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
+            }
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
