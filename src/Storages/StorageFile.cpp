@@ -193,12 +193,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     const struct stat & file_stat,
     ContextPtr context)
 {
-    auto read_method_string = context->getSettingsRef().storage_file_read_method.value;
-    LocalFSReadMethod read_method;
-    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_string))
-        read_method = *opt_method;
-    else
-        throwFromErrno("Unknown read method " + read_method_string, ErrorCodes::UNKNOWN_READ_METHOD);
+    auto read_method = context->getSettingsRef().storage_file_read_method;
 
     if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
     {
