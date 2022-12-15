@@ -1227,6 +1227,7 @@ Default value: `0`
 ## query_result_cache_max_entries {#query-result-cache-max-entries}
 
 Maximum number of SELECT query results in the query result cache.
+This is a server-level setting which takes effect only after server restart.
 
 Possible values:
 
@@ -1237,6 +1238,7 @@ Default value: `1024`
 ## query_result_cache_max_entry_size {#query-result-cache-max-entry-size}
 
 Maximum size in bytes SELECT query results may have to be saved in the query result cache.
+This is a server-level setting which takes effect only after server restart.
 
 Possible values:
 
@@ -1247,6 +1249,7 @@ Default value: `33554432` (ca. 33 MB)
 ## query_result_cache_max_entry_records {#query-result-cache-max-entry-records}
 
 Maximum number of records SELECT query results may have to be saved in the query result cache.
+This is a server-level setting which takes effect only after server restart.
 
 Possible values:
 

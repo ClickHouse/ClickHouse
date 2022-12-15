@@ -1539,7 +1539,11 @@ try
     /// A cache for query results.
     size_t query_result_cache_size = config().getUInt64("query_result_cache_size", settings.query_result_cache_size);
     if (query_result_cache_size)
-        global_context->setQueryResultCache(query_result_cache_size);
+        global_context->setQueryResultCache(
+            query_result_cache_size,
+            config().getUInt64("query_result_cache_max_entries", settings.query_result_cache_max_entries),
+            config().getUInt64("query_result_cache_max_entry_size", settings.query_result_cache_max_entry_size),
+            config().getUInt64("query_result_cache_max_entry_records", settings.query_result_cache_max_entry_records));
 
 #if USE_EMBEDDED_COMPILER
     /// 128 MB
