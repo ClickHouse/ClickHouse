@@ -83,6 +83,7 @@ static const std::unordered_set<std::string_view> required_configuration_keys = 
 static std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
+    "compression_method",
     "structure",
     "access_key_id",
     "secret_access_key",
@@ -1213,7 +1214,7 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
             filename = collection.get<String>(key);
         else if (key == "format")
             configuration.format = collection.get<String>(key);
-        else if (key == "compression")
+        else if (key == "compression" || key == "compression_method")
             configuration.compression_method = collection.get<String>(key);
         else if (key == "structure")
             configuration.structure = collection.get<String>(key);
