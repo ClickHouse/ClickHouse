@@ -71,7 +71,7 @@ public:
     {
     public:
         Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
-            size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entries_, size_t max_entry_size_in_bytes_);
+            size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entries_, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
         ~Writer();
         void buffer(Chunk && chunk);
     private:
@@ -83,6 +83,8 @@ public:
         const size_t max_entries;
         size_t new_entry_size_in_bytes;
         const size_t max_entry_size_in_bytes;
+        size_t new_entry_size_in_rows;
+        const size_t max_entry_size_in_rows;
         Chunks chunks;
         bool skip_insert;
     };
@@ -101,7 +103,7 @@ public:
     explicit QueryResultCache(size_t max_cache_size_in_bytes_);
 
     Reader createReader(const Key & key);
-    Writer createWriter(const Key & key, size_t max_entries, size_t max_entry_size_in_bytes);
+    Writer createWriter(const Key & key, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
 
     void reset();
 

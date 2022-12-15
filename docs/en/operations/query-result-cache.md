@@ -61,7 +61,7 @@ To adjust if results of queries with non-deterministic functions (e.g. `rand()`,
 
 To control how often a query needs to run until its result is cached, use setting [query_result_cache_min_query_runs](settings/settings.md#query-result-cache-min-query-runs).
 
-To set the maximum number and maximum (byte) size of cache entries, use settings [query_result_cache_max_entries](settings/settings.md#query-result-cache-max-entries) or [query_result_cache_max_entry_size](settings/settings.md#query-result-cache-max-entry-size) .
+To set the maximum total number and the maximum size in bytes and in records of cache entries, use settings [query_result_cache_max_entries](settings/settings.md#query-result-cache-max-entries), [query_result_cache_max_entry_size](settings/settings.md#query-result-cache-max-entry-size) and [query_result_cache_max_entry_records](settings/settings.md#query-result-cache-max-entry-records).
 
 To specify the validity period after which cache entries become stale, use setting [query_result_cache_keep_seconds_alive](settings/settings.md#query-result-cache-keep-seconds-alive).
 

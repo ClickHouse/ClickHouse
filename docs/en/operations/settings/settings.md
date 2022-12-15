@@ -1236,13 +1236,23 @@ Default value: `1024`
 
 ## query_result_cache_max_entry_size {#query-result-cache-max-entry-size}
 
-Maximum size in bytes of SELECT query results to be saved in the query result cache.
+Maximum size in bytes SELECT query results may have to be saved in the query result cache.
 
 Possible values:
 
 - Positive integer >= 0.
 
 Default value: `33554432` (ca. 33 MB)
+
+## query_result_cache_max_entry_records {#query-result-cache-max-entry-records}
+
+Maximum number of records SELECT query results may have to be saved in the query result cache.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `33554432` (ca. 33 mil. records)
 
 ## query_result_cche_keep_seconds_alive {#query-result-cache-keep-seconds-alive}
 
