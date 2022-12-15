@@ -212,7 +212,7 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
     std::vector<const ASTIdentifier *> identifiers;
     getIdentifiers(ast, identifiers);
     if (identifiers.empty())
-        return JoinIdentifierPos::Constant;
+        return JoinIdentifierPos::NotColumn;
 
     JoinIdentifierPos table_number = JoinIdentifierPos::Unknown;
 
