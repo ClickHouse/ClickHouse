@@ -56,7 +56,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             if (file_size)
                 res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, *file_size);
             else
-                res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, *file_size);
+                res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0);
 
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
