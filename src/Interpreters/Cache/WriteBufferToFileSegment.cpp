@@ -1,4 +1,5 @@
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/Cache/FileSegment.h>
 
 #include <Common/logger_useful.h>
 
@@ -25,19 +26,22 @@ namespace
     };
 }
 
-WriteBufferToFileSegment::WriteBufferToFileSegment(std::unique_ptr<WriteBuffer> impl_, FileSegment * file_segment_)
-    : WriteBufferFromFileDecorator(std::move(impl_)), file_segment(file_segment_)
+WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
+    : WriteBufferFromFileDecorator(file_segment_->detachWriter()), file_segment(file_segment_)
 {
     auto downloader = file_segment->getOrSetDownloader();
     if (downloader != FileSegment::getCallerId())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set a downloader. ({})", file_segment->getInfoForLog());
 }
 
+/// If it throws an exception, the file segment will be incomplete, so you should not use it in the future.
 void WriteBufferToFileSegment::nextImpl()
 {
     size_t bytes_to_write = offset();
     LOG_WARNING(&Poco::Logger::get("WriteBufferToFileSegment"), "Writing {} bytes", bytes_to_write);
 
+    /// In case of an error, we don't need to finalize the file segment
+    /// because it will be deleted soon and completed in the holder's destructor.
     bool ok = file_segment->reserve(bytes_to_write);
     if (!ok)
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve space for the file cache ({})", file_segment->getInfoForLog());
@@ -51,9 +55,6 @@ void WriteBufferToFileSegment::nextImpl()
     catch (...)
     {
         LOG_WARNING(&Poco::Logger::get("WriteBufferToFileSegment"), "Failed to write to the underlying buffer ({})", file_segment->getInfoForLog());
-        file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-        if (file_segment->isDownloader())
-            file_segment->completePartAndResetDownloader();
         throw;
     }
     LOG_WARNING(&Poco::Logger::get("WriteBufferToFileSegment"), "Written {} bytes", bytes_to_write);
@@ -71,23 +72,6 @@ WriteBufferToFileSegment::~WriteBufferToFileSegment()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-
-void WriteBufferToFileSegment::finalizeImpl()
-{
-    try
-    {
-        WriteBufferFromFileDecorator::finalizeImpl();
-        /// Do not reset and remove temporary file_segment, because the it will be used for reading
-    }
-    catch (...)
-    {
-        file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-        if (file_segment->isDownloader())
-            file_segment->completePartAndResetDownloader();
-        throw;
     }
 }
 

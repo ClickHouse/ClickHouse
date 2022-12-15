@@ -570,7 +570,7 @@ TEST_F(FileCacheTest, writeBuffer)
         auto holder = cache.set(cache.hash(key), 0, 3, segment_settings);
         EXPECT_EQ(holder.file_segments.size(), 1);
         auto & segment = holder.file_segments.front();
-        WriteBufferToFileSegment out(segment->detachWriter(), segment.get());
+        WriteBufferToFileSegment out(segment.get());
         for (const auto & s : data)
             out.write(s.data(), s.size());
         return holder;
