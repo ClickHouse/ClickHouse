@@ -171,8 +171,8 @@ private:
         chassert(typeid_cast<ExpressionStep *>(sorting_node->children.front()->step.get()));
         chassert(!sorting_node->children.front()->children.empty());
 
-        /// need to remove sorting and its expression from plan
-        parent_node->children.front() = sorting_node->children.front()->children.front();
+        /// need to remove sorting
+        parent_node->children.front() = sorting_node->children.front();
 
         return true;
     }
