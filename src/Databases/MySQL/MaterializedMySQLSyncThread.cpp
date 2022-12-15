@@ -24,7 +24,6 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
-#include <base/bit_cast.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Parsers/CommonParsers.h>

@@ -101,12 +101,11 @@ protected:
     bool tryExecuteQueryOnLeaderReplica(
         DDLTaskBase & task,
         StoragePtr storage,
-        const String & rewritten_query,
         const String & node_path,
         const ZooKeeperPtr & zookeeper,
         std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
-    bool tryExecuteQuery(const String & query, DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);

@@ -17,6 +17,7 @@
 #include <Poco/URI.h>
 
 #include <Common/Exception.h>
+#include <Common/Throttler_fwd.h>
 
 namespace Aws::S3
 {
@@ -88,7 +89,9 @@ public:
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
         bool enable_s3_requests_logging,
-        bool for_disk_s3);
+        bool for_disk_s3,
+        const ThrottlerPtr & get_request_throttler,
+        const ThrottlerPtr & put_request_throttler);
 
 private:
     ClientFactory();
@@ -116,8 +119,7 @@ struct URI
 
     bool is_virtual_hosted_style;
 
-    explicit URI(const Poco::URI & uri_);
-    explicit URI(const std::string & uri_) : URI(Poco::URI(uri_)) {}
+    explicit URI(const std::string & uri_);
 
     static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
@@ -128,9 +130,9 @@ struct ObjectInfo
     time_t last_modification_time = 0;
 };
 
-S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
+S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
 
-size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
+size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
 
 }
 #endif

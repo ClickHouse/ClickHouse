@@ -8,8 +8,8 @@ slug: /en/install
 
 You have two options for getting up and running with ClickHouse:
 
-- **[ClickHouse Cloud](https://clickhouse.cloud/):** the official ClickHouse as a service, - built by, maintained, and supported by the creators of ClickHouse
-- **Self-managed ClickHouse:** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture
+- **[ClickHouse Cloud](https://clickhouse.com/cloud/):** the official ClickHouse as a service, - built by, maintained, and supported by the creators of ClickHouse
+- **[Self-managed ClickHouse](https://github.com/ClickHouse/ClickHouse):** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture
 
 ## ClickHouse Cloud
 
@@ -406,4 +406,3 @@ SELECT 1
 **Congratulations, the system works!**
 
 To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/en/tutorial.md).
-

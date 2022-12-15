@@ -1579,6 +1579,8 @@ struct StatefulWindowFunction : public WindowFunction
         state->~State();
     }
 
+    bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<State>; }
+
     State & getState(const WindowFunctionWorkspace & workspace)
     {
         return *static_cast<State *>(static_cast<void *>(workspace.aggregate_function_state.data()));

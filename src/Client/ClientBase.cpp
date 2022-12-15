@@ -22,6 +22,7 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Formats/FormatFactory.h>
+#include <Access/AccessControl.h>
 
 #include "config_version.h"
 
@@ -43,6 +44,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -65,10 +67,12 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
 #include <IO/ForkWriteBuffer.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace fs = std::filesystem;
@@ -103,6 +107,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_OPEN_FILE;
 }
 
 }
@@ -115,6 +120,30 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+ProgressOption toProgressOption(std::string progress)
+{
+    boost::to_upper(progress);
+
+    if (progress == "OFF" || progress == "FALSE" || progress == "0" || progress == "NO")
+        return ProgressOption::OFF;
+    if (progress == "TTY" || progress == "ON" || progress == "TRUE" || progress == "1" || progress == "YES")
+        return ProgressOption::TTY;
+    if (progress == "ERR")
+        return ProgressOption::ERR;
+    if (progress == "DEFAULT")
+        return ProgressOption::DEFAULT;
+
+    throw boost::program_options::validation_error(boost::program_options::validation_error::invalid_option_value);
+}
+
+std::istream& operator>> (std::istream & in, ProgressOption & progress)
+{
+    std::string token;
+    in >> token;
+    progress = toProgressOption(token);
+    return in;
+}
 
 static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
 {
@@ -413,8 +442,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-    if (need_render_progress && (stdout_is_a_tty || is_interactive) && (!select_into_file || select_into_file_and_stdout))
-        progress_indication.clearProgressOutput();
+    if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+        progress_indication.clearProgressOutput(*tty_buf);
 
     try
     {
@@ -431,11 +460,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     output_format->flush();
 
     /// Restore progress bar after data block.
-    if (need_render_progress && (stdout_is_a_tty || is_interactive))
+    if (need_render_progress && tty_buf)
     {
         if (select_into_file && !select_into_file_and_stdout)
             std::cerr << "\r";
-        progress_indication.writeProgress();
+        progress_indication.writeProgress(*tty_buf);
     }
 }
 
@@ -443,7 +472,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
-    progress_indication.clearProgressOutput();
+    if (need_render_progress && tty_buf)
+        progress_indication.clearProgressOutput(*tty_buf);
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
@@ -637,6 +667,64 @@ void ClientBase::initLogsOutputStream()
 
         logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
     }
+}
+
+void ClientBase::initTtyBuffer(ProgressOption progress)
+{
+    if (tty_buf)
+        return;
+
+    if (progress == ProgressOption::OFF || (!is_interactive && progress == ProgressOption::DEFAULT))
+    {
+         need_render_progress = false;
+         return;
+    }
+
+    static constexpr auto tty_file_name = "/dev/tty";
+
+    /// Output all progress bar commands to terminal at once to avoid flicker.
+    /// This size is usually greater than the window size.
+    static constexpr size_t buf_size = 1024;
+
+    if (is_interactive || progress == ProgressOption::TTY)
+    {
+        std::error_code ec;
+        std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
+
+        if (!ec && exists(tty) && is_character_file(tty)
+            && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
+        {
+            try
+            {
+                tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
+
+                /// It is possible that the terminal file has writeable permissions
+                /// but we cannot write anything there. Check it with invisible character.
+                tty_buf->write('\0');
+                tty_buf->next();
+
+                return;
+            }
+            catch (const Exception & e)
+            {
+                if (tty_buf)
+                    tty_buf.reset();
+
+                if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
+                    throw;
+
+                /// It is normal if file exists, indicated as writeable but still cannot be opened.
+                /// Fallback to other options.
+            }
+        }
+    }
+
+    if (stderr_is_a_tty || progress == ProgressOption::ERR)
+    {
+        tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
+    }
+    else
+        need_render_progress = false;
 }
 
 void ClientBase::updateSuggest(const ASTPtr & ast)
@@ -937,14 +1025,15 @@ void ClientBase::onProgress(const Progress & value)
     if (output_format)
         output_format->onProgress(value);
 
-    if (need_render_progress)
-        progress_indication.writeProgress();
+    if (need_render_progress && tty_buf)
+        progress_indication.writeProgress(*tty_buf);
 }
 
 
 void ClientBase::onEndOfStream()
 {
-    progress_indication.clearProgressOutput();
+    if (need_render_progress && tty_buf)
+        progress_indication.clearProgressOutput(*tty_buf);
 
     if (output_format)
         output_format->finalize();
@@ -952,10 +1041,7 @@ void ClientBase::onEndOfStream()
     resetOutput();
 
     if (is_interactive && !written_first_block)
-    {
-        progress_indication.clearProgressOutput();
         std::cout << "Ok." << std::endl;
-    }
 }
 
 
@@ -998,15 +1084,16 @@ void ClientBase::onProfileEvents(Block & block)
         }
         progress_indication.updateThreadEventData(thread_times);
 
-        if (need_render_progress)
-            progress_indication.writeProgress();
+        if (need_render_progress && tty_buf)
+            progress_indication.writeProgress(*tty_buf);
 
         if (profile_events.print)
         {
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
             {
                 initLogsOutputStream();
-                progress_indication.clearProgressOutput();
+                if (need_render_progress && tty_buf)
+                    progress_indication.clearProgressOutput(*tty_buf);
                 logs_out_stream->writeProfileEvents(block);
                 logs_out_stream->flush();
 
@@ -1175,14 +1262,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
     bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
 
-    if (need_render_progress && have_data_in_stdin)
+    if (need_render_progress)
     {
         /// Set total_bytes_to_read for current fd.
         FileProgress file_progress(0, std_in.getFileSize());
         progress_indication.updateProgress(Progress(file_progress));
 
         /// Set callback to be called on file progress.
-        progress_indication.setFileProgressCallback(global_context, true);
+        if (tty_buf)
+            progress_indication.setFileProgressCallback(global_context, *tty_buf);
     }
 
     /// If data fetched from file (maybe compressed file)
@@ -1317,6 +1405,11 @@ try
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
+    if (need_render_progress)
+    {
+        pipeline.setProgressCallback([this](const Progress & progress){ onProgress(progress); });
+    }
+
     Block block;
     while (executor.pull(block))
     {
@@ -1361,12 +1454,6 @@ catch (...)
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
-    if (need_render_progress)
-    {
-        /// Add callback to track reading from fd.
-        std_in.setProgressCallback(global_context);
-    }
-
     /// Send data read from stdin.
     try
     {
@@ -1434,12 +1521,12 @@ bool ClientBase::receiveEndOfQuery()
 void ClientBase::cancelQuery()
 {
     connection->sendCancel();
+    if (need_render_progress && tty_buf)
+        progress_indication.clearProgressOutput(*tty_buf);
+
     if (is_interactive)
-    {
-        progress_indication.clearProgressOutput();
         std::cout << "Cancelling query." << std::endl;
 
-    }
     cancelled = true;
 }
 
@@ -1477,6 +1564,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
         if (logs_level_field)
             updateLoggerLevel(logs_level_field->safeGet<String>());
+    }
+
+    if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
+    {
+        if (!create_user_query->attach && create_user_query->temporary_password_for_checks)
+        {
+            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password_for_checks.value());
+            create_user_query->temporary_password_for_checks.reset();
+        }
     }
 
     processed_rows = 0;
@@ -1544,6 +1640,14 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                     global_context->applySettingChange(change);
             }
             global_context->resetSettingsToDefaultValue(set_query->default_settings);
+
+            /// Query parameters inside SET queries should be also saved on the client side
+            ///  to override their previous definitions set with --param_* arguments
+            ///  and for substitutions to work inside INSERT ... VALUES queries
+            for (const auto & [name, value] : set_query->query_parameters)
+                query_parameters.insert_or_assign(name, value);
+
+            global_context->addQueryParameters(set_query->query_parameters);
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
@@ -1559,7 +1663,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     if (profile_events.last_block)
     {
         initLogsOutputStream();
-        progress_indication.clearProgressOutput();
+        if (need_render_progress && tty_buf)
+            progress_indication.clearProgressOutput(*tty_buf);
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
 
@@ -1577,6 +1682,11 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     else if (print_time_to_stderr)
     {
         std::cerr << progress_indication.elapsedSeconds() << "\n";
+    }
+
+    if (!is_interactive && print_num_processed_rows)
+    {
+        std::cout << "Processed rows: " << processed_rows << "\n";
     }
 
     if (have_error && report_error)
@@ -2250,7 +2360,7 @@ void ClientBase::init(int argc, char ** argv)
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "query_id")
-        ("progress", "print progress of queries execution")
+        ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -2276,6 +2386,7 @@ void ClientBase::init(int argc, char ** argv)
         ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
+        ("processed-rows", "print the number of locally processed rows")
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
@@ -2354,8 +2465,26 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("print-profile-events", true);
     if (options.count("profile-events-delay-ms"))
         config().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
+    if (options.count("processed-rows"))
+        print_num_processed_rows = true;
     if (options.count("progress"))
-        config().setBool("progress", true);
+    {
+        switch (options["progress"].as<ProgressOption>())
+        {
+            case DEFAULT:
+                config().setString("progress", "default");
+                break;
+            case OFF:
+                config().setString("progress", "off");
+                break;
+            case TTY:
+                config().setString("progress", "tty");
+                break;
+            case ERR:
+                config().setString("progress", "err");
+                break;
+        }
+    }
     if (options.count("echo"))
         config().setBool("echo", true);
     if (options.count("disable_suggestion"))

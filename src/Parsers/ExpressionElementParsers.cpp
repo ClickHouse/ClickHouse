@@ -830,21 +830,65 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!pos.isValid())
         return false;
 
-    /** Maximum length of number. 319 symbols is enough to write maximum double in decimal form.
-      * Copy is needed to use strto* functions, which require 0-terminated string.
-      */
-    static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
+    auto try_read_float = [&](const char * it, const char * end)
+    {
+        char * str_end;
+        errno = 0;    /// Functions strto* don't clear errno.
+        Float64 float_value = std::strtod(it, &str_end);
+        if (str_end == end && errno != ERANGE)
+        {
+            if (float_value < 0)
+                throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
 
-    if (pos->size() > MAX_LENGTH_OF_NUMBER)
+            if (negative)
+                float_value = -float_value;
+
+            res = float_value;
+
+            auto literal = std::make_shared<ASTLiteral>(res);
+            literal->begin = literal_begin;
+            literal->end = ++pos;
+            node = literal;
+
+            return true;
+        }
+
+        expected.add(pos, "number");
+        return false;
+    };
+
+    /// NaN and Inf
+    if (pos->type == TokenType::BareWord)
+    {
+        return try_read_float(pos->begin, pos->end);
+    }
+
+    if (pos->type != TokenType::Number)
     {
         expected.add(pos, "number");
         return false;
     }
 
+    /** Maximum length of number. 319 symbols is enough to write maximum double in decimal form.
+      * Copy is needed to use strto* functions, which require 0-terminated string.
+      */
+    static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
+
     char buf[MAX_LENGTH_OF_NUMBER + 1];
 
-    size_t size = pos->size();
-    memcpy(buf, pos->begin, size);
+    size_t buf_size = 0;
+    for (const auto * it = pos->begin; it != pos->end; ++it)
+    {
+        if (*it != '_')
+            buf[buf_size++] = *it;
+        if (unlikely(buf_size > MAX_LENGTH_OF_NUMBER))
+        {
+            expected.add(pos, "number");
+            return false;
+        }
+    }
+
+    size_t size = buf_size;
     buf[size] = 0;
     char * start_pos = buf;
 
@@ -915,29 +959,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
 
-    char * pos_double = buf;
-    errno = 0;    /// Functions strto* don't clear errno.
-    Float64 float_value = std::strtod(buf, &pos_double);
-    if (pos_double == buf + pos->size() && errno != ERANGE)
-    {
-        if (float_value < 0)
-            throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
-
-        if (negative)
-            float_value = -float_value;
-
-        res = float_value;
-
-        auto literal = std::make_shared<ASTLiteral>(res);
-        literal->begin = literal_begin;
-        literal->end = ++pos;
-        node = literal;
-
-        return true;
-    }
-
-    expected.add(pos, "number");
-    return false;
+    return try_read_float(buf, buf + buf_size);
 }
 
 
@@ -1094,7 +1116,153 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
 template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 template bool ParserCollectionOfLiterals<Tuple>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-template bool ParserCollectionOfLiterals<Map>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+
+
+namespace
+{
+
+class ICollection;
+using Collections = std::vector<std::unique_ptr<ICollection>>;
+
+class ICollection
+{
+public:
+    virtual ~ICollection() = default;
+    virtual bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected) = 0;
+};
+
+template <class Container, TokenType end_token>
+class CommonCollection : public ICollection
+{
+public:
+    bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected) override;
+
+private:
+    Container container;
+};
+
+class MapCollection : public ICollection
+{
+public:
+    bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected) override;
+
+private:
+    Map container;
+};
+
+bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Expected & /*expected*/)
+{
+    if (pos->type == TokenType::OpeningCurlyBrace)
+        collections.push_back(std::make_unique<MapCollection>());
+    else if (pos->type == TokenType::OpeningRoundBracket)
+        collections.push_back(std::make_unique<CommonCollection<Tuple, TokenType::ClosingRoundBracket>>());
+    else if (pos->type == TokenType::OpeningSquareBracket)
+        collections.push_back(std::make_unique<CommonCollection<Array, TokenType::ClosingSquareBracket>>());
+    else
+        return false;
+
+    ++pos;
+    return true;
+}
+
+template <class Container, TokenType end_token>
+bool CommonCollection<Container, end_token>::parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected)
+{
+    if (node)
+    {
+        container.push_back(std::move(node->as<ASTLiteral &>().value));
+        node.reset();
+    }
+
+    ASTPtr literal;
+    ParserLiteral literal_p;
+    ParserToken comma_p(TokenType::Comma);
+    ParserToken end_p(end_token);
+
+    while (true)
+    {
+        if (end_p.ignore(pos, expected))
+        {
+            node = std::make_shared<ASTLiteral>(std::move(container));
+            break;
+        }
+
+        if (!container.empty() && !comma_p.ignore(pos, expected))
+                return false;
+
+        if (literal_p.parse(pos, literal, expected))
+            container.push_back(std::move(literal->as<ASTLiteral &>().value));
+        else
+            return parseAllCollectionsStart(pos, collections, expected);
+    }
+
+    return true;
+}
+
+bool MapCollection::parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected)
+{
+    if (node)
+    {
+        container.push_back(std::move(node->as<ASTLiteral &>().value));
+        node.reset();
+    }
+
+    ASTPtr literal;
+    ParserLiteral literal_p;
+    ParserToken comma_p(TokenType::Comma);
+    ParserToken colon_p(TokenType::Colon);
+    ParserToken end_p(TokenType::ClosingCurlyBrace);
+
+    while (true)
+    {
+        if (end_p.ignore(pos, expected))
+        {
+            node = std::make_shared<ASTLiteral>(std::move(container));
+            break;
+        }
+
+        if (!container.empty() && !comma_p.ignore(pos, expected))
+            return false;
+
+        if (!literal_p.parse(pos, literal, expected))
+            return false;
+
+        if (!colon_p.parse(pos, literal, expected))
+            return false;
+
+        container.push_back(std::move(literal->as<ASTLiteral &>().value));
+
+        if (literal_p.parse(pos, literal, expected))
+            container.push_back(std::move(literal->as<ASTLiteral &>().value));
+        else
+            return parseAllCollectionsStart(pos, collections, expected);
+    }
+
+    return true;
+}
+
+}
+
+
+bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    Collections collections;
+
+    if (!parseAllCollectionsStart(pos, collections, expected))
+        return false;
+
+    while (!collections.empty())
+    {
+        if (!collections.back()->parse(pos, collections, node, expected))
+            return false;
+
+        if (node)
+            collections.pop_back();
+    }
+
+    return true;
+}
+
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

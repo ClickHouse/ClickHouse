@@ -73,13 +73,17 @@ public:
     ///     find . -type f
     ///
     /// @param children - out files (relative paths) with their sizes.
+    /// @param max_keys - return not more then max_keys children
+    /// NOTE: max_keys is not the same as list_object_keys_size (disk property)
+    /// - if max_keys is set not more then max_keys keys should be returned
+    /// - however list_object_keys_size determine the size of the batch and should return all keys
     ///
     /// NOTE: It makes sense only for real object storages (S3, Azure), since
     /// it is used only for one of the following:
     /// - send_metadata (to restore metadata)
     ///   - see DiskObjectStorage::restoreMetadataIfNeeded()
     /// - MetadataStorageFromPlainObjectStorage - only for s3_plain disk
-    virtual void findAllFiles(const std::string & path, RelativePathsWithSize & children) const;
+    virtual void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const;
 
     /// Analog of directory content for object storage (object storage does not
     /// have "directory" definition, but it can be emulated with usage of
@@ -195,6 +199,7 @@ public:
     virtual bool supportsCache() const { return false; }
 
     virtual bool isReadOnly() const { return false; }
+    virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
 
