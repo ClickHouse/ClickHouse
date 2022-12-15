@@ -108,6 +108,12 @@ BlockIO InterpreterCreateUserQuery::execute()
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Authentication type NO_PASSWORD must be explicitly specified, check the setting allow_implicit_no_password in the server configuration");
 
+    if (!query.attach && query.temporary_password_for_checks)
+    {
+        access_control.checkPasswordComplexityRules(query.temporary_password_for_checks.value());
+        query.temporary_password_for_checks.reset();
+    }
+
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {

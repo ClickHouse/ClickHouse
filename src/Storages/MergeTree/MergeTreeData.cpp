@@ -2600,7 +2600,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 }
             }
 
-            dropped_columns.emplace(command.column_name);
+            if (old_metadata.columns.has(command.column_name))
+            {
+                dropped_columns.emplace(command.column_name);
+            }
+            else
+            {
+                const auto & nested = old_metadata.columns.getNested(command.column_name);
+                for (const auto & nested_column : nested)
+                    dropped_columns.emplace(nested_column.name);
+            }
+
         }
         else if (command.type == AlterCommand::RESET_SETTING)
         {
@@ -2665,6 +2675,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
+
         for (const auto & changed_setting : new_changes)
         {
             const auto & setting_name = changed_setting.name;
@@ -3882,9 +3894,9 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return res;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states, DataPartsLock * acquired_lock)
 {
-    auto lock = lockParts();
+    auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
 
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())
@@ -3897,9 +3909,9 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInf
     return nullptr;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states, DataPartsLock * acquired_lock)
 {
-    return getPartIfExists(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states);
+    return getPartIfExists(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states, acquired_lock);
 }
 
 
@@ -4523,6 +4535,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         auto read_buffer = backup_entry->getReadBuffer();
         auto write_buffer = disk->writeFile(temp_part_dir / filename);
         copyData(*read_buffer, *write_buffer);
+        write_buffer->finalize();
         reservation->update(reservation->getSize() - backup_entry->getSize());
     }
 

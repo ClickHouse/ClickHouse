@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
+#include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -1193,6 +1194,17 @@ void TCPHandler::sendHello()
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(DBMS_VERSION_PATCH, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
+    {
+        auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
+
+        writeVarUInt(rules.size(), *out);
+        for (const auto & [original_pattern, exception_message] : rules)
+        {
+            writeStringBinary(original_pattern, *out);
+            writeStringBinary(exception_message, *out);
+        }
+    }
     out->next();
 }
 
