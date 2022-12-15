@@ -20,11 +20,11 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 ///
 /// This class is used to represent various types of table-table dependencies:
 /// 1. View dependencies: "source_table -> materialized_view".
-/// Data inserted to a source table is also inserted to corresponding materialized views.
+///    Data inserted to a source table is also inserted to corresponding materialized views.
 /// 2. Loading dependencies: specify in which order tables must be loaded during startup.
-/// For example a dictionary should be loaded after it's source table and it's written in the graph as "dictionary -> source_table".
+///    For example a dictionary should be loaded after it's source table and it's written in the graph as "dictionary -> source_table".
 /// 3. Referential dependencies: "table -> all tables mentioned in its definition".
-/// Referential dependencies are checked to decide if it's safe to drop a table (it can be unsafe if the table is used by another table).
+///    Referential dependencies are checked to decide if it's safe to drop a table (it can be unsafe if the table is used by another table).
 ///
 /// WARNING: This class doesn't have an embedded mutex, so it must be synchronized outside.
 class TablesDependencyGraph
@@ -98,8 +98,8 @@ public:
     /// Cyclic dependencies are dependencies like "A->A" or "A->B->C->D->A".
     void checkNoCyclicDependencies() const;
     bool hasCyclicDependencies() const;
-    std::vector<StorageID> getTablesWithCyclicDependencies() const;
     String describeCyclicDependencies() const;
+    std::vector<StorageID> getTablesWithCyclicDependencies() const;
 
     /// Returns a list of tables sorted by their dependencies:
     /// tables without dependencies first, then
@@ -113,8 +113,12 @@ public:
     /// Outputs information about this graph as a bunch of logging messages.
     void log() const;
 
+    /// Calculates levels - this is required for checking cyclic dependencies, to sort tables by dependency, and to log the graph.
+    /// This function is called automatically by the functions which need it, but can be invoked directly.
+    void calculateLevels() const;
+
 private:
-    struct Node : public std::enable_shared_from_this<Node>
+    struct Node
     {
         StorageID storage_id;
 
@@ -128,28 +132,38 @@ private:
         /// Calculated lazily.
         mutable size_t level = 0;
 
+        /// Number of dependencies left, used only while we're calculating levels.
+        mutable size_t num_dependencies_to_count = 0;
+
         explicit Node(const StorageID & storage_id_) : storage_id(storage_id_) {}
     };
 
     using NodeSharedPtr = std::shared_ptr<Node>;
 
-    struct LessByLevel
+    struct Hash
     {
-        bool operator()(const Node * left, const Node * right) { return left->level < right->level; }
+        using is_transparent = void;
+        size_t operator()(const Node * node) const { return std::hash<const Node *>{}(node); }
+        size_t operator()(const NodeSharedPtr & node_ptr) const { return operator()(node_ptr.get()); }
     };
 
-    std::unordered_set<NodeSharedPtr> nodes;
+    struct Equal
+    {
+        using is_transparent = void;
+        size_t operator()(const NodeSharedPtr & left, const Node * right) const { return left.get() == right; }
+        size_t operator()(const NodeSharedPtr & left, const NodeSharedPtr & right) const { return left == right; }
+    };
+
+    std::unordered_set<NodeSharedPtr, Hash, Equal> nodes;
 
     /// Nodes can be found either by UUID or by database name & table name. That's why we need two maps here.
     std::unordered_map<StorageID, Node *, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> nodes_by_database_and_table_names;
     std::unordered_map<UUID, Node *> nodes_by_uuid;
 
-    /// This is set if both `level` inside each node and `nodes_sorted_by_level_lazy` are calculated.
-    mutable bool levels_calculated = false;
-
     /// Nodes sorted by their level. Calculated lazily.
     using NodesSortedByLevel = std::vector<const Node *>;
     mutable NodesSortedByLevel nodes_sorted_by_level_lazy;
+    mutable bool levels_calculated = false;
 
     const String name_for_logging;
     mutable Poco::Logger * logger = nullptr;
@@ -161,8 +175,7 @@ private:
     static std::vector<StorageID> getDependencies(const Node & node);
     static std::vector<StorageID> getDependents(const Node & node);
 
-    void setNeedRecalculateLevels();
-    void calculateLevels() const;
+    void setNeedRecalculateLevels() const;
     const NodesSortedByLevel & getNodesSortedByLevel() const;
 
     Poco::Logger * getLogger() const;
