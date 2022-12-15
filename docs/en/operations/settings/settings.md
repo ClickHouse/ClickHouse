@@ -1254,6 +1254,16 @@ Possible values:
 
 Default value: `33554432` (ca. 33 mil. records)
 
+## query_result_cache_min_query_duration {#query-result-cache-min-query-duration}
+
+Minimum duration in milliseconds a query needs to run for its result to be cached in the query result cache
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `0`
+
 ## query_result_cche_keep_seconds_alive {#query-result-cache-keep-seconds-alive}
 
 After this time entries in the query result cache become stale.
