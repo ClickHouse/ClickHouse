@@ -104,7 +104,7 @@ NextState KeyStateHandler::readKeyValueDelimiter(const std::string & file, size_
     }
 }
 
-std::string_view KeyStateHandler::get() const
+std::string_view KeyStateHandler::getElement() const
 {
     return key;
 }

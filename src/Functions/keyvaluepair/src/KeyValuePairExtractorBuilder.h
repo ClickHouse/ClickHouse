@@ -8,6 +8,7 @@
 #include <Functions/keyvaluepair/src/impl/state/KeyStateHandler.h>
 #include <Functions/keyvaluepair/src/impl/state/ValueStateHandler.h>
 #include "KeyValuePairExtractor.h"
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -65,7 +66,7 @@ public:
 
         if (!escaping_processor)
         {
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Escaping processor must be set, cannot build KeyValuePairExtractor without one");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Escaping processor must be set, cannot build KeyValuePairExtractor without one");
         }
 
         return std::make_shared<LazyEscapingKeyValuePairExtractor<Response>>(key_state_handler, value_state_handler, escaping_processor);

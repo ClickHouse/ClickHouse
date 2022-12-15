@@ -103,7 +103,7 @@ bool ValueStateHandler::isValidCharacter(char character) const
     return special_character_allowlist.contains(character) || std::isalnum(character) || character == '_';
 }
 
-std::string_view ValueStateHandler::get() const
+std::string_view ValueStateHandler::getElement() const
 {
     return value;
 }

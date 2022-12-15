@@ -19,7 +19,7 @@ public:
     [[nodiscard]] NextState readEnclosed(const std::string & file, size_t pos);
     [[nodiscard]] NextState readKeyValueDelimiter(const std::string & file, size_t pos) const;
 
-    [[nodiscard]] std::string_view get() const override;
+    [[nodiscard]] std::string_view getElement() const override;
 
 private:
     const char key_value_delimiter;
