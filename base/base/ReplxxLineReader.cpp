@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <fmt/format.h>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/classification.hpp> /// is_any_of
 
 namespace
@@ -38,7 +39,7 @@ std::string getEditor()
     return editor;
 }
 
-std::string getFuzzyFinder()
+std::pair<std::string, FuzzyFinderType> getFuzzyFinder()
 {
     const char * env_path = std::getenv("PATH"); // NOLINT(concurrency-mt-unsafe)
 
@@ -52,14 +53,20 @@ std::string getFuzzyFinder()
         std::filesystem::path path(path_str);
         std::filesystem::path sk_bin_path = path / "sk";
         if (!access(sk_bin_path.c_str(), X_OK))
-            return sk_bin_path;
+            return {sk_bin_path, FUZZY_FINDER_SKIM};
 
         std::filesystem::path fzf_bin_path = path / "fzf";
         if (!access(fzf_bin_path.c_str(), X_OK))
-            return fzf_bin_path;
+            return {fzf_bin_path, FUZZY_FINDER_FZF};
     }
 
-    return {};
+    return {"", FUZZY_FINDER_NONE};
+}
+
+String escapeShellArgument(std::string arg)
+{
+    boost::replace_all(arg, "'", "'\\''");
+    return fmt::format("'{}'", arg);
 }
 
 /// See comments in ShellCommand::executeImpl()
@@ -305,10 +312,11 @@ ReplxxLineReader::ReplxxLineReader(
     replxx::Replxx::highlighter_callback_t highlighter_)
     : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
     , editor(getEditor())
-    , fuzzy_finder(getFuzzyFinder())
 {
     using namespace std::placeholders;
     using Replxx = replxx::Replxx;
+
+    std::tie(fuzzy_finder, fuzzy_finder_type) = getFuzzyFinder();
 
     if (!history_file_path.empty())
     {
@@ -415,11 +423,12 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
     /// interactive search in history (requires fzf/sk)
-    if (!fuzzy_finder.empty())
+    if (fuzzy_finder_type != FUZZY_FINDER_NONE)
     {
         auto interactive_history_search = [this](char32_t code)
         {
             openInteractiveHistorySearch();
+            rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
             return rx.invoke(Replxx::ACTION::REPAINT, code);
         };
         rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
@@ -515,9 +524,22 @@ void ReplxxLineReader::openInteractiveHistorySearch()
     ///
     /// And also note, that fzf and skim is 95% compatible (at least option
     /// that is used here)
-    std::string fuzzy_finder_command = fmt::format(
-        "{} --read0 --tac --no-sort --tiebreak=index --bind=ctrl-r:toggle-sort --height=30% < {} > {}",
-        fuzzy_finder, history_file.getPath(), output_file.getPath());
+    std::string fuzzy_finder_command = fmt::format("{} --read0 --height=30%", fuzzy_finder);
+    switch (fuzzy_finder_type)
+    {
+        case FUZZY_FINDER_SKIM:
+            fuzzy_finder_command += " --tac --tiebreak=-score";
+            break;
+        case FUZZY_FINDER_FZF:
+            fuzzy_finder_command += " --tac --tiebreak=index";
+            break;
+        case FUZZY_FINDER_NONE:
+            /// assertion for !fuzzy_finder.empty() is enough
+            break;
+    }
+    fuzzy_finder_command += fmt::format(" < {} > {}",
+        escapeShellArgument(history_file.getPath()),
+        escapeShellArgument(output_file.getPath()));
     char * const argv[] = {sh, sh_c, fuzzy_finder_command.data(), nullptr};
 
     try

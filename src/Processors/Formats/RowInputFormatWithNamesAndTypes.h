@@ -59,7 +59,7 @@ private:
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
 
 protected:
-    std::unordered_map<String, size_t> column_indexes_by_names;
+    Block::NameMap column_indexes_by_names;
 };
 
 /// Base class for parsing data in input formats with -WithNames and -WithNamesAndTypes suffixes.
@@ -111,7 +111,7 @@ public:
 
 protected:
     ReadBuffer * in;
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
 };
 
 /// Base class for schema inference for formats with -WithNames and -WithNamesAndTypes suffixes.
