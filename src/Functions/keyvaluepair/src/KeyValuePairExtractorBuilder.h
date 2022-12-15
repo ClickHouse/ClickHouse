@@ -60,7 +60,7 @@ public:
 
         if (!escaping_processor)
         {
-            throw std::runtime_error{"Escaping processor must be set, cannot build KeyValuePairExtractor without one"};
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Escaping processor must be set, cannot build KeyValuePairExtractor without one");
         }
 
         return std::make_shared<LazyEscapingKeyValuePairExtractor<Response>>(key_state_handler, value_state_handler, escaping_processor);

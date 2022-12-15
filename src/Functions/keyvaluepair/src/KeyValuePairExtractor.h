@@ -26,7 +26,7 @@ struct KeyValuePairExtractor
 
     virtual ~KeyValuePairExtractor() = default;
 
-    virtual Response extract(const std::string & file) = 0;
+    virtual Response extract(const std::string & data) = 0;
 };
 
 }

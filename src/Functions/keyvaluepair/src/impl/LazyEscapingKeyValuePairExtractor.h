@@ -42,7 +42,7 @@ public:
         {
             auto next_state = processState(file, pos, state);
 
-            pos = next_state.pos;
+            pos = next_state.position_in_string;
             state = next_state.state;
         }
 
