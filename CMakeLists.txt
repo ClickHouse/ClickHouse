@@ -609,8 +609,6 @@ if (NATIVE_BUILD_TARGETS
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
             "-DENABLE_CCACHE=${ENABLE_CCACHE}"
-            # Avoid overriding .cargo/config.toml with native toolchain.
-            "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
         ${CMAKE_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
