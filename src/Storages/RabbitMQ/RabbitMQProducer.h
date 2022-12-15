@@ -13,7 +13,7 @@
 namespace DB
 {
 
-class RabbitMQProducer : public ConcurrentMessageProducer
+class RabbitMQProducer : public AsynchronousMessageProducer
 {
 public:
     RabbitMQProducer(
@@ -44,7 +44,7 @@ private:
     void finishImpl() override;
 
     void iterateEventLoop();
-    void producingTask() override;
+    void startProducingTaskLoop() override;
     void setupChannel();
     void removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish);
     void publish(Payloads & messages, bool republishing);

@@ -69,7 +69,7 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
 }
 
 
-void KafkaProducer::producingTask()
+void KafkaProducer::startProducingTaskLoop()
 {
     cppkafka::MessageBuilder builder(topic);
     while ((!payloads.isFinishedAndEmpty()) && !shutdown_called.load())

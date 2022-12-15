@@ -34,13 +34,12 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
 
 size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
 {
-    ReadBuffer & previous_buf = format->getReadBuffer();
     format->setReadBuffer(buffer);
     size_t rows = execute();
     /// Format destructor can touch read buffer (for example when we use PeekableReadBuffer),
-    /// so we need to set previous read buffer to avoid heap use after free,
+    /// so we need to set empty read buffer to avoid heap use after free,
     /// because we cannot control lifetime of provided buffer.
-    format->setReadBuffer(previous_buf);
+    format->setReadBuffer(empty_read_buffer);
     return rows;
 }
 

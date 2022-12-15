@@ -61,13 +61,13 @@ public:
 
     void setTotals(const Block & totals)
     {
-        writeSuffixIfNot();
+        writeSuffixIfNeeded();
         consumeTotals(Chunk(totals.getColumns(), totals.rows()));
         are_totals_written = true;
     }
     void setExtremes(const Block & extremes)
     {
-        writeSuffixIfNot();
+        writeSuffixIfNeeded();
         consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     }
 
@@ -84,7 +84,7 @@ public:
         resetFormatterImpl();
     }
 
-    void writePrefixIfNot()
+    void writePrefixIfNeeded()
     {
         if (need_write_prefix)
         {
@@ -96,7 +96,8 @@ public:
 protected:
     friend class ParallelFormattingOutputFormat;
 
-    void writeSuffixIfNot()
+
+    void writeSuffixIfNeeded()
     {
         if (need_write_suffix)
         {

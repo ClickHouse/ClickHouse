@@ -1,7 +1,5 @@
 #pragma once
 
-#pragma once
-
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/IMessageProducer.h>
 #include <Interpreters/Context.h>
@@ -24,7 +22,7 @@ using IOutputFormatPtr = std::shared_ptr<IOutputFormat>;
 /// After formatting, created message is propagated to IMessageProducer::produce() method.
 /// To use MessageQueueSink for specific streaming engine, you should implement
 /// IMessageProducer for it.
-class MessageQueueSink : public SinkToStorage
+class MessageQueueSink : public SinkToStorage, WithContext
 {
 public:
     MessageQueueSink(
@@ -58,9 +56,6 @@ private:
     std::unique_ptr<IMessageProducer> producer;
 
     const String storage_name;
-
-protected:
-    const ContextPtr context;
 };
 
 }

@@ -95,7 +95,7 @@ void NATSProducer::stopProducingTask()
     payloads.finish();
 }
 
-void NATSProducer::producingTask()
+void NATSProducer::startProducingTaskLoop()
 {
     try
     {

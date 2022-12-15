@@ -224,7 +224,7 @@ void RabbitMQProducer::publish(Payloads & messages, bool republishing)
     iterateEventLoop();
 }
 
-void RabbitMQProducer::producingTask()
+void RabbitMQProducer::startProducingTaskLoop()
 {
     while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty()) && !shutdown_called.load())
     {

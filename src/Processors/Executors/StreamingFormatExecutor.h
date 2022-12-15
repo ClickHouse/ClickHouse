@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/ISimpleTransform.h>
+#include <IO/EmptyReadBuffer.h>
 
 namespace DB
 {
@@ -43,6 +44,10 @@ private:
 
     InputPort port;
     MutableColumns result_columns;
+
+    /// Empty read buffer that is set to input format
+    /// after executing on specified read buffer.
+    EmptyReadBuffer empty_read_buffer;
 };
 
 }

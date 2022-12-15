@@ -70,7 +70,7 @@ public:
         auto columns = arg_columns.getColumns();
         for (size_t i = 0; i != input_rows_count; ++i)
         {
-            row_output_format->writePrefixIfNot();
+            row_output_format->writePrefixIfNeeded();
             row_output_format->writeRow(columns, i);
             row_output_format->finalize();
             if constexpr (no_newline)

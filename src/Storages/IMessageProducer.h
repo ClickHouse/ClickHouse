@@ -27,7 +27,7 @@ public:
 };
 
 /// Implements interface for concurrent message producing.
-class ConcurrentMessageProducer : public IMessageProducer
+class AsynchronousMessageProducer : public IMessageProducer
 {
 public:
     /// Create and schedule task in BackgroundSchedulePool that will produce messages.
@@ -50,15 +50,12 @@ protected:
 
     virtual String getProducingTaskName() const = 0;
     /// Method that is called inside producing task, all producing work should be done here.
-    virtual void producingTask() = 0;
+    virtual void startProducingTaskLoop() = 0;
 
 private:
     /// Flag, indicated that finish() method was called.
     /// It's used to prevent doing finish logic more than once.
     std::atomic<bool> finished = false;
-    /// Flag, indicated that producing task was finished.
-    /// It's used to wait until producing task is finished.
-    std::atomic<bool> task_finished = false;
 
     BackgroundSchedulePool::TaskHolder producing_task;
 };
