@@ -18,7 +18,7 @@ namespace DB
 class Block;
 using ProducerPtr = std::shared_ptr<cppkafka::Producer>;
 
-class KafkaProducer : public ConcurrentMessageProducer
+class KafkaProducer : public AsynchronousMessageProducer
 {
 public:
     KafkaProducer(
@@ -36,7 +36,7 @@ private:
 
     String getProducingTaskName() const override { return "KafkaProducingTask"; }
 
-    void producingTask() override;
+    void startProducingTaskLoop() override;
 
     struct Payload
     {

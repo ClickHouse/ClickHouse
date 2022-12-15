@@ -13,7 +13,7 @@
 namespace DB
 {
 
-class NATSProducer : public ConcurrentMessageProducer
+class NATSProducer : public AsynchronousMessageProducer
 {
 public:
     NATSProducer(
@@ -31,7 +31,7 @@ private:
     void stopProducingTask() override;
     void finishImpl() override;
 
-    void producingTask() override;
+    void startProducingTaskLoop() override;
 
     void iterateEventLoop();
     void publish();
