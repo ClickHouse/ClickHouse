@@ -50,7 +50,7 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
     , cache_size_in_bytes(cache_size_in_bytes_)
     , max_cache_size_in_bytes(max_cache_size_in_bytes_)
     , max_entries(max_entries_)
-    , entry_size_in_bytes(0)
+    , new_entry_size_in_bytes(0)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , skip_insert(false)
 {
@@ -77,33 +77,36 @@ try
     };
 
     auto entry = std::make_shared<Chunk>(to_single_chunk(chunks));
-    entry_size_in_bytes = entry->allocatedBytes();
+    new_entry_size_in_bytes = entry->allocatedBytes();
 
     std::lock_guard lock(mutex);
 
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
         return; /// same check as in ctor
 
-    auto sufficient_space_in_cache = [this](size_t cache_size_in_bytes_)
+    auto sufficient_space_in_cache = [this]()
     {
-        return (cache_size_in_bytes_ + entry_size_in_bytes < max_cache_size_in_bytes) && (cache.size() + 1 < max_entries);
+        return (cache_size_in_bytes + new_entry_size_in_bytes <= max_cache_size_in_bytes) && (cache.size() + 1 <= max_entries);
     };
 
-    if (!sufficient_space_in_cache(cache_size_in_bytes))
+    if (!sufficient_space_in_cache())
     {
+        size_t removed_items = 0;
         /// Remove stale entries
         for (auto it = cache.begin(); it != cache.end();)
             if (is_stale(it->first))
             {
                 cache_size_in_bytes -= it->second->allocatedBytes();
                 it = cache.erase(it);
+                ++removed_items;
             }
             else
                 ++it;
+        LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Removed {} stale entries", removed_items);
     }
 
     /// Insert or replace if enough space
-    if (sufficient_space_in_cache(cache_size_in_bytes))
+    if (sufficient_space_in_cache())
     {
         cache_size_in_bytes += entry->allocatedBytes();
         if (auto it = cache.find(key); it != cache.end())
@@ -127,8 +130,8 @@ void QueryResultCache::Writer::buffer(Chunk && chunk)
 
     chunks.emplace_back(std::move(chunk));
 
-    entry_size_in_bytes += chunks.back().allocatedBytes();
-    if (entry_size_in_bytes > max_entry_size_in_bytes)
+    new_entry_size_in_bytes += chunks.back().allocatedBytes();
+    if (new_entry_size_in_bytes > max_entry_size_in_bytes)
         skip_insert = true;
 
 }

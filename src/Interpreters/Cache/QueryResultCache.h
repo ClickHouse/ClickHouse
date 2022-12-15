@@ -81,7 +81,7 @@ public:
         size_t & cache_size_in_bytes;
         const size_t max_cache_size_in_bytes;
         const size_t max_entries;
-        size_t entry_size_in_bytes;
+        size_t new_entry_size_in_bytes;
         const size_t max_entry_size_in_bytes;
         Chunks chunks;
         bool skip_insert;
