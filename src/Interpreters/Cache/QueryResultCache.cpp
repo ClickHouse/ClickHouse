@@ -42,12 +42,14 @@ auto is_stale = [](const QueryResultCache::Key & key)
 
 }
 
-QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_, size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entry_size_in_bytes_)
+QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
+    size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entries_, size_t max_entry_size_in_bytes_)
     : mutex(mutex_)
     , cache(cache_)
     , key(key_)
     , cache_size_in_bytes(cache_size_in_bytes_)
     , max_cache_size_in_bytes(max_cache_size_in_bytes_)
+    , max_entries(max_entries_)
     , entry_size_in_bytes(0)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , skip_insert(false)
@@ -84,7 +86,7 @@ try
 
     auto sufficient_space_in_cache = [this](size_t cache_size_in_bytes_)
     {
-        return cache_size_in_bytes_ + entry_size_in_bytes < max_cache_size_in_bytes;
+        return (cache_size_in_bytes_ + entry_size_in_bytes < max_cache_size_in_bytes) && (cache.size() + 1 < max_entries);
     };
 
     if (!sufficient_space_in_cache(cache_size_in_bytes))
@@ -176,9 +178,9 @@ QueryResultCache::Reader QueryResultCache::createReader(const Key & key)
     return Reader(cache, mutex, key);
 }
 
-QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, size_t max_entry_size)
+QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, size_t max_entries, size_t max_entry_size)
 {
-    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_entry_size);
+    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_entries, max_entry_size);
 }
 
 void QueryResultCache::reset()

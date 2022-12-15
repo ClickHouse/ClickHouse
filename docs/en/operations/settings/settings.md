@@ -1224,6 +1224,16 @@ Possible values:
 
 Default value: `0`
 
+## query_result_cache_max_entries {#query-result-cache-max-entries}
+
+Maximum number of SELECT query results in the query result cache.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `1024`
+
 ## query_result_cache_max_entry_size {#query-result-cache-max-entry-size}
 
 Maximum size in bytes of SELECT query results to be saved in the query result cache.

@@ -1,0 +1,15 @@
+-- { echoOn }
+
+SYSTEM DROP QUERY RESULT CACHE;
+-- store one entry into query result cache
+SELECT 1 SETTINGS experimental_query_result_cache_active_usage = true;
+1
+SELECT count(*) FROM system.queryresult_cache;
+1
+-- restrict entry count to 1, other queries create no further entries
+SET query_result_cache_max_entries = 1;
+SELECT 2 SETTINGS experimental_query_result_cache_active_usage = true;
+2
+SELECT count(*) FROM system.queryresult_cache;
+1
+SYSTEM DROP QUERY RESULT CACHE;

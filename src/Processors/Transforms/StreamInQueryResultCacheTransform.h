@@ -13,6 +13,7 @@ public:
         const Block & header_,
         QueryResultCachePtr cache,
         QueryResultCache::Key cache_key,
+        size_t max_entries,
         size_t max_entry_size);
 
     String getName() const override { return "StreamInQueryResultCacheTransform"; }

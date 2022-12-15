@@ -70,7 +70,8 @@ public:
     class Writer
     {
     public:
-        Writer(std::mutex & mutex_, Cache & cache_, const Key & key_, size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entry_size_in_bytes_);
+        Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
+            size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entries_, size_t max_entry_size_in_bytes_);
         ~Writer();
         void buffer(Chunk && chunk);
     private:
@@ -79,6 +80,7 @@ public:
         const Key key;
         size_t & cache_size_in_bytes;
         const size_t max_cache_size_in_bytes;
+        const size_t max_entries;
         size_t entry_size_in_bytes;
         const size_t max_entry_size_in_bytes;
         Chunks chunks;
@@ -99,7 +101,7 @@ public:
     explicit QueryResultCache(size_t max_cache_size_in_bytes_);
 
     Reader createReader(const Key & key);
-    Writer createWriter(const Key & key, size_t max_entry_size_in_bytes);
+    Writer createWriter(const Key & key, size_t max_entries, size_t max_entry_size_in_bytes);
 
     void reset();
 
