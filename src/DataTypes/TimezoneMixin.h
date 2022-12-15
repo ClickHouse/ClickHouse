@@ -39,15 +39,5 @@ protected:
     const DateLUTImpl & utc_time_zone;
 
 private:
-    static const String & checkTimezoneName(const String & timezone_name)
-    {
-        const char * forbidden_patterns[] = {"/", "../", "./", "~/"};
-        for (const auto & pattern : forbidden_patterns)
-        {
-            if (timezone_name.starts_with(pattern))
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Timezone name cannot start with '{}'", pattern);
-        }
-        
-        return timezone_name;
-    }
+    static const String & checkTimezoneName(const String & timezone_name);
 };
