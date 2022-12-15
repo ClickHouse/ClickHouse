@@ -53,7 +53,6 @@ namespace
         throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
-
 }
 
 void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory & factory)

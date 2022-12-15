@@ -75,8 +75,31 @@ struct QuantileInterpolatedWeighted
         }
     }
 
-    /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level) const
+    {
+        return getImpl<Value>(level);
+    }
+
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) const
+    {
+        getManyImpl<Value>(levels, indices, size, result);
+    }
+
+    /// The same, but in the case of an empty state, NaN is returned.
+    Float64 getFloat(Float64) const
+    {
+        throw Exception("Method getFloat is not implemented for QuantileInterpolatedWeighted", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *) const
+    {
+        throw Exception("Method getManyFloat is not implemented for QuantileInterpolatedWeighted", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+private:
+    /// Get the value of the `level` quantile. The level must be between 0 and 1.
+    template <typename T>
+    T getImpl(Float64 level) const
     {
         size_t size = map.size();
 
@@ -164,13 +187,13 @@ struct QuantileInterpolatedWeighted
         if (level > xr)
             yl = yr;
 
-        return interpolate(level, xl, xr, yl, yr);
+        return static_cast<T>(interpolate(level, xl, xr, yl, yr));
     }
-
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    void getMany(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
+    template <typename T>
+    void getManyImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
     {
         size_t size = map.size();
 
@@ -258,7 +281,7 @@ struct QuantileInterpolatedWeighted
             if (level > xr)
                 yl = yr;
 
-            result[indices[level_index]] = interpolate(level, xl, xr, yl, yr);
+            result[indices[level_index]] = static_cast<T>(interpolate(level, xl, xr, yl, yr));
             ++level_index;
         }
     }
@@ -272,20 +295,9 @@ struct QuantileInterpolatedWeighted
         dx = dx == 0 ? 1 : dx; /// to handle NaN behavior that might arise during integer division below.
 
         /// yl + (dy / dx) * (level - xl)
-        UnderlyingType g = common::addIgnoreOverflow(yl, common::mulIgnoreOverflow((dy / dx), common::subIgnoreOverflow(level, xl)));
+        UnderlyingType g = static_cast<UnderlyingType>(common::addIgnoreOverflow(yl, common::mulIgnoreOverflow((dy / dx), common::subIgnoreOverflow(level, xl))));
 
         return g;
-    }
-
-    /// The same, but in the case of an empty state, NaN is returned.
-    Float64 getFloat(Float64) const
-    {
-        throw Exception("Method getFloat is not implemented for QuantileInterpolatedWeighted", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *) const
-    {
-        throw Exception("Method getManyFloat is not implemented for QuantileInterpolatedWeighted", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 
