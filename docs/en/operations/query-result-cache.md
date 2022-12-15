@@ -27,7 +27,7 @@ Query caches are generally either transactionally consistent or inconsistent.
 
 Transactionally inconsistent caching is traditionally provided by client tools or proxy packages interacting with the database. As a result,
 the same caching logic and configuration is often duplicated. With ClickHouse's query result cache, the caching logic moves to the server
-side. This reduces maintenance effort and avoids redundance.
+side. This reduces maintenance effort and avoids redundancy.
 
 ## Usage Examples and Configuration Settings
 
