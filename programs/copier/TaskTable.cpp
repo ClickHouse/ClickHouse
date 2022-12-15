@@ -45,7 +45,7 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
     engine_push_str = config.getString(table_prefix + "engine", "rand()");
 
     {
-        ParserStorage parser_storage;
+        ParserStorage parser_storage{ParserStorage::TABLE_ENGINE};
         engine_push_ast = parseQuery(parser_storage, engine_push_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
         primary_key_comma_separated = boost::algorithm::join(extractPrimaryKeyColumnNames(engine_push_ast), ", ");

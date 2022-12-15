@@ -44,21 +44,29 @@ namespace Ternary
 {
     using ResultType = UInt8;
 
-    /** These carefully picked values magically work so bitwise "and", "or" on them
-      *  corresponds to the expected results in three-valued logic.
+    /** These values are carefully picked so that they could be efficiently evaluated with bitwise operations, which
+      * are feasible for auto-vectorization by the compiler. The expression for the ternary value evaluation writes:
       *
-      * False and True are represented by all-0 and all-1 bits, so all bitwise operations on them work as expected.
-      * Null is represented as single 1 bit. So, it is something in between False and True.
-      * And "or" works like maximum and "and" works like minimum:
-      *  "or" keeps True as is and lifts False with Null to Null.
-      *  "and" keeps False as is and downs True with Null to Null.
+      * ternary_value = ((value << 1) | is_null) & (1 << !is_null)
+      *
+      * The truth table of the above formula lists:
+      *  +---------------+--------------+-------------+
+      *  | is_null\value |      0       |      1      |
+      *  +---------------+--------------+-------------+
+      *  |             0 | 0b00 (False) | 0b10 (True) |
+      *  |             1 | 0b01 (Null)  | 0b01 (Null) |
+      *  +---------------+--------------+-------------+
+      *
+      * As the numerical values of False, Null and True are assigned in ascending order, the "and" and "or" of
+      * ternary logic could be implemented with minimum and maximum respectively, which are also vectorizable.
+      * https://en.wikipedia.org/wiki/Three-valued_logic
       *
       * This logic does not apply for "not" and "xor" - they work with default implementation for NULLs:
       *  anything with NULL returns NULL, otherwise use conventional two-valued logic.
       */
-    static constexpr UInt8 False = 0;   /// All zero bits.
-    static constexpr UInt8 True = -1;   /// All one bits.
-    static constexpr UInt8 Null = 1;    /// Single one bit.
+    static constexpr UInt8 False = 0;   /// 0b00
+    static constexpr UInt8 Null = 1;    /// 0b01
+    static constexpr UInt8 True = 2;   /// 0b10
 
     template <typename T>
     inline ResultType makeValue(T value)
@@ -90,6 +98,8 @@ struct AndImpl
 
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a & b; }
 
+    static inline constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::min(a, b); }
+
     /// Will use three-valued logic for NULLs (see above) or default implementation (any operation with NULL returns NULL).
     static inline constexpr bool specialImplementationForNulls() { return true; }
 };
@@ -102,6 +112,7 @@ struct OrImpl
     static inline constexpr bool isSaturatedValue(bool a) { return a; }
     static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::True; }
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
+    static inline constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::max(a, b); }
     static inline constexpr bool specialImplementationForNulls() { return true; }
 };
 
@@ -113,6 +124,7 @@ struct XorImpl
     static inline constexpr bool isSaturatedValue(bool) { return false; }
     static inline constexpr bool isSaturatedValueTernary(UInt8) { return false; }
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a != b; }
+    static inline constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return a != b; }
     static inline constexpr bool specialImplementationForNulls() { return false; }
 
 #if USE_EMBEDDED_COMPILER

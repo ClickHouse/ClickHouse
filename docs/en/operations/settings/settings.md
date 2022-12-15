@@ -668,7 +668,7 @@ log_query_views=1
 
 ## log_formatted_queries {#settings-log-formatted-queries}
 
-Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)). 
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)).
 
 Possible values:
 
@@ -1806,6 +1806,41 @@ Default value: 1000000000 nanoseconds.
 See also:
 
 -   System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
+
+## memory_profiler_step {#memory_profiler_step}
+
+Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+
+Possible values:
+
+-   A positive integer number of bytes.
+
+-   0 for turning off the memory profiler.
+
+Default value: 4,194,304 bytes (4 MiB).
+
+## memory_profiler_sample_probability {#memory_profiler_sample_probability}
+
+Sets the probability of collecting stacktraces at random allocations and deallocations and writing them into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+
+Possible values:
+
+-   A positive floating-point number in the range [0..1].
+
+-   0.0 for turning off the memory sampling.
+
+Default value: 0.0.
+
+## trace_profile_events {#trace_profile_events}
+
+Enables or disables collecting stacktraces on each update of profile events along with the name of profile event and the value of increment and sending them into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+
+Possible values:
+
+-   1 — Tracing of profile events enabled.
+-   0 — Tracing of profile events disabled.
+
+Default value: 0.
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
@@ -3718,6 +3753,29 @@ Allow parsing numbers as strings in JSON input formats.
 
 Disabled by default.
 
+### input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
+
+Allow parsing JSON objects as strings in JSON input formats.
+
+Example:
+
+```sql
+SET input_format_json_read_objects_as_strings = 1;
+CREATE TABLE test (id UInt64, obj String, date Date) ENGINE=Memory();
+INSERT INTO test FORMAT JSONEachRow {"id" : 1, "obj" : {"a" : 1, "b" : "Hello"}, "date" : "2020-01-01"};
+SELECT * FROM test;
+```
+
+Result:
+
+```
+┌─id─┬─obj──────────────────────┬───────date─┐
+│  1 │ {"a" : 1, "b" : "Hello"} │ 2020-01-01 │
+└────┴──────────────────────────┴────────────┘
+```
+
+Disabled by default.
+
 ### input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
 
 For JSON/JSONCompact/JSONColumnsWithMetadata input formats, if this setting is set to 1,
@@ -4784,7 +4842,7 @@ Possible values:
 
 Default value: 1.
 
-## SQLInsert format settings {$sqlinsert-format-settings}
+## SQLInsert format settings {#sqlinsert-format-settings}
 
 ### output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
 
@@ -4815,3 +4873,25 @@ Default value: `false`.
 Quote column names with "`" characters
 
 Default value: `true`.
+
+## BSONEachRow format settings {#bson-each-row-format-settings}
+
+### output_format_bson_string_as_string {#output_format_bson_string_as_string}
+
+Use BSON String type instead of Binary for String columns.
+
+Disabled by default.
+
+### input_format_bson_skip_fields_with_unsupported_types_in_schema_inference {#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference}
+
+Allow skipping columns with unsupported types while schema inference for format BSONEachRow.
+
+Disabled by default.
+
+## RowBinary format settings {#row-binary-format-settings}
+
+### format_binary_max_string_size {#format_binary_max_string_size}
+
+The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit.
+
+Default value: `1GiB`
