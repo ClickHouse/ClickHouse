@@ -1,20 +1,18 @@
 #pragma once
 
-#include <Interpreters/Cache/FileSegment.h>
-
 #include <IO/WriteBufferFromFileDecorator.h>
 
 namespace DB
 {
 
+class FileSegment;
+
 class WriteBufferToFileSegment : public WriteBufferFromFileDecorator
 {
 public:
-    explicit WriteBufferToFileSegment(std::unique_ptr<WriteBuffer> impl_, FileSegment * file_segment_);
+    explicit WriteBufferToFileSegment(FileSegment * file_segment_);
 
     void nextImpl() override;
-
-    void finalizeImpl() override;
 
     ~WriteBufferToFileSegment() override;
 

@@ -1150,7 +1150,7 @@ void FileCache::reduceSizeToDownloaded(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    CreateFileSegmentSettings create_settings{ .is_persistent = file_segment->is_persistent };
+    CreateFileSegmentSettings create_settings(file_segment->getKind());
 
     cell->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, create_settings);
@@ -1216,16 +1216,6 @@ size_t FileCache::getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_l
 size_t FileCache::getAvailableCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const
 {
     return max_size - getUsedCacheSizeUnlocked(cache_lock);
-}
-
-size_t FileCache::getTotalMaxSize() const
-{
-    return max_size;
-}
-
-size_t FileCache::getTotalMaxElements() const
-{
-    return max_element_size;
 }
 
 size_t FileCache::getFileSegmentsNum() const

@@ -144,6 +144,7 @@ void FileSegment::setDownloadedSize(size_t delta)
 void FileSegment::setDownloadedSizeUnlocked(std::unique_lock<std::mutex> & /* download_lock */, size_t delta)
 {
     downloaded_size += delta;
+    assert(downloaded_size == std::filesystem::file_size(getPathInLocalCache()));
 }
 
 bool FileSegment::isDownloaded() const

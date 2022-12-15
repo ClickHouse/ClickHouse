@@ -226,7 +226,7 @@ TemporaryFileStream::TemporaryFileStream(FileSegmentsHolder && segments_, const 
     if (segment_holder.file_segments.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream can be created only from single segment");
     auto & segment = segment_holder.file_segments.front();
-    auto out_buf = std::make_unique<WriteBufferToFileSegment>(segment->detachWriter(), segment.get());
+    auto out_buf = std::make_unique<WriteBufferToFileSegment>(segment.get());
     out_writer = std::make_unique<OutputWriter>(std::move(out_buf), header);
 }
 
