@@ -2,14 +2,6 @@
 #include <Core/Types.h>
 #include <Common/DateLUT.h>
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-}
-
 class DateLUTImpl;
 
 /** Mixin-class that manages timezone info for timezone-aware DateTime implementations

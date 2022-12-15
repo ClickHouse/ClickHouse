@@ -2,6 +2,14 @@
 #include <Common/Exception.h>
 #include <filesystem>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+}
+
 const String & TimezoneMixin::checkTimezoneName(const String & timezone_name)
 {
     const char * forbidden_beginnings[] = {"/", "./", "~"};
