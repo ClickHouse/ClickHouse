@@ -8,6 +8,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/hex.h>
 #include <Common/quoteString.h>
+#include <Common/XMLUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
@@ -22,6 +23,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/DOM/DOMParser.h>
 
 
 namespace DB
@@ -352,8 +354,11 @@ void BackupImpl::writeBackupMetadata()
     increaseUncompressedSize(str.size());
 }
 
+
 void BackupImpl::readBackupMetadata()
 {
+    using namespace XMLUtils;
+
     std::unique_ptr<ReadBuffer> in;
     if (use_archives)
     {
@@ -372,40 +377,39 @@ void BackupImpl::readBackupMetadata()
     String str;
     readStringUntilEOF(str, *in);
     increaseUncompressedSize(str.size());
-    std::istringstream stream(str); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
-    config->load(stream);
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> config = dom_parser.parseMemory(str.data(), str.size());
+    const Poco::XML::Node * config_root = getRootNode(config);
 
-    version = config->getInt("version");
+    version = getInt(config_root, "version");
     if ((version < INITIAL_BACKUP_VERSION) || (version > CURRENT_BACKUP_VERSION))
         throw Exception(
             ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", backup_name_for_logging, version);
 
-    timestamp = parse<LocalDateTime>(config->getString("timestamp")).to_time_t();
-    uuid = parse<UUID>(config->getString("uuid"));
+    timestamp = parse<::LocalDateTime>(getString(config_root, "timestamp")).to_time_t();
+    uuid = parse<UUID>(getString(config_root, "uuid"));
 
-    if (config->has("base_backup") && !base_backup_info)
-        base_backup_info = BackupInfo::fromString(config->getString("base_backup"));
+    if (config_root->getNodeByPath("base_backup") && !base_backup_info)
+        base_backup_info = BackupInfo::fromString(getString(config_root, "base_backup"));
 
-    if (config->has("base_backup_uuid"))
-        base_backup_uuid = parse<UUID>(config->getString("base_backup_uuid"));
+    if (config_root->getNodeByPath("base_backup_uuid"))
+        base_backup_uuid = parse<UUID>(getString(config_root, "base_backup_uuid"));
 
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("contents", keys);
-    for (const auto & key : keys)
+    const auto * contents = config_root->getNodeByPath("contents");
+    for (const Poco::XML::Node * child = contents->firstChild(); child; child = child->nextSibling())
     {
-        if ((key == "file") || key.starts_with("file["))
+        if (child->nodeName() == "file")
         {
-            String prefix = "contents." + key + ".";
+            const Poco::XML::Node * file_config = child;
             FileInfo info;
-            info.file_name = config->getString(prefix + "name");
-            info.size = config->getUInt64(prefix + "size");
+            info.file_name = getString(file_config, "name");
+            info.size = getUInt64(file_config, "size");
             if (info.size)
             {
-                info.checksum = unhexChecksum(config->getString(prefix + "checksum"));
+                info.checksum = unhexChecksum(getString(file_config, "checksum"));
 
-                bool use_base = config->getBool(prefix + "use_base", false);
-                info.base_size = config->getUInt64(prefix + "base_size", use_base ? info.size : 0);
+                bool use_base = getBool(file_config, "use_base", false);
+                info.base_size = getUInt64(file_config, "base_size", use_base ? info.size : 0);
                 if (info.base_size)
                     use_base = true;
 
@@ -423,14 +427,14 @@ void BackupImpl::readBackupMetadata()
                     if (info.base_size == info.size)
                         info.base_checksum = info.checksum;
                     else
-                        info.base_checksum = unhexChecksum(config->getString(prefix + "base_checksum"));
+                        info.base_checksum = unhexChecksum(getString(file_config, "base_checksum"));
                 }
 
                 if (info.size > info.base_size)
                 {
-                    info.data_file_name = config->getString(prefix + "data_file", info.file_name);
-                    info.archive_suffix = config->getString(prefix + "archive_suffix", "");
-                    info.pos_in_archive = config->getUInt64(prefix + "pos_in_archive", static_cast<UInt64>(-1));
+                    info.data_file_name = getString(file_config, "data_file", info.file_name);
+                    info.archive_suffix = getString(file_config, "archive_suffix", "");
+                    info.pos_in_archive = getUInt64(file_config, "pos_in_archive", static_cast<UInt64>(-1));
                 }
             }
 
@@ -502,7 +506,7 @@ void BackupImpl::removeLockFile()
         return; /// Internal backup must not remove the lock file (it's still used by the initiator).
 
     if (checkLockFile(false))
-        writer->removeFiles({lock_file_name});
+        writer->removeFile(lock_file_name);
 }
 
 Strings BackupImpl::listFiles(const String & directory, bool recursive) const

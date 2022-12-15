@@ -573,7 +573,14 @@ public:
             /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
             /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging, configuration.for_disk_s3);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+                    configuration.region,
+                    configuration.remote_host_filter,
+                    configuration.s3_max_redirects,
+                    configuration.enable_s3_requests_logging,
+                    configuration.for_disk_s3,
+                    configuration.get_request_throttler,
+                    configuration.put_request_throttler);
                 AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
             }
 
@@ -610,7 +617,14 @@ public:
             }
             else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging, configuration.for_disk_s3);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+                    configuration.region,
+                    configuration.remote_host_filter,
+                    configuration.s3_max_redirects,
+                    configuration.enable_s3_requests_logging,
+                    configuration.for_disk_s3,
+                    configuration.get_request_throttler,
+                    configuration.put_request_throttler);
 
                 /// See MakeDefaultHttpResourceClientConfiguration().
                 /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
@@ -731,12 +745,21 @@ namespace S3
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
         bool enable_s3_requests_logging,
-        bool for_disk_s3)
+        bool for_disk_s3,
+        const ThrottlerPtr & get_request_throttler,
+        const ThrottlerPtr & put_request_throttler)
     {
-        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requests_logging, for_disk_s3);
+        return PocoHTTPClientConfiguration(
+            force_region,
+            remote_host_filter,
+            s3_max_redirects,
+            enable_s3_requests_logging,
+            for_disk_s3,
+            get_request_throttler,
+            put_request_throttler);
     }
 
-    URI::URI(const Poco::URI & uri_)
+    URI::URI(const std::string & uri_)
     {
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
@@ -754,16 +777,32 @@ namespace S3
         static constexpr auto OBS = "OBS";
         static constexpr auto OSS = "OSS";
 
-        uri = uri_;
+        uri = Poco::URI(uri_);
+
         storage_name = S3;
 
         if (uri.getHost().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
         /// Extract object version ID from query string.
+        bool has_version_id = false;
         for (const auto & [query_key, query_value] : uri.getQueryParameters())
             if (query_key == "versionId")
+            {
                 version_id = query_value;
+                has_version_id = true;
+            }
+
+        /// Poco::URI will ignore '?' when parsing the path, but if there is a vestionId in the http parameter,
+        /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
+        /// If no "vertionId" in the http parameter, '?' can be used as a wildcard.
+        /// It is necessary to encode '?' to avoid deletion during parsing path.
+        if (!has_version_id && uri_.find('?') != String::npos)
+        {
+            String uri_with_question_mark_encode;
+            Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
+            uri = Poco::URI(uri_with_question_mark_encode);
+        }
 
         String name;
         String endpoint_authority_from_uri;
@@ -813,7 +852,7 @@ namespace S3
     }
 
 
-    S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (for_disk_s3)
@@ -826,7 +865,7 @@ namespace S3
         if (!version_id.empty())
             req.SetVersionId(version_id);
 
-        Aws::S3::Model::HeadObjectOutcome outcome = client_ptr->HeadObject(req);
+        Aws::S3::Model::HeadObjectOutcome outcome = client.HeadObject(req);
 
         if (outcome.IsSuccess())
         {
@@ -840,9 +879,9 @@ namespace S3
         return {};
     }
 
-    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
-        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error, for_disk_s3).size;
+        return getObjectInfo(client, bucket, key, version_id, throw_on_error, for_disk_s3).size;
     }
 
 }

@@ -24,6 +24,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MovesList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -229,6 +230,7 @@ struct ContextSharedPart : boost::noncopyable
     ProcessList process_list;                               /// Executing queries at the moment.
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
+    MovesList moves_list;                                   /// The list of executing moves (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
@@ -637,6 +639,8 @@ const ProcessList & Context::getProcessList() const { return shared->process_lis
 OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
+MovesList & Context::getMovesList() { return shared->moves_list; }
+const MovesList & Context::getMovesList() const { return shared->moves_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
 const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
 
@@ -1427,6 +1431,11 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
     getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
 }
 
+void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
+{
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(merge_tree_settings, changes);
+}
+
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
     auto lock = getLock();
@@ -1521,9 +1530,9 @@ void Context::setCurrentQueryId(const String & query_id)
         client_info.initial_query_id = client_info.current_query_id;
 }
 
-void Context::killCurrentQuery()
+void Context::killCurrentQuery() const
 {
-    if (auto elem = process_list_elem.lock())
+    if (auto elem = getProcessListElement())
         elem->cancelQuery(true);
 }
 
@@ -1778,11 +1787,16 @@ void Context::setProcessListElement(QueryStatusPtr elem)
 {
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
+    has_process_list_elem = elem.get();
 }
 
 QueryStatusPtr Context::getProcessListElement() const
 {
-    return process_list_elem.lock();
+    if (!has_process_list_elem)
+        return {};
+    if (auto res = process_list_elem.lock())
+        return res;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Weak pointer to process_list_elem expired during query execution, it's a bug");
 }
 
 

@@ -50,7 +50,7 @@ public:
         std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        const S3Settings::ReadWriteSettings & s3_settings_,
+        const S3Settings::RequestSettings & request_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ThreadPoolCallbackRunner<void> schedule_ = {},
@@ -75,7 +75,7 @@ private:
     void finalizeImpl() override;
 
     struct UploadPartTask;
-    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, int part_number);
+    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req);
     void processUploadRequest(UploadPartTask & task);
 
     struct PutObjectTask;
@@ -88,14 +88,14 @@ private:
 
     const String bucket;
     const String key;
-    const S3Settings::ReadWriteSettings s3_settings;
+    const S3Settings::RequestSettings request_settings;
     const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
     size_t upload_part_size = 0;
     std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
     size_t last_part_size = 0;
-    std::atomic<size_t> total_parts_uploaded = 0;
+    size_t part_number = 0;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
