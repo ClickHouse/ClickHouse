@@ -1,7 +1,7 @@
 -- { echoOn }
 
 -- run query and cache query result
-SELECT 1 SETTINGS experimental_query_result_cache_active_usage = true;
+SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
 SELECT count(*) FROM system.queryresult_cache;
 
 -- query results are no longer in cache after drop

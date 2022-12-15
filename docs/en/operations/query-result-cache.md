@@ -31,17 +31,20 @@ moved to the server side. This reduces maintenance effort and avoids duplication
 
 ## Usage Examples and Configuration Settings
 
-The two query/user/profile-level parameters [experimental_query_result_cache_active_usage](../../operations/settings/settings.md#setting-experimental_query_result_cache_active_usage)
-and [experimental_query_result_cache_passive_usage](../../operations/settings/settings.md#setting-experimental_query_result_cache_passive_usage) control whether query results are
-inserted or retrieved from the cache. For example, the first execution of query
+The query/user/profile-level parameter [enable_experimental_query_result_cache](../../operations/settings/settings.md#enable-experimental-enable-query-result-cache)
+controls whether query results are inserted or retrieved from the cache. For example, the first execution of query
 
 ``` sql
 SELECT expensive_calculation(A, B, C)
 FROM T
-SETTINGS experimental_query_result_cache_active_usage = true, experimental_query_result_cache_passive_usage = false;
+SETTINGS enable_experimental_query_result_cache = true;
 ```
 
 will store the query result into the query result cache and subsequent executions will retrieve the result directly from the cache.
+
+It is sometimes convenient to use the query result cache passively, i.e. to read from it but not write in it. Parameter
+[enable_experimental_query_result_cache_passive_uage](../../operations/settings/settings.md#enable-experimental-enable-query-result-cache-passive-usage)
+instead of 'enable_experimental_query_result_cache' can be used for that.
 
 For maximum control, it is generally recommended to enable caching on a per-query basis. It is also possible to activate caching at
 user/profile level if the user keeps in mind that all SELECT queries may return outdated results then.
