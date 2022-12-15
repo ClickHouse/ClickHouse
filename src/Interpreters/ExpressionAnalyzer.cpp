@@ -254,7 +254,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
     auto * select_query = query->as<ASTSelectQuery>();
 
     makeAggregateDescriptions(temp_actions, aggregate_descriptions);
-    has_aggregation = !aggregate_descriptions.empty() || (select_query && (select_query->groupBy() || select_query->having()));
+    has_aggregation = !aggregate_descriptions.empty() || (select_query && select_query->groupBy());
 
     if (!has_aggregation)
     {
@@ -411,7 +411,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
             if (group_asts.empty())
             {
                 select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-                has_aggregation = select_query->having() || !aggregate_descriptions.empty();
+                has_aggregation = !aggregate_descriptions.empty();
             }
         }
 
@@ -1960,6 +1960,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             /// TODO correct conditions
             optimize_aggregation_in_order =
                     context->getSettingsRef().optimize_aggregation_in_order
+                    && (!context->getSettingsRef().query_plan_aggregation_in_order)
                     && storage && query.groupBy();
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);

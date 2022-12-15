@@ -19,6 +19,8 @@ public:
 
     size_t getMaxThreads() const { return max_threads; }
 
+    void updateOutputSortDescription();
+
 private:
     Block header;
     size_t max_threads;

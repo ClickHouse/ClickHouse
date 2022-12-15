@@ -2050,4 +2050,122 @@ bool ActionsDAG::isSortingPreserved(
     return true;
 }
 
+ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
+    const NodeRawConstPtrs & filter_nodes,
+    const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
+    const ContextPtr & context)
+{
+    if (filter_nodes.empty())
+        return nullptr;
+
+    struct Frame
+    {
+        const ActionsDAG::Node * node = nullptr;
+        bool visited_children = false;
+    };
+
+    auto result_dag = std::make_shared<ActionsDAG>();
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
+
+    size_t filter_nodes_size = filter_nodes.size();
+
+    std::vector<Frame> nodes_to_process;
+    nodes_to_process.reserve(filter_nodes_size);
+
+    for (const auto & node : filter_nodes)
+        nodes_to_process.push_back({node, false /*visited_children*/});
+
+    while (!nodes_to_process.empty())
+    {
+        auto & node_to_process = nodes_to_process.back();
+        const auto * node = node_to_process.node;
+
+        /// Already visited node
+        if (node_to_result_node.contains(node))
+        {
+            nodes_to_process.pop_back();
+            continue;
+        }
+
+        const ActionsDAG::Node * result_node = nullptr;
+
+        auto input_node_it = node_name_to_input_node_column.find(node->result_name);
+        if (input_node_it != node_name_to_input_node_column.end())
+        {
+            result_node = &result_dag->addInput(input_node_it->second);
+            node_to_result_node.emplace(node, result_node);
+            nodes_to_process.pop_back();
+            continue;
+        }
+
+        if (!node_to_process.visited_children)
+        {
+            node_to_process.visited_children = true;
+
+            for (const auto & child : node->children)
+                nodes_to_process.push_back({child, false /*visited_children*/});
+
+            /// If node has children process them first
+            if (!node->children.empty())
+                continue;
+        }
+
+        auto node_type = node->type;
+
+        switch (node_type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+            {
+                result_node = &result_dag->addInput({node->column, node->result_type, node->result_name});
+                break;
+            }
+            case ActionsDAG::ActionType::COLUMN:
+            {
+                result_node = &result_dag->addColumn({node->column, node->result_type, node->result_name});
+                break;
+            }
+            case ActionsDAG::ActionType::ALIAS:
+            {
+                const auto * child = node->children.front();
+                result_node = &result_dag->addAlias(*(node_to_result_node.find(child)->second), node->result_name);
+                break;
+            }
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            {
+                const auto * child = node->children.front();
+                result_node = &result_dag->addArrayJoin(*(node_to_result_node.find(child)->second), {});
+                break;
+            }
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                NodeRawConstPtrs function_children;
+                function_children.reserve(node->children.size());
+
+                for (const auto & child : node->children)
+                    function_children.push_back(node_to_result_node.find(child)->second);
+
+                result_node = &result_dag->addFunction(node->function_builder, std::move(function_children), {});
+                break;
+            }
+        }
+
+        node_to_result_node.emplace(node, result_node);
+        nodes_to_process.pop_back();
+    }
+
+    auto & result_dag_outputs = result_dag->getOutputs();
+    result_dag_outputs.reserve(filter_nodes_size);
+
+    for (const auto & node : filter_nodes)
+        result_dag_outputs.push_back(node_to_result_node.find(node)->second);
+
+    if (result_dag_outputs.size() > 1)
+    {
+        auto function_builder = FunctionFactory::instance().get("and", context);
+        result_dag_outputs = { &result_dag->addFunction(function_builder, result_dag_outputs, {}) };
+    }
+
+    return result_dag;
+}
+
 }
