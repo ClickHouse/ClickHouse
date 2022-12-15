@@ -242,6 +242,13 @@
                     </main>
                 </volumes>
             </local_cache_3>
+            <s3_cache_small_segment_size>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_small_segment_size</disk>
+                    </main>
+                </volumes>
+            </s3_cache_small_segment_size>
         </policies>
     </storage_configuration>
 </clickhouse>
