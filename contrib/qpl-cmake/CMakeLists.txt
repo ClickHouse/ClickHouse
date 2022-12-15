@@ -15,7 +15,7 @@ set (QPL_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl/sources")
 set (QPL_BINARY_DIR "${ClickHouse_BINARY_DIR}/build/contrib/qpl")
 set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
 
-set (EFFICIENT_WAIT ON)
+set (EFFICIENT_WAIT OFF)
 set (BLOCK_ON_FAULT ON)
 set (LOG_HW_INIT OFF)
 set (SANITIZE_MEMORY OFF)
@@ -42,7 +42,7 @@ include("${QPL_PROJECT_DIR}/cmake/CompileOptions.cmake")
 include(CheckLanguage)
 check_language(ASM_NASM)
 if(NOT CMAKE_ASM_NASM_COMPILER)
-  message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
+    message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
 endif()
 
 # [SUBDIR]isal
@@ -110,18 +110,18 @@ target_compile_options(isal PRIVATE
                        "$<$<CONFIG:Debug>:>"
                        "$<$<CONFIG:Release>:>")
 
-target_compile_options(isal_asm PUBLIC "-I${QPL_SRC_DIR}/isal/include/"
-                       PUBLIC "-I${QPL_SRC_DIR}/isal/igzip/"
-                       PUBLIC "-I${QPL_SRC_DIR}/isal/crc/"
-                       PUBLIC "-DQPL_LIB")
+target_compile_options(isal_asm PRIVATE "-I${QPL_SRC_DIR}/isal/include/"
+                       PRIVATE "-I${QPL_SRC_DIR}/isal/igzip/"
+                       PRIVATE "-I${QPL_SRC_DIR}/isal/crc/"
+                       PRIVATE "-DQPL_LIB")
 
 # AS_FEATURE_LEVEL=10 means "Check SIMD capabilities of the target system at runtime and use up to AVX512 if available".
 # AS_FEATURE_LEVEL=5 means "Check SIMD capabilities of the target system at runtime and use up to AVX2 if available".
 # HAVE_KNOWS_AVX512 means rely on AVX512 being available on the target system.
 if (ENABLE_AVX512)
-    target_compile_options(isal_asm PUBLIC "-DHAVE_AS_KNOWS_AVX512" "-DAS_FEATURE_LEVEL=10")
+    target_compile_options(isal_asm PRIVATE "-DHAVE_AS_KNOWS_AVX512" "-DAS_FEATURE_LEVEL=10")
 else()
-    target_compile_options(isal_asm PUBLIC "-DAS_FEATURE_LEVEL=5")
+    target_compile_options(isal_asm PRIVATE "-DAS_FEATURE_LEVEL=5")
 endif()
 
 # Here must remove "-fno-sanitize=undefined" from COMPILE_OPTIONS.
@@ -315,7 +315,13 @@ target_compile_definitions(_qpl
         PRIVATE -DQPL_BADARG_CHECK
         PUBLIC -DENABLE_QPL_COMPRESSION)
 
+find_library(LIBACCEL accel-config)
+if(NOT LIBACCEL)
+    message(FATAL_ERROR "Please install QPL dependency library:libaccel-config from https://github.com/intel/idxd-config")
+endif()
+
 target_link_libraries(_qpl
+        PRIVATE ${LIBACCEL}
         PRIVATE ${CMAKE_DL_LIBS})
 
 add_library (ch_contrib::qpl ALIAS _qpl)

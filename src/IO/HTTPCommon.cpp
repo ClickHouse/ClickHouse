@@ -334,7 +334,7 @@ std::string HTTPException::makeExceptionMessage(
         "Received error from remote server {}. "
         "HTTP status code: {} {}, "
         "body: {}",
-        uri, http_status, reason, body);
+        uri, static_cast<int>(http_status), reason, body);
 }
 
 }
