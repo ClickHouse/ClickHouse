@@ -58,9 +58,9 @@ Query results are referenced in the cache by the AST of their query. This means 
 
 ### Further Configuration Options:
 
-To configure the size of the query result cache, use setting [query_result_cache_size](settings/settings.md#query-result-cache-size).
+To configure the size of the query result cache, use setting [query_result_cache_size](server-configuration-parameters/settings.md#server_configuration_parameters_query-result-cache-size).
 
-To set the maximum number of cache entries and the maximum size of a cache entry in bytes and in records, use settings [query_result_cache_max_entries](settings/settings.md#query-result-cache-max-entries), [query_result_cache_max_entry_size](settings/settings.md#query-result-cache-max-entry-size) and [query_result_cache_max_entry_records](settings/settings.md#query-result-cache-max-entry-records).
+To set the maximum number of cache entries and the maximum size of a cache entry in bytes and in records, use settings [query_result_cache_max_entries](server-configuration-parameters/settings.md#server_configuration_parameters_query-result-cache-max-entries), [query_result_cache_max_entry_size](server-configuration-parameters/settings.md#server_configuration_parameters_query-result-cache-max-entry-size) and [query_result_cache_max_entry_records](server-configuration-parameters/settings.md#server_configuration_parameters_query-result-cache-max-entry-records).
 
 To define how long a query must run at least such that its result is cached, use setting [query_result_cache_min_query_duration](settings/settings.md#query-result-cache-min-query-duration).
 

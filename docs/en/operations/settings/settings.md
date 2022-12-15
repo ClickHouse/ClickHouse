@@ -1172,7 +1172,7 @@ Default value: `3`.
 
 ## enable_experimental_query_result_cache {#experimental-query-result-cache}
 
-If turned on, results of SELECT queries are stored in and (if available) retrieved from the query result cache.
+If turned on, results of SELECT queries are stored in and (if available) retrieved from the [query result cache](../query-result-cache.md).
 
 Possible values:
 
@@ -1183,7 +1183,7 @@ Default value: `0`.
 
 ## enable_experimental_query_result_cache_passive_usage {#experimental-query-result-cache-passive-usage}
 
-If turned on, results of SELECT queries are (if available) retrieved from the query result cache.
+If turned on, results of SELECT queries are (if available) retrieved from the [query result cache](../query-result-cache.md).
 
 Possible values:
 
@@ -1194,7 +1194,7 @@ Default value: `0`.
 
 ## query_result_cache_ignore_nondeterministic_functions {#experimental-query-result-cache-ignore-nondeterministic-function}
 
-If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) are not cached in the query result cache.
+If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) are not cached in the [query result cache](../query-result-cache.md).
 
 Possible values:
 
@@ -1203,63 +1203,19 @@ Possible values:
 
 Default value: `1`.
 
-## query_result_cache_size {#query-result-cache-size}
-
-Maximum size of the query result cache in bytes. 0 means disabled.
-This is a server-level setting which takes effect only after server restart.
-
-Possible values:
-
--   Positive integer >= 0.
-
-Default value: `1073741824` (ca. 1 GB.)
-
 ## query_result_cache_min_query_runs {#query-result-cache-min-query-runs}
 
-Minimum number a SELECT query must run before its result is stored in the query result cache.
+Minimum number a SELECT query must run before its result is stored in the [query result cache](../query-result-cache.md).
 
 Possible values:
 
 - Positive integer >= 0.
 
 Default value: `0`
-
-## query_result_cache_max_entries {#query-result-cache-max-entries}
-
-Maximum number of SELECT query results in the query result cache.
-This is a server-level setting which takes effect only after server restart.
-
-Possible values:
-
-- Positive integer >= 0.
-
-Default value: `1024`
-
-## query_result_cache_max_entry_size {#query-result-cache-max-entry-size}
-
-Maximum size in bytes SELECT query results may have to be saved in the query result cache.
-This is a server-level setting which takes effect only after server restart.
-
-Possible values:
-
-- Positive integer >= 0.
-
-Default value: `33554432` (ca. 33 MB)
-
-## query_result_cache_max_entry_records {#query-result-cache-max-entry-records}
-
-Maximum number of records SELECT query results may have to be saved in the query result cache.
-This is a server-level setting which takes effect only after server restart.
-
-Possible values:
-
-- Positive integer >= 0.
-
-Default value: `33554432` (ca. 33 mil. records)
 
 ## query_result_cache_min_query_duration {#query-result-cache-min-query-duration}
 
-Minimum duration in milliseconds a query needs to run for its result to be cached in the query result cache
+Minimum duration in milliseconds a query needs to run for its result to be cached in the [query result cache](../query-result-cache.md).
 
 Possible values:
 
@@ -1267,9 +1223,9 @@ Possible values:
 
 Default value: `0`
 
-## query_result_cche_keep_seconds_alive {#query-result-cache-keep-seconds-alive}
+## query_result_cache_keep_seconds_alive {#query-result-cache-keep-seconds-alive}
 
-After this time entries in the query result cache become stale.
+After this time entries in the [query result cache](../query-result-cache.md) become stale.
 
 Possible values:
 
@@ -1279,7 +1235,7 @@ Default value: `60`
 
 ## query_result_cache_partition_key {#query-result-cache-partition-key}
 
-Represents a partition of the query result cache.
+Represents a partition of the [query result cache](../query-result-cache.md).
 
 Possible values:
 
