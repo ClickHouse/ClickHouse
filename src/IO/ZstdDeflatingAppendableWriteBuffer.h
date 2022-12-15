@@ -45,6 +45,13 @@ public:
 
     WriteBuffer * getNestedBuffer() { return out.get(); }
 
+    /// Read three last bytes from non-empty compressed file and compares them with
+    /// ZSTD_CORRECT_TERMINATION_LAST_BLOCK.
+    static bool isNeedToAddEmptyBlock(const std::string & file_name);
+
+    /// Adding zstd empty block (ZSTD_CORRECT_TERMINATION_LAST_BLOCK) to out.working_buffer
+    static void addEmptyBlock(WriteBuffer & write_buffer);
+
 private:
     /// NOTE: will fill compressed data to the out.working_buffer, but will not call out.next method until the buffer is full
     void nextImpl() override;
@@ -59,13 +66,6 @@ private:
     void finalizeBefore();
     void finalizeAfter();
     void finalizeZstd();
-
-    /// Read three last bytes from non-empty compressed file and compares them with
-    /// ZSTD_CORRECT_TERMINATION_LAST_BLOCK.
-    static bool isNeedToAddEmptyBlock();
-
-    /// Adding zstd empty block (ZSTD_CORRECT_TERMINATION_LAST_BLOCK) to out.working_buffer
-    void addEmptyBlock();
 
     std::unique_ptr<WriteBuffer> out;
 

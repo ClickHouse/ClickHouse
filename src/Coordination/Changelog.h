@@ -147,9 +147,6 @@ private:
     /// Pack log_entry into changelog record
     static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
 
-    /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
-    void rotate(uint64_t new_start_log_index, std::lock_guard<std::mutex> & writer_lock);
-
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
 
