@@ -91,6 +91,19 @@ function configure
     cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
     cp -av --dereference "$script_dir"/allow-nullable-key.xml db/config.d
 
+    # the following memory limits configuration is copy-pasted from docker/test/stress/run.sh
+    local total_mem
+    total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
+    total_mem=$(( total_mem*1024 )) # bytes
+    local max_server_mem
+    max_server_mem=$((total_mem*75/100)) # 75%
+    echo "Setting max_server_memory_usage=$max_server_mem"
+    cat > db/config.d/max_server_memory_usage.xml <<EOL
+<clickhouse>
+    <max_server_memory_usage>${max_server_mem}</max_server_memory_usage>
+</clickhouse>
+EOL
+
     cat > db/config.d/core.xml <<EOL
 <clickhouse>
     <core_dump>
