@@ -38,10 +38,8 @@ public:
 
 private:
     const Block header;
-    /// Empty read buffer that is set to input format
-    /// after executing on specified read buffer.
-    /// It's important that this field is declared before
-    /// format field, because it can be used in
+    /// Empty read buffer that is set to input format after executing on specified read buffer.
+    /// It's important that this field is declared before format field, because it can be used in
     /// format destructor.
     EmptyReadBuffer empty_read_buffer;
     const InputFormatPtr format;
