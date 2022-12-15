@@ -735,7 +735,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (num_query_runs > settings.query_result_cache_min_query_runs)
                     {
                         auto stream_in_query_result_cache_transform = std::make_shared<StreamInQueryResultCacheTransform>(res.pipeline.getHeader(), query_result_cache, key,
-                                context->getSettings().query_result_cache_max_entries, context->getSettings().query_result_cache_max_entry_size, context->getSettings().query_result_cache_max_entry_records);
+                                context->getSettings().query_result_cache_max_entries,
+                                context->getSettings().query_result_cache_max_entry_size,
+                                context->getSettings().query_result_cache_max_entry_records,
+                                std::chrono::milliseconds(context->getSettings().query_result_cache_min_query_duration.totalMilliseconds()));
                         res.pipeline.streamIntoQueryResultCache(stream_in_query_result_cache_transform);
                     }
                 }

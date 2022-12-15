@@ -71,7 +71,10 @@ public:
     {
     public:
         Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
-            size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_, size_t max_entries_, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+            size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
+            size_t max_entries_,
+            size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
+            std::chrono::milliseconds min_query_duration_);
         ~Writer();
         void buffer(Chunk && chunk);
     private:
@@ -85,6 +88,8 @@ public:
         const size_t max_entry_size_in_bytes;
         size_t new_entry_size_in_rows;
         const size_t max_entry_size_in_rows;
+        const std::chrono::time_point<std::chrono::system_clock> query_start_time; /// Writer construction/destruction coincides with query start/end
+        const std::chrono::milliseconds min_query_duration;
         Chunks chunks;
         bool skip_insert;
     };
@@ -103,7 +108,7 @@ public:
     explicit QueryResultCache(size_t max_cache_size_in_bytes_);
 
     Reader createReader(const Key & key);
-    Writer createWriter(const Key & key, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
+    Writer createWriter(const Key & key, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, std::chrono::milliseconds min_query_duration);
 
     void reset();
 
