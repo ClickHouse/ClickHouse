@@ -1,8 +1,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -268,6 +270,12 @@ private:
 
             if (typeid_cast<const UnionStep *>(step))
                 return false;
+
+            if (const auto * join_step = typeid_cast<const JoinStep *>(step); join_step)
+            {
+                if (typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get()))
+                    return false;
+            }
         }
 
         return true;
