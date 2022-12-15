@@ -1170,9 +1170,9 @@ Possible values:
 
 Default value: `3`.
 
-## experimental_query_result_cache_active_usage {#experimental-query-result-cache-active-usage}
+## enable_experimental_query_result_cache {#experimental-query-result-cache}
 
-If turned on, results of SELECT queries are stored in the query result cache.
+If turned on, results of SELECT queries are stored in and (if available) retrieved from the query result cache.
 
 Possible values:
 
@@ -1181,9 +1181,9 @@ Possible values:
 
 Default value: `0`.
 
-## experimental_query_result_cache_passive_usage {#experimental-query-result-cache-passive-usage}
+## enable_experimental_query_result_cache_passive_usage {#experimental-query-result-cache-passive-usage}
 
-If turned on, the database tries to answer SELECT queries using a lookup in the query result cache.
+If turned on, results of SELECT queries are (if available) retrieved from the query result cache.
 
 Possible values:
 
