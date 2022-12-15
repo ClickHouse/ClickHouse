@@ -81,6 +81,20 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     return false;
 }
 
+/** There are no limits on the maximum size of the result for the view.
+  *  Since the result of the view is not the result of the entire query.
+  */
+ContextPtr getViewContext(ContextPtr context)
+{
+    auto view_context = Context::createCopy(context);
+    Settings view_settings = context->getSettings();
+    view_settings.max_result_rows = 0;
+    view_settings.max_result_bytes = 0;
+    view_settings.extremes = false;
+    view_context->setSettings(view_settings);
+    return view_context;
+}
+
 }
 
 StorageView::StorageView(
@@ -123,7 +137,7 @@ void StorageView::read(
     }
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, options, column_names);
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, getViewContext(context), options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     interpreter.buildQueryPlan(query_plan);
 
