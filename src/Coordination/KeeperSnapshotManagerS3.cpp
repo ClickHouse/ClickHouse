@@ -65,7 +65,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
 
         auto endpoint = config.getString(config_prefix + ".endpoint");
-        auto new_uri = S3::URI{Poco::URI(endpoint)};
+        auto new_uri = S3::URI{endpoint};
 
         {
             std::lock_guard client_lock{snapshot_s3_client_mutex};
@@ -136,7 +136,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
             return;
 
         S3Settings::RequestSettings request_settings_1;
-        request_settings_1.upload_part_size_multiply_parts_count_threshold = 10000;
+        request_settings_1.setEmptyFieldsByDefault();
 
         const auto create_writer = [&](const auto & key)
         {

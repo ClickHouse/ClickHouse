@@ -104,7 +104,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         ContextPtr context,
         const DisksMap & /*map*/) -> DiskPtr
     {
-        S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
+        S3::URI uri(config.getString(config_prefix + ".endpoint"));
 
         if (uri.key.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No key in S3 uri: {}", uri.uri.toString());

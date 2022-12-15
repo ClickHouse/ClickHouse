@@ -86,9 +86,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
         auto serialization = minmax_column_types[i]->getDefaultSerialization();
 
         Field min_val;
-        serialization->deserializeBinary(min_val, *file);
+        serialization->deserializeBinary(min_val, *file, {});
         Field max_val;
-        serialization->deserializeBinary(max_val, *file);
+        serialization->deserializeBinary(max_val, *file, {});
 
         // NULL_LAST
         if (min_val.isNull())
@@ -134,8 +134,8 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 
         auto out = part_storage.writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
         HashingWriteBuffer out_hashing(*out);
-        serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
-        serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
+        serialization->serializeBinary(hyperrectangle[i].left, out_hashing, {});
+        serialization->serializeBinary(hyperrectangle[i].right, out_hashing, {});
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -755,7 +755,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
+                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -1350,7 +1350,7 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
     if (!wasInvolvedInTransaction() && !force)
         return;
 
-    LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+    LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {}, creation csn {})", name, version.creation_tid, version.removal_tid, version.creation_csn);
     assert(storage.supportsTransactions());
 
     if (!isStoredOnDisk())
@@ -1382,7 +1382,7 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
 {
     chassert(!version.creation_tid.isEmpty());
-    chassert(version.removal_csn == 0);
+    chassert(version.removal_csn == 0 || (version.removal_csn == Tx::PrehistoricCSN && version.removal_tid.isPrehistoric()));
     chassert(!version.removal_tid.isEmpty());
     chassert(isStoredOnDisk());
 
@@ -1390,6 +1390,12 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
     {
         /// Metadata file probably does not exist, because it was not written on part creation, because it was created without a transaction.
         /// Let's create it (if needed). Concurrent writes are not possible, because creation_csn is prehistoric and we own removal_tid_lock.
+
+        /// It can happen that VersionMetadata::isVisible sets creation_csn to PrehistoricCSN when creation_tid is Prehistoric
+        /// In order to avoid a race always write creation_csn as PrehistoricCSN for Prehistoric creation_tid
+        assert(version.creation_csn == Tx::UnknownCSN || version.creation_csn == Tx::PrehistoricCSN);
+        version.creation_csn.store(Tx::PrehistoricCSN);
+
         storeVersionMetadata();
         return;
     }
@@ -1531,8 +1537,8 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     {
         WriteBufferFromOwnString expected;
         version.write(expected);
-        tryLogCurrentException(storage.log, fmt::format("File {} contains:\n{}\nexpected:\n{}\nlock: {}",
-                                                        version_file_name, content, expected.str(), version.removal_tid_lock));
+        tryLogCurrentException(storage.log, fmt::format("File {} contains:\n{}\nexpected:\n{}\nlock: {}\nname: {}",
+                                                        version_file_name, content, expected.str(), version.removal_tid_lock, name));
         return false;
     }
 }
@@ -1635,6 +1641,12 @@ void IMergeTreeDataPart::remove()
         {
             LOG_TRACE(storage.log, "Temporary projection part {} can be removed", name);
             return CanRemoveDescription{.can_remove_anything = true, .files_not_to_remove = {} };
+        }
+
+        if (getState() == MergeTreeDataPartState::Temporary)
+        {
+            LOG_TRACE(storage.log, "Part {} in temporary state can be removed without unlocking shared state", name);
+            return CanRemoveDescription{.can_remove_anything = false, .files_not_to_remove = {} };
         }
 
         auto [can_remove, files_not_to_remove] = canRemovePart();
@@ -2023,8 +2035,7 @@ std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorag
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             const auto & extension = fs::path(it->name()).extension();
-            if (extension == getIndexExtension(false)
-                    || extension == getIndexExtension(true))
+            if (extension == getIndexExtension(true))
                 return extension;
         }
     }
@@ -2034,6 +2045,14 @@ std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorag
 bool isCompressedFromIndexExtension(const String & index_extension)
 {
     return index_extension == getIndexExtension(true);
+}
+
+Strings getPartsNames(const MergeTreeDataPartsVector & parts)
+{
+    Strings part_names;
+    for (const auto & p : parts)
+        part_names.push_back(p->name);
+    return part_names;
 }
 
 }

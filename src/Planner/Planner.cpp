@@ -142,13 +142,11 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQ
         if (!subquery_node)
             continue;
 
-        auto subquery_context = buildSubqueryContext(planner_context->getQueryContext());
         auto subquery_options = select_query_options.subquery();
 
         Planner subquery_planner(
             subquery_node,
             subquery_options,
-            std::move(subquery_context),
             planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
 
@@ -183,52 +181,26 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
 
 }
 
-Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_,
-    ContextPtr context_)
-    : query_tree(query_tree_)
-    , select_query_options(select_query_options_)
-    , planner_context(std::make_shared<PlannerContext>(std::move(context_), std::make_shared<GlobalPlannerContext>()))
+PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
+    const SelectQueryOptions & select_query_options,
+    GlobalPlannerContextPtr global_planner_context)
 {
-    initialize();
-}
+    auto * query_node = query_tree_node->as<QueryNode>();
+    auto * union_node = query_tree_node->as<UnionNode>();
 
-Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_,
-    ContextPtr context_,
-    GlobalPlannerContextPtr global_planner_context_)
-    : query_tree(query_tree_)
-    , select_query_options(select_query_options_)
-    , planner_context(std::make_shared<PlannerContext>(std::move(context_), std::move(global_planner_context_)))
-{
-    initialize();
-}
-
-void Planner::initialize()
-{
-    checkStackSize();
-
-    if (query_tree->getNodeType() != QueryTreeNodeType::QUERY &&
-        query_tree->getNodeType() != QueryTreeNodeType::UNION)
+    if (!query_node && !union_node)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Expected QUERY or UNION node. Actual {}",
-            query_tree->formatASTForErrorMessage());
+            query_tree_node->formatASTForErrorMessage());
 
-    auto & query_context = planner_context->getQueryContext();
-
-    size_t max_subquery_depth = query_context->getSettingsRef().max_subquery_depth;
+    auto & mutable_context = query_node ? query_node->getMutableContext() : union_node->getMutableContext();
+    size_t max_subquery_depth = mutable_context->getSettingsRef().max_subquery_depth;
     if (max_subquery_depth && select_query_options.subquery_depth > max_subquery_depth)
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES,
             "Too deep subqueries. Maximum: {}",
             max_subquery_depth);
 
-    auto * query_node = query_tree->as<QueryNode>();
-    if (!query_node)
-        return;
-
-    bool need_apply_query_settings = query_node->hasSettingsChanges();
-
-    const auto & client_info = query_context->getClientInfo();
+    const auto & client_info = mutable_context->getClientInfo();
     auto min_major = static_cast<UInt64>(DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
     auto min_minor = static_cast<UInt64>(DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
 
@@ -236,22 +208,34 @@ void Planner::initialize()
         client_info.connection_client_version_major < min_major &&
         client_info.connection_client_version_minor < min_minor;
 
-    if (need_apply_query_settings || need_to_disable_two_level_aggregation)
+    if (need_to_disable_two_level_aggregation)
     {
-        auto updated_context = Context::createCopy(query_context);
-
-        if (need_apply_query_settings)
-            updated_context->applySettingsChanges(query_node->getSettingsChanges());
-
         /// Disable two-level aggregation due to version incompatibility
-        if (need_to_disable_two_level_aggregation)
-        {
-            updated_context->setSetting("group_by_two_level_threshold", Field(0));
-            updated_context->setSetting("group_by_two_level_threshold_bytes", Field(0));
-        }
-
-        query_context = std::move(updated_context);
+        mutable_context->setSetting("group_by_two_level_threshold", Field(0));
+        mutable_context->setSetting("group_by_two_level_threshold_bytes", Field(0));
     }
+
+    if (select_query_options.is_subquery)
+        updateContextForSubqueryExecution(mutable_context);
+
+    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context));
+}
+
+Planner::Planner(const QueryTreeNodePtr & query_tree_,
+    const SelectQueryOptions & select_query_options_)
+    : query_tree(query_tree_)
+    , select_query_options(select_query_options_)
+    , planner_context(buildPlannerContext(query_tree, select_query_options, std::make_shared<GlobalPlannerContext>()))
+{
+}
+
+Planner::Planner(const QueryTreeNodePtr & query_tree_,
+    const SelectQueryOptions & select_query_options_,
+    GlobalPlannerContextPtr global_planner_context_)
+    : query_tree(query_tree_)
+    , select_query_options(select_query_options_)
+    , planner_context(buildPlannerContext(query_tree_, select_query_options, std::move(global_planner_context_)))
+{
 }
 
 void Planner::buildQueryPlanIfNeeded()
@@ -279,7 +263,7 @@ void Planner::buildQueryPlanIfNeeded()
 
         for (auto & query_node : union_query_tree->getQueries().getNodes())
         {
-            Planner query_planner(query_node, select_query_options, query_context);
+            Planner query_planner(query_node, select_query_options);
             query_planner.buildQueryPlanIfNeeded();
             auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
             query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
@@ -455,6 +439,7 @@ void Planner::buildQueryPlanIfNeeded()
         );
 
         SortDescription group_by_sort_description;
+        SortDescription sort_description_for_merging;
 
         auto merge_threads = settings.max_threads;
         auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -477,7 +462,6 @@ void Planner::buildQueryPlanIfNeeded()
         const bool should_produce_results_in_order_of_bucket_number
             = select_query_options.to_stage == QueryProcessingStage::WithMergeableState && settings.distributed_aggregation_memory_efficient;
 
-        InputOrderInfoPtr input_order_info;
         bool aggregate_final =
             select_query_options.to_stage > QueryProcessingStage::WithMergeableState &&
             !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
@@ -493,9 +477,10 @@ void Planner::buildQueryPlanIfNeeded()
             temporary_data_merge_threads,
             storage_has_evenly_distributed_read,
             settings.group_by_use_nulls,
-            std::move(input_order_info),
+            std::move(sort_description_for_merging),
             std::move(group_by_sort_description),
-            should_produce_results_in_order_of_bucket_number);
+            should_produce_results_in_order_of_bucket_number,
+            settings.enable_memory_bound_merging_of_aggregation_results);
         query_plan.addStep(std::move(aggregating_step));
 
         if (query_node.isGroupByWithTotals())
@@ -599,7 +584,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_node.hasOffset())
     {
         /// Constness of offset is validated during query analysis stage
-        limit_offset = query_node.getOffset()->getConstantValue().getValue().safeGet<UInt64>();
+        limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     }
 
     UInt64 limit_length = 0;
@@ -607,7 +592,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_node.hasLimit())
     {
         /// Constness of limit is validated during query analysis stage
-        limit_length = query_node.getLimit()->getConstantValue().getValue().safeGet<UInt64>();
+        limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     }
 
     if (query_node.isDistinct())
@@ -779,13 +764,13 @@ void Planner::buildQueryPlanIfNeeded()
         query_plan.addStep(std::move(expression_step_before_limit_by));
 
         /// Constness of LIMIT BY limit is validated during query analysis stage
-        UInt64 limit_by_limit = query_node.getLimitByLimit()->getConstantValue().getValue().safeGet<UInt64>();
+        UInt64 limit_by_limit = query_node.getLimitByLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         UInt64 limit_by_offset = 0;
 
         if (query_node.hasLimitByOffset())
         {
             /// Constness of LIMIT BY offset is validated during query analysis stage
-            limit_by_offset = query_node.getLimitByOffset()->getConstantValue().getValue().safeGet<UInt64>();
+            limit_by_offset = query_node.getLimitByOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         }
 
         auto limit_by_step = std::make_unique<LimitByStep>(query_plan.getCurrentDataStream(),

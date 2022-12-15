@@ -37,8 +37,10 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractC
     S3Settings::RequestSettings request_settings;
     request_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", settings.s3_max_single_read_retries);
     request_settings.min_upload_part_size = config.getUInt64(config_prefix + ".s3_min_upload_part_size", settings.s3_min_upload_part_size);
+    request_settings.max_upload_part_size = config.getUInt64(config_prefix + ".s3_max_upload_part_size", S3Settings::RequestSettings::DEFAULT_MAX_UPLOAD_PART_SIZE);
     request_settings.upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", settings.s3_upload_part_size_multiply_factor);
     request_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", settings.s3_upload_part_size_multiply_parts_count_threshold);
+    request_settings.max_part_number = config.getUInt64(config_prefix + ".s3_max_part_number", S3Settings::RequestSettings::DEFAULT_MAX_PART_NUMBER);
     request_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", settings.s3_max_single_part_upload_size);
     request_settings.check_objects_after_upload = config.getUInt64(config_prefix + ".s3_check_objects_after_upload", settings.s3_check_objects_after_upload);
     request_settings.max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".s3_max_unexpected_write_error_retries", settings.s3_max_unexpected_write_error_retries);
@@ -137,7 +139,7 @@ std::unique_ptr<Aws::S3::S3Client> getClient(
         settings.request_settings.get_request_throttler,
         settings.request_settings.put_request_throttler);
 
-    S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
+    S3::URI uri(config.getString(config_prefix + ".endpoint"));
     if (uri.key.back() != '/')
         throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
