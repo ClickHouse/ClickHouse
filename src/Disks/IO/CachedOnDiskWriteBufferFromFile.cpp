@@ -56,8 +56,6 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
     if (finalized)
         return false;
 
-
-
     auto & file_segments = file_segments_holder.file_segments;
 
     LOG_DEBUG(
