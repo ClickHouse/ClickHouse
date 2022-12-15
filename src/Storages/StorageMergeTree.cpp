@@ -118,7 +118,6 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
-    clearOldPartsFromFilesystem();
     clearOldWriteAheadLogs();
     clearEmptyParts();
 
@@ -185,26 +184,6 @@ void StorageMergeTree::shutdown()
 
     if (deduplication_log)
         deduplication_log->shutdown();
-
-    try
-    {
-        /// We clear all old parts after stopping all background operations.
-        /// It's important, because background operations can produce temporary
-        /// parts which will remove themselves in their destructors. If so, we
-        /// may have race condition between our remove call and background
-        /// process.
-        /// Do not clear old parts in case when server is shutting down because it failed to start due to some exception.
-
-        if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
-            && Context::getGlobalContextInstance()->isServerCompletelyStarted())
-            clearOldPartsFromFilesystem(true);
-    }
-    catch (...)
-    {
-        /// Example: the case of readonly filesystem, we have failure removing old parts.
-        /// Should not prevent table shutdown.
-        tryLogCurrentException(log);
-    }
 }
 
 
@@ -1391,19 +1370,21 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
     {
         /// Forcefully stop merges and make part outdated
         auto merge_blocker = stopMergesAndWait();
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
+        auto parts_lock = lockParts();
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}, &parts_lock);
         if (!part)
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
-        removePartsFromWorkingSet(txn, {part}, true);
+        removePartsFromWorkingSet(txn, {part}, true, &parts_lock);
         return part;
     }
     else
     {
         /// Wait merges selector
         std::unique_lock lock(currently_processing_in_background_mutex);
+        auto parts_lock = lockParts();
 
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}, &parts_lock);
         /// It's okay, part was already removed
         if (!part)
             return nullptr;
@@ -1413,7 +1394,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         if (currently_merging_mutating_parts.contains(part))
             return nullptr;
 
-        removePartsFromWorkingSet(txn, {part}, true);
+        removePartsFromWorkingSet(txn, {part}, true, &parts_lock);
         return part;
     }
 }

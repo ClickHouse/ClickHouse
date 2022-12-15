@@ -22,6 +22,7 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Formats/FormatFactory.h>
+#include <Access/AccessControl.h>
 
 #include "config_version.h"
 
@@ -43,6 +44,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -1560,6 +1562,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
         if (logs_level_field)
             updateLoggerLevel(logs_level_field->safeGet<String>());
+    }
+
+    if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
+    {
+        if (!create_user_query->attach && create_user_query->temporary_password_for_checks)
+        {
+            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password_for_checks.value());
+            create_user_query->temporary_password_for_checks.reset();
+        }
     }
 
     processed_rows = 0;
