@@ -77,8 +77,9 @@ Numeric literal tries to be parsed:
 
 Literal value has the smallest type that the value fits in.
 For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../sql-reference/data-types/index.md).
+Underscores `_` inside numeric literals are ignored and can be used for better readability.
 
-Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
+Examples: `1`, `10_000_000`, `0xffff_ffff`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
 ### String
 

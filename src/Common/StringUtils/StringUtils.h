@@ -156,6 +156,20 @@ inline bool isValidIdentifier(std::string_view str)
         && !(str.size() == strlen("null") && 0 == strncasecmp(str.data(), "null", strlen("null")));
 }
 
+
+inline bool isNumberSeparator(bool is_start_of_block, bool is_hex, const char * pos, const char * end)
+{
+    if (*pos != '_')
+        return false;
+    if (is_start_of_block && *pos == '_')
+        return false; // e.g. _123, 12e_3
+    if (pos + 1 < end && !(is_hex ? isHexDigit(pos[1]) : isNumericASCII(pos[1])))
+        return false; // e.g. 1__2, 1_., 1_e, 1_p, 1_;
+    if (pos + 1 == end)
+        return false; // e.g. 12_
+    return true;
+}
+
 /// Works assuming isAlphaASCII.
 inline char toLowerIfAlphaASCII(char c)
 {
