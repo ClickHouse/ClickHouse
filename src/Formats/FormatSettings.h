@@ -79,6 +79,8 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
+    UInt64 max_binary_string_size = 0;
+
     struct
     {
         UInt64 row_group_size = 1000000;
@@ -150,6 +152,7 @@ struct FormatSettings
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
         bool read_numbers_as_strings = true;
+        bool read_objects_as_strings = true;
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
