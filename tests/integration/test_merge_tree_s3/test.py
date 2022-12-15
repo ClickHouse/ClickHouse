@@ -323,8 +323,8 @@ def test_attach_detach_partition(cluster, node_name):
     )
 
     node.query("ALTER TABLE s3_test DETACH PARTITION '2020-01-03'")
-    wait_for_delete_inactive_parts(node, "s3_test")
     wait_for_delete_empty_parts(node, "s3_test")
+    wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(4096)"
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
@@ -339,8 +339,8 @@ def test_attach_detach_partition(cluster, node_name):
     )
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
-    wait_for_delete_inactive_parts(node, "s3_test")
     wait_for_delete_empty_parts(node, "s3_test")
+    wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(4096)"
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
@@ -348,8 +348,8 @@ def test_attach_detach_partition(cluster, node_name):
     )
 
     node.query("ALTER TABLE s3_test DETACH PARTITION '2020-01-04'")
-    wait_for_delete_inactive_parts(node, "s3_test")
     wait_for_delete_empty_parts(node, "s3_test")
+    wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/")))
@@ -431,8 +431,8 @@ def test_table_manipulations(cluster, node_name):
     )
 
     node.query("TRUNCATE TABLE s3_test")
-    wait_for_delete_inactive_parts(node, "s3_test")
     wait_for_delete_empty_parts(node, "s3_test")
+    wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
@@ -546,8 +546,8 @@ def test_freeze_unfreeze(cluster, node_name):
     node.query("ALTER TABLE s3_test FREEZE WITH NAME 'backup2'")
 
     node.query("TRUNCATE TABLE s3_test")
-    wait_for_delete_inactive_parts(node, "s3_test")
     wait_for_delete_empty_parts(node, "s3_test")
+    wait_for_delete_inactive_parts(node, "s3_test")
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
@@ -586,8 +586,8 @@ def test_freeze_system_unfreeze(cluster, node_name):
     node.query("ALTER TABLE s3_test_removed FREEZE WITH NAME 'backup3'")
 
     node.query("TRUNCATE TABLE s3_test")
-    wait_for_delete_inactive_parts(node, "s3_test")
     wait_for_delete_empty_parts(node, "s3_test")
+    wait_for_delete_inactive_parts(node, "s3_test")
     node.query("DROP TABLE s3_test_removed NO DELAY")
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
