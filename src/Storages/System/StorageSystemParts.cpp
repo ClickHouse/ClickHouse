@@ -32,6 +32,8 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Part ownership is not unique";
     case DB::DataPartRemovalState::NOT_REACHED_REMOVAL_TIME:
         return "Part hasn't reached removal time yet";
+    case DB::DataPartRemovalState::HAS_SKIPPED_MUTATION_PARENT:
+        return "Waiting mutation parent to be removed";
     case DB::DataPartRemovalState::REMOVED:
         return "Part was selected to be removed";
     }
