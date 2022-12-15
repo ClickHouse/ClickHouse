@@ -38,16 +38,18 @@ public:
 
 private:
     const Block header;
+    /// Empty read buffer that is set to input format
+    /// after executing on specified read buffer.
+    /// It's important that this field is declared before
+    /// format field, because it can be used in
+    /// format destructor.
+    EmptyReadBuffer empty_read_buffer;
     const InputFormatPtr format;
     const ErrorCallback on_error;
     const SimpleTransformPtr adding_defaults_transform;
 
     InputPort port;
     MutableColumns result_columns;
-
-    /// Empty read buffer that is set to input format
-    /// after executing on specified read buffer.
-    EmptyReadBuffer empty_read_buffer;
 };
 
 }
