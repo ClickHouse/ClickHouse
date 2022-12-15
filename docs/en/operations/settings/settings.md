@@ -3596,13 +3596,13 @@ Enabled by default.
 
 ## input_format_try_infer_dates {#input_format_try_infer_dates}
 
-If enabled, ClickHouse will try to infer type `Date` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as dates, the result type will be `Date`, of at least one field was not parsed as date, the result type will be `String`.
+If enabled, ClickHouse will try to infer type `Date` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as dates, the result type will be `Date`, if at least one field was not parsed as date, the result type will be `String`.
 
 Enabled by default.
 
 ## input_format_try_infer_datetimes {#input_format_try_infer_datetimes}
 
-If enabled, ClickHouse will try to infer type `DateTime64` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as datetimes, the result type will be `DateTime64`, of at least one field was not parsed as datetime, the result type will be `String`.
+If enabled, ClickHouse will try to infer type `DateTime64` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as datetimes, the result type will be `DateTime64`, if at least one field was not parsed as datetime, the result type will be `String`.
 
 Enabled by default.
 
