@@ -107,7 +107,7 @@ public:
         bool hasCacheEntryForKey() const;
         Pipe && getPipe();
     private:
-        Reader(const Cache & cache_, std::mutex & mutex, const Key & key);
+        Reader(const Cache & cache_, const Key & key);
         Pipe pipe;
         friend class QueryResultCache; /// for createReader()
     };
@@ -128,10 +128,10 @@ private:
     /// associated with cache entries provide a "natural" eviction criterion. As a future TODO, we could make an expiration-based eviction
     /// policy and use that with CacheBase.
     mutable std::mutex mutex;
-    Cache cache;
-    TimesExecutedMap times_executed;
+    Cache cache TSA_GUARDED_BY(mutex);
+    TimesExecutedMap times_executed TSA_GUARDED_BY(mutex);
 
-    size_t cache_size_in_bytes; /// updated in each cache insert/delete
+    size_t cache_size_in_bytes TSA_GUARDED_BY(mutex); /// updated in each cache insert/delete
     const size_t max_cache_size_in_bytes;
     const size_t max_cache_entries;
     const size_t max_cache_entry_size_in_bytes;

@@ -180,10 +180,8 @@ void QueryResultCache::Writer::buffer(Chunk && chunk)
 
 }
 
-QueryResultCache::Reader::Reader(const Cache & cache_, std::mutex & mutex_, const Key & key)
+QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key)
 {
-    std::lock_guard lock(mutex_);
-
     auto it = cache_.find(key);
 
     if (it == cache_.end())
@@ -232,11 +230,13 @@ QueryResultCache::QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_c
 
 QueryResultCache::Reader QueryResultCache::createReader(const Key & key)
 {
-    return Reader(cache, mutex, key);
+    std::lock_guard lock(mutex);
+    return Reader(cache, key);
 }
 
 QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, std::chrono::milliseconds min_query_duration)
 {
+    std::lock_guard lock(mutex);
     return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_cache_entries, max_cache_entry_size_in_bytes, max_cache_entry_size_in_rows, min_query_duration);
 }
 
