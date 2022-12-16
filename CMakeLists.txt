@@ -448,12 +448,7 @@ else()
     link_libraries(global-group)
 endif ()
 
-if (NOT (OS_LINUX OR OS_DARWIN))
-    # Using system libs can cause a lot of warnings in includes (on macro expansion).
-    option(WERROR "Enable -Werror compiler option" OFF)
-else ()
-    option(WERROR "Enable -Werror compiler option" ON)
-endif ()
+option(WERROR "Enable -Werror compiler option" ON)
 
 if (WERROR)
     # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
@@ -614,6 +609,8 @@ if (NATIVE_BUILD_TARGETS
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
             "-DENABLE_CCACHE=${ENABLE_CCACHE}"
+            # Avoid overriding .cargo/config.toml with native toolchain.
+            "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
         ${CMAKE_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"

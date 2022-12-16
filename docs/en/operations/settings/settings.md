@@ -3588,6 +3588,24 @@ y	Nullable(String)
 z	IPv4
 ```
 
+## input_format_try_infer_integers {#input_format_try_infer_integers}
+
+If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
+
+Enabled by default.
+
+## input_format_try_infer_dates {#input_format_try_infer_dates}
+
+If enabled, ClickHouse will try to infer type `Date` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as dates, the result type will be `Date`, if at least one field was not parsed as date, the result type will be `String`.
+
+Enabled by default.
+
+## input_format_try_infer_datetimes {#input_format_try_infer_datetimes}
+
+If enabled, ClickHouse will try to infer type `DateTime64` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as datetimes, the result type will be `DateTime64`, if at least one field was not parsed as datetime, the result type will be `String`.
+
+Enabled by default.
+
 ## date_time_input_format {#date_time_input_format}
 
 Allows choosing a parser of the text representation of date and time.
@@ -3750,6 +3768,29 @@ Enabled by default.
 ### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.
+
+Disabled by default.
+
+### input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
+
+Allow parsing JSON objects as strings in JSON input formats.
+
+Example:
+
+```sql
+SET input_format_json_read_objects_as_strings = 1;
+CREATE TABLE test (id UInt64, obj String, date Date) ENGINE=Memory();
+INSERT INTO test FORMAT JSONEachRow {"id" : 1, "obj" : {"a" : 1, "b" : "Hello"}, "date" : "2020-01-01"};
+SELECT * FROM test;
+```
+
+Result:
+
+```
+┌─id─┬─obj──────────────────────┬───────date─┐
+│  1 │ {"a" : 1, "b" : "Hello"} │ 2020-01-01 │
+└────┴──────────────────────────┴────────────┘
+```
 
 Disabled by default.
 

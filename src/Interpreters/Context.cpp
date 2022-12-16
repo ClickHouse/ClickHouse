@@ -1254,6 +1254,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             if (select_query_hint && getSettingsRef().use_structure_from_insertion_table_in_table_functions == 2)
             {
                 const auto * expression_list = select_query_hint->select()->as<ASTExpressionList>();
+                std::unordered_set<String> virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
                 Names columns_names;
                 bool have_asterisk = false;
                 /// First, check if we have only identifiers, asterisk and literals in select expression,
@@ -1275,10 +1276,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     }
                 }
 
-                /// Check that all identifiers are column names from insertion table.
+                /// Check that all identifiers are column names from insertion table and not virtual column names from storage.
                 for (const auto & column_name : columns_names)
                 {
-                    if (!structure_hint.has(column_name))
+                    if (!structure_hint.has(column_name) || virtual_column_names.contains(column_name))
                     {
                         use_columns_from_insert_query = false;
                         break;
@@ -1411,6 +1412,11 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
+void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements) const
+{
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements);
+}
+
 void Context::checkSettingsConstraints(const SettingChange & change) const
 {
     getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change);
@@ -1429,6 +1435,11 @@ void Context::checkSettingsConstraints(SettingsChanges & changes) const
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 {
     getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
+}
+
+void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
+{
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(merge_tree_settings, changes);
 }
 
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
