@@ -3,8 +3,8 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Storages/NamedCollectionConfiguration.h>
-#include <Storages/NamedCollectionUtils.h>
+#include <Storages/NamedCollections/NamedCollectionConfiguration.h>
+#include <Storages/NamedCollections/NamedCollectionUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <ranges>
 
@@ -234,6 +234,16 @@ public:
         return keys;
     }
 
+    Keys::const_iterator begin() const
+    {
+        return keys.begin();
+    }
+
+    Keys::const_iterator end() const
+    {
+        return keys.end();
+    }
+
     std::string dumpStructure() const
     {
         /// Convert a collection config like
@@ -375,6 +385,22 @@ NamedCollection::Keys NamedCollection::getKeys() const
     return pimpl->getKeys();
 }
 
+template <bool Locked> NamedCollection::const_iterator NamedCollection::begin() const
+{
+    std::unique_lock lock(mutex, std::defer_lock);
+    if constexpr (!Locked)
+        lock.lock();
+    return pimpl->begin();
+}
+
+template <bool Locked> NamedCollection::const_iterator NamedCollection::end() const
+{
+    std::unique_lock lock(mutex, std::defer_lock);
+    if constexpr (!Locked)
+        lock.lock();
+    return pimpl->end();
+}
+
 std::string NamedCollection::dumpStructure() const
 {
     std::lock_guard lock(mutex);
@@ -417,4 +443,8 @@ template void NamedCollection::setOrUpdate<Float64, false>(const NamedCollection
 template void NamedCollection::remove<true>(const Key & key);
 template void NamedCollection::remove<false>(const Key & key);
 
+template NamedCollection::const_iterator NamedCollection::begin<true>() const;
+template NamedCollection::const_iterator NamedCollection::begin<false>() const;
+template NamedCollection::const_iterator NamedCollection::end<true>() const;
+template NamedCollection::const_iterator NamedCollection::end<false>() const;
 }
