@@ -125,6 +125,8 @@ PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
 QTCreator
+QueryResultCacheHits
+QueryResultCacheMisses
 RBAC
 RawBLOB
 RedHat
