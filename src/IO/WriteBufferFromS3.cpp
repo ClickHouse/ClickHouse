@@ -88,6 +88,18 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
 {
     allocateBuffer();
+    assertSettings();
+}
+
+void WriteBufferFromS3::assertSettings() const
+{
+    assert(request_settings.min_upload_part_size > 0);
+    assert(request_settings.max_upload_part_size > 0);
+    assert(request_settings.upload_part_size_multiply_factor > 0);
+    assert(request_settings.upload_part_size_multiply_parts_count_threshold > 0);
+    assert(request_settings.max_part_number > 0);
+    assert(request_settings.max_single_part_upload_size > 0);
+    assert(request_settings.max_unexpected_write_error_retries > 0);
 }
 
 void WriteBufferFromS3::nextImpl()
@@ -111,6 +123,7 @@ void WriteBufferFromS3::nextImpl()
     if (multipart_upload_id.empty() && last_part_size > request_settings.max_single_part_upload_size)
         createMultipartUpload();
 
+    assert(upload_part_size>0);
     if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
     {
         writePart();
