@@ -558,9 +558,10 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf);
   * - string could be placed in quotes; quotes could be single: ' if FormatSettings::CSV::allow_single_quotes is true
   *   or double: " if FormatSettings::CSV::allow_double_quotes is true;
   * - or string could be unquoted - this is determined by first character;
-  * - if string is unquoted, then it is read until next delimiter,
-  *   either until end of line (CR or LF),
-  *   or until end of stream;
+  * - if string is unquoted, then:
+  *     - If settings.custom_delimiter is not specified, it is read until next settings.delimiter, either until end of line (CR or LF) or until end of stream;
+  *     - If settings.custom_delimiter is specified it reads until first occurrences of settings.custom_delimiter in buffer.
+  *       This works only if provided buffer is PeekableReadBuffer.
   *   but spaces and tabs at begin and end of unquoted string are consumed but ignored (note that this behaviour differs from RFC).
   * - if string is in quotes, then it will be read until closing quote,
   *   but sequences of two consecutive quotes are parsed as single quote inside string;
@@ -569,6 +570,13 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
 
 /// Differ from readCSVString in that it doesn't remove quotes around field if any.
 void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+
+/// Read string in CSV format until the first occurrence of first_delimiter or second_delimiter.
+/// Similar to readCSVString if string is in quotes, we read only data in quotes.
+String readCSVStringWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter);
+
+/// Same as above but includes quotes in the result if any.
+String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter);
 
 /// Read and append result to array of characters.
 template <typename Vector>
