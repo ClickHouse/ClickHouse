@@ -73,11 +73,6 @@ public:
     class Writer
     {
     public:
-        Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
-            size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
-            size_t max_entries_,
-            size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
-            std::chrono::milliseconds min_query_duration_);
         ~Writer();
         void buffer(Chunk && chunk);
     private:
@@ -95,17 +90,26 @@ public:
         const std::chrono::milliseconds min_query_duration;
         Chunks chunks;
         bool skip_insert;
+
+        Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
+            size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
+            size_t max_entries_,
+            size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
+            std::chrono::milliseconds min_query_duration_);
+
+        friend class QueryResultCache; /// for createWriter()
     };
 
     /// Looks up a result chunk for a key in the cache and (if found) constructs a pipe with the chunk as source.
     class Reader
     {
     public:
-        Reader(const Cache & cache_, std::mutex & mutex, const Key & key);
         bool hasCacheEntryForKey() const;
         Pipe && getPipe();
     private:
+        Reader(const Cache & cache_, std::mutex & mutex, const Key & key);
         Pipe pipe;
+        friend class QueryResultCache; /// for createReader()
     };
 
     QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_);
