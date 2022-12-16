@@ -90,7 +90,6 @@ struct TreeRewriterResult
     void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query, bool is_select, bool visit_index_hint);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
-    Names sourceColumns() const { return source_columns.getNames(); }
     const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
     NameSet getArrayJoinSourceNameSet() const;
     const Scalars & getScalars() const { return scalars; }

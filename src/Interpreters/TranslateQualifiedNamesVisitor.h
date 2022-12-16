@@ -30,7 +30,7 @@ public:
         bool has_columns;
         NameToNameMap parameter_values;
 
-        Data(const NameSet & source_columns_, const TablesWithColumns & tables_, bool has_columns_ = true, NameToNameMap parameter_values_ = {})
+        Data(const NameSet & source_columns_, const TablesWithColumns & tables_, bool has_columns_ = true, const NameToNameMap & parameter_values_ = {})
             : source_columns(source_columns_)
             , tables(tables_)
             , has_columns(has_columns_)

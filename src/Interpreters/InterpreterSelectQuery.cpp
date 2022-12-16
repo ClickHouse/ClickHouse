@@ -510,7 +510,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             query_info.is_parameterized_view = view->isParameterizedView();
             /// We need to fetch the parameters set for SELECT parameterized view before the query is replaced.
-            /// ad after query is replaced, we use these parameters to substitute in the parameterized view query
+            /// and after query is replaced, we use these parameters to substitute in the parameterized view query
             if (query_info.is_parameterized_view)
             {
                 parameter_values = analyzeFunctionParamValues(query_ptr);

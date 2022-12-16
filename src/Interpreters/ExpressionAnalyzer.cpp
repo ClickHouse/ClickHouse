@@ -1952,7 +1952,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
                     auto & column_elem
                         = before_where_sample.getByName(query.where()->getColumnName());
-                    /// If the filter column is a constant and not a query parameter, record it.
+                    /// If the filter column is a constant, record it.
                     if (column_elem.column)
                         where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
                 }
