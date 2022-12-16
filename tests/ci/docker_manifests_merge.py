@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
 
 def load_images(path: str, suffix: str) -> Images:
     with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
-        return json.load(images)
+        return json.load(images)  # type: ignore
 
 
 def strip_suffix(suffix: str, images: Images) -> Images:

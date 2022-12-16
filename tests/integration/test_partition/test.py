@@ -3,6 +3,8 @@ import logging
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.test_tools import assert_eq_with_retry
+from helpers.wait_for_helpers import wait_for_delete_inactive_parts
+from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -199,6 +201,9 @@ def attach_check_all_parts_table(started_cluster):
 def test_attach_check_all_parts(attach_check_all_parts_table):
     q("ALTER TABLE test.attach_partition DETACH PARTITION 0")
 
+    wait_for_delete_empty_parts(instance, "test.attach_partition")
+    wait_for_delete_inactive_parts(instance, "test.attach_partition")
+
     path_to_detached = path_to_data + "data/test/attach_partition/detached/"
     instance.exec_in_container(["mkdir", "{}".format(path_to_detached + "0_5_5_0")])
     instance.exec_in_container(
@@ -226,7 +231,8 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     )
 
     parts = q(
-        "SElECT name FROM system.parts WHERE table='attach_partition' AND database='test' ORDER BY name"
+        "SElECT name FROM system.parts "
+        "WHERE table='attach_partition' AND database='test' AND active ORDER BY name"
     )
     assert TSV(parts) == TSV("1_2_2_0\n1_4_4_0")
     detached = q(
@@ -461,11 +467,23 @@ def test_detached_part_dir_exists(started_cluster):
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
-    )  # will move all_1_1_0 to detached/all_1_1_0
+    )  # will move all_1_1_0 to detached/all_1_1_0 and create all_1_1_1
+
+    wait_for_delete_empty_parts(instance, "detached_part_dir_exists")
+    wait_for_delete_inactive_parts(instance, "detached_part_dir_exists")
+
     q("detach table detached_part_dir_exists")
     q("attach table detached_part_dir_exists")
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q("insert into detached_part_dir_exists select 1")  # will create all_2_2_0
+
+    assert (
+        q(
+            "select name from system.parts where table='detached_part_dir_exists' and active order by name"
+        )
+        == "all_1_1_0\nall_2_2_0\n"
+    )
+
     instance.exec_in_container(
         [
             "bash",
@@ -502,7 +520,7 @@ def test_make_clone_in_detached(started_cluster):
     path = path_to_data + "data/default/clone_in_detached/"
 
     # broken part already detached
-    q("insert into clone_in_detached values (42, '¯\_(ツ)_/¯')")
+    q("insert into clone_in_detached values (42, '¯-_(ツ)_-¯')")
     instance.exec_in_container(["rm", path + "all_0_0_0/data.bin"])
     instance.exec_in_container(
         ["cp", "-r", path + "all_0_0_0", path + "detached/broken_all_0_0_0"]
@@ -513,7 +531,7 @@ def test_make_clone_in_detached(started_cluster):
     )
 
     # there's a directory with the same name, but different content
-    q("insert into clone_in_detached values (43, '¯\_(ツ)_/¯')")
+    q("insert into clone_in_detached values (43, '¯-_(ツ)_-¯')")
     instance.exec_in_container(["rm", path + "all_1_1_0/data.bin"])
     instance.exec_in_container(
         ["cp", "-r", path + "all_1_1_0", path + "detached/broken_all_1_1_0"]
@@ -542,7 +560,7 @@ def test_make_clone_in_detached(started_cluster):
     )
 
     # there are directories with the same name, but different content, and part already detached
-    q("insert into clone_in_detached values (44, '¯\_(ツ)_/¯')")
+    q("insert into clone_in_detached values (44, '¯-_(ツ)_-¯')")
     instance.exec_in_container(["rm", path + "all_2_2_0/data.bin"])
     instance.exec_in_container(
         ["cp", "-r", path + "all_2_2_0", path + "detached/broken_all_2_2_0"]
