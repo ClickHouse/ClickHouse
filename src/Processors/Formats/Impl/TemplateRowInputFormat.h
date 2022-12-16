@@ -130,6 +130,7 @@ private:
     TemplateFormatReader format_reader;
     bool first_row = true;
     JSONInferenceInfo json_inference_info;
+    const char default_csv_delimiter;
 };
 
 bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces);
