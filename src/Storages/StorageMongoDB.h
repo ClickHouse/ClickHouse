@@ -44,7 +44,18 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
 
-    static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    struct Configuration
+    {
+        std::string host;
+        UInt16 port;
+        std::string username;
+        std::string password;
+        std::string database;
+        std::string table;
+        std::string options;
+    };
+
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
     void connectIfNotConnected();
