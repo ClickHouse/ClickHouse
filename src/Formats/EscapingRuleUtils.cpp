@@ -394,6 +394,7 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
 
         bool have_maps = false;
         bool have_objects = false;
+        bool have_strings = false;
         bool are_maps_equal = true;
         DataTypePtr first_map_type;
         for (const auto & type : data_types)
@@ -414,6 +415,10 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
             {
                 have_objects = true;
             }
+            else if (isString(type))
+            {
+                have_strings = false;
+            }
         }
 
         if (have_maps && (have_objects || !are_maps_equal))
@@ -422,6 +427,15 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
             {
                 if (isMap(type))
                     type = std::make_shared<DataTypeObject>("json", true);
+            }
+        }
+
+        if (settings.json.read_objects_as_strings && have_strings && (have_maps || have_objects))
+        {
+            for (auto & type : data_types)
+            {
+                if (isMap(type) || isObject(type))
+                    type = std::make_shared<DataTypeString>();
             }
         }
     };

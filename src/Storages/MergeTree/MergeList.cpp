@@ -88,6 +88,10 @@ MergeListElement::MergeListElement(
     /// thread_group::memory_tracker, but MemoryTrackerThreadSwitcher will reset parent).
     memory_tracker.setProfilerStep(settings.memory_profiler_step);
     memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+    /// Specify sample probability also for current thread to track more deallocations.
+    if (auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker())
+        thread_memory_tracker->setSampleProbability(settings.memory_profiler_sample_probability);
+
     memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
     if (settings.memory_tracker_fault_probability > 0.0)
         memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
@@ -142,7 +146,11 @@ MergeInfo MergeListElement::getInfo() const
     return res;
 }
 
-MergeListElement::~MergeListElement() = default;
+MergeListElement::~MergeListElement()
+{
+    CurrentThread::getMemoryTracker()->adjustWithUntrackedMemory(untracked_memory);
+    untracked_memory = 0;
+}
 
 
 }
