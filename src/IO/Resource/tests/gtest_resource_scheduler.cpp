@@ -4,6 +4,8 @@
 
 #include <IO/Resource/tests/ResourceTest.h>
 
+#include <future>
+
 using namespace DB;
 
 struct ResourceTest : public ResourceTestBase
@@ -48,18 +50,26 @@ struct ResourceHolder
 
     void registerResource()
     {
-        t.scheduler.event_queue->enqueue([this]
+        std::promise<void> p;
+        auto f = p.get_future();
+        t.scheduler.event_queue->enqueue([this, &p]
         {
             t.scheduler.attachChild(root_node);
+            p.set_value();
         });
+        f.get();
     }
 
     void unregisterResource()
     {
-        t.scheduler.event_queue->enqueue([this]
+        std::promise<void> p;
+        auto f = p.get_future();
+        t.scheduler.event_queue->enqueue([this, &p]
         {
             t.scheduler.removeChild(root_node.get());
+            p.set_value();
         });
+        f.get();
     }
 };
 

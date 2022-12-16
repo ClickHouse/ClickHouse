@@ -39,7 +39,7 @@ private:
         TResource * next = nullptr;
         TResource * prev = nullptr;
 
-        TResource(const SchedulerNodePtr & root_)
+        explicit TResource(const SchedulerNodePtr & root_)
             : root(root_)
         {
             root->info.parent.ptr = this;
