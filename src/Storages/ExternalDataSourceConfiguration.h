@@ -46,12 +46,6 @@ struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
     String on_duplicate_clause;
 };
 
-struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
-{
-    String options;
-};
-
-
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
 struct ExternalDataSourceInfo
