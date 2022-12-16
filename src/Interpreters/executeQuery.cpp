@@ -692,9 +692,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if ((settings.enable_experimental_query_result_cache || settings.enable_experimental_query_result_cache_passive_usage)
                     && query_result_cache != nullptr && res.pipeline.pulling())
                 {
-                    QueryResultCache::Key key{
+                    QueryResultCache::Key key(
                         ast, context->getUserName(), settings.query_result_cache_partition_key, res.pipeline.getHeader(),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_keep_seconds_alive)};
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_keep_seconds_alive));
                     QueryResultCache::Reader reader = query_result_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                         res.pipeline = QueryPipeline(reader.getPipe());
@@ -703,9 +703,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (settings.enable_experimental_query_result_cache && query_result_cache != nullptr && res.pipeline.pulling()
                   && (settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions || !astContainsNonDeterministicFunctions(ast, context)))
                 {
-                    QueryResultCache::Key key{
+                    QueryResultCache::Key key(
                         ast, context->getUserName(), settings.query_result_cache_partition_key, res.pipeline.getHeader(),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_keep_seconds_alive)};
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_keep_seconds_alive));
 
                     const size_t num_query_runs = query_result_cache->recordQueryRun(key);
                     if (num_query_runs > settings.query_result_cache_min_query_runs)

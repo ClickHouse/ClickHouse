@@ -2,7 +2,9 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -34,6 +36,77 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
         has_non_cacheable_functions |= astContainsNonDeterministicFunctions(child, context);
 
     return has_non_cacheable_functions;
+}
+
+namespace
+{
+
+class RemoveQueryResultCacheSettingsMatcher
+{
+public:
+    struct Data {};
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * func = ast->as<ASTSetQuery>())
+            visit(*func, ast, data);
+    }
+
+    static void visit(ASTSetQuery & func, ASTPtr &, const Data &)
+    {
+        assert(!func.is_standalone);
+
+        auto is_query_result_cache_related_setting = [](const auto & change)
+        {
+            return change.name.starts_with("enable_experimental_query_result_cache")
+                || change.name.starts_with("query_result_cache");
+        };
+
+        std::erase_if(func.changes, is_query_result_cache_related_setting);
+    }
+
+    /// TODO further improve AST cleanup, e.g. remove SETTINGS clause completely if it is empty
+    /// E.g. SELECT 1 SETTINGS enable_experimental_query_result_cache = true
+    /// and  SELECT 1;
+    /// currently don't match.
+};
+
+using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResultCacheSettingsMatcher, true>;
+
+/// Consider
+///   (1) SET enable_experimental_query_result_cache = true;
+///       SELECT expensiveComputation(...) SETTINGS max_threads = 64, query_result_cache_keep_seconds_alive = 300;
+///       SET enable_experimental_query_result_cache = false;
+/// and
+///   (2) SELECT expensiveComputation(...) SETTINGS max_threads = 64, enable_experimental_query_result_cache_passive_usage = true;
+/// The SELECT query in (1) and (2) is basically the same and the user expects to find the result in the query result cache. However, query
+/// results are indexed by the AST of their SELECT queries and no result will be found. Insert and retrieval behave overall more natural if
+/// settings related to the query result cache are erased from the AST key. Note that at this point the settings themselves have been parsed
+/// already, they are not lost or discarded.
+ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
+{
+    ASTPtr transformed_ast = ast->clone();
+
+    RemoveQueryResultCacheSettingsMatcher::Data visitor_data{};
+    RemoveQueryResultCacheSettingsVisitor visitor(visitor_data);
+    visitor.visit(transformed_ast);
+
+    return transformed_ast;
+}
+
+}
+
+QueryResultCache::Key::Key(
+    ASTPtr ast_, String username_, String partition_key_,
+    Block header_, std::chrono::time_point<std::chrono::system_clock> expires_at_)
+    : ast(removeQueryResultCacheSettings(ast_))
+    , username(username_)
+    , partition_key(partition_key_)
+    , header(header_)
+    , expires_at(expires_at_)
+{
 }
 
 bool QueryResultCache::Key::operator==(const Key & other) const

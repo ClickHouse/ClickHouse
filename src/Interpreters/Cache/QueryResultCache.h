@@ -50,6 +50,8 @@ public:
         /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
 
+        Key(ASTPtr ast_, String username_, String partition_key_, Block header_, std::chrono::time_point<std::chrono::system_clock> expires_at_);
+
         bool operator==(const Key & other) const;
         String queryStringFromAst() const;
     };
