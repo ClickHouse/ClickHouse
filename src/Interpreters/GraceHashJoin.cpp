@@ -238,13 +238,7 @@ private:
 
 namespace
 {
-enum class TableSide : uint8_t
-{
-    Left,
-    Right
-};
-
-template <TableSide table_side>
+template <JoinTableSide table_side>
 void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & buckets)
 {
     chassert(blocks.size() == buckets.size());
@@ -256,9 +250,9 @@ void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & bucket
                 return true;
 
             bool flushed = false;
-            if constexpr (table_side == TableSide::Left)
+            if constexpr (table_side == JoinTableSide::Left)
                 flushed = buckets[i]->tryAddLeftBlock(blocks[i]);
-            if constexpr (table_side == TableSide::Right)
+            if constexpr (table_side == JoinTableSide::Right)
                 flushed = buckets[i]->tryAddRightBlock(blocks[i]);
 
             if (flushed)
@@ -397,9 +391,10 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
 
     materializeBlockInplace(block);
 
-    /// number of buckets doesn't change after right table is split to buckets i.e. read-only access to buckets
-    /// todo: ensure that joinBlock thread see actual buckets vector state after we finished splitting right table to buckets
-    Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, buckets.size());
+    /// number of buckets doesn't change after right table is split to buckets, i.e. read-only access to buckets
+    /// so, no need to copy buckets here
+    size_t num_buckets = getNumBuckets();
+    Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
 
     block = std::move(blocks[current_bucket->idx]);
 
@@ -407,7 +402,7 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
     if (not_processed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
 
-    flushBlocksToBuckets<TableSide::Left>(blocks, buckets);
+    flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
 }
 
 void GraceHashJoin::setTotals(const Block & block)
@@ -435,9 +430,11 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
     if (!isInnerOrRight(table_join->kind()))
         return false;
 
-    std::shared_lock lock(rehash_mutex);
-
-    bool file_buckets_are_empty = std::all_of(buckets.begin(), buckets.end(), [](const auto & bucket) { return bucket->empty(); });
+    bool file_buckets_are_empty = [this]()
+    {
+        std::shared_lock lock(rehash_mutex);
+        return std::all_of(buckets.begin(), buckets.end(), [](const auto & bucket) { return bucket->empty(); });
+    }();
     bool hash_join_is_empty = hash_join && hash_join->alwaysReturnsEmptySet();
 
     return hash_join_is_empty && file_buckets_are_empty;
@@ -617,7 +614,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         blocks[bucket_index].clear();
     }
 
-    flushBlocksToBuckets<TableSide::Right>(blocks, buckets_snapshot);
+    flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot);
 }
 
 size_t GraceHashJoin::getNumBuckets() const
