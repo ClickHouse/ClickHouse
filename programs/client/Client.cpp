@@ -17,6 +17,8 @@
 
 #include <base/find_symbols.h>
 
+#include <Access/AccessControl.h>
+
 #include "config_version.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -258,6 +260,10 @@ try
     /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
         showWarnings();
+
+    /// Set user password complexity rules
+    auto & access_control = global_context->getAccessControl();
+    access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
     if (is_interactive && !delayed_interactive)
     {

@@ -334,6 +334,7 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
+    void setRename(const String & from, const String & to);
 
     void resetKeys();
     void resetToCross();

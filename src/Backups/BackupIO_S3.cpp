@@ -179,15 +179,6 @@ void BackupWriterS3::copyObjectImpl(
 
 }
 
-Aws::S3::Model::HeadObjectOutcome BackupWriterS3::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
-{
-    Aws::S3::Model::HeadObjectRequest request;
-    request.SetBucket(bucket_from);
-    request.SetKey(key);
-
-    return client->HeadObject(request);
-}
-
 void BackupWriterS3::copyObjectMultipartImpl(
     const String & src_bucket,
     const String & src_key,
@@ -310,7 +301,7 @@ void BackupWriterS3::copyFileNative(DiskPtr from_disk, const String & file_name_
         std::string source_bucket = object_storage->getObjectsNamespace();
         auto file_path = fs::path(s3_uri.key) / file_name_to;
 
-        auto head = requestObjectHeadData(source_bucket, objects[0].absolute_path).GetResult();
+        auto head = S3::headObject(*client, source_bucket, objects[0].absolute_path).GetResult();
         if (static_cast<size_t>(head.GetContentLength()) < request_settings.max_single_operation_copy_size)
         {
             copyObjectImpl(
@@ -372,7 +363,48 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
 }
 
+void BackupWriterS3::removeFile(const String & file_name)
+{
+    Aws::S3::Model::DeleteObjectRequest request;
+    request.SetBucket(s3_uri.bucket);
+    request.SetKey(fs::path(s3_uri.key) / file_name);
+    auto outcome = client->DeleteObject(request);
+    if (!outcome.IsSuccess())
+        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+}
+
 void BackupWriterS3::removeFiles(const Strings & file_names)
+{
+    try
+    {
+        if (!supports_batch_delete.has_value() || supports_batch_delete.value() == true)
+        {
+            removeFilesBatch(file_names);
+            supports_batch_delete = true;
+        }
+        else
+        {
+            for (const auto & file_name : file_names)
+                removeFile(file_name);
+        }
+    }
+    catch (const Exception &)
+    {
+        if (!supports_batch_delete.has_value())
+        {
+            supports_batch_delete = false;
+            LOG_TRACE(log, "DeleteObjects is not supported. Retrying with plain DeleteObject.");
+
+            for (const auto & file_name : file_names)
+                removeFile(file_name);
+        }
+        else
+            throw;
+    }
+
+}
+
+void BackupWriterS3::removeFilesBatch(const Strings & file_names)
 {
     /// One call of DeleteObjects() cannot remove more than 1000 keys.
     size_t chunk_size_limit = 1000;
