@@ -252,12 +252,12 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                         {
                             std::string column_name = column.name;
                             std::string::size_type pos = 0u;
-                            for (auto parameter : data.parameter_values)
+                            for (const auto & parameter : data.parameter_values)
                             {
                                 if ((pos = column_name.find(parameter.first)) != std::string::npos)
                                 {
                                     String parameter_name("_CAST(" + parameter.second + ", '" + column.type->getName() + "')");
-                                    column_name.replace(pos,parameter.first.size(),parameter_name);
+                                    column_name.replace(pos, parameter.first.size(), parameter_name);
                                     break;
                                 }
                             }

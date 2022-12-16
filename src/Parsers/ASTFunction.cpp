@@ -464,8 +464,6 @@ ASTPtr ASTFunction::clone() const
         res->children.push_back(res->window_definition);
     }
 
-    res->prefer_subquery_to_function_formatting = prefer_subquery_to_function_formatting;
-
     return res;
 }
 
