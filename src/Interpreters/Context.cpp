@@ -1412,6 +1412,11 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
+void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements) const
+{
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements);
+}
+
 void Context::checkSettingsConstraints(const SettingChange & change) const
 {
     getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change);
