@@ -56,7 +56,7 @@ public:
             if (!isInt64OrUInt64FieldType(constant_value_literal.getType()))
                 return;
 
-            if (constant_value_literal.get<UInt64>() != 1)
+            if (constant_value_literal.get<UInt64>() != 1 || context->getSettingsRef().aggregate_functions_null_for_empty)
                 return;
 
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
