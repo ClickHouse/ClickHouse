@@ -133,8 +133,6 @@ struct URLBasedDataSourceConfig
     StorageSpecificArgs specific_args;
 };
 
-std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
-
 std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
 
