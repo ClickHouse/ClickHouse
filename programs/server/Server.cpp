@@ -60,7 +60,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Storages/NamedCollections.h>
+#include <Storages/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -735,6 +735,24 @@ try
     }
 #endif
 
+#if USE_OPENSSL_INTREE
+    /// When building openssl into clickhouse, clickhouse owns the configuration
+    /// Therefore, the clickhouse openssl configuration should be kept separate from
+    /// the OS. Default to the one in the standard config directory, unless overridden
+    /// by a key in the config.
+    if (config().has("opensslconf"))
+    {
+        std::string opensslconf_path = config().getString("opensslconf");
+        setenv("OPENSSL_CONF", opensslconf_path.c_str(), true);
+    }
+    else
+    {
+        const String config_path = config().getString("config-file", "config.xml");
+        const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+        setenv("OPENSSL_CONF", config_dir.string() + "openssl.conf", true);
+    }
+#endif
+
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -782,7 +800,7 @@ try
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
-    NamedCollectionFactory::instance().initialize(config());
+    NamedCollectionUtils::loadFromConfig(config());
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1168,6 +1186,8 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
+    NamedCollectionUtils::loadFromSQL(global_context);
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         include_from_path,
@@ -1336,7 +1356,8 @@ try
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
-            NamedCollectionFactory::instance().reload(*config);
+            NamedCollectionUtils::reloadFromConfig(*config);
+
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.

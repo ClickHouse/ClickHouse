@@ -91,6 +91,8 @@ public:
 
     const String & getDescription() const override { return description; }
 
+    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
+
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,

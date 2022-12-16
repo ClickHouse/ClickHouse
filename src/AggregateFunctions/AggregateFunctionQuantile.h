@@ -170,7 +170,7 @@ public:
             {
                 auto & data_to = assert_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
-                data_to.resize(data_to.size() + size);
+                data_to.resize(old_size + size);
 
                 data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
@@ -178,7 +178,7 @@ public:
             {
                 auto & data_to = static_cast<ColVecType &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
-                data_to.resize(data_to.size() + size);
+                data_to.resize(old_size + size);
 
                 data.getMany(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
