@@ -2478,9 +2478,13 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     auto grouping_sets_params = getAggregatorGroupingSetsParams(*query_analyzer, keys);
 
     SortDescription group_by_sort_description;
+    SortDescription sort_description_for_merging;
 
     if (group_by_info && settings.optimize_aggregation_in_order && !query_analyzer->useGroupingSetKey())
+    {
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
+        sort_description_for_merging = group_by_info->sort_description_for_merging;
+    }
     else
         group_by_info = nullptr;
 
@@ -2502,6 +2506,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
         group_by_info = std::make_shared<InputOrderInfo>(
             group_by_sort_description, group_by_sort_description.size(), 1 /* direction */, 0 /* limit */);
+
+        sort_description_for_merging = group_by_info->sort_description_for_merging;
     }
 
     auto merge_threads = max_streams;
@@ -2525,7 +2531,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         temporary_data_merge_threads,
         storage_has_evenly_distributed_read,
         settings.group_by_use_nulls,
-        std::move(group_by_info),
+        std::move(sort_description_for_merging),
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings.enable_memory_bound_merging_of_aggregation_results);

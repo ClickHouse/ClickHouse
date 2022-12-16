@@ -421,6 +421,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
+    /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
+    ProcessList::EntryPtr process_list_entry;
     BlockIO res;
     std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
     String query_database;
@@ -513,7 +515,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         checkASTSizeLimits(*ast, settings);
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
-        ProcessList::EntryPtr process_list_entry;
         if (!internal && !ast->as<ASTShowProcesslistQuery>())
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
