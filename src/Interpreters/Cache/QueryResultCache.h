@@ -9,6 +9,9 @@
 namespace DB
 {
 
+/// Does AST contain non-deterministic functions like rand() and now()?
+bool hasNonCacheableFunctions(ASTPtr ast, ContextPtr context);
+
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
