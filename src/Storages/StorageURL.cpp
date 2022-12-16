@@ -63,6 +63,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "compression_method",
     "structure",
     "filename",
+    "description",
     "headers.header.name",
     "headers.header.value",
 };

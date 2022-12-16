@@ -13,6 +13,7 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -247,24 +248,11 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 
         if (engine_name == "URL")
         {
-            URLBasedDataSourceConfiguration configuration;
-            if (auto named_collection = getURLBasedDataSourceConfiguration(inner_engine_args, args.getLocalContext()))
+            StorageURL::Configuration configuration;
+            if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
             {
-                auto [common_configuration, storage_specific_args] = named_collection.value();
-                configuration.set(common_configuration);
-
-                for (const auto & [name, value] : storage_specific_args)
-                {
-                    if (name == "description")
-                        cluster_description = checkAndGetLiteralArgument<String>(value, "cluster_description");
-                    else
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "Unknown key-value argument {} for table engine URL", name);
-                }
-
-                if (cluster_description.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Engine ExternalDistribued must have `description` key-value argument or named collection parameter");
+                StorageURL::processNamedCollectionResult(configuration, *named_collection);
+                StorageURL::collectHeaders(engine_args, configuration.headers, args.getLocalContext());
             }
             else
             {
