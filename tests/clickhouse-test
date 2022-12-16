@@ -484,10 +484,10 @@ class MergeTreeSettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "vertical_merge_algorithm_min_rows_to_activate": threshold_generator(
-            0.25, 0.25, 1, 100000000
+            0.4, 0.4, 1, 1000000
         ),
         "vertical_merge_algorithm_min_columns_to_activate": threshold_generator(
-            0.25, 0.25, 1, 1000
+            0.4, 0.4, 1, 100
         ),
         "min_merge_bytes_to_use_direct_io": threshold_generator(
             0.25, 0.25, 1, 10 * 1024 * 1024 * 1024
