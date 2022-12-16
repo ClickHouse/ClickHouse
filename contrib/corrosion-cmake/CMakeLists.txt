@@ -10,6 +10,9 @@ else()
 endif()
 
 option(ENABLE_RUST "Enable rust" ${DEFAULT_ENABLE_RUST})
+
+message(STATUS ${ENABLE_RUST})
+
 if(NOT ENABLE_RUST)
   message(STATUS "Not using rust")
   return()
