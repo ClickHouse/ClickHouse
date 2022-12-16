@@ -111,7 +111,7 @@ public:
 
 protected:
     ReadBuffer * in;
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
 };
 
 /// Base class for schema inference for formats with -WithNames and -WithNamesAndTypes suffixes.

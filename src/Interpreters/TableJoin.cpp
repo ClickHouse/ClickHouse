@@ -672,6 +672,11 @@ String TableJoin::renamedRightColumnName(const String & name) const
     return name;
 }
 
+void TableJoin::setRename(const String & from, const String & to)
+{
+    renames[from] = to;
+}
+
 void TableJoin::addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast)
 {
     clauses.back().key_names_left.emplace_back(left_name);
