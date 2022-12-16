@@ -1,4 +1,4 @@
-#include <Storages/NamedCollections/NamedCollectionUtils.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
@@ -13,8 +13,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Interpreters/Context.h>
-#include <Storages/NamedCollections/NamedCollections.h>
-#include <Storages/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
 
 
 namespace fs = std::filesystem;
@@ -69,10 +69,10 @@ public:
     {
         const auto collection_prefix = getCollectionPrefix(collection_name);
         std::queue<std::string> enumerate_input;
-        std::set<std::string> enumerate_result;
+        std::set<std::string, std::less<>> enumerate_result;
 
         enumerate_input.push(collection_prefix);
-        collectKeys(config, std::move(enumerate_input), enumerate_result);
+        NamedCollectionConfiguration::listKeys(config, std::move(enumerate_input), enumerate_result, -1);
 
         /// Collection does not have any keys.
         /// (`enumerate_result` == <collection_path>).
@@ -96,50 +96,6 @@ private:
     static std::string getCollectionPrefix(const std::string & collection_name)
     {
         return fmt::format("{}.{}", NAMED_COLLECTIONS_CONFIG_PREFIX, collection_name);
-    }
-
-    /// Enumerate keys paths of the config recursively.
-    /// E.g. if `enumerate_paths` = {"root.key1"} and config like
-    /// <root>
-    ///     <key0></key0>
-    ///     <key1>
-    ///         <key2></key2>
-    ///         <key3>
-    ///            <key4></key4>
-    ///         </key3>
-    ///     </key1>
-    /// </root>
-    /// the `result` will contain two strings: "root.key1.key2" and "root.key1.key3.key4"
-    static void collectKeys(
-        const Poco::Util::AbstractConfiguration & config,
-        std::queue<std::string> enumerate_paths,
-        std::set<std::string> & result)
-    {
-        if (enumerate_paths.empty())
-            return;
-
-        auto initial_paths = std::move(enumerate_paths);
-        enumerate_paths = {};
-        while (!initial_paths.empty())
-        {
-            auto path = initial_paths.front();
-            initial_paths.pop();
-
-            Poco::Util::AbstractConfiguration::Keys keys;
-            config.keys(path, keys);
-
-            if (keys.empty())
-            {
-                result.insert(path);
-            }
-            else
-            {
-                for (const auto & key : keys)
-                    enumerate_paths.emplace(path + '.' + key);
-            }
-        }
-
-        collectKeys(config, enumerate_paths, result);
     }
 };
 

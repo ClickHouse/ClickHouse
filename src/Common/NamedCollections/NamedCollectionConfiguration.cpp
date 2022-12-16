@@ -1,4 +1,4 @@
-#include <Storages/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/SettingsChanges.h>
@@ -143,6 +143,52 @@ ConfigurationPtr createConfiguration(const std::string & root_name, const Settin
         Configuration::setConfigValue<String>(*config, name, convertFieldToString(value));
 
     return config;
+}
+
+void listKeys(
+    const Poco::Util::AbstractConfiguration & config,
+    std::queue<std::string> enumerate_paths,
+    std::set<std::string, std::less<>> & result,
+    ssize_t depth)
+{
+    if (enumerate_paths.empty())
+        enumerate_paths.push("");
+
+    const bool do_finish = depth >= 0 && --depth < 0;
+
+    auto initial_paths = std::move(enumerate_paths);
+    enumerate_paths = {};
+    while (!initial_paths.empty())
+    {
+        auto path = initial_paths.front();
+        initial_paths.pop();
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        if (path.empty())
+            config.keys(keys);
+        else
+            config.keys(path, keys);
+
+        if (keys.empty())
+        {
+            result.insert(path);
+        }
+        else if (do_finish)
+        {
+            for (const auto & key : keys)
+                result.emplace(path.empty() ? key : path + '.' + key);
+        }
+        else
+        {
+            for (const auto & key : keys)
+                enumerate_paths.emplace(path.empty() ? key : path + '.' + key);
+        }
+    }
+
+    if (enumerate_paths.empty())
+        return;
+
+    listKeys(config, enumerate_paths, result, depth);
 }
 
 template String getConfigValue<String>(const Poco::Util::AbstractConfiguration & config,

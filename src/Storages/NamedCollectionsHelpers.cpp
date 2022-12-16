@@ -1,5 +1,5 @@
 #include "NamedCollectionsHelpers.h"
-#include <Storages/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier.h>
@@ -83,12 +83,30 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
 void validateNamedCollection(
     const NamedCollection & collection,
     const std::unordered_set<std::string_view> & required_keys,
-    const std::unordered_set<std::string_view> & optional_keys)
+    const std::unordered_set<std::string_view> & optional_keys,
+    const std::vector<std::regex> & optional_regex_keys)
 {
     const auto & keys = collection.getKeys();
+    auto required_keys_copy = required_keys;
+
     for (const auto & key : keys)
     {
-        if (!required_keys.contains(key) && !optional_keys.contains(key))
+        auto it = required_keys_copy.find(key);
+        if (it != required_keys_copy.end())
+        {
+            required_keys_copy.erase(it);
+            continue;
+        }
+
+        if (optional_keys.contains(key))
+            continue;
+
+        auto match = std::find_if(
+            optional_regex_keys.begin(), optional_regex_keys.end(),
+            [&](const std::regex & regex) { return std::regex_search(key, regex); })
+            != optional_regex_keys.end();
+
+        if (!match)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -97,16 +115,22 @@ void validateNamedCollection(
         }
     }
 
-    for (const auto & key : required_keys)
+    if (!required_keys_copy.empty())
     {
-        if (!keys.contains(key))
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Key `{}` is required, but not specified. Required keys: {}, optional keys: {}",
-                key, fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
-        }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Required keys ({}) are not specified. All required keys: {}, optional keys: {}",
+            fmt::join(required_keys_copy, ", "), fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
     }
+}
+
+HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection)
+{
+    HTTPHeaderEntries headers;
+    auto keys = collection.getKeys(0, "headers");
+    for (const auto & key : keys)
+        headers.emplace_back(collection.get<String>(key + ".name"), collection.get<String>(key + ".value"));
+    return headers;
 }
 
 }
