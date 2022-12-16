@@ -15,9 +15,16 @@ import subprocess
 import socket
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance(
-    "instance",
-    main_configs=["configs/kerberos.xml"],
+instance1 = cluster.add_instance(
+    "instance1",
+    main_configs=["configs/kerberos_with_keytab.xml"],
+    user_configs=["configs/users.xml"],
+    with_kerberos_kdc=True,
+    clickhouse_path_dir="clickhouse_path",
+)
+instance2 = cluster.add_instance(
+    "instance2",
+    main_configs=["configs/kerberos_without_keytab.xml"],
     user_configs=["configs/users.xml"],
     with_kerberos_kdc=True,
     clickhouse_path_dir="clickhouse_path",
@@ -43,9 +50,7 @@ def kerberos_setup_teardown():
 
 # Tests
 
-
-def test_kerberos_auth_with_keytab(kerberos_cluster):
-    logging.debug("kerberos test")
+def make_auth(instance, user):
     instance.exec_in_container(
         ["bash", "-c", "kinit -V -k -t /tmp/keytab/kuser.keytab kuser"]
     )
@@ -53,8 +58,16 @@ def test_kerberos_auth_with_keytab(kerberos_cluster):
         instance.exec_in_container(
             ["bash", "-c", "echo 'select currentUser()' | curl -vvv --negotiate -u : http://{}:8123/ --data-binary @-".format(instance.hostname)]
         )
-        == "kuser\n"
+        == user + "\n"
     )
+
+
+
+def test_kerberos_auth_with_keytab(kerberos_cluster):
+    make_auth(instance1, "kuser")
+
+def test_kerberos_auth_without_keytab(kerberos_cluster):
+    make_auth(instance2, "default")
 
 
 if __name__ == "__main__":
