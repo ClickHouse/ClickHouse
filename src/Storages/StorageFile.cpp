@@ -79,7 +79,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int UNKNOWN_READ_METHOD;
 }
 
 namespace
