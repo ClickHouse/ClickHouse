@@ -1,7 +1,7 @@
 #pragma once
 #include <Interpreters/Context.h>
-#include <Storages/NamedCollections_fwd.h>
-#include <Storages/NamedCollectionUtils.h>
+#include <Storages/NamedCollections/NamedCollections_fwd.h>
+#include <Storages/NamedCollections/NamedCollectionUtils.h>
 
 namespace Poco { namespace Util { class AbstractConfiguration; } }
 
@@ -22,7 +22,7 @@ class NamedCollection
 {
 public:
     using Key = std::string;
-    using Keys = std::set<Key>;
+    using Keys = std::set<Key, std::less<>>;
     using SourceId = NamedCollectionUtils::SourceId;
 
     static MutableNamedCollectionPtr create(
@@ -48,6 +48,13 @@ public:
     MutableNamedCollectionPtr duplicate() const;
 
     Keys getKeys() const;
+
+    using iterator = typename Keys::iterator;
+    using const_iterator = typename Keys::const_iterator;
+
+    template <bool locked = false> const_iterator begin() const;
+
+    template <bool locked = false> const_iterator end() const;
 
     std::string dumpStructure() const;
 
