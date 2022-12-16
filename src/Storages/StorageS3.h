@@ -30,6 +30,8 @@ namespace DB
 
 class PullingPipelineExecutor;
 class StorageS3SequentialSource;
+class NamedCollection;
+
 class StorageS3Source : public ISource, WithContext
 {
 public:
@@ -216,7 +218,7 @@ public:
         ContextPtr ctx,
         std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
 
-    static void processNamedCollectionResult(StorageS3Configuration & configuration, const std::vector<std::pair<String, ASTPtr>> & key_value_args);
+    static void processNamedCollectionResult(StorageS3Configuration & configuration, const NamedCollection & collection);
 
     struct S3Configuration
     {
