@@ -77,9 +77,9 @@ public:
         void buffer(Chunk && chunk);
     private:
         std::mutex & mutex;
-        Cache & cache;
+        Cache & cache TSA_GUARDED_BY(mutex);
         const Key key;
-        size_t & cache_size_in_bytes;
+        size_t & cache_size_in_bytes TSA_GUARDED_BY(mutex);
         const size_t max_cache_size_in_bytes;
         const size_t max_entries;
         size_t new_entry_size_in_bytes;
