@@ -2339,7 +2339,8 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         .returns_default_when_only_null = true,
         // This probably doesn't make any difference for window functions because
         // it is an Aggregator-specific setting.
-        .is_order_dependent = true };
+        .is_order_dependent = true,
+        .is_window_function = true};
 
     factory.registerFunction("rank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
