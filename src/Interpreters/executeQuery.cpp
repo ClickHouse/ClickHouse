@@ -695,7 +695,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         ast, context->getUserName(), settings.query_result_cache_partition_key, res.pipeline.getHeader(),
                         std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_keep_seconds_alive)};
                     QueryResultCache::Reader reader = query_result_cache->createReader(key);
-                    if (reader.hasEntryForKey())
+                    if (reader.hasCacheEntryForKey())
                         res.pipeline = QueryPipeline(reader.getPipe());
                 }
 
