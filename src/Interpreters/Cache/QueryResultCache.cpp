@@ -1,11 +1,36 @@
 #include "Interpreters/Cache/QueryResultCache.h"
 
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 
 namespace DB
 {
+
+bool hasNonCacheableFunctions(ASTPtr ast, ContextPtr context)
+{
+    if (!context->getSettings().query_result_cache_ignore_nondeterministic_functions)
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        const FunctionFactory & function_factory = FunctionFactory::instance();
+        if (const FunctionOverloadResolverPtr resolver = function_factory.tryGet(function->name, context))
+        {
+            if (!resolver->isDeterministic())
+                return true;
+        }
+    }
+
+    bool has_non_cacheable_functions = false;
+    for (const auto & child : ast->children)
+        has_non_cacheable_functions |= hasNonCacheableFunctions(child, context);
+
+    return has_non_cacheable_functions;
+}
 
 bool QueryResultCache::Key::operator==(const Key & other) const
 {

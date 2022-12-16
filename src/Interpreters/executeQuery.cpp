@@ -21,7 +21,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -40,8 +39,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
-
-#include <Functions/FunctionFactory.h>
 
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
@@ -310,28 +307,6 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
     {
         InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
     }
-}
-
-static bool hasNonCacheableFunctions(ASTPtr ast, ContextPtr context)
-{
-    if (!context->getSettings().query_result_cache_ignore_nondeterministic_functions)
-        return false;
-
-    if (const auto * function = ast->as<ASTFunction>())
-    {
-        const FunctionFactory & function_factory = FunctionFactory::instance();
-        if (const FunctionOverloadResolverPtr resolver = function_factory.tryGet(function->name, context))
-        {
-            if (!resolver->isDeterministic())
-                return true;
-        }
-    }
-
-    bool has_non_cacheable_functions = false;
-    for (const auto & child : ast->children)
-        has_non_cacheable_functions |= hasNonCacheableFunctions(child, context);
-
-    return has_non_cacheable_functions;
 }
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
