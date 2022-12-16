@@ -1,6 +1,6 @@
 #include <Common/tests/gtest_global_context.h>
-#include <Storages/NamedCollections/NamedCollections.h>
-#include <Storages/NamedCollections/NamedCollectionUtils.h>
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 #include <gtest/gtest.h>
@@ -142,4 +142,83 @@ key2:
     ASSERT_EQ(collection->get<Int64>("key2.key2_2.key2_3.key2_4"), 4);
     ASSERT_EQ(collection->get<Int64>("key2.key2_2.key2_3.key2_5"), 5);
 
+}
+
+TEST(NamedCollections, NestedConfigDuplicateKeys)
+{
+    std::string xml(R"CONFIG(<clickhouse>
+    <named_collections>
+        <collection>
+            <headers>
+                <header>
+                    <name>key1</name>
+                    <value>value1</value>
+                </header>
+                <header>
+                    <name>key2</name>
+                    <value>value2</value>
+                </header>
+                <header>
+                    <name>key3</name>
+                    <value>value3</value>
+                </header>
+            </headers>
+        </collection>
+    </named_collections>
+</clickhouse>)CONFIG");
+
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+
+    NamedCollectionUtils::loadFromConfig(*config);
+    auto collection = NamedCollectionFactory::instance().get("collection");
+
+    auto keys = collection->getKeys();
+    ASSERT_EQ(keys.size(), 6);
+
+    ASSERT_TRUE(keys.contains("headers.header.name"));
+    ASSERT_TRUE(keys.contains("headers.header[1].name"));
+    ASSERT_TRUE(keys.contains("headers.header[2].name"));
+
+    ASSERT_TRUE(keys.contains("headers.header.value"));
+    ASSERT_TRUE(keys.contains("headers.header[1].value"));
+    ASSERT_TRUE(keys.contains("headers.header[2].value"));
+
+    ASSERT_EQ(collection->get<String>("headers.header.name"), "key1");
+    ASSERT_EQ(collection->get<String>("headers.header[1].name"), "key2");
+    ASSERT_EQ(collection->get<String>("headers.header[2].name"), "key3");
+
+    ASSERT_EQ(collection->get<String>("headers.header.value"), "value1");
+    ASSERT_EQ(collection->get<String>("headers.header[1].value"), "value2");
+    ASSERT_EQ(collection->get<String>("headers.header[2].value"), "value3");
+
+    keys = collection->getKeys(0);
+    ASSERT_EQ(keys.size(), 1);
+    ASSERT_TRUE(keys.contains("headers"));
+
+    keys = collection->getKeys(0, "headers");
+    ASSERT_EQ(keys.size(), 3);
+
+    ASSERT_TRUE(keys.contains("headers.header"));
+    ASSERT_TRUE(keys.contains("headers.header[1]"));
+    ASSERT_TRUE(keys.contains("headers.header[2]"));
+
+    keys = collection->getKeys(1);
+    ASSERT_EQ(keys.size(), 3);
+
+    ASSERT_TRUE(keys.contains("headers.header"));
+    ASSERT_TRUE(keys.contains("headers.header[1]"));
+    ASSERT_TRUE(keys.contains("headers.header[2]"));
+
+    keys = collection->getKeys(2);
+    ASSERT_EQ(keys.size(), 6);
+
+    ASSERT_TRUE(keys.contains("headers.header.name"));
+    ASSERT_TRUE(keys.contains("headers.header[1].name"));
+    ASSERT_TRUE(keys.contains("headers.header[2].name"));
+
+    ASSERT_TRUE(keys.contains("headers.header.value"));
+    ASSERT_TRUE(keys.contains("headers.header[1].value"));
+    ASSERT_TRUE(keys.contains("headers.header[2].value"));
 }

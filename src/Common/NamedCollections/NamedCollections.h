@@ -1,7 +1,7 @@
 #pragma once
 #include <Interpreters/Context.h>
-#include <Storages/NamedCollections/NamedCollections_fwd.h>
-#include <Storages/NamedCollections/NamedCollectionUtils.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 
 namespace Poco { namespace Util { class AbstractConfiguration; } }
 
@@ -47,7 +47,7 @@ public:
 
     MutableNamedCollectionPtr duplicate() const;
 
-    Keys getKeys() const;
+    Keys getKeys(ssize_t depth = -1, const std::string & prefix = "") const;
 
     using iterator = typename Keys::iterator;
     using const_iterator = typename Keys::const_iterator;

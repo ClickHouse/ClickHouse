@@ -10,6 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
@@ -91,9 +92,6 @@ namespace detail
     class ReadWriteBufferFromHTTPBase : public SeekableReadBuffer, public WithFileName, public WithFileSize
     {
     public:
-        using HTTPHeaderEntry = std::tuple<std::string, std::string>;
-        using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>;
-
         /// HTTP range, including right bound [begin, end].
         struct Range
         {
@@ -159,8 +157,8 @@ namespace detail
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
 
-            for (auto & http_header_entry : http_header_entries)
-                request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
+            for (auto & [header, value] : http_header_entries)
+                request.set(header, value);
 
             if (withPartialContent())
             {
@@ -319,11 +317,11 @@ namespace detail
             auto iter = std::find_if(
                 http_header_entries.begin(),
                 http_header_entries.end(),
-                [&user_agent](const HTTPHeaderEntry & entry) { return std::get<0>(entry) == user_agent; });
+                [&user_agent](const HTTPHeaderEntry & entry) { return entry.name == user_agent; });
 
             if (iter == http_header_entries.end())
             {
-                http_header_entries.emplace_back(std::make_pair("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING)));
+                http_header_entries.emplace_back("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING));
             }
 
             if (!delay_initialization)
@@ -779,7 +777,7 @@ public:
         UInt64 max_redirects_ = 0,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ReadSettings settings_ = {},
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries_ = {},
+        HTTPHeaderEntries http_header_entries_ = {},
         const RemoteHostFilter * remote_host_filter_ = nullptr,
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
@@ -851,7 +849,7 @@ private:
     UInt64 max_redirects;
     size_t buffer_size;
     ReadSettings settings;
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries;
+    HTTPHeaderEntries http_header_entries;
     const RemoteHostFilter * remote_host_filter;
     bool delay_initialization;
     bool use_external_buffer;

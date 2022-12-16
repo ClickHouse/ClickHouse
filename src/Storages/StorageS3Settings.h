@@ -8,7 +8,6 @@
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Throttler_fwd.h>
-#include <Storages/HeaderCollection.h>
 
 #include <IO/S3Common.h>
 

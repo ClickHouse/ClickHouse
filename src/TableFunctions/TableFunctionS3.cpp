@@ -13,7 +13,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/NamedCollections/NamedCollectionsHelpers.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <filesystem>
@@ -40,7 +40,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         if (args.empty() || args.size() > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
 
-        auto header_it = StorageURL::collectHeaders(args, s3_configuration, context);
+        auto header_it = StorageURL::collectHeaders(args, s3_configuration.headers, context);
         if (header_it != args.end())
             args.erase(header_it);
 

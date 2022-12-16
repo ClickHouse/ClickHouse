@@ -1,5 +1,7 @@
 #pragma once
 #include <Poco/Util/AbstractConfiguration.h>
+#include <queue>
+#include <set>
 
 namespace DB
 {
@@ -39,6 +41,28 @@ void removeConfigValue(
 
 ConfigurationPtr createConfiguration(const std::string & root_name, const SettingsChanges & settings);
 
+/// Enumerate keys paths of the config recursively.
+/// E.g. if `enumerate_paths` = {"root.key1"} and config like
+/// <root>
+///     <key0></key0>
+///     <key1>
+///         <key2></key2>
+///         <key3>
+///            <key4></key4>
+///         </key3>
+///     </key1>
+/// </root>
+/// the `result` will contain: "root.key0", "root.key1.key2" and "root.key1.key3.key4"
+///
+/// depth == -1 means to return all keys with full path: "root.key0", "root.key1.key2", "root.key1.key3.key4".
+/// depth == 0 means: "root.key0" and "root.key1"
+/// depth == 1 means: "root.key0", "root.key1.key2" and "root.key1.key3"
+/// and so on.
+void listKeys(
+    const Poco::Util::AbstractConfiguration & config,
+    std::queue<std::string> enumerate_paths,
+    std::set<std::string, std::less<>> & result,
+    ssize_t depth);
 }
 
 }

@@ -233,13 +233,13 @@ public:
         bool static_configuration = true;
 
         /// Headers from ast is a part of static configuration.
-        HeaderCollection headers_from_ast;
+        HTTPHeaderEntries headers_from_ast;
 
         S3Configuration(
             const String & url_,
             const S3::AuthSettings & auth_settings_,
             const S3Settings::RequestSettings & request_settings_,
-            const HeaderCollection & headers_from_ast_)
+            const HTTPHeaderEntries & headers_from_ast_)
             : uri(S3::URI(url_))
             , auth_settings(auth_settings_)
             , request_settings(request_settings_)

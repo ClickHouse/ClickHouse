@@ -9,6 +9,7 @@
 #    include <Common/quoteString.h>
 
 #    include <IO/WriteBufferFromString.h>
+#    include <IO/HTTPHeaderEntries.h>
 #    include <Storages/StorageS3Settings.h>
 
 #    include <aws/core/Version.h>
@@ -700,7 +701,7 @@ namespace S3
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
-        HeaderCollection headers,
+        HTTPHeaderEntries headers,
         bool use_environment_credentials,
         bool use_insecure_imds_request)
     {
@@ -916,7 +917,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     if (config.has(config_elem + ".use_insecure_imds_request"))
         use_insecure_imds_request = config.getBool(config_elem + ".use_insecure_imds_request");
 
-    HeaderCollection headers;
+    HTTPHeaderEntries headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;
     config.keys(config_elem, subconfig_keys);
     for (const std::string & subkey : subconfig_keys)
@@ -927,7 +928,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
             auto delimiter = header_str.find(':');
             if (delimiter == std::string::npos)
                 throw Exception("Malformed s3 header value", ErrorCodes::INVALID_CONFIG_PARAMETER);
-            headers.emplace_back(HttpHeader{header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos)});
+            headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
         }
     }
 
