@@ -510,6 +510,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             query_info.is_parameterized_view = view->isParameterizedView();
             /// We need to fetch the parameters set for SELECT parameterized view before the query is replaced.
+            /// replaceWithSubquery replaces the function child and adds the subquery in its place.
+            /// the parameters are children of function child, if function is replaced the parameters are also gone from tree
+            /// So we need to get the parameters before they are removed from the tree
             /// and after query is replaced, we use these parameters to substitute in the parameterized view query
             if (query_info.is_parameterized_view)
             {

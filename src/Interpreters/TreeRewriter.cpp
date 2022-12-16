@@ -1409,7 +1409,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                 if ((pos = column_name.find(parameter.first)) != std::string::npos)
                 {
                     String parameter_name("_CAST(" + parameter.second + ", '" + column.type->getName() + "')");
-                    column.name.replace(pos,parameter.first.size(),parameter_name);
+                    column.name.replace(pos, parameter.first.size(), parameter_name);
                     break;
                 }
             }
