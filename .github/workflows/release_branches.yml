@@ -1881,8 +1881,6 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   SignRelease:
-    needs:
-      BuilderDebRelease
     runs-on: [self-hosted]
     steps:
       - name: Set envs
