@@ -103,7 +103,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, bool ignore_constant) c
         /// ignore_constant is used for scalar subqueries cache
         if (ignore_constant && lhs_node_to_compare->as<QueryNode>() && rhs_node_to_compare->as<QueryNode>())
         {
-            if(!lhs_node_to_compare->as<QueryNode>()->isEqualImplIgnoreConstant(*rhs_node_to_compare))
+            if (!lhs_node_to_compare->as<QueryNode>()->isEqualImplIgnoreConstant(*rhs_node_to_compare))
                 return false;
         }
         else if (!lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
