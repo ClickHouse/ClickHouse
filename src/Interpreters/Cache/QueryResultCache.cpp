@@ -5,7 +5,14 @@
 #include <Parsers/ASTFunction.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+
+namespace ProfileEvents
+{
+    extern const Event QueryResultCacheHits;
+    extern const Event QueryResultCacheMisses;
+};
 
 namespace DB
 {
@@ -196,14 +203,21 @@ QueryResultCache::Reader::Reader(const Cache & cache_, std::mutex & mutex_, cons
     pipe = Pipe(std::make_shared<SourceFromSingleChunk>(key.header, it->second->clone()));
 }
 
-bool QueryResultCache::Reader::hasEntryForKey() const
+bool QueryResultCache::Reader::hasCacheEntryForKey() const
 {
-    return !pipe.empty();
+    bool res = !pipe.empty();
+
+    if (res)
+        ProfileEvents::increment(ProfileEvents::QueryResultCacheHits);
+    else
+        ProfileEvents::increment(ProfileEvents::QueryResultCacheMisses);
+
+    return res;
 }
 
 Pipe && QueryResultCache::Reader::getPipe()
 {
-    assert(hasEntryForKey());
+    assert(!pipe.empty()); // cf. hasCacheEntryForKey()
     return std::move(pipe);
 }
 

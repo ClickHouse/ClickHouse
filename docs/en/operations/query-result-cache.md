@@ -50,7 +50,10 @@ For maximum control, it is generally recommended to enable caching on a per-quer
 user/profile level but users should keep in mind that all SELECT queries may then return outdated results.
 
 To clear the query result cache, use statement `SYSTEM DROP QUERY RESULT CACHE`. The content of the query result cache is displayed in
-system table `SYSTEM.QUERYRESULT_CACHE`.
+system table `SYSTEM.QUERYRESULT_CACHE`. The number of query result cache hits and misses are shown as events "QueryResultCacheHits" and
+"QueryResultCacheMisses" in system table `SYSTEM.EVENTS`. Both counters are updated only for SELECT queries which run with settings
+"enable_experimental_query_result_cache = true" or "enable_experimental_query_result_cache_passive_usage = true". In particular, all other
+queries do not increment the cache miss counter.
 
 The cache exists once per ClickHouse server process but cache results are by default not shared between users (see below).
 

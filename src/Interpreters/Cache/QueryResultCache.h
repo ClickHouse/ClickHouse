@@ -102,7 +102,7 @@ public:
     {
     public:
         Reader(const Cache & cache_, std::mutex & mutex, const Key & key);
-        bool hasEntryForKey() const;
+        bool hasCacheEntryForKey() const;
         Pipe && getPipe();
     private:
         Pipe pipe;
