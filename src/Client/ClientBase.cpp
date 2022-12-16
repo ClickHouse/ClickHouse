@@ -2353,9 +2353,14 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         /// may clash. Query settings have higher priority and we just
         /// skip ambiguous merge tree settings.
         auto & main_options = options_description.main_description.value();
+
+        NameSet main_option_names;
+        for (const auto & option : main_options.options())
+            main_option_names.insert(option->long_name());
+
         for (const auto & setting : cmd_merge_tree_settings.all())
         {
-            if (main_options.find_nothrow(setting.getName(), false))
+            if (main_option_names.contains(setting.getName()))
                 continue;
 
             if (allow_repeated_settings)
