@@ -1126,6 +1126,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
             continue;
 
         size_t affected_dirs = 0;
+        size_t checked_dirs = 0;
         for (auto it = disk->iterateDirectory("store"); it->isValid(); it->next())
         {
             String prefix = it->name();
@@ -1135,6 +1136,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
             if (!expected_prefix_dir)
             {
                 LOG_WARNING(log, "Found invalid directory {} on disk {}, will try to remove it", it->path(), disk_name);
+                checked_dirs += 1;
                 affected_dirs += maybeRemoveDirectory(disk_name, disk, it->path());
                 continue;
             }
@@ -1150,6 +1152,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
                 if (!expected_dir)
                 {
                     LOG_WARNING(log, "Found invalid directory {} on disk {}, will try to remove it", jt->path(), disk_name);
+                    checked_dirs += 1;
                     affected_dirs += maybeRemoveDirectory(disk_name, disk, jt->path());
                     continue;
                 }
@@ -1161,6 +1164,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
                     /// so it looks safe enough to remove directory if we don't have uuid mapping for it.
                     /// No table or database using this directory should concurrently appear,
                     /// because creation of new table would fail with "directory already exists".
+                    checked_dirs += 1;
                     affected_dirs += maybeRemoveDirectory(disk_name, disk, jt->path());
                 }
             }
@@ -1168,7 +1172,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
 
         if (affected_dirs)
             LOG_INFO(log, "Cleaned up {} directories from store/ on disk {}", affected_dirs, disk_name);
-        else
+        if (checked_dirs == 0)
             LOG_TEST(log, "Nothing to clean up from store/ on disk {}", disk_name);
     }
 
