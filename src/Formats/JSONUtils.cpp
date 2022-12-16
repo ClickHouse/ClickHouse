@@ -167,7 +167,7 @@ namespace JSONUtils
             else
                 first = false;
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
-            types.push_back(type);
+            types.push_back(std::move(type));
         }
 
         if (in.eof())

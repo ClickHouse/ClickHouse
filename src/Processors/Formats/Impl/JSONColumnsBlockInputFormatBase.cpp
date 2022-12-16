@@ -229,8 +229,7 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
             if (!names_to_types.contains(column_name))
                 names_order.push_back(column_name);
 
-            const auto it = hints.find(column_name);
-            if (it != hints.end())
+            if (const auto it = hints.find(column_name); it != hints.end())
             {
                 names_to_types[column_name] = it->second;
             }

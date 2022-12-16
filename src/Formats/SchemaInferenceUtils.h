@@ -32,11 +32,11 @@ DataTypePtr tryInferDataTypeForSingleJSONField(ReadBuffer & buf, const FormatSet
 DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// Try to parse Date or DateTime value from a string.
-DataTypePtr tryInferDateOrDateTimeFromString(const std::string_view & field, const FormatSettings & settings);
+DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings);
 
 /// Try to parse a number value from a string. By default, it tries to parse Float64,
 /// but if setting try_infer_integers is enabled, it also tries to parse Int64.
-DataTypePtr tryInferNumberFromString(const std::string_view & field, const FormatSettings & settings);
+DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSettings & settings);
 
 /// It takes two types inferred for the same column and tries to transform them to a common type if possible.
 /// It's also used when we try to infer some not ordinary types from another types.

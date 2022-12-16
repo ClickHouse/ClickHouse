@@ -49,36 +49,36 @@ namespace
     void transformNothingSimpleTypes(DataTypes & data_types, const TypeIndexesSet & type_indexes)
     {
         /// Check if we have both Nothing and non Nothing types.
-        if (type_indexes.contains(TypeIndex::Nothing) && type_indexes.size() > 1)
-        {
-            DataTypePtr not_nothing_type = nullptr;
-            for (const auto & type : data_types)
-            {
-                if (!isNothing(type))
-                {
-                    not_nothing_type = type;
-                    break;
-                }
-            }
+        if (!type_indexes.contains(TypeIndex::Nothing) || type_indexes.size() <= 1)
+            return;
 
-            for (auto & type : data_types)
+        DataTypePtr not_nothing_type = nullptr;
+        for (const auto & type : data_types)
+        {
+            if (!isNothing(type))
             {
-                if (isNothing(type))
-                    type = not_nothing_type;
+                not_nothing_type = type;
+                break;
             }
+        }
+
+        for (auto & type : data_types)
+        {
+            if (isNothing(type))
+                type = not_nothing_type;
         }
     }
 
     /// If we have both Int64 and Float64 types, convert all Int64 to Float64.
     void transformIntegersAndFloatsToFloats(DataTypes & data_types, const TypeIndexesSet & type_indexes)
     {
-        if (type_indexes.contains(TypeIndex::Int64) && type_indexes.contains(TypeIndex::Float64))
+        if (!type_indexes.contains(TypeIndex::Int64) || !type_indexes.contains(TypeIndex::Float64))
+            return;
+
+        for (auto & type : data_types)
         {
-            for (auto & type : data_types)
-            {
-                if (isInteger(type))
-                    type = std::make_shared<DataTypeFloat64>();
-            }
+            if (isInteger(type))
+                type = std::make_shared<DataTypeFloat64>();
         }
     }
 
@@ -88,7 +88,7 @@ namespace
     {
         bool have_dates = type_indexes.contains(TypeIndex::Date);
         bool have_datetimes = type_indexes.contains(TypeIndex::DateTime64);
-        bool all_dates_or_datetimes = (type_indexes.size() == (size_t(have_dates) + size_t(have_datetimes)));
+        bool all_dates_or_datetimes = (type_indexes.size() == (static_cast<size_t>(have_dates) + static_cast<size_t>(have_datetimes)));
 
         if (!all_dates_or_datetimes && (have_dates || have_datetimes))
         {
@@ -118,15 +118,15 @@ namespace
     {
         bool have_strings = type_indexes.contains(TypeIndex::String);
         bool have_numbers = type_indexes.contains(TypeIndex::Int64) || type_indexes.contains(TypeIndex::Float64);
-        if (have_strings && have_numbers)
+        if (!have_strings || !have_numbers)
+            return;
+
+        for (auto & type : data_types)
         {
-            for (auto & type : data_types)
-            {
-                if (isNumber(type)
-                    && (settings.json.read_numbers_as_strings || !json_info
-                        || json_info->numbers_parsed_from_json_strings.contains(type.get())))
-                    type = std::make_shared<DataTypeString>();
-            }
+            if (isNumber(type)
+                && (settings.json.read_numbers_as_strings || !json_info
+                    || json_info->numbers_parsed_from_json_strings.contains(type.get())))
+                type = std::make_shared<DataTypeString>();
         }
     }
 
@@ -137,17 +137,18 @@ namespace
         bool have_floats = type_indexes.contains(TypeIndex::Float64);
         bool have_integers = type_indexes.contains(TypeIndex::Int64);
         bool have_bools = type_indexes.contains(TypeIndex::UInt8);
-        if (have_bools && (have_integers || have_floats))
+        /// Check if we have both Bool and Integer/Float.
+        if (!have_bools || (!have_integers && !have_floats))
+            return;
+
+        for (auto & type : data_types)
         {
-            for (auto & type : data_types)
+            if (isBool(type))
             {
-                if (isBool(type))
-                {
-                    if (have_integers)
-                        type = std::make_shared<DataTypeInt64>();
-                    else
-                        type = std::make_shared<DataTypeFloat64>();
-                }
+                if (have_integers)
+                    type = std::make_shared<DataTypeInt64>();
+                else
+                    type = std::make_shared<DataTypeFloat64>();
             }
         }
     }
@@ -168,26 +169,26 @@ namespace
                 not_nothing_type = type;
         }
 
-        if (have_nothing && not_nothing_type)
+        if (!have_nothing || !not_nothing_type)
+            return;
+
+        for (auto & type : data_types)
         {
-            for (auto & type : data_types)
-            {
-                if (isNothing(removeNullable(type)))
-                    type = not_nothing_type;
-            }
+            if (isNothing(removeNullable(type)))
+                type = not_nothing_type;
         }
     }
 
     /// If we have both Nullable and non Nullable types, make all types Nullable
     void transformNullableTypes(DataTypes & data_types, const TypeIndexesSet & type_indexes)
     {
-        if (type_indexes.contains(TypeIndex::Nullable))
+        if (!type_indexes.contains(TypeIndex::Nullable))
+            return;
+
+        for (auto & type : data_types)
         {
-            for (auto & type : data_types)
-            {
-                if (type->canBeInsideNullable())
-                    type = makeNullable(type);
-            }
+            if (type->canBeInsideNullable())
+                type = makeNullable(type);
         }
     }
 
@@ -198,16 +199,16 @@ namespace
     /// also transform it to Array(Nullable(Int64))
     void transformTuplesWithEqualNestedTypesToArrays(DataTypes & data_types, const TypeIndexesSet & type_indexes)
     {
-        if (type_indexes.contains(TypeIndex::Tuple))
+        if (!type_indexes.contains(TypeIndex::Tuple))
+            return;
+
+        for (auto & type : data_types)
         {
-            for (auto & type : data_types)
+            if (isTuple(type))
             {
-                if (isTuple(type))
-                {
-                    const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
-                    if (checkIfTypesAreEqual(tuple_type->getElements()))
-                        type = std::make_shared<DataTypeArray>(tuple_type->getElements().back());
-                }
+                const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
+                if (checkIfTypesAreEqual(tuple_type->getElements()))
+                    type = std::make_shared<DataTypeArray>(tuple_type->getElements().back());
             }
         }
     }
@@ -222,8 +223,7 @@ namespace
     void transformJSONTuplesAndArraysToArrays(
         DataTypes & data_types, const FormatSettings & settings, const TypeIndexesSet & type_indexes, JSONInferenceInfo * json_info)
     {
-        bool have_tuples = type_indexes.contains(TypeIndex::Tuple);
-        if (!have_tuples)
+        if (!type_indexes.contains(TypeIndex::Tuple))
             return;
 
         bool have_arrays = type_indexes.contains(TypeIndex::Array);
@@ -241,27 +241,28 @@ namespace
             }
         }
 
-        if (have_arrays || tuple_sizes_are_equal)
-        {
-            DataTypes nested_types;
-            for (auto & type : data_types)
-            {
-                if (isArray(type))
-                    nested_types.push_back(assert_cast<const DataTypeArray &>(*type).getNestedType());
-                else
-                {
-                    const auto & elements = assert_cast<const DataTypeTuple &>(*type).getElements();
-                    for (const auto & element : elements)
-                        nested_types.push_back(element);
-                }
-            }
+        /// Check if we have arrays and tuples with same size.
+        if (!have_arrays && !tuple_sizes_are_equal)
+            return;
 
-            transformInferredTypesIfNeededImpl<true>(nested_types, settings, json_info);
-            if (checkIfTypesAreEqual(nested_types))
+        DataTypes nested_types;
+        for (auto & type : data_types)
+        {
+            if (isArray(type))
+                nested_types.push_back(assert_cast<const DataTypeArray &>(*type).getNestedType());
+            else
             {
-                for (auto & type : data_types)
-                    type = std::make_shared<DataTypeArray>(nested_types.back());
+                const auto & elements = assert_cast<const DataTypeTuple &>(*type).getElements();
+                for (const auto & element : elements)
+                    nested_types.push_back(element);
             }
+        }
+
+        transformInferredTypesIfNeededImpl<true>(nested_types, settings, json_info);
+        if (checkIfTypesAreEqual(nested_types))
+        {
+            for (auto & type : data_types)
+                type = std::make_shared<DataTypeArray>(nested_types.back());
         }
     }
 
@@ -269,8 +270,7 @@ namespace
     /// If we have Map types with different value types, convert all Map types to Object(JSON)
     void transformMapsAndObjectsToObjects(DataTypes & data_types, const TypeIndexesSet & type_indexes)
     {
-        bool have_maps = type_indexes.contains(TypeIndex::Map);
-        if (!have_maps)
+        if (!type_indexes.contains(TypeIndex::Map))
             return;
 
         bool have_objects = type_indexes.contains(TypeIndex::Object);
@@ -287,13 +287,13 @@ namespace
             }
         }
 
-        if (have_objects || !maps_are_equal)
+        if (!have_objects && maps_are_equal)
+            return;
+
+        for (auto & type : data_types)
         {
-            for (auto & type : data_types)
-            {
-                if (isMap(type))
-                    type = std::make_shared<DataTypeObject>("json", true);
-            }
+            if (isMap(type))
+                type = std::make_shared<DataTypeObject>("json", true);
         }
     }
 
@@ -303,13 +303,14 @@ namespace
         bool have_objects = type_indexes.contains(TypeIndex::Object);
         bool have_strings = type_indexes.contains(TypeIndex::String);
 
-        if (have_strings && (have_maps || have_objects))
+        /// Check if we have both String and Map/Object
+        if (!have_strings || (!have_maps && !have_objects))
+            return;
+
+        for (auto & type : data_types)
         {
-            for (auto & type : data_types)
-            {
-                if (isMap(type) || isObject(type))
-                    type = std::make_shared<DataTypeString>();
-            }
+            if (isMap(type) || isObject(type))
+                type = std::make_shared<DataTypeString>();
         }
     }
 
@@ -375,14 +376,14 @@ namespace
     template <bool is_json>
     DataTypePtr tryInferDataTypeForSingleFieldImpl(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth = 1);
 
-    bool tryInferDate(const std::string_view & field)
+    bool tryInferDate(std::string_view field)
     {
         ReadBufferFromString buf(field);
         DayNum tmp;
         return tryReadDateText(tmp, buf) && buf.eof();
     }
 
-    bool tryInferDateTime(const std::string_view & field, const FormatSettings & settings)
+    bool tryInferDateTime(std::string_view field, const FormatSettings & settings)
     {
         if (field.empty())
             return false;
@@ -634,8 +635,7 @@ namespace
         {
             if (settings.json.try_infer_numbers_from_strings)
             {
-                auto number_type = tryInferNumberFromString(field, settings);
-                if (number_type)
+                if (auto number_type = tryInferNumberFromString(field, settings))
                 {
                     json_info->numbers_parsed_from_json_strings.insert(number_type.get());
                     return number_type;
@@ -811,8 +811,8 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 {
     DataTypes types = {first, second};
     transformInferredTypesIfNeededImpl<false>(types, settings, nullptr);
-    first = types[0];
-    second = types[1];
+    first = std::move(types[0]);
+    second = std::move(types[1]);
 }
 
 void transformInferredJSONTypesIfNeeded(
@@ -820,8 +820,8 @@ void transformInferredJSONTypesIfNeeded(
 {
     DataTypes types = {first, second};
     transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
-    first = types[0];
-    second = types[1];
+    first = std::move(types[0]);
+    second = std::move(types[1]);
 }
 
 void transformJSONTupleToArrayIfPossible(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info)
@@ -836,7 +836,7 @@ void transformJSONTupleToArrayIfPossible(DataTypePtr & data_type, const FormatSe
         data_type = std::make_shared<DataTypeArray>(nested_types.back());
 }
 
-DataTypePtr tryInferNumberFromString(const std::string_view & field, const FormatSettings & settings)
+DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSettings & settings)
 {
     ReadBufferFromString buf(field);
 
@@ -857,7 +857,7 @@ DataTypePtr tryInferNumberFromString(const std::string_view & field, const Forma
     return nullptr;
 }
 
-DataTypePtr tryInferDateOrDateTimeFromString(const std::string_view & field, const FormatSettings & settings)
+DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings)
 {
     if (settings.try_infer_dates && tryInferDate(field))
         return std::make_shared<DataTypeDate>();
