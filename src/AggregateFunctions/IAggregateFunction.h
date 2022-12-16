@@ -832,6 +832,9 @@ struct AggregateFunctionProperties
       * Some may also name this property as "non-commutative".
       */
     bool is_order_dependent = false;
+
+    /// Indicates if it's actually window function.
+    bool is_window_function = false;
 };
 
 
