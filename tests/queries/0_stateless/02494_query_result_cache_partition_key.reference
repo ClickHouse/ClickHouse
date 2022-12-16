@@ -5,10 +5,10 @@ SYSTEM DROP QUERY RESULT CACHE;
 
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true, query_result_cache_partition_key = 'key 1';
 1
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 1
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true, query_result_cache_partition_key = 'key 2';
 1
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 2
 SYSTEM DROP QUERY RESULT CACHE;

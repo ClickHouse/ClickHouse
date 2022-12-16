@@ -4,21 +4,21 @@ SYSTEM DROP QUERY RESULT CACHE;
 -- by default don't write query result into cache
 SELECT 1;
 1
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- try to retrieve from empty cache, cache should still be empty
 SELECT 1 SETTINGS enable_experimental_query_result_cache_passive_usage = true;
 1
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 1
 -- put query result into cache
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
 1
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 2
 -- read from query result cache
 SELECT 1 SETTINGS enable_experimental_query_result_cache_passive_usage = true;
 1
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 2
 SYSTEM DROP QUERY RESULT CACHE;
