@@ -63,6 +63,7 @@ public:
     void preFinalize() override;
 
 private:
+    void assertSettings() const;
     void allocateBuffer();
 
     void createMultipartUpload();
