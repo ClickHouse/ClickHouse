@@ -31,6 +31,7 @@ public:
     UInt64 getFileSize(const String & file_name) override;
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
+    void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
     DataSourceDescription getDataSourceDescription() const override;
     bool supportNativeCopy(DataSourceDescription data_source_description) const override;
