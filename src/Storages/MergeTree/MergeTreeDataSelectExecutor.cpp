@@ -385,9 +385,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     : static_cast<size_t>(settings.max_threads);
 
                 InputOrderInfoPtr group_by_info = query_info.projection->input_order_info;
+                SortDescription sort_description_for_merging;
                 SortDescription group_by_sort_description;
                 if (group_by_info && settings.optimize_aggregation_in_order)
+                {
                     group_by_sort_description = getSortDescriptionFromGroupBy(select_query);
+                    sort_description_for_merging = group_by_info->sort_description_for_merging;
+                }
                 else
                     group_by_info = nullptr;
 
@@ -406,9 +410,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     temporary_data_merge_threads,
                     /* storage_has_evenly_distributed_read_= */ false,
                     /* group_by_use_nulls */ false,
-                    std::move(group_by_info),
+                    std::move(sort_description_for_merging),
                     std::move(group_by_sort_description),
-                    should_produce_results_in_order_of_bucket_number);
+                    should_produce_results_in_order_of_bucket_number,
+                    settings.enable_memory_bound_merging_of_aggregation_results);
                 query_plan->addStep(std::move(aggregating_step));
             };
 
@@ -784,14 +789,11 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 {
     const Settings & settings = context->getSettingsRef();
 
-    /// TODO: Analyzer syntax analyzer result
-    if (settings.allow_experimental_analyzer)
-        return;
-
     std::optional<PartitionPruner> partition_pruner;
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
-    if (metadata_snapshot->hasPartitionKey())
+
+    if (metadata_snapshot->hasPartitionKey() && !settings.allow_experimental_analyzer)
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
@@ -803,19 +805,9 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
-            String msg = "Neither MinMax index by columns (";
-            bool first = true;
-            for (const String & col : minmax_columns_names)
-            {
-                if (first)
-                    first = false;
-                else
-                    msg += ", ";
-                msg += col;
-            }
-            msg += ") nor partition expr is used and setting 'force_index_by_date' is set";
-
-            throw Exception(msg, ErrorCodes::INDEX_NOT_USED);
+            throw Exception(ErrorCodes::INDEX_NOT_USED,
+                "Neither MinMax index by columns ({}) nor partition expr is used and setting 'force_index_by_date' is set",
+                fmt::join(minmax_columns_names, ", "));
         }
     }
 
@@ -1113,6 +1105,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
+                    SCOPE_EXIT_SAFE(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
+                    );
                     if (thread_group)
                         CurrentThread::attachToIfDetached(thread_group);
 
