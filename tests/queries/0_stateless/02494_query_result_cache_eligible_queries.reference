@@ -8,68 +8,68 @@ SET enable_experimental_query_result_cache = true;
 -- check that SELECT statements create entries in the query result cache ...
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
 1
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 1
 -- ... yet EXPLAIN SELECT should not create such an entry ...
 EXPLAIN SELECT 2 SETTINGS enable_experimental_query_result_cache = true;
 Expression ((Projection + Before ORDER BY))
   ReadFromStorage (SystemOne)
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 1
 SYSTEM DROP QUERY RESULT CACHE;
 -- ... and all other statements also should not create entries:
 
 -- CREATE
 CREATE TABLE eligible_test (a String) ENGINE=MergeTree ORDER BY a; --  SETTINGS enable_experimental_query_result_cache = true; -- SETTINGS rejected as unknown
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- ALTER
 ALTER TABLE eligible_test ADD COLUMN b String SETTINGS enable_experimental_query_result_cache = true;
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- INSERT
 INSERT INTO eligible_test VALUES('a', 'b'); -- SETTINGS enable_experimental_query_result_cache = true; -- SETTINGS rejected as unknown
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 INSERT INTO eligible_test SELECT * FROM eligible_test SETTINGS enable_experimental_query_result_cache = true;
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- SHOW
 SHOW TABLES SETTINGS enable_experimental_query_result_cache = true;
 eligible_test
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- CHECK
 CHECK TABLE eligible_test SETTINGS enable_experimental_query_result_cache = true;
 1
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- DESCRIBE
 DESCRIBE TABLE eligible_test SETTINGS enable_experimental_query_result_cache = true;
 a	String					
 b	String					
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- EXISTS
 EXISTS TABLE eligible_test SETTINGS enable_experimental_query_result_cache = true;
 1
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- KILL
 KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS enable_experimental_query_result_cache = true;
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- OPTIMIZE
 OPTIMIZE TABLE eligible_test FINAL SETTINGS enable_experimental_query_result_cache = true;
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- TRUNCATE
 TRUNCATE TABLE eligible_test SETTINGS enable_experimental_query_result_cache = true;
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 -- RENAME
 RENAME TABLE eligible_test TO eligible_test2 SETTINGS enable_experimental_query_result_cache = true;
-SELECT count(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.queryresult_cache;
 0
 SYSTEM DROP QUERY RESULT CACHE;
 DROP TABLE eligible_test2;
