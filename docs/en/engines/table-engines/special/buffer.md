@@ -9,7 +9,7 @@ sidebar_label:  Buffer
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
 :::note
-To enable asynchronous inserts, use the [async_insert](../../../operations/settings/settings.md#async-insert) setting.
+A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/docs/en/guides/best-practices/asyncinserts.md).
 :::
 
 ``` sql
