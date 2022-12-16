@@ -8,18 +8,16 @@ SET enable_experimental_query_result_cache = true;
 -- check that SELECT statements create entries in the query result cache ...
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
 1
-SELECT 2 SETTINGS enable_experimental_query_result_cache = true;
-2
 SELECT count(*) FROM system.queryresult_cache;
-2
--- ... EXPLAIN SELECT should not create such an entry ...
+1
+-- ... yet EXPLAIN SELECT should not create such an entry ...
 EXPLAIN SELECT 2 SETTINGS enable_experimental_query_result_cache = true;
 Expression ((Projection + Before ORDER BY))
   ReadFromStorage (SystemOne)
 SELECT count(*) FROM system.queryresult_cache;
-2
+1
 SYSTEM DROP QUERY RESULT CACHE;
--- ... and all other statements don't
+-- ... and all other statements also should not create entries:
 
 -- CREATE
 CREATE TABLE eligible_test (a String) ENGINE=MergeTree ORDER BY a; --  SETTINGS enable_experimental_query_result_cache = true; -- SETTINGS rejected as unknown
