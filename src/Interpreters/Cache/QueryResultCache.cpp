@@ -93,7 +93,6 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
     , min_query_duration(min_query_duration_)
     , skip_insert(false)
 {
-    std::lock_guard lock(mutex);
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
         skip_insert = true; /// Do nothing if key exists in cache and it is not expired
 }
@@ -126,7 +125,7 @@ try
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
         return; /// same check as in ctor
 
-    auto sufficient_space_in_cache = [this]()
+    auto sufficient_space_in_cache = [this]() TSA_REQUIRES(mutex)
     {
         return (cache_size_in_bytes + new_entry_size_in_bytes <= max_cache_size_in_bytes) && (cache.size() + 1 <= max_entries);
     };
@@ -177,7 +176,6 @@ void QueryResultCache::Writer::buffer(Chunk && chunk)
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
         skip_insert = true;
-
 }
 
 QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key)
