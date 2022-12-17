@@ -42,6 +42,17 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     validate();
 }
 
+S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedCollection & collection)
+    : PartUploadSettings()
+{
+    min_upload_part_size = collection.getOrDefault<UInt64>("min_upload_part_size", min_upload_part_size);
+    upload_part_size_multiply_factor = collection.getOrDefault<UInt64>("upload_part_size_multiply_factor", upload_part_size_multiply_factor);
+    upload_part_size_multiply_parts_count_threshold = collection.getOrDefault<UInt64>("upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
+    max_single_part_upload_size = collection.getOrDefault<UInt64>("max_single_part_upload_size", max_single_part_upload_size);
+
+    validate();
+}
+
 void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(const Settings & settings, bool if_changed)
 {
     if (!if_changed || settings.s3_min_upload_part_size.changed)
@@ -126,39 +137,18 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
     /// TODO: it's possible to set too small limits. We can check that max possible object size is not too small.
 }
 
+
 S3Settings::RequestSettings::RequestSettings(const Settings & settings)
     : upload_settings(settings)
 {
     updateFromSettingsImpl(settings, false);
 }
 
-void S3Settings::RequestSettings::updateFromSettingsImpl(const Settings & settings, bool if_changed)
+S3Settings::RequestSettings::RequestSettings(const NamedCollection & collection)
+    : upload_settings(collection)
 {
-    if (!if_changed || settings.s3_max_single_read_retries.changed)
-        max_single_read_retries = settings.s3_max_single_read_retries;
-
-    if (!if_changed || settings.s3_max_connections.changed)
-        max_connections = settings.s3_max_connections;
-
-    if (!if_changed || settings.s3_check_objects_after_upload.changed)
-        check_objects_after_upload = settings.s3_check_objects_after_upload;
-
-    if (!if_changed || settings.s3_max_unexpected_write_error_retries.changed)
-        max_unexpected_write_error_retries = settings.s3_max_unexpected_write_error_retries;
-
-    if ((!if_changed || settings.s3_max_get_rps.changed || settings.s3_max_get_burst.changed) && settings.s3_max_get_rps)
-        get_request_throttler = std::make_shared<Throttler>(
-            settings.s3_max_get_rps, settings.s3_max_get_burst ? settings.s3_max_get_burst : Throttler::default_burst_seconds * settings.s3_max_get_rps);
-
-    if ((!if_changed || settings.s3_max_put_rps.changed || settings.s3_max_put_burst.changed) && settings.s3_max_put_rps)
-        put_request_throttler = std::make_shared<Throttler>(
-            settings.s3_max_put_rps, settings.s3_max_put_burst ? settings.s3_max_put_burst : Throttler::default_burst_seconds * settings.s3_max_put_rps);
-}
-
-void S3Settings::RequestSettings::updateFromSettings(const Settings & settings)
-{
-    updateFromSettingsImpl(settings, true);
-    upload_settings.updateFromSettings(settings);
+    max_single_read_retries = collection.getOrDefault<UInt64>("max_single_read_retries", max_single_read_retries);
+    max_connections = collection.getOrDefault<UInt64>("max_connections", max_connections);
 }
 
 S3Settings::RequestSettings::RequestSettings(
@@ -194,6 +184,36 @@ S3Settings::RequestSettings::RequestSettings(
         put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst);
     }
 }
+
+void S3Settings::RequestSettings::updateFromSettingsImpl(const Settings & settings, bool if_changed)
+{
+    if (!if_changed || settings.s3_max_single_read_retries.changed)
+        max_single_read_retries = settings.s3_max_single_read_retries;
+
+    if (!if_changed || settings.s3_max_connections.changed)
+        max_connections = settings.s3_max_connections;
+
+    if (!if_changed || settings.s3_check_objects_after_upload.changed)
+        check_objects_after_upload = settings.s3_check_objects_after_upload;
+
+    if (!if_changed || settings.s3_max_unexpected_write_error_retries.changed)
+        max_unexpected_write_error_retries = settings.s3_max_unexpected_write_error_retries;
+
+    if ((!if_changed || settings.s3_max_get_rps.changed || settings.s3_max_get_burst.changed) && settings.s3_max_get_rps)
+        get_request_throttler = std::make_shared<Throttler>(
+            settings.s3_max_get_rps, settings.s3_max_get_burst ? settings.s3_max_get_burst : Throttler::default_burst_seconds * settings.s3_max_get_rps);
+
+    if ((!if_changed || settings.s3_max_put_rps.changed || settings.s3_max_put_burst.changed) && settings.s3_max_put_rps)
+        put_request_throttler = std::make_shared<Throttler>(
+            settings.s3_max_put_rps, settings.s3_max_put_burst ? settings.s3_max_put_burst : Throttler::default_burst_seconds * settings.s3_max_put_rps);
+}
+
+void S3Settings::RequestSettings::updateFromSettings(const Settings & settings)
+{
+    updateFromSettingsImpl(settings, true);
+    upload_settings.updateFromSettings(settings);
+}
+
 
 void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings)
 {
