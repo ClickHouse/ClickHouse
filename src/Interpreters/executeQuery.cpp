@@ -689,7 +689,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 auto query_result_cache = context->getQueryResultCache();
 
-                if (settings.enable_experimental_query_result_cache && query_result_cache != nullptr && res.pipeline.pulling())
+                if ((settings.enable_experimental_query_result_cache || settings.enable_experimental_query_result_cache_passive_usage)
+                    && query_result_cache != nullptr && res.pipeline.pulling())
                 {
                     QueryResultCache::Key key{
                         ast, context->getUserName(), settings.query_result_cache_partition_key, res.pipeline.getHeader(),
@@ -699,8 +700,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         res.pipeline = QueryPipeline(reader.getPipe());
                 }
 
-                if ((settings.enable_experimental_query_result_cache_passive_usage || settings.enable_experimental_query_result_cache)
-                  && query_result_cache != nullptr && res.pipeline.pulling()
+                if (settings.enable_experimental_query_result_cache && query_result_cache != nullptr && res.pipeline.pulling()
                   && (settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions || !astContainsNonDeterministicFunctions(ast, context)))
                 {
                     QueryResultCache::Key key{
