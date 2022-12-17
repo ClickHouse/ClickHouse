@@ -161,13 +161,6 @@ void S3Settings::RequestSettings::updateFromSettings(const Settings & settings)
     upload_settings.updateFromSettings(settings);
 }
 
-S3Settings::RequestSettings::RequestSettings(const NamedCollection & collection)
-    : upload_settings(collection)
-{
-    max_single_read_retries = collection.getOrDefault("max_single_read_retries", max_single_read_retries);
-    max_connections = collection.getOrDefault("max_connections", max_connections);
-}
-
 S3Settings::RequestSettings::RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
     const String & key,
