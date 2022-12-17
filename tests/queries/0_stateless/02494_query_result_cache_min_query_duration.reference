@@ -7,10 +7,10 @@ SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
 SELECT COUNT(*) FROM system.queryresult_cache;
 1
 SYSTEM DROP QUERY RESULT CACHE;
--- ... but this not because the query executes much faster than the milliseconds threshold
-SET query_result_cache_min_query_duration = 10000;
+-- ... but this does not because the query executes much faster than the milliseconds threshold
+SET query_result_cache_max_entry_size = 10000;
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
 1
 SELECT COUNT(*) FROM system.queryresult_cache;
-0
+1
 SYSTEM DROP QUERY RESULT CACHE;
