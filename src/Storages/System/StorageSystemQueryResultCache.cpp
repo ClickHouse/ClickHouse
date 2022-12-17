@@ -16,6 +16,7 @@ NamesAndTypesList StorageSystemQueryResultCache::getNamesAndTypes()
         {"query_hash", std::make_shared<DataTypeUInt64>()},
         {"expires_at", std::make_shared<DataTypeDateTime>()},
         {"stale", std::make_shared<DataTypeUInt8>()},
+        {"shared", std::make_shared<DataTypeUInt8>()},
         {"partition_key", std::make_shared<DataTypeString>()},
         {"result_size", std::make_shared<DataTypeUInt64>()}
     };
@@ -45,8 +46,9 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
         res_columns[1]->insert(key.ast->getTreeHash().first);
         res_columns[2]->insert(std::chrono::system_clock::to_time_t(key.expires_at));
         res_columns[3]->insert(key.expires_at < std::chrono::system_clock::now());
-        res_columns[4]->insert(key.partition_key);
-        res_columns[5]->insert(entry->allocatedBytes());
+        res_columns[4]->insert(!key.username.has_value());
+        res_columns[5]->insert(key.partition_key);
+        res_columns[6]->insert(entry->allocatedBytes());
     }
 }
 
