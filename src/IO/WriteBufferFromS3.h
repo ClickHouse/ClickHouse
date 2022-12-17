@@ -50,7 +50,7 @@ public:
         std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        const S3Settings::RequestSettings & request_settings_,
+        const S3Settings::RequestSettings & request_settings,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ThreadPoolCallbackRunner<void> schedule_ = {},
@@ -63,7 +63,6 @@ public:
     void preFinalize() override;
 
 private:
-    void assertSettings() const;
     void allocateBuffer();
 
     void createMultipartUpload();
@@ -89,7 +88,9 @@ private:
 
     const String bucket;
     const String key;
-    const S3Settings::RequestSettings request_settings;
+    const S3Settings::RequestSettings::PartUploadSettings settings;
+    const bool check_objects_after_upload = false;
+    const size_t max_unexpected_write_error_retries = 4;
     const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
