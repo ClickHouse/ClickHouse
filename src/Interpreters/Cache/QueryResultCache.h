@@ -22,10 +22,11 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 class QueryResultCache
 {
 public:
-    /// Represents a query in the cache.
+    /// Represents a query result in the cache.
     struct Key
     {
-        /// The actual key, i.e. data which gets hashed:
+        /// ----------------------------------------------------
+        /// The actual key (data which gets hashed):
 
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select)
         const ASTPtr ast;
@@ -37,6 +38,7 @@ public:
         /// cache whenever the settings change. This is because certain settings (e.g. "additional_table_filters") can affect the query
         /// result.
 
+        /// ----------------------------------------------------
         /// Additional stuff data stored in the key, not hashed:
 
         /// For constructing the pipe.
