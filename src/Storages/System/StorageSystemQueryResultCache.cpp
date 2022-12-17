@@ -37,6 +37,10 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
 
     for (const auto & [key, entry] : query_result_cache->cache)
     {
+        /// Showing other user's queries is considered a security risk
+        if (key.username != context->getUserName())
+            continue;
+
         res_columns[0]->insert(key.queryStringFromAst()); /// approximates the original query string
         res_columns[1]->insert(key.ast->getTreeHash().first);
         res_columns[2]->insert(std::chrono::system_clock::to_time_t(key.expires_at));
