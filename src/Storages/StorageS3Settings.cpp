@@ -58,6 +58,9 @@ void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(con
     if (!if_changed || settings.s3_min_upload_part_size.changed)
         min_upload_part_size = settings.s3_min_upload_part_size;
 
+    if (!if_changed || settings.s3_max_upload_part_size.changed)
+        max_upload_part_size = settings.s3_max_upload_part_size;
+
     if (!if_changed || settings.s3_upload_part_size_multiply_factor.changed)
         upload_part_size_multiply_factor = settings.s3_upload_part_size_multiply_factor;
 
@@ -159,7 +162,7 @@ S3Settings::RequestSettings::RequestSettings(
 {
     max_single_read_retries = config.getUInt64(key + ".max_single_read_retries", settings.s3_max_single_read_retries);
     max_connections = config.getUInt64(key + ".max_connections", settings.s3_max_connections);
-    check_objects_after_upload = config.getBool(key + ".check_objects_after_upload", false);
+    check_objects_after_upload = config.getBool(key + ".check_objects_after_upload", settings.s3_check_objects_after_upload);
 
     /// NOTE: it would be better to reuse old throttlers to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time. But it is good enough unless very high `burst` values are used.
