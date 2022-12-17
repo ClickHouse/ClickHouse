@@ -10,15 +10,15 @@ SELECT COUNT(*) FROM system.queryresult_cache;
 SELECT 1 SETTINGS enable_experimental_query_result_cache_passive_usage = true;
 1
 SELECT COUNT(*) FROM system.queryresult_cache;
-1
+0
 -- put query result into cache
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
 1
 SELECT COUNT(*) FROM system.queryresult_cache;
-2
+1
 -- read from query result cache
 SELECT 1 SETTINGS enable_experimental_query_result_cache_passive_usage = true;
 1
 SELECT COUNT(*) FROM system.queryresult_cache;
-2
+1
 SYSTEM DROP QUERY RESULT CACHE;
