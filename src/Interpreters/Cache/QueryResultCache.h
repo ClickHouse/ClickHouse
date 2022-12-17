@@ -30,11 +30,6 @@ public:
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select)
         const ASTPtr ast;
 
-        /// It is unlikely that different users pose the same queries. More importantly, sharing query results between users potentially
-        /// breaches security. E.g. User A must not be able to bypass row policies on some table by running the same queries as user B for
-        /// whom no row policies exist.
-        const String username;
-
         /// Identifies a (virtual) cache partition. Can be used to cache the same query multiple times with different timeouts.
         const String partition_key;
 
@@ -47,10 +42,17 @@ public:
         /// For constructing the pipe.
         const Block header;
 
+        /// Std::nullopt means that the associated entry can be read by other users. In general, sharing is a bad idea: First, it is
+        /// unlikely that different users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be
+        /// able to bypass row policies on some table by running the same queries as user B for whom no row policies exist.
+        const std::optional<String> username;
+
         /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
 
-        Key(ASTPtr ast_, String username_, String partition_key_, Block header_, std::chrono::time_point<std::chrono::system_clock> expires_at_);
+        Key(ASTPtr ast_, String partition_key_,
+            Block header_, const std::optional<String> & username_,
+            std::chrono::time_point<std::chrono::system_clock> expires_at_);
 
         bool operator==(const Key & other) const;
         String queryStringFromAst() const;

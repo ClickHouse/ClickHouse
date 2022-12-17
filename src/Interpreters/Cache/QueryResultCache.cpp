@@ -99,12 +99,13 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 }
 
 QueryResultCache::Key::Key(
-    ASTPtr ast_, String username_, String partition_key_,
-    Block header_, std::chrono::time_point<std::chrono::system_clock> expires_at_)
+    ASTPtr ast_, String partition_key_,
+    Block header_, const std::optional<String> & username_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_)
     : ast(removeQueryResultCacheSettings(ast_))
-    , username(username_)
     , partition_key(partition_key_)
     , header(header_)
+    , username(username_)
     , expires_at(expires_at_)
 {
 }
@@ -112,7 +113,6 @@ QueryResultCache::Key::Key(
 bool QueryResultCache::Key::operator==(const Key & other) const
 {
     return ast->getTreeHash() == other.ast->getTreeHash()
-        && username == other.username
         && partition_key == other.partition_key;
 }
 
@@ -128,7 +128,6 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
 {
     SipHash hash;
     hash.update(key.ast->getTreeHash());
-    hash.update(key.username);
     hash.update(key.partition_key);
     auto res = hash.get64();
     return res;
@@ -255,6 +254,12 @@ QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key)
     if (it == cache_.end())
     {
         LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "No entry found for query {}", key.queryStringFromAst());
+        return;
+    }
+
+    if (it->first.username.has_value() && it->first.username != key.username)
+    {
+        LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
         return;
     }
 
