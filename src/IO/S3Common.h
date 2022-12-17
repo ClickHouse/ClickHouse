@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/HTTPHeaderEntries.h>
 
 #include <string>
 #include <optional>
@@ -17,7 +18,6 @@
 
 #include <Common/Exception.h>
 #include <Common/Throttler_fwd.h>
-#include <IO/HTTPHeaderEntries.h>
 
 namespace Aws::S3
 {
@@ -80,7 +80,7 @@ public:
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
-        DB::HTTPHeaderEntries headers,
+        HTTPHeaderEntries headers,
         bool use_environment_credentials,
         bool use_insecure_imds_request);
 
@@ -154,7 +154,7 @@ struct AuthSettings
     std::string region;
     std::string server_side_encryption_customer_key_base64;
 
-    DB::HTTPHeaderEntries headers;
+    HTTPHeaderEntries headers;
 
     std::optional<bool> use_environment_credentials;
     std::optional<bool> use_insecure_imds_request;

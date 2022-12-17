@@ -26,21 +26,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
-    extern const int BAD_ARGUMENTS;
 }
-
-static const std::unordered_set<std::string_view> required_configuration_keys = {
-    "host",
-    "port",
-    "username",
-    "passowrd",
-    "database",
-    "collection",
-    "table",
-};
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
-    "options",
-};
 
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
@@ -193,7 +179,10 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
     {
-        validateNamedCollection(*named_collection, required_configuration_keys, optional_configuration_keys);
+        validateNamedCollection(
+            *named_collection,
+            {"host", "port", "username", "password", "database", "collection", "table"},
+            {"options"});
 
         configuration.host = named_collection->get<String>("host");
         configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
