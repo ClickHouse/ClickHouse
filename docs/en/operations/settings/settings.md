@@ -1233,6 +1233,17 @@ Possible values:
 
 Default value: `60`
 
+## query_result_cache_share_between_users {#query-result-cache-share-between-users}
+
+If turned on, the result of SELECT queries cached in the [query result cache](../query-result-cache.md) are accessible to other users (shared).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
 ## query_result_cache_partition_key {#query-result-cache-partition-key}
 
 Represents a partition of the [query result cache](../query-result-cache.md).

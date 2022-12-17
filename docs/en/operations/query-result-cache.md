@@ -73,5 +73,9 @@ To specify the validity period after which cache entries become stale, use setti
 
 Results of queries with non-deterministic functions such as `rand()` and `now()` are not cached by default. This behavior can be overruled using setting [query_result_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-result-cache-store-results-of-queries-with-nondeterministic-functions).
 
+Query cache entries are not shared between users due to security reasons. For example, user A must not be able to bypass a row policy on a
+table by running the same query as another user B for whom no such policy exists. If nevertheless necessary, cache entries can be marked
+accessible by other users (i.e. shared) using setting [query_result_cache_share_between_users]{settings/settings.md#query-result-cache-share-between-users}.
+
 Finally, it is sometimes useful to cache query results of the same query multiple times with different validity periods. To identify
 different entries for the same query, users may pass configuration [query_result_cache_partition_key](settings/settings.md#query-result-cache-partition-key).

@@ -681,6 +681,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, query_result_cache_max_entry_records, (1ull << 20), "Maximum number of records SELECT query results may have to be saved in the query result cache", 0) \
     M(Milliseconds, query_result_cache_min_query_duration, 0, "Minimum time in milliseconds for a query to run for its result to be cached in the query result cache.", 0) \
     M(Seconds, query_result_cache_keep_seconds_alive, 60, "After this time in seconds entries in the query result cache become stale", 0) \
+    M(Bool, query_result_cache_share_between_users, false, "Allow other users to access entry in the query result cache", 0) \
     M(String, query_result_cache_partition_key, "", "Represents a partition of the query result cache", 0) \
     M(UInt64, insert_keeper_max_retries, 0, "Max retries for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during insert", 0) \

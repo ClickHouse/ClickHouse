@@ -38,7 +38,7 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
     for (const auto & [key, entry] : query_result_cache->cache)
     {
         /// Showing other user's queries is considered a security risk
-        if (key.username != context->getUserName())
+        if (key.username.has_value() && key.username != context->getUserName())
             continue;
 
         res_columns[0]->insert(key.queryStringFromAst()); /// approximates the original query string
