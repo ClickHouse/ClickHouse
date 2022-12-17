@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// Does AST contain non-deterministic functions like rand() and now()?
-bool hasNonCacheableFunctions(ASTPtr ast, ContextPtr context);
+bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///

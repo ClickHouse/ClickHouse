@@ -17,11 +17,8 @@ namespace ProfileEvents
 namespace DB
 {
 
-bool hasNonCacheableFunctions(ASTPtr ast, ContextPtr context)
+bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
-    if (!context->getSettings().query_result_cache_ignore_nondeterministic_functions)
-        return false;
-
     if (const auto * function = ast->as<ASTFunction>())
     {
         const FunctionFactory & function_factory = FunctionFactory::instance();
@@ -34,7 +31,7 @@ bool hasNonCacheableFunctions(ASTPtr ast, ContextPtr context)
 
     bool has_non_cacheable_functions = false;
     for (const auto & child : ast->children)
-        has_non_cacheable_functions |= hasNonCacheableFunctions(child, context);
+        has_non_cacheable_functions |= astContainsNonDeterministicFunctions(child, context);
 
     return has_non_cacheable_functions;
 }
