@@ -673,7 +673,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, optimize_sorting_by_input_stream_properties, true, "Optimize sorting by sorting properties of input stream", 0) \
     M(Bool, enable_experimental_query_result_cache, false, "Store and retrieve results of SELECT queries in/from the query result cache", 0) \
     M(Bool, enable_experimental_query_result_cache_passive_usage, false, "Only retrieve results of SELECT queries from the query result cache", 0) \
-    M(Bool, query_result_cache_ignore_nondeterministic_functions, true, "Queries with non-deterministic functions (e.g. rand(), now()) are not stored in the query result cache", 0) \
+    M(Bool, query_result_cache_store_results_of_queries_with_nondeterministic_functions, false, "Store results of queries with non-deterministic functions (e.g. rand(), now()) in the query result cache", 0) \
     M(UInt64, query_result_cache_size, (1ull << 30), "Maximum size of the query result cache in bytes. 0 means disabled.", 0) \
     M(UInt64, query_result_cache_min_query_runs, 0, "Minimum number a SELECT query must run before its result is stored in the query result cache", 0) \
     M(UInt64, query_result_cache_max_entries, (1ull << 10), "Maximum number of SELECT query results in the query result cache", 0) \

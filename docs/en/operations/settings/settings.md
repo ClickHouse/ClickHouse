@@ -1192,16 +1192,16 @@ Possible values:
 
 Default value: `0`.
 
-## query_result_cache_ignore_nondeterministic_functions {#experimental-query-result-cache-ignore-nondeterministic-function}
+## query_result_cache_store_results_of_queries_with_nondeterministic_functions {#query-result-cache-store-results-of-queries-with-nondeterministic-functions}
 
-If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) are not cached in the [query result cache](../query-result-cache.md).
+If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query result cache](../query-result-cache.md).
 
 Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
 
-Default value: `1`.
+Default value: `0`.
 
 ## query_result_cache_min_query_runs {#query-result-cache-min-query-runs}
 

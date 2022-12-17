@@ -71,7 +71,7 @@ To control how often a query needs to run until its result is cached, use settin
 
 To specify the validity period after which cache entries become stale, use setting [query_result_cache_keep_seconds_alive](settings/settings.md#query-result-cache-keep-seconds-alive).
 
-Results of queries with non-deterministic functions such as `rand()` and `now()` are not cached by default. This behavior can be overruled using setting [query_result_cache_ignore_nondeterministic_functions](settings/settings.md#query-result-cache-ignore-nondeterministic-functions).
+Results of queries with non-deterministic functions such as `rand()` and `now()` are not cached by default. This behavior can be overruled using setting [query_result_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-result-cache-store-results-of-queries-with-nondeterministic-functions).
 
 Finally, it is sometimes useful to cache query results of the same query multiple times with different validity periods. To identify
 different entries for the same query, users may pass configuration [query_result_cache_partition_key](settings/settings.md#query-result-cache-partition-key).
