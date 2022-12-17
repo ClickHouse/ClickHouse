@@ -41,7 +41,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const String & metadata_path_,
         const ASTStorage * database_engine_define_,
         const String & dbname_,
-        const StoragePostgreSQLConfiguration & configuration_,
+        const StoragePostgreSQL::Configuration & configuration_,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_)
     : IDatabase(dbname_)

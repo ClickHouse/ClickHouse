@@ -4,6 +4,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -89,9 +90,13 @@ StorageExternalDistributed::StorageExternalDistributed(
             case ExternalStorageEngine::PostgreSQL:
             {
                 addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
-                StoragePostgreSQLConfiguration postgres_conf;
-                postgres_conf.set(configuration);
+                StoragePostgreSQL::Configuration postgres_conf;
                 postgres_conf.addresses = addresses;
+                postgres_conf.username = configuration.username;
+                postgres_conf.password = configuration.password;
+                postgres_conf.database = configuration.database;
+                postgres_conf.table = configuration.table;
+                postgres_conf.schema = configuration.schema;
 
                 const auto & settings = context->getSettingsRef();
                 auto pool = std::make_shared<postgres::PoolWithFailover>(

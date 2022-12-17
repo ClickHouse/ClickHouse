@@ -45,7 +45,7 @@ PoolWithFailover::PoolWithFailover(
 }
 
 PoolWithFailover::PoolWithFailover(
-    const DB::StoragePostgreSQLConfiguration & configuration,
+    const DB::StoragePostgreSQL::Configuration & configuration,
     size_t pool_size,
     size_t pool_wait_timeout_,
     size_t max_tries_,
