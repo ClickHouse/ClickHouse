@@ -60,7 +60,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Storages/NamedCollectionUtils.h>
+#include <Storages/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -732,6 +732,24 @@ try
                 libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
         }
         setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), true /* overwrite */); // NOLINT
+    }
+#endif
+
+#if USE_OPENSSL_INTREE
+    /// When building openssl into clickhouse, clickhouse owns the configuration
+    /// Therefore, the clickhouse openssl configuration should be kept separate from
+    /// the OS. Default to the one in the standard config directory, unless overridden
+    /// by a key in the config.
+    if (config().has("opensslconf"))
+    {
+        std::string opensslconf_path = config().getString("opensslconf");
+        setenv("OPENSSL_CONF", opensslconf_path.c_str(), true);
+    }
+    else
+    {
+        const String config_path = config().getString("config-file", "config.xml");
+        const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
+        setenv("OPENSSL_CONF", config_dir.string(), true);
     }
 #endif
 

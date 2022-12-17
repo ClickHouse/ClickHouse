@@ -647,6 +647,11 @@ struct IdentifierResolveScope
             subquery_depth = parent_scope->subquery_depth;
             context = parent_scope->context;
         }
+
+        if (auto * union_node = scope_node->as<UnionNode>())
+            context = union_node->getContext();
+        else if (auto * query_node = scope_node->as<QueryNode>())
+            context = query_node->getContext();
     }
 
     QueryTreeNodePtr scope_node;
@@ -974,7 +979,9 @@ public:
     void resolve(QueryTreeNodePtr node, const QueryTreeNodePtr & table_expression, ContextPtr context)
     {
         IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
-        scope.context = context;
+
+        if (!scope.context)
+            scope.context = context;
 
         auto node_type = node->getNodeType();
 
@@ -3976,7 +3983,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = parameter_node->as<ConstantNode>();
         if (!constant_node)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Parameter for function {} expected to have constant value. Actual {}. In scope {}",
+            "Parameter for function '{}' expected to have constant value. Actual {}. In scope {}",
             function_name,
             parameter_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
@@ -4050,7 +4057,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto constant_data_type = std::make_shared<DataTypeUInt64>();
 
-        auto in_subquery = std::make_shared<QueryNode>();
+        auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
         in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
         in_subquery->getJoinTree() = exists_subquery_argument;
         in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
@@ -4072,7 +4079,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
         if (function_in_arguments_nodes.size() != 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects 2 arguments", function_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' expects 2 arguments", function_name);
 
         auto & in_second_argument = function_in_arguments_nodes[1];
         auto * table_node = in_second_argument->as<TableNode>();
@@ -4103,7 +4110,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 projection_columns.emplace_back(column.name, column.type);
             }
 
-            auto in_second_argument_query_node = std::make_shared<QueryNode>();
+            auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(scope.context));
             in_second_argument_query_node->setIsSubquery(true);
             in_second_argument_query_node->getProjectionNode() = std::move(column_nodes_to_select);
             in_second_argument_query_node->getJoinTree() = std::move(in_second_argument);
@@ -4162,8 +4169,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         if (!argument_column.type)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Function {} argument is not resolved. In scope {}",
-                function_node.getFunctionName(),
+                "Function '{}' argument is not resolved. In scope {}",
+                function_name,
                 scope.scope_node->formatASTForErrorMessage());
 
         const auto * constant_node = function_argument->as<ConstantNode>();
@@ -4213,7 +4220,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto * lambda_expression = lambda_expression_untyped->as<LambdaNode>();
             if (!lambda_expression)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function identifier {} must be resolved as lambda. Actual {}. In scope {}",
+                    "Function identifier '{}' must be resolved as lambda. Actual {}. In scope {}",
                     function_node.getFunctionName(),
                     lambda_expression_untyped->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
@@ -4246,7 +4253,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
             if (!tuple_data_type)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Function untuple argument must be have compound type. Actual type {}. In scope {}",
+                    "Function 'untuple' argument must have compound type. Actual type {}. In scope {}",
                     result_type->getName(),
                     scope.scope_node->formatASTForErrorMessage());
 
@@ -4304,13 +4311,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            std::string error_message = fmt::format("Aggregate function with name {} does not exists. In scope {}",
+            std::string error_message = fmt::format("Aggregate function with name '{}' does not exists. In scope {}",
                function_name,
                scope.scope_node->formatASTForErrorMessage());
 
             AggregateFunctionFactory::instance().appendHintsMessage(error_message, function_name);
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, error_message);
         }
+
+        if (!function_lambda_arguments_indexes.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Window function '{}' does not support lambda arguments",
+                function_name);
 
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
@@ -4361,11 +4373,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hints = name_prompter.getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Function with name {} does not exists. In scope {}{}",
+                "Function with name '{}' does not exists. In scope {}{}",
                 function_name,
                 scope.scope_node->formatASTForErrorMessage(),
                 getHintsErrorMessageSuffix(hints));
         }
+
+        if (!function_lambda_arguments_indexes.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Aggregate function '{}' does not support lambda arguments",
+                function_name);
 
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
@@ -4397,7 +4414,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[function_lambda_argument_index].get());
             if (!function_data_type)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function {} expected function data type for lambda argument with index {}. Actual {}. In scope {}",
+                    "Function '{}' expected function data type for lambda argument with index {}. Actual {}. In scope {}",
                     function_name,
                     function_lambda_argument_index,
                     argument_types[function_lambda_argument_index]->getName(),
@@ -4407,7 +4424,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             size_t function_data_type_arguments_size = function_data_type_argument_types.size();
             if (function_data_type_arguments_size != lambda_arguments_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function {} function data type for lambda argument with index {} arguments size mismatch. Actual {}. Expected {}. In scope {}",
+                    "Function '{}' function data type for lambda argument with index {} arguments size mismatch. Actual {}. Expected {}. In scope {}",
                     function_name,
                     function_data_type_arguments_size,
                     lambda_arguments_size,
@@ -5764,14 +5781,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             max_subquery_depth);
 
     auto & query_node_typed = query_node->as<QueryNode &>();
-
-    if (query_node_typed.hasSettingsChanges())
-    {
-        auto updated_scope_context = Context::createCopy(scope.context);
-        updated_scope_context->applySettingsChanges(query_node_typed.getSettingsChanges());
-        scope.context = std::move(updated_scope_context);
-    }
-
     const auto & settings = scope.context->getSettingsRef();
 
     if (settings.group_by_use_nulls)
