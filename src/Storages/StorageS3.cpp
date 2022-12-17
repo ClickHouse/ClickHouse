@@ -1197,6 +1197,7 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
     upd.request_settings = settings.request_settings;
+    upd.request_settings.updateFromSettings(ctx->getSettings());
 
     if (upd.client)
     {

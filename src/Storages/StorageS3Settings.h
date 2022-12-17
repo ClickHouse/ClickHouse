@@ -48,13 +48,16 @@ struct S3Settings
                     && max_single_operation_copy_size == other.max_single_operation_copy_size;
             }
 
+            void updateFromSettings(const Settings & settings) { updateFromSettingsImpl(settings, true); }
+            void validate();
+
         private:
             PartUploadSettings() = default;
             explicit PartUploadSettings(const Settings & settings);
             explicit PartUploadSettings(const NamedCollection & collection);
             PartUploadSettings(const Poco::Util::AbstractConfiguration & config, const String & key, const Settings & settings);
 
-            void validate();
+            void updateFromSettingsImpl(const Settings & settings, bool if_changed);
 
             friend struct RequestSettings;
         };
@@ -87,6 +90,11 @@ struct S3Settings
         explicit RequestSettings(const Settings & settings);
         explicit RequestSettings(const NamedCollection & collection);
         RequestSettings(const Poco::Util::AbstractConfiguration & config, const String & key, const Settings & settings);
+
+        void updateFromSettings(const Settings & settings);
+
+    private:
+        void updateFromSettingsImpl(const Settings & settings, bool if_changed);
     };
 
     S3::AuthSettings auth_settings;
