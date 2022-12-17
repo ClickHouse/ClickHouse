@@ -1249,6 +1249,13 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedC
     validate();
 }
 
+S3Settings::RequestSettings::RequestSettings(const NamedCollection & collection)
+    : upload_settings(collection)
+{
+    max_single_read_retries = collection.getOrDefault("max_single_read_retries", max_single_read_retries);
+    max_connections = collection.getOrDefault("max_connections", max_connections);
+}
+
 void StorageS3::processNamedCollectionResult(StorageS3Configuration & configuration, const NamedCollection & collection)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
