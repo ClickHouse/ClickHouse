@@ -1,10 +1,11 @@
 use skim::prelude::*;
+use term::terminfo::TermInfo;
 use cxx::{CxxString, CxxVector};
 
 #[cxx::bridge]
 mod ffi {
     extern "Rust" {
-        fn skim(words: &CxxVector<CxxString>) -> String;
+        fn skim(words: &CxxVector<CxxString>) -> Result<String>;
     }
 }
 
@@ -17,8 +18,12 @@ impl SkimItem for Item {
     }
 }
 
-fn skim(words: &CxxVector<CxxString>) -> String {
-    // TODO: configure colors
+fn skim(words: &CxxVector<CxxString>) -> Result<String, String> {
+    // Let's check is terminal available. To avoid panic.
+    if let Err(err) = TermInfo::from_env() {
+        return Err(format!("{}", err));
+    }
+
     let options = SkimOptionsBuilder::default()
         .height(Some("30%"))
         .tac(true)
@@ -35,15 +40,15 @@ fn skim(words: &CxxVector<CxxString>) -> String {
 
     let output = Skim::run_with(&options, Some(rx));
     if output.is_none() {
-        return "".to_string();
+        return Err("skim return nothing".to_string());
     }
     let output = output.unwrap();
     if output.is_abort {
-        return "".to_string();
+        return Ok("".to_string());
     }
 
     if output.selected_items.is_empty() {
-        return "".to_string();
+        return Err("No items had been selected".to_string());
     }
-    return output.selected_items[0].output().to_string();
+    return Ok(output.selected_items[0].output().to_string());
 }

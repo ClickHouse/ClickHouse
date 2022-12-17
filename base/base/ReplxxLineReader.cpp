@@ -402,7 +402,15 @@ ReplxxLineReader::ReplxxLineReader(
                 words.push_back(hs.get().text());
         }
 
-        std::string new_query(skim(words));
+        std::string new_query;
+        try
+        {
+            new_query = std::string(skim(words));
+        }
+        catch (const std::exception & e)
+        {
+            rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
+        }
         if (!new_query.empty())
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
 
@@ -413,8 +421,18 @@ ReplxxLineReader::ReplxxLineReader(
         return rx.invoke(Replxx::ACTION::REPAINT, code);
     };
 
-    /// NOTE: You can use Ctrl-S for non-fuzzy complete.
     rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+
+    /// Rebind regular incremental search to C-T.
+    ///
+    /// NOTE: C-T by default this is a binding to swap adjustent chars
+    /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
+    rx.bind_key(Replxx::KEY::control('T'), [this](char32_t)
+    {
+        /// Reverse search is detected by C-R.
+        uint32_t reverse_search = Replxx::KEY::control('R');
+        return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
+    });
 #endif
 }
 
