@@ -221,37 +221,4 @@ S3Settings StorageS3Settings::getSettings(const String & endpoint) const
     return {};
 }
 
-
-
-// void S3Settings::RequestSettings::updateFromSettingsIfEmpty(const Settings & settings)
-// {
-//     if (!max_single_read_retries)
-//         max_single_read_retries = settings.s3_max_single_read_retries;
-//     if (!min_upload_part_size)
-//         min_upload_part_size = settings.s3_min_upload_part_size;
-//     if (!max_upload_part_size)
-//         max_upload_part_size = DEFAULT_MAX_UPLOAD_PART_SIZE;
-//     if (!upload_part_size_multiply_factor)
-//         upload_part_size_multiply_factor = settings.s3_upload_part_size_multiply_factor;
-//     if (!upload_part_size_multiply_parts_count_threshold)
-//         upload_part_size_multiply_parts_count_threshold = settings.s3_upload_part_size_multiply_parts_count_threshold;
-//     if (!max_part_number)
-//         max_part_number = DEFAULT_MAX_PART_NUMBER;
-//     if (!max_single_part_upload_size)
-//         max_single_part_upload_size = settings.s3_max_single_part_upload_size;
-//     if (!max_single_operation_copy_size)
-//         max_single_operation_copy_size = DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE;
-//     if (!max_connections)
-//         max_connections = settings.s3_max_connections;
-//     if (!max_unexpected_write_error_retries)
-//         max_unexpected_write_error_retries = settings.s3_max_unexpected_write_error_retries;
-//     check_objects_after_upload = settings.s3_check_objects_after_upload;
-//     if (!get_request_throttler && settings.s3_max_get_rps)
-//         get_request_throttler = std::make_shared<Throttler>(
-//             settings.s3_max_get_rps, settings.s3_max_get_burst ? settings.s3_max_get_burst : Throttler::default_burst_seconds * settings.s3_max_get_rps);
-//     if (!put_request_throttler && settings.s3_max_put_rps)
-//         put_request_throttler = std::make_shared<Throttler>(
-//             settings.s3_max_put_rps, settings.s3_max_put_burst ? settings.s3_max_put_burst : Throttler::default_burst_seconds * settings.s3_max_put_rps);
-// }
-
 }

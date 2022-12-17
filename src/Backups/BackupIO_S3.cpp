@@ -215,7 +215,7 @@ void BackupWriterS3::copyObjectMultipartImpl(
     for (size_t part_number = 1; position < size; ++part_number)
     {
         /// Check that part number is not too big.
-        if (part_number >settings.max_part_number)
+        if (part_number > settings.max_part_number)
         {
             throw Exception(
                 ErrorCodes::INVALID_CONFIG_PARAMETER,
