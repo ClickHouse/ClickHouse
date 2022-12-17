@@ -129,7 +129,6 @@ BackupWriterS3::BackupWriterS3(
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
     , log(&Poco::Logger::get("BackupWriterS3"))
 {
-    request_settings.updateFromSettingsIfEmpty(context_->getSettingsRef());
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
 
@@ -210,20 +209,21 @@ void BackupWriterS3::copyObjectMultipartImpl(
     std::vector<String> part_tags;
 
     size_t position = 0;
-    size_t upload_part_size = request_settings.min_upload_part_size;
+    const auto & settings = request_settings.getUploadSettings();
+    size_t upload_part_size = settings.min_upload_part_size;
 
     for (size_t part_number = 1; position < size; ++part_number)
     {
         /// Check that part number is not too big.
-        if (part_number > request_settings.max_part_number)
+        if (part_number >settings.max_part_number)
         {
             throw Exception(
                 ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
                 "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_operation_copy_size = {}",
-                request_settings.max_part_number, size, request_settings.min_upload_part_size, request_settings.max_upload_part_size,
-                request_settings.upload_part_size_multiply_factor, request_settings.upload_part_size_multiply_parts_count_threshold,
-                request_settings.max_single_operation_copy_size);
+                settings.max_part_number, size, settings.min_upload_part_size, settings.max_upload_part_size,
+                settings.upload_part_size_multiply_factor, settings.upload_part_size_multiply_parts_count_threshold,
+                settings.max_single_operation_copy_size);
         }
 
         size_t next_position = std::min(position + upload_part_size, size);
@@ -256,10 +256,10 @@ void BackupWriterS3::copyObjectMultipartImpl(
         position = next_position;
 
         /// Maybe increase `upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
-        if (part_number % request_settings.upload_part_size_multiply_parts_count_threshold == 0)
+        if (part_number % settings.upload_part_size_multiply_parts_count_threshold == 0)
         {
-            upload_part_size *= request_settings.upload_part_size_multiply_factor;
-            upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
+            upload_part_size *= settings.upload_part_size_multiply_factor;
+            upload_part_size = std::min(upload_part_size, settings.max_upload_part_size);
         }
     }
 
@@ -302,7 +302,7 @@ void BackupWriterS3::copyFileNative(DiskPtr from_disk, const String & file_name_
         auto file_path = fs::path(s3_uri.key) / file_name_to;
 
         auto head = S3::headObject(*client, source_bucket, objects[0].absolute_path).GetResult();
-        if (static_cast<size_t>(head.GetContentLength()) < request_settings.max_single_operation_copy_size)
+        if (static_cast<size_t>(head.GetContentLength()) < request_settings.getUploadSettings().max_single_operation_copy_size)
         {
             copyObjectImpl(
                 source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);

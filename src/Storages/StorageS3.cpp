@@ -1196,10 +1196,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
-    if (upd.request_settings != settings.request_settings)
-        upd.request_settings = settings.request_settings;
-
-    upd.request_settings.updateFromSettingsIfEmpty(ctx->getSettings());
+    upd.request_settings = settings.request_settings;
 
     if (upd.client)
     {
@@ -1245,6 +1242,8 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
     std::string filename;
 
+    configuration.request_settings = S3Settings::RequestSettings(collection);
+
     for (const auto & key : collection)
     {
         if (key == "url")
@@ -1263,25 +1262,6 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
             configuration.structure = collection.get<String>(key);
         else if (key == "use_environment_credentials")
             configuration.auth_settings.use_environment_credentials = collection.get<UInt64>(key);
-        else if (key == "max_single_read_retries")
-            configuration.request_settings.max_single_read_retries = collection.get<UInt64>(key);
-        else if (key == "min_upload_part_size")
-            configuration.request_settings.min_upload_part_size = collection.get<UInt64>(key);
-        else if (key == "upload_part_size_multiply_factor")
-            configuration.request_settings.upload_part_size_multiply_factor = collection.get<UInt64>(key);
-        else if (key == "upload_part_size_multiply_parts_count_threshold")
-            configuration.request_settings.upload_part_size_multiply_parts_count_threshold = collection.get<UInt64>(key);
-        else if (key == "max_single_part_upload_size")
-            configuration.request_settings.max_single_part_upload_size = collection.get<UInt64>(key);
-        else if (key == "max_connections")
-            configuration.request_settings.max_connections = collection.get<UInt64>(key);
-        else
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Unknown configuration key `{}` for StorageS3, "
-                "expected: url, [access_key_id, secret_access_key], "
-                "name of used format and [compression_method].",
-                key);
     }
     if (!filename.empty())
         configuration.url = std::filesystem::path(configuration.url) / filename;
