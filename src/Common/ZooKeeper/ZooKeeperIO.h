@@ -65,7 +65,7 @@ void read(std::array<char, N> & s, ReadBuffer & in)
     read(size, in);
     if (size != N)
         throw Exception("Unexpected array size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
-    in.read(s.data(), N);
+    in.readStrict(s.data(), N);
 }
 
 template <typename T>

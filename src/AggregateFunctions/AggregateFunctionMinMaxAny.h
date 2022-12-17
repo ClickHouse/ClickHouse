@@ -573,7 +573,6 @@ public:
         if (rhs_size <= MAX_SMALL_STRING_SIZE)
         {
             /// Don't free large_data here.
-
             size = rhs_size;
 
             if (size > 0)
