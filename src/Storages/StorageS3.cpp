@@ -1237,6 +1237,17 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
         upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
 }
 
+S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedCollection & collection)
+    : PartUploadSettings()
+{
+    min_upload_part_size = collection.getOrDefault("min_upload_part_size", min_upload_part_size);
+    upload_part_size_multiply_factor = collection.getOrDefault("upload_part_size_multiply_factor", upload_part_size_multiply_factor);
+    upload_part_size_multiply_parts_count_threshold = collection.getOrDefault("upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
+    max_single_part_upload_size = collection.getOrDefault("max_single_part_upload_size", max_single_part_upload_size);
+
+    validate();
+}
+
 void StorageS3::processNamedCollectionResult(StorageS3Configuration & configuration, const NamedCollection & collection)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);

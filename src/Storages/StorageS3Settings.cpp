@@ -29,17 +29,6 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const Settin
     validate();
 }
 
-S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedCollection & collection)
-    : PartUploadSettings()
-{
-    min_upload_part_size = collection.getOrDefault("min_upload_part_size", min_upload_part_size);
-    upload_part_size_multiply_factor = collection.getOrDefault("upload_part_size_multiply_factor", upload_part_size_multiply_factor);
-    upload_part_size_multiply_parts_count_threshold = collection.getOrDefault("upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
-    max_single_part_upload_size = collection.getOrDefault("max_single_part_upload_size", max_single_part_upload_size);
-
-    validate();
-}
-
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     const Poco::Util::AbstractConfiguration & config,
     const String & key,
