@@ -59,12 +59,12 @@ static size_t scoreForType(const DataTypePtr & type)
     return 1;
 }
 
-static size_t scoreForRule(const FormatSettings::EscapingRule & rule)
+static size_t scoreForRule(FormatSettings::EscapingRule rule)
 {
     switch (rule)
     {
         case FormatSettings::EscapingRule::JSON:
-            return 3;
+            return 5;
         case FormatSettings::EscapingRule::CSV:
             [[fallthrough]];
         case FormatSettings::EscapingRule::Quoted:
@@ -79,7 +79,7 @@ static size_t scoreForRule(const FormatSettings::EscapingRule & rule)
     UNREACHABLE();
 }
 
-static size_t scoreForField(const FormatSettings::EscapingRule & rule, DataTypePtr type)
+static size_t scoreForField(FormatSettings::EscapingRule rule, const DataTypePtr & type)
 {
     return scoreForRule(rule) * scoreForType(type);
 }
@@ -132,14 +132,14 @@ FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSetting
     : format_settings(settings_), max_rows_to_check(std::min<size_t>(100, settings_.max_rows_to_read_for_schema_inference)), in(in_)
 {
     // matchers are pushed in the order of priority, this helps with exiting early and reducing the search tree.
-    matchers.push_back(std::make_unique<JSONFieldMatcher>(FormatSettings::EscapingRule::JSON, settings_));
-    matchers.push_back(std::make_unique<CSVFieldMatcher>(FormatSettings::EscapingRule::CSV, settings_));
-    matchers.push_back(std::make_unique<RawByWhitespaceFieldMatcher>(FormatSettings::EscapingRule::Raw, settings_));
-    matchers.push_back(std::make_unique<QuotedFieldMatcher>(FormatSettings::EscapingRule::Quoted, settings_));
-    matchers.push_back(std::make_unique<EscapedFieldMatcher>(FormatSettings::EscapingRule::Escaped, settings_));
+    matchers.emplace_back(std::make_unique<JSONFieldMatcher>(FormatSettings::EscapingRule::JSON, settings_));
+    matchers.emplace_back(std::make_unique<CSVFieldMatcher>(FormatSettings::EscapingRule::CSV, settings_));
+    matchers.emplace_back(std::make_unique<RawByWhitespaceFieldMatcher>(FormatSettings::EscapingRule::Raw, settings_));
+    matchers.emplace_back(std::make_unique<QuotedFieldMatcher>(FormatSettings::EscapingRule::Quoted, settings_));
+    matchers.emplace_back(std::make_unique<EscapedFieldMatcher>(FormatSettings::EscapingRule::Escaped, settings_));
 }
 
-std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleFields(const bool & one_string)
+std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleFields(bool one_string)
 {
     skipWhitespacesAndDelimiters(in);
     char * start = in.position();
@@ -163,6 +163,10 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
             auto type = matcher->getDataTypeFromField(field);
             if (type)
             {
+                // a single punctuation is not a valid field
+                if (field.size() == 1 && isPunctuationASCII(field[0]))
+                    continue;
+
                 type = makeFloatIfInt(type);
                 score = scoreForType(type);
 
@@ -198,7 +202,7 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
 }
 
 void FreeformFieldMatcher::recursivelyGetNextFieldInRow(
-    char * current_pos, Solution current_solution, std::vector<Solution> & solutions, const bool & one_string)
+    char * current_pos, Solution current_solution, std::vector<Solution> & solutions, bool one_string)
 {
     char * tmp = in.position();
     in.position() = current_pos;

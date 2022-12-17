@@ -115,10 +115,9 @@ private:
     size_t max_rows_to_check;
     ReadBuffer & in;
 
-    void
-    recursivelyGetNextFieldInRow(char * current_pos, Solution current_solution, std::vector<Solution> & solutions, const bool & one_string);
+    void recursivelyGetNextFieldInRow(char * current_pos, Solution current_solution, std::vector<Solution> & solutions, bool one_string);
     void readRowAndGenerateSolutions(char * pos, std::vector<Solution> & solutions);
-    std::vector<Field> readNextPossibleFields(const bool & one_string);
+    std::vector<Field> readNextPossibleFields(bool one_string);
 };
 
 class FreeformRowInputFormat final : public IRowInputFormat
