@@ -1,4 +1,4 @@
--- { echoOn }
+-- Tags: no-parallel
 
 SYSTEM DROP QUERY RESULT CACHE;
 DROP TABLE IF EXISTS eligible_test;
@@ -9,10 +9,6 @@ SET enable_experimental_query_result_cache = true;
 
 -- check that SELECT statements create entries in the query result cache ...
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
-SELECT COUNT(*) FROM system.queryresult_cache;
-
--- ... yet EXPLAIN SELECT should not create such an entry ...
-EXPLAIN SELECT 2 SETTINGS enable_experimental_query_result_cache = true;
 SELECT COUNT(*) FROM system.queryresult_cache;
 
 SYSTEM DROP QUERY RESULT CACHE;
@@ -67,5 +63,3 @@ SELECT COUNT(*) FROM system.queryresult_cache;
 
 SYSTEM DROP QUERY RESULT CACHE;
 DROP TABLE eligible_test2;
-
--- { echoOff }

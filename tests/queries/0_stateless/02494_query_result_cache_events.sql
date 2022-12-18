@@ -1,4 +1,4 @@
--- { echoOn }
+-- Tags: no-parallel
 
 -- Warm up: If the query result cache has not been used yet, its event counters don't show up in
 -- system.events (instead of simply being shown as 0). Insert into query result cache once to
@@ -24,6 +24,8 @@ SELECT value = (SELECT value FROM old WHERE event = 'QueryResultCacheMisses')
 FROM system.events
 WHERE event = 'QueryResultCacheMisses';
 
+SELECT '---';
+
 -- Run a query with query result cache on, the miss count increments +1
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
 
@@ -34,6 +36,8 @@ WHERE event = 'QueryResultCacheHits';
 SELECT value = (SELECT value FROM old WHERE event = 'QueryResultCacheMisses') + 1
 FROM system.events
 WHERE event = 'QueryResultCacheMisses';
+
+SELECT '---';
 
 -- Run previous query again with query result cache on, the hit count increments +1
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
@@ -48,5 +52,3 @@ WHERE event = 'QueryResultCacheMisses';
 
 SYSTEM DROP QUERY RESULT CACHE;
 DROP TABLE old;
-
--- { echoOff }
