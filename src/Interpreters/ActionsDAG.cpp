@@ -235,6 +235,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 
     node.result_name = std::move(result_name);
 
+    std::cerr << ".... added function " << node.result_name << " with res type " << node.result_type->getName() << ' ' << (node.column ? node.column->getName() : "") << std::endl;
+
     return addNode(std::move(node));
 }
 
