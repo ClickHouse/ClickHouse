@@ -82,3 +82,6 @@ endif()
 
 clickhouse_add_executable (interval_tree interval_tree.cpp)
 target_link_libraries (interval_tree PRIVATE dbms)
+
+add_executable (tournament_tree tournament_tree.cpp)
+target_link_libraries (tournament_tree PRIVATE dbms)
