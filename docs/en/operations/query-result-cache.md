@@ -31,7 +31,7 @@ side. This reduces maintenance effort and avoids redundancy.
 
 ## Usage Examples and Configuration Settings
 
-The query/user/profile-level parameter [enable_experimental_query_result_cache](../../operations/settings/settings.md#enable-experimental-enable-query-result-cache)
+The query/user/profile-level parameter [enable_experimental_query_result_cache](settings/settings.md#enable-experimental-query-result-cache)
 controls whether query results are inserted or retrieved from the cache. For example, the first execution of query
 
 ``` sql
@@ -43,7 +43,7 @@ SETTINGS enable_experimental_query_result_cache = true;
 will store the query result into the query result cache and subsequent executions will retrieve the result directly from the cache.
 
 It is sometimes desirable to use the query result cache only passively, i.e. to read from it but not write in it. Parameter
-[enable_experimental_query_result_cache_passive_usage](../../operations/settings/settings.md#enable-experimental-enable-query-result-cache-passive-usage)
+[enable_experimental_query_result_cache_passive_usage](settings/settings.md#enable-experimental-query-result-cache-passive-usage)
 instead of 'enable_experimental_query_result_cache' can be used for that.
 
 For maximum control, it is generally recommended to enable caching on a per-query basis. It is also possible to activate caching at
