@@ -1170,7 +1170,7 @@ Possible values:
 
 Default value: `3`.
 
-## enable_experimental_query_result_cache {#experimental-query-result-cache}
+## enable_experimental_query_result_cache {#enable-experimental-query-result-cache}
 
 If turned on, results of SELECT queries are stored in and (if available) retrieved from the [query result cache](../query-result-cache.md).
 
@@ -1181,7 +1181,7 @@ Possible values:
 
 Default value: `0`.
 
-## enable_experimental_query_result_cache_passive_usage {#experimental-query-result-cache-passive-usage}
+## enable_experimental_query_result_cache_passive_usage {#enable-experimental-query-result-cache-passive-usage}
 
 If turned on, results of SELECT queries are (if available) retrieved from the [query result cache](../query-result-cache.md).
 
