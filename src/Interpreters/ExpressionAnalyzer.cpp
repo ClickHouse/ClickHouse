@@ -423,9 +423,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         aggregated_columns = temp_actions->getNamesAndTypesList();
 
     for (const auto & desc : aggregate_descriptions)
-    {
         aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
-    }
 }
 
 
