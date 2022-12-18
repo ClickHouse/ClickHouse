@@ -106,6 +106,10 @@ while (True):
     errMsg = ""
     for i in range(total_number):
         expect = str(i+1)
+        if i >= len(result):
+            err = True
+            errMsg = "index {} is out of the size of result {}".format(i, len(result))
+            break
         real = result[i]
         if expect != real:
             err = True
