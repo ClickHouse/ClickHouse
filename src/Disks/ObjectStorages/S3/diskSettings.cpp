@@ -34,7 +34,7 @@ namespace ErrorCodes
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
-    S3Settings::RequestSettings request_settings(config, config_prefix, settings);
+    S3Settings::RequestSettings request_settings(config, config_prefix, settings, "s3_");
 
     return std::make_unique<S3ObjectStorageSettings>(
         request_settings,

@@ -27,17 +27,19 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const Settin
 
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     const Poco::Util::AbstractConfiguration & config,
-    const String & key,
-    const Settings & settings)
+    const String & config_prefix,
+    const Settings & settings,
+    String setting_name_prefix)
     : PartUploadSettings(settings)
 {
-    min_upload_part_size = config.getUInt64(key + ".min_upload_part_size", min_upload_part_size);
-    max_upload_part_size = config.getUInt64(key + ".max_upload_part_size", max_upload_part_size);
-    upload_part_size_multiply_factor = config.getUInt64(key + ".upload_part_size_multiply_factor", upload_part_size_multiply_factor);
-    upload_part_size_multiply_parts_count_threshold = config.getUInt64(key + ".upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
-    max_part_number = config.getUInt64(key + ".max_part_number", max_part_number);
-    max_single_part_upload_size = config.getUInt64(key + ".max_single_part_upload_size", max_single_part_upload_size);
-    max_single_operation_copy_size = config.getUInt64(key + ".max_single_operation_copy_size", max_single_operation_copy_size);
+    String key = config_prefix + "." + setting_name_prefix;
+    min_upload_part_size = config.getUInt64(key + "min_upload_part_size", min_upload_part_size);
+    max_upload_part_size = config.getUInt64(key + "max_upload_part_size", max_upload_part_size);
+    upload_part_size_multiply_factor = config.getUInt64(key + "upload_part_size_multiply_factor", upload_part_size_multiply_factor);
+    upload_part_size_multiply_parts_count_threshold = config.getUInt64(key + "upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
+    max_part_number = config.getUInt64(key + "max_part_number", max_part_number);
+    max_single_part_upload_size = config.getUInt64(key + "max_single_part_upload_size", max_single_part_upload_size);
+    max_single_operation_copy_size = config.getUInt64(key + "max_single_operation_copy_size", max_single_operation_copy_size);
 
     validate();
 }
@@ -156,33 +158,35 @@ S3Settings::RequestSettings::RequestSettings(const NamedCollection & collection)
 
 S3Settings::RequestSettings::RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
-    const String & key,
-    const Settings & settings)
-    : upload_settings(config, key, settings)
+    const String & config_prefix,
+    const Settings & settings,
+    String setting_name_prefix)
+    : upload_settings(config, config_prefix, settings, setting_name_prefix)
 {
-    max_single_read_retries = config.getUInt64(key + ".max_single_read_retries", settings.s3_max_single_read_retries);
-    max_connections = config.getUInt64(key + ".max_connections", settings.s3_max_connections);
-    check_objects_after_upload = config.getBool(key + ".check_objects_after_upload", settings.s3_check_objects_after_upload);
+    String key = config_prefix + "." + setting_name_prefix;
+    max_single_read_retries = config.getUInt64(key + "max_single_read_retries", settings.s3_max_single_read_retries);
+    max_connections = config.getUInt64(key + "max_connections", settings.s3_max_connections);
+    check_objects_after_upload = config.getBool(key + "check_objects_after_upload", settings.s3_check_objects_after_upload);
 
     /// NOTE: it would be better to reuse old throttlers to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time. But it is good enough unless very high `burst` values are used.
-    if (UInt64 max_get_rps = config.getUInt64(key + ".max_get_rps", settings.s3_max_get_rps))
+    if (UInt64 max_get_rps = config.getUInt64(key + "max_get_rps", settings.s3_max_get_rps))
     {
         size_t default_max_get_burst = settings.s3_max_get_burst
             ? settings.s3_max_get_burst
             : (Throttler::default_burst_seconds * max_get_rps);
 
-        size_t max_get_burst = config.getUInt64(key + ".max_get_burst", default_max_get_burst);
+        size_t max_get_burst = config.getUInt64(key + "max_get_burst", default_max_get_burst);
 
         get_request_throttler = std::make_shared<Throttler>(max_get_rps, max_get_burst);
     }
-    if (UInt64 max_put_rps = config.getUInt64(key + ".max_put_rps", settings.s3_max_put_rps))
+    if (UInt64 max_put_rps = config.getUInt64(key + "max_put_rps", settings.s3_max_put_rps))
     {
         size_t default_max_put_burst = settings.s3_max_put_burst
             ? settings.s3_max_put_burst
             : (Throttler::default_burst_seconds * max_put_rps);
 
-        size_t max_put_burst = config.getUInt64(key + ".max_put_burst", default_max_put_burst);
+        size_t max_put_burst = config.getUInt64(key + "max_put_burst", default_max_put_burst);
 
         put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst);
     }
