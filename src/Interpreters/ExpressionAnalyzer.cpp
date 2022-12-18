@@ -358,10 +358,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 }
                 else
                 {
-                    std::cerr << "tmp actions 0\n" << temp_actions->dumpDAG() << std::endl;
                     getRootActionsNoMakeSet(group_asts[i], temp_actions, false);
-
-                    std::cerr << "tmp actions 1\n" << temp_actions->dumpDAG() << std::endl;
 
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto * node = temp_actions->tryFindInOutputs(column_name);
@@ -429,9 +426,6 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
     {
         aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
     }
-
-    for (auto & val : aggregated_columns)
-        std::cerr << "====== agg column " << val.name << ' ' << val.type->getName() << std::endl;
 }
 
 
