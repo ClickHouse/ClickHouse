@@ -1,4 +1,4 @@
--- { echoOn }
+-- Tags: no-parallel
 
 SYSTEM DROP QUERY RESULT CACHE;
 DROP TABLE IF EXISTS old;
@@ -13,6 +13,8 @@ INSERT INTO old SELECT event, value FROM system.events WHERE event LIKE 'QueryRe
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true, query_result_cache_store_results_of_queries_with_nondeterministic_functions = true, max_threads = 16;
 SELECT COUNT(*) FROM system.queryresult_cache;
 
+SELECT '---';
+
 -- Run same query again. We want its result to be served from the QRC.
 -- Technically, both SELECT 1 queries have different ASTs.
 SELECT 1 SETTINGS enable_experimental_query_result_cache_passive_usage = true,  max_threads = 16;
@@ -25,5 +27,3 @@ WHERE event = 'QueryResultCacheHits';
 
 SYSTEM DROP QUERY RESULT CACHE;
 DROP TABLE old;
-
--- { echoOff }
