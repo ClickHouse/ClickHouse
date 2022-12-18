@@ -55,7 +55,11 @@ struct S3Settings
             PartUploadSettings() = default;
             explicit PartUploadSettings(const Settings & settings);
             explicit PartUploadSettings(const NamedCollection & collection);
-            PartUploadSettings(const Poco::Util::AbstractConfiguration & config, const String & key, const Settings & settings);
+            PartUploadSettings(
+                const Poco::Util::AbstractConfiguration & config,
+                const String & config_prefix,
+                const Settings & settings,
+                String setting_name_prefix = {});
 
             void updateFromSettingsImpl(const Settings & settings, bool if_changed);
 
@@ -89,7 +93,19 @@ struct S3Settings
         RequestSettings() = default;
         explicit RequestSettings(const Settings & settings);
         explicit RequestSettings(const NamedCollection & collection);
-        RequestSettings(const Poco::Util::AbstractConfiguration & config, const String & key, const Settings & settings);
+
+        /// What's the setting_name_prefix, and why do we need it?
+        /// There are (at least) two config sections where s3 settings can be specified:
+        /// * settings for s3 disk (clickhouse/storage_configuration/disks)
+        /// * settings for s3 storage (clickhouse/s3), which are also used for backups
+        /// Even though settings are the same, in case of s3 disk they are prefixed with "s3_"
+        /// ("s3_max_single_part_upload_size"), but in case of s3 storage they are not
+        /// (   "max_single_part_upload_size"). Why this happened is a complete mystery to me.
+        RequestSettings(
+            const Poco::Util::AbstractConfiguration & config,
+            const String & config_prefix,
+            const Settings & settings,
+            String setting_name_prefix = {});
 
         void updateFromSettings(const Settings & settings);
 
