@@ -1,4 +1,4 @@
-#include <Storages/NamedCollectionConfiguration.h>
+#include <Storages/NamedCollections/NamedCollectionConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/SettingsChanges.h>
@@ -35,19 +35,30 @@ template <typename T> T getConfigValueOrDefault(
         return *default_value;
     }
 
-    if constexpr (std::is_same_v<T, String>)
-        return config.getString(path);
-    else if constexpr (std::is_same_v<T, UInt64>)
-        return config.getUInt64(path);
-    else if constexpr (std::is_same_v<T, Int64>)
-        return config.getInt64(path);
-    else if constexpr (std::is_same_v<T, Float64>)
-        return config.getDouble(path);
-    else
+    try
+    {
+        if constexpr (std::is_same_v<T, String>)
+            return config.getString(path);
+        else if constexpr (std::is_same_v<T, UInt64>)
+            return config.getUInt64(path);
+        else if constexpr (std::is_same_v<T, Int64>)
+            return config.getInt64(path);
+        else if constexpr (std::is_same_v<T, Float64>)
+            return config.getDouble(path);
+        else
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Unsupported type in getConfigValueOrDefault(). "
+                "Supported types are String, UInt64, Int64, Float64");
+    }
+    catch (const Poco::SyntaxException &)
+    {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Unsupported type in getConfigValueOrDefault(). "
-            "Supported types are String, UInt64, Int64, Float64");
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot extract {} from {}",
+            toString(magic_enum::enum_name(Field::TypeToEnum<NearestFieldType<T>>::value)),
+            path);
+    }
 }
 
 template<typename T> void setConfigValue(
