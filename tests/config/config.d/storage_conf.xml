@@ -116,6 +116,7 @@
                 <max_size>22548578304</max_size>
                 <max_file_segment_size>10Ki</max_file_segment_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <cache_on_write_operations>1</cache_on_write_operations>
             </s3_cache_small_segment_size>
             <!-- local disks -->
             <local_disk>
