@@ -5,7 +5,7 @@ services:
     image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
     hostname: kerberoskdc
     volumes:
-      - ${KERBEROS_AUTH_DIR}/secrets:/tmp/keytab
-      - ${KERBEROS_AUTH_DIR}/../../kerberos_image_config.sh:/config.sh
+      - ${KERBEROS_KDC_DIR}/secrets:/tmp/keytab
+      - ${KERBEROS_KDC_DIR}/../kerberos_image_config.sh:/config.sh
       - /dev/urandom:/dev/random
     ports: [88, 749]
