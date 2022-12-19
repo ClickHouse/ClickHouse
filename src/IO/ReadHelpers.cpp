@@ -35,8 +35,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -638,16 +636,14 @@ concept WithResize = requires (T value)
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
-    /// Empty string
     if (buf.eof())
-        return;
+        throwReadAfterEOF();
 
     const char delimiter = settings.delimiter;
     const char maybe_quote = *buf.position();
-    const String & custom_delimiter = settings.custom_delimiter;
 
     /// Emptiness and not even in quotation marks.
-    if (custom_delimiter.empty() && maybe_quote == delimiter)
+    if (maybe_quote == delimiter)
         return;
 
     if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
@@ -685,42 +681,6 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
     }
     else
     {
-        /// If custom_delimiter is specified, we should read until first occurrences of
-        /// custom_delimiter in buffer.
-        if (!custom_delimiter.empty())
-        {
-            PeekableReadBuffer * peekable_buf = dynamic_cast<PeekableReadBuffer *>(&buf);
-            if (!peekable_buf)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading CSV string with custom delimiter is allowed only when using PeekableReadBuffer");
-
-            while (true)
-            {
-                if (peekable_buf->eof())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading CSV string, expected custom delimiter \"{}\"", custom_delimiter);
-
-                char * next_pos = reinterpret_cast<char *>(memchr(peekable_buf->position(), custom_delimiter[0], peekable_buf->available()));
-                if (!next_pos)
-                    next_pos = peekable_buf->buffer().end();
-
-                appendToStringOrVector(s, *peekable_buf, next_pos);
-                peekable_buf->position() = next_pos;
-
-                if (!buf.hasPendingData())
-                    continue;
-
-                {
-                    PeekableReadBufferCheckpoint checkpoint{*peekable_buf, true};
-                    if (checkString(custom_delimiter, *peekable_buf))
-                        return;
-                }
-
-                s.push_back(*peekable_buf->position());
-                ++peekable_buf->position();
-            }
-
-            return;
-        }
-
         /// Unquoted case. Look for delimiter or \r or \n.
         while (!buf.eof())
         {
@@ -813,72 +773,6 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
 
     if (add_quote)
         s.push_back(quote);
-}
-
-void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
-{
-    /// Check that delimiters are not empty.
-    if (first_delimiter.empty() || second_delimiter.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read CSV field with two possible delimiters, one of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
-
-    /// Read all data until first_delimiter or second_delimiter
-    while (true)
-    {
-        if (buf.eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA, R"(Unexpected EOF while reading CSV string, expected on of delimiters "{}" or "{}")", first_delimiter, second_delimiter);
-
-        char * next_pos = buf.position();
-        while (next_pos != buf.buffer().end() && *next_pos != first_delimiter[0] && *next_pos != second_delimiter[0])
-            ++next_pos;
-
-        appendToStringOrVector(s, buf, next_pos);
-        buf.position() = next_pos;
-        if (!buf.hasPendingData())
-            continue;
-
-        if (*buf.position() == first_delimiter[0])
-        {
-            PeekableReadBufferCheckpoint checkpoint(buf, true);
-            if (checkString(first_delimiter, buf))
-                return;
-        }
-
-        if (*buf.position() == second_delimiter[0])
-        {
-            PeekableReadBufferCheckpoint checkpoint(buf, true);
-            if (checkString(second_delimiter, buf))
-                return;
-        }
-
-        s.push_back(*buf.position());
-        ++buf.position();
-    }
-}
-
-String readCSVStringWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter)
-{
-    String res;
-
-    /// If value is quoted, use regular CSV reading since we need to read only data inside quotes.
-    if (!buf.eof() && ((settings.allow_single_quotes && *buf.position() == '\'') || (settings.allow_double_quotes && *buf.position() == '"')))
-        readCSVStringInto(res, buf, settings);
-    else
-        readCSVWithTwoPossibleDelimitersImpl(res, buf, first_delimiter, second_delimiter);
-
-    return res;
-}
-
-String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter)
-{
-    String res;
-
-    /// If value is quoted, use regular CSV reading since we need to read only data inside quotes.
-    if (!buf.eof() && ((settings.allow_single_quotes && *buf.position() == '\'') || (settings.allow_double_quotes && *buf.position() == '"')))
-         readCSVField(res, buf, settings);
-    else
-        readCSVWithTwoPossibleDelimitersImpl(res, buf, first_delimiter, second_delimiter);
-
-    return res;
 }
 
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
@@ -1075,12 +969,10 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    /// YYYY-MM-DD hh:mm:ss
+    static constexpr auto date_time_broken_down_length = 19;
     /// YYYY-MM-DD
     static constexpr auto date_broken_down_length = 10;
-    /// hh:mm:ss
-    static constexpr auto time_broken_down_length = 8;
-    /// YYYY-MM-DD hh:mm:ss
-    static constexpr auto date_time_broken_down_length = date_broken_down_length + 1 + time_broken_down_length;
 
     char s[date_time_broken_down_length];
     char * s_pos = s;
@@ -1103,15 +995,16 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
+        const size_t remaining_date_time_size = date_time_broken_down_length - already_read_length;
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
 
-        size_t size = buf.read(s_pos, remaining_date_size);
-        if (size != remaining_date_size)
+        size_t size = buf.read(s_pos, remaining_date_time_size);
+        if (size != remaining_date_time_size && size != remaining_date_size)
         {
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw ParsingException(std::string("Cannot parse DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
             else
                 return false;
         }
@@ -1124,24 +1017,11 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         UInt8 minute = 0;
         UInt8 second = 0;
 
-        if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+        if (size == remaining_date_time_size)
         {
-            ++buf.position();
-            size = buf.read(s, time_broken_down_length);
-
-            if (size != time_broken_down_length)
-            {
-                s_pos[size] = 0;
-
-                if constexpr (throw_exception)
-                    throw ParsingException(std::string("Cannot parse time component of DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
-                else
-                    return false;
-            }
-
-            hour = (s[0] - '0') * 10 + (s[1] - '0');
-            minute = (s[3] - '0') * 10 + (s[4] - '0');
-            second = (s[6] - '0') * 10 + (s[7] - '0');
+            hour = (s[11] - '0') * 10 + (s[12] - '0');
+            minute = (s[14] - '0') * 10 + (s[15] - '0');
+            second = (s[17] - '0') * 10 + (s[18] - '0');
         }
 
         if (unlikely(year == 0))
@@ -1382,25 +1262,6 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
         }
     }
 }
-
-void skipNullTerminated(ReadBuffer & buf)
-{
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
-        buf.position() = next_pos;
-
-        if (!buf.hasPendingData())
-            continue;
-
-        if (*buf.position() == '\0')
-        {
-            ++buf.position();
-            return;
-        }
-    }
-}
-
 
 void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 {

@@ -1,69 +1,24 @@
 ---
-sidebar_label: Install
-keywords: [clickhouse, install, getting started, quick start]
-slug: /en/install
+sidebar_label: Installation
+sidebar_position: 1
+keywords: [clickhouse, install, installation, docs]
+description: ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture.
+slug: /en/getting-started/install
 ---
 
-# Installing ClickHouse
+# Installation
 
-You have two options for getting up and running with ClickHouse:
+## System Requirements {#system-requirements}
 
-- **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
-- **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, ARM, or PowerPC64LE CPU architecture
+ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture.
 
-## ClickHouse Cloud
+Official pre-built binaries are typically compiled for x86_64 and leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports it becomes an additional system requirement. Here’s the command to check if current CPU has support for SSE 4.2:
 
-The quickest and easiest way to get up and running with ClickHouse is to create a new service in [ClickHouse Cloud](https://clickhouse.cloud/):
+``` bash
+$ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
+```
 
-<div class="eighty-percent">
-
-![Create a ClickHouse Cloud service](@site/docs/en/_snippets/images/createservice1.png)
-</div>
-
-Once your Cloud service is provisioned, you will be able to [connect to it](/docs/en/integrations/connect-a-client.md) and start [inserting data](/docs/en/integrations/data-ingestion.md).
-
-
-## Self-Managed Install
-
-1. The simplest way to download ClickHouse locally is to run the following command. If your operating system is supported, an appropriate ClickHouse binary will be downloaded and made runnable:
-  ```bash
-  curl https://clickhouse.com/ | sh
-  ```
-
-1. Run the `install` command, which defines a collection of useful symlinks along with the files and folders used by ClickHouse - all of which you can see in the output of the install script:
-  ```bash
-  sudo ./clickhouse install
-  ```
-
-1. At the end of the install script, you are prompted for a password for the `default` user. Feel free to enter a password, or you can optionally leave it blank:
-  ```response
-  Creating log directory /var/log/clickhouse-server.
-  Creating data directory /var/lib/clickhouse.
-  Creating pid directory /var/run/clickhouse-server.
-   chown -R clickhouse:clickhouse '/var/log/clickhouse-server'
-   chown -R clickhouse:clickhouse '/var/run/clickhouse-server'
-   chown  clickhouse:clickhouse '/var/lib/clickhouse'
-  Enter password for default user:
-  ```
-  You should see the following output:
-  ```response
-   ClickHouse has been successfully installed.
-
-   Start clickhouse-server with:
-    sudo clickhouse start
-
-   Start clickhouse-client with:
-    clickhouse-client
-  ```
-
-1. Run the following command to start the ClickHouse server:
-  ```bash
-  sudo clickhouse start
-  ```
-
-:::tip
-The [Quick Start](/docs/en/quick-start.mdx/#step-1-get-clickhouse) walks through the steps to download and run ClickHouse, connect to it, and insert data.
-:::
+To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or PowerPC64LE architecture, you should [build ClickHouse from sources](#from-sources) with proper configuration adjustments.
 
 ## Available Installation Options {#available-installation-options}
 
@@ -104,27 +59,9 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-<details>
-<summary>Migration Method for installing the deb-packages</summary>
+You can replace `stable` with `lts` or `testing` to use different [release trains](../faq/operations/production.md) based on your needs.
 
-```bash
-sudo apt-key del E0C56BD4
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
-echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
-```
-
-</details>
-
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
-
-You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
+You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/stable).
 
 #### Packages {#packages}
 
@@ -169,7 +106,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
+If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). `prestable` is sometimes also available.
 
 Then run these commands to install packages:
 
@@ -265,32 +202,32 @@ sudo ./clickhouse install
 
 ### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
 
-For non-Linux operating systems and for ARM CPU architecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
+For non-Linux operating systems and for AArch64 CPU architecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
 
--   [MacOS x86-64](https://builds.clickhouse.com/master/macos/clickhouse)
+-   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse)
      ```bash
      curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse
      ```
--   [MacOS ARM (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse)
+-   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse)
     ```bash
     curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse
     ```
--   [FreeBSD x86-64](https://builds.clickhouse.com/master/freebsd/clickhouse)
+-   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse)
     ```bash
     curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse
     ```
--   [Linux ARM](https://builds.clickhouse.com/master/aarch64/clickhouse)
+-   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse)
     ```bash
     curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse
     ```
 
-Run `sudo ./clickhouse install` to install ClickHouse system-wide (also with needed configuration files, configuring users etc.). Then run `sudo clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it.
+Run `sudo ./clickhouse install` to install ClickHouse system-wide (also with needed configuration files, configuring users etc.). Then run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it.
 
 Use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
 
 ### From Sources {#from-sources}
 
-To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/development/build.md) or [Mac OS X](/docs/en/development/build-osx.md).
+To manually compile ClickHouse, follow the instructions for [Linux](../development/build.md) or [Mac OS X](../development/build-osx.md).
 
 You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
 
@@ -345,7 +282,7 @@ If the configuration file is in the current directory, you do not need to specif
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
-For more information, see the section [“Configuration Files”](/docs/en/operations/configuration-files.md).
+For more information, see the section [“Configuration Files”](../operations/configuration-files.md).
 
 After launching server, you can use the command-line client to connect to it:
 
@@ -356,7 +293,7 @@ $ clickhouse-client
 By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
 The terminal must use UTF-8 encoding.
-For more information, see the section [“Command-line client”](/docs/en/interfaces/cli.md).
+For more information, see the section [“Command-line client”](../interfaces/cli.md).
 
 Example:
 
@@ -381,62 +318,6 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/en/tutorial.md).
+To continue experimenting, you can download one of the test data sets or go through [tutorial](./../tutorial.md).
 
-## Self-Managed Requirements
-
-### CPU Architecture
-
-ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, ARM, or PowerPC64LE CPU architecture.
-
-Official binaries are available for x86-64 and ARM.
-
-It is also possible to build ClickHouse from source, (see above)[#from-sources] for details.
-
-ClickHouse implements parallel data processing and uses all the hardware resources available. When choosing a processor, take into account that ClickHouse works more efficiently at configurations with a large number of cores but a lower clock rate than at configurations with fewer cores and a higher clock rate. For example, 16 cores with 2600 MHz is preferable to 8 cores with 3600 MHz.
-
-It is recommended to use **Turbo Boost** and **hyper-threading** technologies. It significantly improves performance with a typical workload.
-
-### RAM {#ram}
-
-We recommend using a minimum of 4GB of RAM to perform non-trivial queries. The ClickHouse server can run with a much smaller amount of RAM, but it requires memory for processing queries.
-
-The required volume of RAM depends on:
-
--   The complexity of queries.
--   The amount of data that is processed in queries.
-
-To calculate the required volume of RAM, you should estimate the size of temporary data for [GROUP BY](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/en/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/en/sql-reference/statements/select/join.md#select-join) and other operations you use.
-
-ClickHouse can use external memory for temporary data. See [GROUP BY in External Memory](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
-
-### Swap File {#swap-file}
-
-Disable the swap file for production environments.
-
-### Storage Subsystem {#storage-subsystem}
-
-You need to have 2GB of free disk space to install ClickHouse.
-
-The volume of storage required for your data should be calculated separately. Assessment should include:
-
--   Estimation of the data volume.
-
-    You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
-
--   The data compression coefficient.
-
-    To estimate the data compression coefficient, load a sample of your data into ClickHouse, and compare the actual size of the data with the size of the table stored. For example, clickstream data is usually compressed by 6-10 times.
-
-To calculate the final volume of data to be stored, apply the compression coefficient to the estimated data volume. If you plan to store data in several replicas, then multiply the estimated volume by the number of replicas.
-
-### Network {#network}
-
-If possible, use networks of 10G or higher class.
-
-The network bandwidth is critical for processing distributed queries with a large amount of intermediate data. Besides, network speed affects replication processes.
-
-### Software {#software}
-
-ClickHouse is developed primarily for the Linux family of operating systems. The recommended Linux distribution is Ubuntu. The `tzdata` package should be installed in the system.
-
+[Original article](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->

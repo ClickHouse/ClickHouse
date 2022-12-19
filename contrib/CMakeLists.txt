@@ -48,11 +48,7 @@ function(add_contrib cmake_folder)
     message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
     add_subdirectory (${cmake_folder})
 endfunction()
-if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
-    add_contrib (openssl-cmake openssl)
-else ()
-    add_contrib (boringssl-cmake boringssl)
-endif ()
+
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
@@ -65,7 +61,7 @@ add_contrib (dragonbox-cmake dragonbox)
 add_contrib (vectorscan-cmake vectorscan)
 add_contrib (jemalloc-cmake jemalloc)
 add_contrib (libcpuid-cmake libcpuid)
-add_contrib (libdivide-cmake)
+add_contrib (libdivide)
 add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
@@ -78,6 +74,7 @@ add_contrib (re2-cmake re2)
 add_contrib (xz-cmake xz)
 add_contrib (brotli-cmake brotli)
 add_contrib (double-conversion-cmake double-conversion)
+add_contrib (boringssl-cmake boringssl)
 add_contrib (poco-cmake poco)
 add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
@@ -95,8 +92,6 @@ add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 
-add_contrib (corrosion-cmake corrosion)
-
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
@@ -112,8 +107,7 @@ if (ENABLE_TESTS)
     add_contrib (googletest-cmake googletest)
 endif()
 
-add_contrib (llvm-project-cmake llvm-project)
-add_contrib (libfuzzer-cmake llvm-project)
+add_contrib (llvm-cmake llvm)
 add_contrib (libxml2-cmake libxml2)
 add_contrib (aws-s3-cmake
     aws
@@ -164,13 +158,6 @@ add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
-add_contrib (morton-nd-cmake morton-nd)
-
-add_contrib (annoy-cmake annoy)
-
-add_contrib (xxHash-cmake xxHash)
-
-add_contrib (google-benchmark-cmake google-benchmark)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

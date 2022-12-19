@@ -440,9 +440,7 @@
 #define HAVE_STRERROR 1
 
 /* Define to 1 if you have the `strerror_r' function. */
-#ifndef USE_MUSL
 #define HAVE_STRERROR_R 1
-#endif
 
 /* Define to 1 if you have the <strings.h> header file. */
 #define HAVE_STRINGS_H 1
