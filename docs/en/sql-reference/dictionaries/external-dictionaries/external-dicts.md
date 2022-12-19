@@ -79,6 +79,3 @@ You can convert values for a small dictionary by describing it in a `SELECT` que
 -   [Dictionary Key and Fields](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md)
 -   [Functions for Working with Dictionaries](../../../sql-reference/functions/ext-dict-functions.md)
 
-## Related Content
-
-- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

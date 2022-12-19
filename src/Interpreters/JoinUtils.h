@@ -106,19 +106,13 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 
-Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
-Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
-Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
-
-bool hasNonJoinedBlocks(const TableJoin & table_join);
-
 /// Insert default values for rows marked in filter
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
 
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
-class NotJoinedBlocks final : public IBlocksStream
+class NotJoinedBlocks final
 {
 public:
     using LeftToRightKeyRemap = std::unordered_map<String, String>;
@@ -138,9 +132,9 @@ public:
     NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
               const Block & result_sample_block_,
               size_t left_columns_count,
-              const TableJoin & table_join);
+              const LeftToRightKeyRemap & left_to_right_key_remap);
 
-    Block nextImpl() override;
+    Block read();
 
 private:
     void extractColumnChanges(size_t right_pos, size_t result_pos);

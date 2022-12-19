@@ -243,7 +243,7 @@ public:
 
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        ActionsDAGPtr filter_dag,
+        ActionDAGNodes dag_nodes,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,

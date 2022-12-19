@@ -9,9 +9,6 @@ AddressSanitizer
 AppleClang
 ArrowStream
 AvroConfluent
-BSON
-BSONEachRow
-Bool
 CCTOOLS
 CLion
 CMake
@@ -25,7 +22,6 @@ CentOS
 ClickHouse
 ClickHouse's
 Config
-ConnectionDetails
 Contrib
 Ctrl
 CustomSeparated
@@ -98,9 +94,7 @@ MySQLDump
 NEKUDOTAYIM
 NULLIF
 NVME
-NYPD
 NuRaft
-ObjectId
 Ok
 OpenSUSE
 OpenStack
@@ -112,13 +106,13 @@ Precompiled
 PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
+PrettyNoEscapes
+PrettySpace
+PrettySpaceNoEscapes
 PrettyCompactNoEscapesMonoBlock
 PrettyMonoBlock
-PrettyNoEscapes
 PrettyNoEscapesMonoBlock
-PrettySpace
 PrettySpaceMonoBlock
-PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
@@ -126,7 +120,6 @@ QTCreator
 RBAC
 RawBLOB
 RedHat
-ReplicatedMergeTree
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
@@ -139,7 +132,6 @@ SQLInsert
 SQLSTATE
 SSSE
 Schemas
-SelfManaged
 Stateful
 Submodules
 Subqueries
@@ -197,8 +189,6 @@ boolean
 bools
 boringssl
 brotli
-bson
-bsoneachrow
 buildable
 camelCase
 capn
@@ -210,7 +200,6 @@ ccache
 cctz
 cfg
 changelog
-changelogs
 charset
 charsets
 checkouting
@@ -252,7 +241,6 @@ ddl
 deallocation
 debian
 decompressor
-denormalizing
 denormals
 deserialization
 deserialized
@@ -391,13 +379,13 @@ prestable
 prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
+prettynoescapes
+prettyspace
+prettyspacenoescapes
 prettycompactnoescapesmonoblock
 prettymonoblock
-prettynoescapes
 prettynoescapesmonoblock
-prettyspace
 prettyspacemonoblock
-prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prlimit
 prometheus
@@ -420,7 +408,6 @@ representable
 requestor
 resultset
 rethrow
-retriable
 risc
 riscv
 ro
@@ -430,7 +417,6 @@ rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
 rsync
-runnable
 runningAccumulate
 runtime
 russian
@@ -464,7 +450,6 @@ subquery
 subseconds
 substring
 subtree
-subtype
 sudo
 symlink
 symlinks
@@ -483,15 +468,12 @@ th
 tmp
 tokenization
 toml
-toolchain
 toolset
 tskv
 tsv
 tui
 turbostat
 txt
-ubuntu
-uint
 unary
 unencrypted
 unixodbc
@@ -520,3 +502,7 @@ zkcopy
 zlib
 znodes
 zstd
+NYPD
+denormalizing
+ConnectionDetails
+SelfManaged

@@ -24,7 +24,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/MovesList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -54,7 +53,6 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
-#include <IO/ResourceManagerFactory.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -222,7 +220,6 @@ struct ContextSharedPart : boost::noncopyable
     String system_profile_name;                             /// Profile used by system processes
     String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
     std::unique_ptr<AccessControl> access_control;
-    mutable ResourceManagerPtr resource_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
@@ -232,7 +229,6 @@ struct ContextSharedPart : boost::noncopyable
     ProcessList process_list;                               /// Executing queries at the moment.
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
-    MovesList moves_list;                                   /// The list of executing moves (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
@@ -641,8 +637,6 @@ const ProcessList & Context::getProcessList() const { return shared->process_lis
 OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
-MovesList & Context::getMovesList() { return shared->moves_list; }
-const MovesList & Context::getMovesList() const { return shared->moves_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
 const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
 
@@ -1067,21 +1061,6 @@ std::vector<UUID> Context::getEnabledProfiles() const
 }
 
 
-ResourceManagerPtr Context::getResourceManager() const
-{
-    auto lock = getLock();
-    if (!shared->resource_manager)
-        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "static"));
-    return shared->resource_manager;
-}
-
-ClassifierPtr Context::getClassifier() const
-{
-    auto lock = getLock();
-    return getResourceManager()->acquire(getSettingsRef().workload);
-}
-
-
 const Scalars & Context::getScalars() const
 {
     return scalars;
@@ -1271,7 +1250,6 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             if (select_query_hint && getSettingsRef().use_structure_from_insertion_table_in_table_functions == 2)
             {
                 const auto * expression_list = select_query_hint->select()->as<ASTExpressionList>();
-                std::unordered_set<String> virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
                 Names columns_names;
                 bool have_asterisk = false;
                 /// First, check if we have only identifiers, asterisk and literals in select expression,
@@ -1293,10 +1271,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     }
                 }
 
-                /// Check that all identifiers are column names from insertion table and not virtual column names from storage.
+                /// Check that all identifiers are column names from insertion table.
                 for (const auto & column_name : columns_names)
                 {
-                    if (!structure_hint.has(column_name) || virtual_column_names.contains(column_name))
+                    if (!structure_hint.has(column_name))
                     {
                         use_columns_from_insert_query = false;
                         break;
@@ -1429,11 +1407,6 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements) const
-{
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements);
-}
-
 void Context::checkSettingsConstraints(const SettingChange & change) const
 {
     getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change);
@@ -1452,11 +1425,6 @@ void Context::checkSettingsConstraints(SettingsChanges & changes) const
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 {
     getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
-}
-
-void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
-{
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(merge_tree_settings, changes);
 }
 
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
@@ -1553,9 +1521,9 @@ void Context::setCurrentQueryId(const String & query_id)
         client_info.initial_query_id = client_info.current_query_id;
 }
 
-void Context::killCurrentQuery() const
+void Context::killCurrentQuery()
 {
-    if (auto elem = getProcessListElement())
+    if (auto elem = process_list_elem.lock())
         elem->cancelQuery(true);
 }
 
@@ -1810,16 +1778,11 @@ void Context::setProcessListElement(QueryStatusPtr elem)
 {
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
-    has_process_list_elem = elem.get();
 }
 
 QueryStatusPtr Context::getProcessListElement() const
 {
-    if (!has_process_list_elem)
-        return {};
-    if (auto res = process_list_elem.lock())
-        return res;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Weak pointer to process_list_elem expired during query execution, it's a bug");
+    return process_list_elem.lock();
 }
 
 
