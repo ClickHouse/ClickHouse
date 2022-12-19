@@ -715,6 +715,12 @@ void StorageRabbitMQ::read(
         auto rabbit_source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
 
+        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
+                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
+
+        rabbit_source->setTimeLimit(max_execution_time_ms);
+
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
             sample_block.getColumnsWithTypeAndName(),
@@ -1075,14 +1081,15 @@ bool StorageRabbitMQ::streamToViews()
     {
         auto source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
+
+        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
+                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
+
+        source->setTimeLimit(max_execution_time_ms);
+
         sources.emplace_back(source);
         pipes.emplace_back(source);
-
-        Poco::Timespan max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
-                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
-
-        source->setTimeLimit(max_execution_time);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));

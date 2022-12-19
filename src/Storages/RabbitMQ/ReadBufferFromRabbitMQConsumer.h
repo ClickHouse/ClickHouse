@@ -67,8 +67,9 @@ public:
     bool ackMessages();
     void updateAckTracker(AckTracker record = AckTracker());
 
-    bool queueEmpty() { return received.empty(); }
-    void allowNext() { allowed = true; } // Allow to read next message.
+    bool hasPendingMessages() { return received.empty(); }
+
+    void allowNext() { allowed = true; }
 
     auto getChannelID() const { return current.track.channel_id; }
     auto getDeliveryTag() const { return current.track.delivery_tag; }
@@ -89,7 +90,6 @@ private:
     const size_t channel_id_base;
     Poco::Logger * log;
     char row_delimiter;
-    bool allowed = true;
     const std::atomic<bool> & stopped;
 
     String channel_id;
@@ -100,6 +100,8 @@ private:
 
     AckTracker last_inserted_record_info;
     UInt64 prev_tag = 0, channel_id_counter = 0;
+
+    bool allowed = false;
 };
 
 }

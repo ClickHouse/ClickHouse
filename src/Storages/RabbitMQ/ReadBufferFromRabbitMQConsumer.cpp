@@ -183,8 +183,8 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     {
         auto * new_position = const_cast<char *>(current.message.data());
         BufferBase::set(new_position, current.message.size(), 0);
-        allowed = false;
 
+        allowed = false;
         return true;
     }
 
