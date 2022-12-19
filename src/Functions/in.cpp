@@ -88,7 +88,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 

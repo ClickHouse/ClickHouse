@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
 
+#include <Interpreters/Aggregator.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ConcurrentHashJoin.h>
@@ -1831,7 +1832,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     ssize_t where_step_num = -1;
     ssize_t having_step_num = -1;
 
-    auto finalize_chain = [&](ExpressionActionsChain & chain)
+    auto finalize_chain = [&](ExpressionActionsChain & chain /*, const NamesAndTypesList * expected_result_columns*/) -> ColumnsWithTypeAndName
     {
         if (prewhere_step_num >= 0)
         {
@@ -1852,7 +1853,56 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
 
+        auto res = chain.getLastStep().getResultColumns();
+
+        // ActionsDAGPtr converting;
+        // if (expected_result_columns)
+        // {
+        //     auto actual_result_columns = chain.getLastStep().getResultColumns();
+        //     bool found_different_types = false;
+        //     size_t pos = 0;
+
+        //     std::stringstream ss;
+        //     ss << "==== " << Block(actual_result_columns).dumpStructure() << std::endl;
+        //     for (const auto & expected : *expected_result_columns)
+        //         ss << "--- " << expected.name << ' ' << expected.type->getName() << std::endl;
+
+        //     std::cerr << ss.str() << std::endl;
+
+        //     for (const auto & expected : *expected_result_columns)
+        //     {
+        //         const auto & actual = actual_result_columns[pos];
+        //         if (actual.name != expected.name)
+        //             throw Exception(
+        //                 ErrorCodes::LOGICAL_ERROR,
+        //                 "Block structure mismatch in ExpressionActionsChain stream: different names of columns: {} vs {}",
+        //                 actual.dumpStructure(), expected.name);
+
+        //         if (!actual.type->equals(*expected.type))
+        //             found_different_types = true;
+        //     }
+
+        //     if (found_different_types)
+        //     {
+        //         ColumnsWithTypeAndName to;
+        //         to.reserve(expected_result_columns->size());
+        //         for (const auto & expected : *expected_result_columns)
+        //             to.emplace_back(expected.type, expected.name);
+
+        //         auto converting = ActionsDAG::makeConvertingActions(actual_result_columns, to, ActionsDAG::MatchColumnsMode::Position);
+        //     }
+        // }
+
         chain.clear();
+
+        // if (converting)
+        // {
+        //     auto & step = chain.lastStep(*expected_result_columns);
+        //     auto & actions = step.actions();
+        //     actions = ActionsDAG::merge(std::move(*actions), std::move(*converting));
+        // }
+
+        return res;
     };
 
     {
@@ -1970,7 +2020,35 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             if (settings.group_by_use_nulls)
                 query_analyzer.appendGroupByModifiers(before_aggregation, chain, only_types);
 
-            finalize_chain(chain);
+            auto res_cols = finalize_chain(chain /*, &query_analyzer.aggregated_columns*/);
+
+            for (auto & col : res_cols)
+                if (!col.column)
+                    col.column = col.type->createColumn();
+            Block res_block(std::move(res_cols));
+
+            const auto & keys = query_analyzer.aggregationKeys();
+            const auto & aggregates = query_analyzer.aggregates();
+
+            auto actual_header = Aggregator::Params::getHeader(res_block, false, keys.getNames(), aggregates, true);
+
+            Block expected_header;
+            for (const auto & expected : query_analyzer.aggregated_columns)
+                expected_header.insert(ColumnWithTypeAndName(expected.type, expected.name));
+
+            if (!blocksHaveEqualStructure(actual_header, expected_header))
+            {
+                auto converting = ActionsDAG::makeConvertingActions(
+                    actual_header.getColumnsWithTypeAndName(),
+                    expected_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Name,
+                    true);
+
+
+                auto & step = chain.lastStep(query_analyzer.aggregated_columns);
+                auto & actions = step.actions();
+                actions = ActionsDAG::merge(std::move(*actions), std::move(*converting));
+            }
 
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
             {
@@ -2044,7 +2122,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             }
 
             before_window = chain.getLastActions();
-            finalize_chain(chain);
+            finalize_chain(chain /*, &query_analyzer.columns_after_window*/);
 
             query_analyzer.appendExpressionsAfterWindowFunctions(chain, only_types || !first_stage);
             for (const auto & x : chain.getLastActions()->getNamesAndTypesList())
