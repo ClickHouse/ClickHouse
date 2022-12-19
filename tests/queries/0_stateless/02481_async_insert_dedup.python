@@ -104,17 +104,17 @@ while (True):
     result = result.split()
     err = False
     errMsg = ""
-    for i in range(total_number):
-        expect = str(i+1)
-        if i >= len(result):
-            err = True
-            errMsg = "index {} is out of the size of result {}".format(i, len(result))
-            break
-        real = result[i]
-        if expect != real:
-            err = True
-            errMsg = "error, {} is not equal to {} for {}-th elements, total rows is {}".format(real, expect, i, len(result))
-            break
+    if len(result) != total_number:
+        err = True
+        errMsg = f"the size of result is {len(result)}. we expect {total_number}."
+    else:
+        for i in range(total_number):
+            expect = str(i+1)
+            real = result[i]
+            if expect != real:
+                err = True
+                errMsg = f"error, real value {real} is not equal to expect value {expect} for {i}-th elements"
+                break
     # retry several times to get stable results.
     if err and retry >= 5:
         print (errMsg, flush=True)
