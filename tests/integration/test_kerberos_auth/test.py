@@ -43,31 +43,45 @@ def kerberos_cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(autouse=True)
-def kerberos_setup_teardown():
-    yield  # run test
-
-
 # Tests
 
-def make_auth(instance, user):
-    instance.exec_in_container(
-        ["bash", "-c", "kinit -V -k -t /tmp/keytab/kuser.keytab kuser"]
-    )
-    assert (
-        instance.exec_in_container(
-            ["bash", "-c", "echo 'select currentUser()' | curl -vvv --negotiate -u : http://{}:8123/ --data-binary @-".format(instance.hostname)]
-        )
-        == user + "\n"
-    )
 
+def exec_kinit(instance):
+    instance.exec_in_container(
+        ["bash", "-c", "kinit -k -t /tmp/keytab/kuser.keytab kuser"]
+    )
 
 
 def test_kerberos_auth_with_keytab(kerberos_cluster):
-    make_auth(instance1, "kuser")
+    exec_kinit(instance1)
+    assert (
+        instance1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "echo 'select currentUser()' | curl -vvv --negotiate -u : http://{}:8123/ --data-binary @-".format(
+                    instance1.hostname
+                ),
+            ]
+        )
+        == "kuser\n"
+    )
+
 
 def test_kerberos_auth_without_keytab(kerberos_cluster):
-    make_auth(instance2, "default")
+    exec_kinit(instance2)
+    assert (
+        "DB::Exception: : Authentication failed: password is incorrect or there is no user with such name."
+        in instance2.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "echo 'select currentUser()' | curl -vvv --negotiate -u : http://{}:8123/ --data-binary @-".format(
+                    instance2.hostname
+                ),
+            ]
+        )
+    )
 
 
 if __name__ == "__main__":
