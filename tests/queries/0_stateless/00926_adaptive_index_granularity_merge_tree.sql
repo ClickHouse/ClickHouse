@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-merge-tree-settings
 
 ----- Group of very similar simple tests ------
 select '----HORIZONTAL MERGE TESTS----';
