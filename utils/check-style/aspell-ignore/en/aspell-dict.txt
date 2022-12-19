@@ -430,6 +430,7 @@ rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
 rsync
+runnable
 runningAccumulate
 runtime
 russian
