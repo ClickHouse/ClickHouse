@@ -9,14 +9,14 @@ if [ "${OS}" = "Linux" ]
 then
     if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
     then
-        # Require at least SSE4.2 (introduced in 2006), on older hardware fall back to plain x86-64 (introduced in 1999) which guarantees
-        # SSE2. The caveat is that SSE2 builds are much less tested than SSE 4.2 builds.
+        # Require at least x86-64 + SSE4.2 (introduced in 2006). On older hardware fall back to plain x86-64 (introduced in 1999) which
+        # guarantees at least SSE2. The caveat is that plain x86-64 builds are much less tested than SSE 4.2 builds.
         HAS_SSE42=$(grep sse4_2 /proc/cpuinfo)
         if [ "${HAS_SSE42}" ]
         then
             DIR="amd64"
         else
-            DIR="amd64sse2"
+            DIR="amd64compat"
         fi
     elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
     then
