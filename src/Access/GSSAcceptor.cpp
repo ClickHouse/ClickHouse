@@ -6,6 +6,7 @@
 
 #include <mutex>
 #include <tuple>
+#include <filesystem>
 
 
 namespace DB
@@ -260,6 +261,15 @@ void GSSAcceptorContext::initHandles()
     std::scoped_lock lock(gss_global_mutex);
 
     resetHandles();
+
+    if (!params.keytab.empty())
+    {
+        if (!std::filesystem::exists(params.keytab))
+            throw Exception("Keytab file not found", ErrorCodes::BAD_ARGUMENTS);
+
+        if (krb5_gss_register_acceptor_identity(params.keytab.c_str()))
+            throw Exception("Invalid keytab file is specified", ErrorCodes::BAD_ARGUMENTS);
+    }
 
     if (!params.principal.empty())
     {
