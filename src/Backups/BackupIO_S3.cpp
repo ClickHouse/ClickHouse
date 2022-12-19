@@ -179,15 +179,6 @@ void BackupWriterS3::copyObjectImpl(
 
 }
 
-Aws::S3::Model::HeadObjectOutcome BackupWriterS3::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
-{
-    Aws::S3::Model::HeadObjectRequest request;
-    request.SetBucket(bucket_from);
-    request.SetKey(key);
-
-    return client->HeadObject(request);
-}
-
 void BackupWriterS3::copyObjectMultipartImpl(
     const String & src_bucket,
     const String & src_key,
@@ -310,7 +301,7 @@ void BackupWriterS3::copyFileNative(DiskPtr from_disk, const String & file_name_
         std::string source_bucket = object_storage->getObjectsNamespace();
         auto file_path = fs::path(s3_uri.key) / file_name_to;
 
-        auto head = requestObjectHeadData(source_bucket, objects[0].absolute_path).GetResult();
+        auto head = S3::headObject(*client, source_bucket, objects[0].absolute_path).GetResult();
         if (static_cast<size_t>(head.GetContentLength()) < request_settings.max_single_operation_copy_size)
         {
             copyObjectImpl(
