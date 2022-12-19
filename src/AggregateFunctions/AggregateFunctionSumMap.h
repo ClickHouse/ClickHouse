@@ -461,6 +461,7 @@ public:
     bool keepKey(const T &) const { return true; }
 };
 
+
 template <typename T, bool overflow, bool tuple_argument>
 class AggregateFunctionSumMapFiltered final :
     public AggregateFunctionMapBase<T,
@@ -495,14 +496,15 @@ public:
                 "Aggregate function {} requires an Array as a parameter",
                 getName());
 
+        this->parameters = params_;
+
         keys_to_keep.reserve(keys_to_keep_values.size());
 
         for (const Field & f : keys_to_keep_values)
             keys_to_keep.emplace(f.safeGet<T>());
     }
 
-    String getName() const override
-    { return overflow ? "sumMapFilteredWithOverflow" : "sumMapFiltered"; }
+    String getName() const override { return overflow ? "sumMapFilteredWithOverflow" : "sumMapFiltered"; }
 
     bool keepKey(const T & key) const { return keys_to_keep.count(key); }
 };
