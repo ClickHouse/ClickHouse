@@ -1037,6 +1037,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             source_file_path,
             file_segment->getInfoForLog());
 
+#ifdef NDEBUG
         if (read_type == ReadType::REMOTE_FS_READ_BYPASS_CACHE)
         {
             /// If we are not using cache, allow to return zero bytes if expected range is not finished,
@@ -1044,6 +1045,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             LOG_WARNING(log, "{}", log_message);
         }
         else
+#endif
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, log_message);
         }
