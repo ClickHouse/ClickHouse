@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/alter/projection
 sidebar_position: 49
 sidebar_label: PROJECTION
 ---

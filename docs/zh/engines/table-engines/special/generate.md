@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/table-engines/special/generate
 sidebar_position: 46
 sidebar_label: 随机数生成
 ---

@@ -8,11 +8,9 @@
 
 #include <iostream>
 #include <iomanip>
-#include <pcg_random.hpp>
 #include <Poco/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Stopwatch.h>
-#include <Common/randomSeed.h>
 #include <Core/Defines.h>
 
 
@@ -268,9 +266,9 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        pcg64 rng(randomSeed());
+        srand48(rdtsc());
         for (size_t i = 0; i < BUF_SIZE; ++i)
-            data[i] = rng();
+            data[i] = lrand48();
 
         watch.stop();
         double elapsed = watch.elapsedSeconds();

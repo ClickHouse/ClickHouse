@@ -1,7 +1,6 @@
 import pytest
 import asyncio
 import re
-import random
 import os.path
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
@@ -90,8 +89,6 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -132,8 +129,6 @@ def test_restore_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     assert instance.query("EXISTS test.table2") == "0\n"
 
     instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}")
@@ -146,8 +141,6 @@ def test_backup_table_under_another_name():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table AS test.table2 TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     assert instance.query("EXISTS test.table2") == "0\n"
 
@@ -176,8 +169,6 @@ def test_incremental_backup():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
 
@@ -261,89 +252,6 @@ def test_incremental_backup_after_renaming_table():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "100\t4950\n"
 
 
-def test_incremental_backup_for_log_family():
-    backup_name = new_backup_name()
-    create_and_fill_table(engine="Log")
-
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
-    instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
-
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == "102\t5081\n"
-
-    backup_name2 = new_backup_name()
-    instance.query(f"BACKUP TABLE test.table TO {backup_name2}")
-
-    backup_name_inc = new_backup_name()
-    instance.query(
-        f"BACKUP TABLE test.table TO {backup_name_inc} SETTINGS base_backup = {backup_name}"
-    )
-
-    metadata_path = os.path.join(
-        get_path_to_backup(backup_name), "metadata/test/table.sql"
-    )
-
-    metadata_path2 = os.path.join(
-        get_path_to_backup(backup_name2), "metadata/test/table.sql"
-    )
-
-    metadata_path_inc = os.path.join(
-        get_path_to_backup(backup_name_inc), "metadata/test/table.sql"
-    )
-
-    assert os.path.isfile(metadata_path)
-    assert os.path.isfile(metadata_path2)
-    assert not os.path.isfile(metadata_path_inc)
-    assert os.path.getsize(metadata_path) > 0
-    assert os.path.getsize(metadata_path) == os.path.getsize(metadata_path2)
-
-    x_bin_path = os.path.join(get_path_to_backup(backup_name), "data/test/table/x.bin")
-    y_bin_path = os.path.join(get_path_to_backup(backup_name), "data/test/table/y.bin")
-
-    x_bin_path2 = os.path.join(
-        get_path_to_backup(backup_name2), "data/test/table/x.bin"
-    )
-    y_bin_path2 = os.path.join(
-        get_path_to_backup(backup_name2), "data/test/table/y.bin"
-    )
-
-    x_bin_path_inc = os.path.join(
-        get_path_to_backup(backup_name_inc), "data/test/table/x.bin"
-    )
-
-    y_bin_path_inc = os.path.join(
-        get_path_to_backup(backup_name_inc), "data/test/table/y.bin"
-    )
-
-    assert os.path.isfile(x_bin_path)
-    assert os.path.isfile(y_bin_path)
-    assert os.path.isfile(x_bin_path2)
-    assert os.path.isfile(y_bin_path2)
-    assert os.path.isfile(x_bin_path_inc)
-    assert os.path.isfile(y_bin_path_inc)
-
-    x_bin_size = os.path.getsize(x_bin_path)
-    y_bin_size = os.path.getsize(y_bin_path)
-    x_bin_size2 = os.path.getsize(x_bin_path2)
-    y_bin_size2 = os.path.getsize(y_bin_path2)
-    x_bin_size_inc = os.path.getsize(x_bin_path_inc)
-    y_bin_size_inc = os.path.getsize(y_bin_path_inc)
-
-    assert x_bin_size > 0
-    assert y_bin_size > 0
-    assert x_bin_size2 > 0
-    assert y_bin_size2 > 0
-    assert x_bin_size_inc > 0
-    assert y_bin_size_inc > 0
-    assert x_bin_size2 == x_bin_size + x_bin_size_inc
-    assert y_bin_size2 == y_bin_size + y_bin_size_inc
-
-    instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name_inc}")
-
-    assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
-
-
 def test_backup_not_found_or_already_exists():
     backup_name = new_backup_name()
 
@@ -372,8 +280,6 @@ def test_file_engine():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -387,9 +293,6 @@ def test_database():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP DATABASE test")
     instance.query(f"RESTORE DATABASE test FROM {backup_name}")
 
@@ -402,7 +305,6 @@ def test_zip_archive():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
     assert os.path.isfile(get_path_to_backup(backup_name))
 
     instance.query("DROP TABLE test.table")
@@ -1159,112 +1061,3 @@ def test_mutation():
     instance.query("DROP TABLE test.table")
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
-
-
-def test_tables_dependency():
-    instance.query("CREATE DATABASE test")
-    instance.query("CREATE DATABASE test2")
-
-    # For this test we use random names of tables to check they're created according to their dependency (not just in alphabetic order).
-    random_table_names = [f"{chr(ord('A')+i)}" for i in range(0, 10)]
-    random.shuffle(random_table_names)
-    random_table_names = [
-        random.choice(["test", "test2"]) + "." + table_name
-        for table_name in random_table_names
-    ]
-    print(f"random_table_names={random_table_names}")
-
-    t1 = random_table_names[0]
-    t2 = random_table_names[1]
-    t3 = random_table_names[2]
-    t4 = random_table_names[3]
-    t5 = random_table_names[4]
-    t6 = random_table_names[5]
-    t7 = random_table_names[6]
-    t8 = random_table_names[7]
-    t9 = random_table_names[8]
-
-    # Create a materialized view and a dictionary with a local table as source.
-    instance.query(
-        f"CREATE TABLE {t1} (x Int64, y String) ENGINE=MergeTree ORDER BY tuple()"
-    )
-
-    instance.query(
-        f"CREATE TABLE {t2} (x Int64, y String) ENGINE=MergeTree ORDER BY tuple()"
-    )
-
-    instance.query(f"CREATE MATERIALIZED VIEW {t3} TO {t2} AS SELECT x, y FROM {t1}")
-
-    instance.query(
-        f"CREATE DICTIONARY {t4} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(4)"
-    )
-
-    instance.query(f"CREATE TABLE {t5} AS dictionary({t4})")
-
-    instance.query(
-        f"CREATE TABLE {t6}(x Int64, y String DEFAULT dictGet({t4}, 'y', x)) ENGINE=MergeTree ORDER BY tuple()"
-    )
-
-    instance.query(f"CREATE VIEW {t7} AS SELECT sum(x) FROM (SELECT x FROM {t6})")
-
-    instance.query(
-        f"CREATE TABLE {t8} AS {t2} ENGINE = Buffer({t2.split('.')[0]}, {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
-    )
-
-    instance.query(
-        f"CREATE DICTIONARY {t9} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(9)"
-    )
-
-    # Make backup.
-    backup_name = new_backup_name()
-    instance.query(f"BACKUP DATABASE test, DATABASE test2 TO {backup_name}")
-
-    # Drop everything in reversive order.
-    def drop():
-        instance.query(f"DROP DICTIONARY {t9}")
-        instance.query(f"DROP TABLE {t8} NO DELAY")
-        instance.query(f"DROP TABLE {t7} NO DELAY")
-        instance.query(f"DROP TABLE {t6} NO DELAY")
-        instance.query(f"DROP TABLE {t5} NO DELAY")
-        instance.query(f"DROP DICTIONARY {t4}")
-        instance.query(f"DROP TABLE {t3} NO DELAY")
-        instance.query(f"DROP TABLE {t2} NO DELAY")
-        instance.query(f"DROP TABLE {t1} NO DELAY")
-        instance.query("DROP DATABASE test NO DELAY")
-        instance.query("DROP DATABASE test2 NO DELAY")
-
-    drop()
-
-    # Restore everything.
-    instance.query(f"RESTORE ALL FROM {backup_name}")
-
-    # Check everything is restored.
-    assert instance.query(
-        "SELECT concat(database, '.', name) AS c FROM system.tables WHERE database IN ['test', 'test2'] ORDER BY c"
-    ) == TSV(sorted([t1, t2, t3, t4, t5, t6, t7, t8, t9]))
-
-    # Check logs.
-    instance.query("SYSTEM FLUSH LOGS")
-    expect_in_logs = [
-        f"Table {t1} has no dependencies (level 0)",
-        f"Table {t2} has no dependencies (level 0)",
-        (
-            f"Table {t3} has 2 dependencies: {t1}, {t2} (level 1)",
-            f"Table {t3} has 2 dependencies: {t2}, {t1} (level 1)",
-        ),
-        f"Table {t4} has 1 dependencies: {t1} (level 1)",
-        f"Table {t5} has 1 dependencies: {t4} (level 2)",
-        f"Table {t6} has 1 dependencies: {t4} (level 2)",
-        f"Table {t7} has 1 dependencies: {t6} (level 3)",
-        f"Table {t8} has 1 dependencies: {t2} (level 1)",
-        f"Table {t9} has 1 dependencies: {t1} (level 1)",
-    ]
-    for expect in expect_in_logs:
-        assert any(
-            [
-                instance.contains_in_log(f"RestorerFromBackup: {x}")
-                for x in tuple(expect)
-            ]
-        )
-
-    drop()

@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -23,7 +22,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/TableJoin.h>
-#include <fmt/format.h>
 
 namespace DB::ErrorCodes
 {
@@ -136,24 +134,10 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
 
 static size_t
 tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Names & allowed_inputs,
-                    bool can_remove_filter = true, size_t child_idx = 0)
+                    bool can_remove_filter = true)
 {
-    if (auto split_filter = splitFilter(parent_node, allowed_inputs, child_idx))
-        return tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
-    return 0;
-}
-
-
-/// Push down filter through specified type of step
-template <typename Step>
-static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
-{
-    if (typeid_cast<Step *>(child.get()))
-    {
-        Names allowed_inputs = child->getOutputStream().header.getNames();
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
-            return updated_steps;
-    }
+    if (auto split_filter = splitFilter(parent_node, allowed_inputs, 0))
+        return tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, 0);
     return 0;
 }
 
@@ -250,8 +234,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
     }
 
-    if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, nodes, child))
-        return updated_steps;
+    if (auto * distinct = typeid_cast<DistinctStep *>(child.get()))
+    {
+        Names allowed_inputs = distinct->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
+            return updated_steps;
+    }
 
     if (auto * join = typeid_cast<JoinStep *>(child.get()))
     {
@@ -302,7 +290,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             const size_t updated_steps = tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
             if (updated_steps > 0)
             {
-                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Pushed down filter {} to the {} side of join", split_filter_column_name, kind);
+                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Pushed down filter to {} side of join", kind);
             }
             return updated_steps;
         };
@@ -333,11 +321,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (auto updated_steps = simplePushDownOverStep<SortingStep>(parent_node, nodes, child))
-        return updated_steps;
-
-    if (auto updated_steps = simplePushDownOverStep<CreateSetAndFilterOnTheFlyStep>(parent_node, nodes, child))
-        return updated_steps;
+    if (typeid_cast<SortingStep *>(child.get()))
+    {
+        Names allowed_inputs = child->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
+            return updated_steps;
+    }
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/map
 sidebar_position: 65
 sidebar_label: Map(key, value)
 ---

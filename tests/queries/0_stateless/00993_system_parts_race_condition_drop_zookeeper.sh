@@ -61,7 +61,6 @@ function thread6()
     done
 }
 
-
 # https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
 export -f thread1;
 export -f thread2;
