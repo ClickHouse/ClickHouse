@@ -2167,6 +2167,8 @@ size_t MergeTreeData::clearEmptyParts()
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
 {
+    LOG_INFO(log, "Renaming table to path {} with ID {}", new_table_path, new_table_id.getFullTableName());
+
     auto disks = getStoragePolicy()->getDisks();
 
     for (const auto & disk : disks)
