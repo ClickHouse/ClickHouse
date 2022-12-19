@@ -1010,11 +1010,8 @@ ASTs::iterator StorageURL::collectHeaders(
     for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
         const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
-        if (headers_ast_function)
+        if (headers_ast_function && headers_ast_function->name == "headers")
         {
-            if (headers_ast_function->name != "headers")
-                continue;
-
             if (headers_it != url_function_args.end())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -1056,6 +1053,9 @@ ASTs::iterator StorageURL::collectHeaders(
 
             continue;
         }
+
+        if (headers_ast_function && headers_ast_function->name == "equals")
+            continue;
 
         (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
     }
