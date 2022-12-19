@@ -63,6 +63,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "compression_method",
     "structure",
     "filename",
+    "method",
+    "http_method",
     "description",
     "headers.header.name",
     "headers.header.value",
@@ -1070,7 +1072,7 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
     configuration.url = collection.get<String>("url");
     configuration.headers = getHeadersFromNamedCollection(collection);
 
-    configuration.http_method = collection.getOrDefault<String>("http_method", "");
+    configuration.http_method = collection.getOrDefault<String>("http_method", collection.getOrDefault<String>("method", ""));
     if (!configuration.http_method.empty() && configuration.http_method != Poco::Net::HTTPRequest::HTTP_POST
         && configuration.http_method != Poco::Net::HTTPRequest::HTTP_PUT)
         throw Exception(
