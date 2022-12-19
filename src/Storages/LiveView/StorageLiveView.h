@@ -21,12 +21,16 @@ limitations under the License. */
 namespace DB
 {
 
+using Time = std::chrono::time_point<std::chrono::system_clock>;
+using Seconds = std::chrono::seconds;
+using MilliSeconds = std::chrono::milliseconds;
+
 
 struct BlocksMetadata
 {
     String hash;
     UInt64 version;
-    std::chrono::time_point<std::chrono::system_clock> time;
+    Time time;
 };
 
 struct MergeableBlocks
@@ -49,10 +53,6 @@ class StorageLiveView final : public IStorage, WithContext
 friend class LiveViewSource;
 friend class LiveViewEventsSource;
 friend class LiveViewSink;
-
-using Time = std::chrono::time_point<std::chrono::system_clock>;
-using Seconds = std::chrono::seconds;
-using MilliSeconds = std::chrono::milliseconds;
 
 public:
     StorageLiveView(

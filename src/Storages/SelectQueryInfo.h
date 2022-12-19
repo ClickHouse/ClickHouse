@@ -207,9 +207,6 @@ struct SelectQueryInfo
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
 
-    /// Filter actions dag for current storage
-    ActionsDAGPtr filter_actions_dag;
-
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
     InputOrderInfoPtr input_order_info;
@@ -234,9 +231,6 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
-
-    // If limit is not 0, that means it's a trivial limit query.
-    UInt64 limit = 0;
 
     InputOrderInfoPtr getInputOrderInfo() const
     {

@@ -66,6 +66,12 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     if (result_type)
         buffer << ", result_type: " + result_type->getName();
 
+    if (constant_value)
+    {
+        buffer << ", constant_value: " << constant_value->getValue().dump();
+        buffer << ", constant_value_type: " << constant_value->getType()->getName();
+    }
+
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
     {
@@ -87,6 +93,27 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
+String FunctionNode::getName() const
+{
+    String name = function_name;
+
+    const auto & parameters = getParameters();
+    const auto & parameters_nodes = parameters.getNodes();
+    if (!parameters_nodes.empty())
+    {
+        name += '(';
+        name += parameters.getName();
+        name += ')';
+    }
+
+    const auto & arguments = getArguments();
+    name += '(';
+    name += arguments.getName();
+    name += ')';
+
+    return name;
+}
+
 bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
@@ -101,6 +128,13 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
     else if (result_type && !rhs_typed.result_type)
         return false;
     else if (!result_type && rhs_typed.result_type)
+        return false;
+
+    if (constant_value && rhs_typed.constant_value && *constant_value != *rhs_typed.constant_value)
+        return false;
+    else if (constant_value && !rhs_typed.constant_value)
+        return false;
+    else if (!constant_value && rhs_typed.constant_value)
         return false;
 
     return true;
@@ -120,6 +154,17 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
         hash_state.update(result_type_name.size());
         hash_state.update(result_type_name);
     }
+
+    if (constant_value)
+    {
+        auto constant_dump = applyVisitor(FieldVisitorToString(), constant_value->getValue());
+        hash_state.update(constant_dump.size());
+        hash_state.update(constant_dump);
+
+        auto constant_value_type_name = constant_value->getType()->getName();
+        hash_state.update(constant_value_type_name.size());
+        hash_state.update(constant_value_type_name);
+    }
 }
 
 QueryTreeNodePtr FunctionNode::cloneImpl() const
@@ -132,6 +177,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->function = function;
     result_function->aggregate_function = aggregate_function;
     result_function->result_type = result_type;
+    result_function->constant_value = constant_value;
 
     return result_function;
 }
@@ -141,12 +187,7 @@ ASTPtr FunctionNode::toASTImpl() const
     auto function_ast = std::make_shared<ASTFunction>();
 
     function_ast->name = function_name;
-
-    if (isWindowFunction())
-    {
-        function_ast->is_window_function = true;
-        function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
-    }
+    function_ast->is_window_function = isWindowFunction();
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())

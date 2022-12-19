@@ -1,7 +1,16 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#include <libdivide-config.h>
+#if defined(__SSE2__)
+#    define LIBDIVIDE_SSE2
+#elif defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX512VL__)
+#    define LIBDIVIDE_AVX512
+#elif defined(__AVX2__)
+#    define LIBDIVIDE_AVX2
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+#    define LIBDIVIDE_NEON
+#endif
+
 #include <libdivide.h>
 
 
@@ -124,7 +133,6 @@ struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
 {
     using Op = ModuloLegacyImpl<A, B>;
 };
-
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -169,30 +177,6 @@ using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, 
 REGISTER_FUNCTION(ModuloLegacy)
 {
     factory.registerFunction<FunctionModuloLegacy>();
-}
-
-struct NamePositiveModulo
-{
-    static constexpr auto name = "positiveModulo";
-};
-using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloImpl, NamePositiveModulo, false>;
-
-REGISTER_FUNCTION(PositiveModulo)
-{
-    factory.registerFunction<FunctionPositiveModulo>(
-        {
-            R"(
-Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
-Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
-In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
-        )",
-            Documentation::Examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);"}},
-            Documentation::Categories{"Arithmetic"}},
-        FunctionFactory::CaseInsensitive);
-
-    factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::CaseInsensitive);
-    /// Compatibility with Spark:
-    factory.registerAlias("pmod", "positiveModulo", FunctionFactory::CaseInsensitive);
 }
 
 }

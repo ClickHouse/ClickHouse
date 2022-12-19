@@ -8,8 +8,8 @@ slug: /en/install
 
 You have two options for getting up and running with ClickHouse:
 
-- **[ClickHouse Cloud](https://clickhouse.com/cloud/):** the official ClickHouse as a service, - built by, maintained, and supported by the creators of ClickHouse
-- **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture
+- **[ClickHouse Cloud](https://clickhouse.cloud/):** the official ClickHouse as a service, - built by, maintained, and supported by the creators of ClickHouse
+- **Self-managed ClickHouse:** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture
 
 ## ClickHouse Cloud
 
@@ -117,24 +117,6 @@ sudo apt-get install apt-transport-https ca-certificates dirmngr
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
 
 echo "deb https://repo.clickhouse.com/deb/stable/ main/" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
-```
-
-</details>
-
-<details>
-<summary>Migration Method for installing the deb-packages</summary>
-
-```bash
-sudo apt-key del E0C56BD4
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
-echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
 
@@ -406,3 +388,4 @@ SELECT 1
 **Congratulations, the system works!**
 
 To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/en/tutorial.md).
+

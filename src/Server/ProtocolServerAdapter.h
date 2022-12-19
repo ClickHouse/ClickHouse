@@ -6,10 +6,8 @@
 #include <memory>
 #include <string>
 
-
 namespace DB
 {
-
 class GRPCServer;
 class TCPServer;
 

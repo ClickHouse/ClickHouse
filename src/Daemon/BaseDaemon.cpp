@@ -30,7 +30,6 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
-#include <Poco/Pipe.h>
 
 #include <Common/ErrorHandlers.h>
 #include <base/argsToConfig.h>
@@ -77,7 +76,6 @@ namespace DB
     {
         extern const int CANNOT_SET_SIGNAL_HANDLER;
         extern const int CANNOT_SEND_SIGNAL;
-        extern const int SYSTEM_ERROR;
     }
 }
 
@@ -313,29 +311,19 @@ private:
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
         }
 
-        std::string signal_description = "Unknown signal";
-
-        /// Some of these are not really signals, but our own indications on failure reason.
-        if (sig == StdTerminate)
-            signal_description = "std::terminate";
-        else if (sig == SanitizerTrap)
-            signal_description = "sanitizer trap";
-        else if (sig >= 0)
-            signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
         LOG_FATAL(log, "########################################");
 
         if (query_id.empty())
         {
             LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (no query) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, signal_description, sig);
+                thread_num, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, query_id, query, signal_description, sig);
+                thread_num, query_id, query, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context)
         }
 
         String error_message;
@@ -367,33 +355,27 @@ private:
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
         /// Please keep the below log messages in-sync with the ones in programs/server/Server.cpp
-
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
         {
-            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read.");
+            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read."
+                " (calculated checksum: {})", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == daemon.stored_binary_hash)
+        {
+            LOG_FATAL(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
         }
         else
         {
-            String calculated_binary_hash = getHashOfLoadedBinaryHex();
-            if (calculated_binary_hash == daemon.stored_binary_hash)
-            {
-                LOG_FATAL(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
-            }
-            else
-            {
-                LOG_FATAL(
-                    log,
-                    "Calculated checksum of the executable ({0}) does not correspond"
-                    " to the reference checksum stored in the executable ({1})."
-                    " This may indicate one of the following:"
-                    " - the executable was changed just after startup;"
-                    " - the executable was corrupted on disk due to faulty hardware;"
-                    " - the loaded executable was corrupted in memory due to faulty hardware;"
-                    " - the file was intentionally modified;"
-                    " - a logical error in the code.",
-                    calculated_binary_hash,
-                    daemon.stored_binary_hash);
-            }
+            LOG_FATAL(log, "Calculated checksum of the executable ({0}) does not correspond"
+                " to the reference checksum stored in the executable ({1})."
+                " This may indicate one of the following:"
+                " - the executable was changed just after startup;"
+                " - the executable was corrupted on disk due to faulty hardware;"
+                " - the loaded executable was corrupted in memory due to faulty hardware;"
+                " - the file was intentionally modified;"
+                " - a logical error in the code."
+                , calculated_binary_hash, daemon.stored_binary_hash);
         }
 #endif
 
@@ -1009,15 +991,11 @@ void BaseDaemon::setupWatchdog()
 
     while (true)
     {
-        /// This pipe is used to synchronize notifications to the service manager from the child process
-        /// to be sent after the notifications from the parent process.
-        Poco::Pipe notify_sync;
-
         static pid_t pid = -1;
         pid = fork();
 
         if (-1 == pid)
-            DB::throwFromErrno("Cannot fork", DB::ErrorCodes::SYSTEM_ERROR);
+            throw Poco::Exception("Cannot fork");
 
         if (0 == pid)
         {
@@ -1025,35 +1003,9 @@ void BaseDaemon::setupWatchdog()
 #if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
                 logger().warning("Cannot do prctl to ask termination with parent.");
-
-            if (getppid() == 1)
-                throw Poco::Exception("Parent watchdog process has exited.");
 #endif
-
-            {
-                notify_sync.close(Poco::Pipe::CLOSE_WRITE);
-                /// Read from the pipe will block until the pipe is closed.
-                /// This way we synchronize with the parent process.
-                char buf[1];
-                if (0 != notify_sync.readBytes(buf, sizeof(buf)))
-                    throw Poco::Exception("Unexpected result while waiting for watchdog synchronization pipe to close.");
-            }
-
             return;
         }
-
-#if defined(OS_LINUX)
-        /// Tell the service manager the actual main process is not this one but the forked process
-        /// because it is going to be serving the requests and it is going to send "READY=1" notification
-        /// when it is fully started.
-        /// NOTE: we do this right after fork() and then notify the child process to "unblock" so that it finishes initialization
-        /// and sends "READY=1" after we have sent "MAINPID=..."
-        systemdNotify(fmt::format("MAINPID={}\n", pid));
-#endif
-
-        /// Close the pipe after notifying the service manager.
-        /// The child process is waiting for the pipe to be closed.
-        notify_sync.close();
 
         /// Change short thread name and process name.
         setThreadName("clckhouse-watch");   /// 15 characters
@@ -1173,58 +1125,3 @@ String BaseDaemon::getStoredBinaryHash() const
 {
     return stored_binary_hash;
 }
-
-#if defined(OS_LINUX)
-void systemdNotify(const std::string_view & command)
-{
-    const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
-
-    if (path == nullptr)
-        return; /// not using systemd
-
-    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-
-    if (s == -1)
-        DB::throwFromErrno("Can't create UNIX socket for systemd notify.", DB::ErrorCodes::SYSTEM_ERROR);
-
-    SCOPE_EXIT({ close(s); });
-
-    const size_t len = strlen(path);
-
-    struct sockaddr_un addr;
-
-    addr.sun_family = AF_UNIX;
-
-    if (len < 2 || len > sizeof(addr.sun_path) - 1)
-        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
-
-    memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
-
-    size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
-
-    /// '@' means this is Linux abstract socket, per documentation sun_path[0] must be set to '\0' for it.
-    if (path[0] == '@')
-        addr.sun_path[0] = 0;
-    else if (path[0] == '/')
-        addrlen += 1; /// non-abstract-addresses should be zero terminated.
-    else
-        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
-
-    const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
-
-    size_t sent_bytes_total = 0;
-    while (sent_bytes_total < command.size())
-    {
-        auto sent_bytes = sendto(s, command.data() + sent_bytes_total, command.size() - sent_bytes_total, 0, sock_addr, static_cast<socklen_t>(addrlen));
-        if (sent_bytes == -1)
-        {
-            if (errno == EINTR)
-                continue;
-            else
-                DB::throwFromErrno("Failed to notify systemd, sendto returned error.", DB::ErrorCodes::SYSTEM_ERROR);
-        }
-        else
-            sent_bytes_total += sent_bytes;
-    }
-}
-#endif
