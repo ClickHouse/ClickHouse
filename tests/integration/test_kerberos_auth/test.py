@@ -1,18 +1,5 @@
-import os.path as p
-import random
-import threading
-import time
 import pytest
-import logging
-
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.client import QueryRuntimeException
-
-import json
-import subprocess
-
-import socket
 
 cluster = ClickHouseCluster(__file__)
 instance1 = cluster.add_instance(
@@ -20,14 +7,12 @@ instance1 = cluster.add_instance(
     main_configs=["configs/kerberos_with_keytab.xml"],
     user_configs=["configs/users.xml"],
     with_kerberos_kdc=True,
-    clickhouse_path_dir="clickhouse_path",
 )
 instance2 = cluster.add_instance(
     "instance2",
     main_configs=["configs/kerberos_without_keytab.xml"],
     user_configs=["configs/users.xml"],
     with_kerberos_kdc=True,
-    clickhouse_path_dir="clickhouse_path",
 )
 
 
