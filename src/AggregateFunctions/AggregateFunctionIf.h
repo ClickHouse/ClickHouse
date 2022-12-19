@@ -5,7 +5,7 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -54,16 +54,6 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
-    }
-
-    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
-    {
-        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        return nested_func->getNormalizedStateType();
     }
 
     bool isVersioned() const override
@@ -118,38 +108,31 @@ public:
     }
 
     void addBatch(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * __restrict places,
+        size_t batch_size,
+        AggregateDataPtr * places,
         size_t place_offset,
         const IColumn ** columns,
         Arena * arena,
         ssize_t) const override
     {
-        nested_func->addBatch(row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
+        nested_func->addBatch(batch_size, places, place_offset, columns, arena, num_arguments - 1);
     }
 
     void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t) const override
     {
-        nested_func->addBatchSinglePlace(row_begin, row_end, place, columns, arena, num_arguments - 1);
+        nested_func->addBatchSinglePlace(batch_size, place, columns, arena, num_arguments - 1);
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
+        size_t batch_size,
+        AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
         ssize_t) const override
     {
-        nested_func->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, num_arguments - 1);
+        nested_func->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena, num_arguments - 1);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -158,14 +141,13 @@ public:
     }
 
     void mergeBatch(
-        size_t row_begin,
-        size_t row_end,
+        size_t batch_size,
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
         Arena * arena) const override
     {
-        nested_func->mergeBatch(row_begin, row_end, places, place_offset, rhs, arena);
+        nested_func->mergeBatch(batch_size, places, place_offset, rhs, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -181,11 +163,6 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertResultInto(place, to, arena);
-    }
-
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        nested_func->insertMergeResultInto(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

@@ -5,7 +5,7 @@ elseif(ENABLE_HIVE)
 endif()
 
 if (NOT ENABLE_HIVE)
-    message(STATUS "Not using hive")
+    message("Hive disabled")
     return()
 endif()
 

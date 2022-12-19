@@ -79,16 +79,12 @@ def test_merge_doesnt_work_without_zookeeper(start_cluster):
         == "2\n"
     )
 
-    # Parts may be moved to Deleting state and then back in Outdated state.
-    # But system.parts returns only Active and Outdated parts if _state column is not queried.
     with PartitionManager() as pm:
         node1.query("OPTIMIZE TABLE test_table FINAL")
         pm.drop_instance_zk_connections(node1)
         # unfortunately we can be too fast and delete node before partition with ZK
         if (
-            node1.query(
-                "SELECT count(*) from system.parts where table = 'test_table' and _state!='dummy'"
-            )
+            node1.query("SELECT count(*) from system.parts where table = 'test_table'")
             == "1\n"
         ):
             print("We were too fast and deleted parts before partition with ZK")
@@ -96,7 +92,7 @@ def test_merge_doesnt_work_without_zookeeper(start_cluster):
             time.sleep(10)  # > old_parts_lifetime
             assert (
                 node1.query(
-                    "SELECT count(*) from system.parts where table = 'test_table' and _state!='dummy'"
+                    "SELECT count(*) from system.parts where table = 'test_table'"
                 )
                 == "3\n"
             )

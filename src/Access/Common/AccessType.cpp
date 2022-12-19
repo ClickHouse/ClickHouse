@@ -35,7 +35,7 @@ namespace
 #undef ACCESS_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING
         }
 
-        void addToMapping(AccessType type, std::string_view str)
+        void addToMapping(AccessType type, const std::string_view & str)
         {
             String str2{str};
             boost::replace_all(str2, "_", " ");

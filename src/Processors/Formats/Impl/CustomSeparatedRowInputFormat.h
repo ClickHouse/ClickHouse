@@ -30,7 +30,6 @@ private:
 
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
-    void readPrefix() override;
 
     std::unique_ptr<PeekableReadBuffer> buf;
     bool ignore_spaces;
@@ -83,9 +82,7 @@ private:
     std::vector<String> readRowImpl();
 
     template <bool read_string>
-    String readFieldIntoString(bool is_first, bool is_last, bool is_unknown);
-
-    void updateFormatSettings(bool is_last_column);
+    String readFieldIntoString(bool is_first);
 
     PeekableReadBuffer * buf;
     bool ignore_spaces;
@@ -95,15 +92,14 @@ private:
 class CustomSeparatedSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
-    CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);
+    CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_, ContextPtr context_);
 
 private:
     DataTypes readRowAndGetDataTypes() override;
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
-
     PeekableReadBuffer buf;
     CustomSeparatedFormatReader reader;
+    ContextPtr context;
     bool first_row = true;
 };
 
