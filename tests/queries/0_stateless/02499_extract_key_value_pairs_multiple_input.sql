@@ -17,8 +17,8 @@ select extractKeyValuePairs('name: neymar, favorite_quote: Premature\\ optimizat
 
 ----- Mix Strings -----
 
--- Expected output: {'no:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}
-select extractKeyValuePairs('9 ads =nm,  no\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\ picasso, team: psg,', '\\', ':', ',', '"', '.');
+-- Expected output: {'na:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}
+select extractKeyValuePairs('9 ads =nm,  na\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\ picasso, team: psg,', '\\', ':', ',', '"', '.');
 
 -- Expected output: {'XNFHGSSF_RHRUZHVBS_KWBT':'F'}
 SELECT extractKeyValuePairs('XNFHGSSF_RHRUZHVBS_KWBT: F,', '\\', ':', ',', '"');

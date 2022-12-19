@@ -61,6 +61,8 @@ private:
 
     static ParsedArguments parseArguments(const ColumnsWithTypeAndName & arguments);
 
+    static char extractControlCharacter(ColumnPtr column);
+
     static std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> getExtractor(
         CharArgument escape_character,
         CharArgument key_value_pair_delimiter,
