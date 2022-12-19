@@ -240,7 +240,8 @@ KeeperStateManager::KeeperStateManager(
           log_storage_path,
           coordination_settings->rotate_log_storage_interval,
           coordination_settings->force_sync,
-          coordination_settings->compress_logs))
+          coordination_settings->compress_logs,
+          coordination_settings->max_log_file_size))
     , server_state_path(state_file_path)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {
