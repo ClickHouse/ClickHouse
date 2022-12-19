@@ -257,7 +257,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, LoadingStrictness
     auto startup_one_table = [&](const StoragePtr & table)
     {
         /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
-        /// until statup finished.
+        /// until startup finished.
         auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
         table->startup();
         logAboutProgress(log, ++tables_processed, total_tables, watch);
