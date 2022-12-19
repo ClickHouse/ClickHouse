@@ -6,10 +6,11 @@ slug: /en/install
 
 # Installing ClickHouse
 
-You have two options for getting up and running with ClickHouse:
+You have three options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
 - **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, ARM, or PowerPC64LE CPU architecture
+- **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** Read the guide with the official image in Docker Hub
 
 ## ClickHouse Cloud
 
