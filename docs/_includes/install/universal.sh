@@ -9,14 +9,26 @@ if [ "${OS}" = "Linux" ]
 then
     if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
     then
-        DIR="amd64"
+        # Require at least SSE4.2 (introduced in 2006) but also provide a fallback to SSE2 (introduced in 2000) for older systems. SSE2
+        # builds are much less tested than SSE 4.2 builds. Hardware w/o SSE2 is unsupported.
+        HAS_SSE42=$(grep sse4_2 /proc/cpuinfo)
+        if [ "${HAS_SSE42}" ]
+        then
+            DIR="amd64"
+        else
+            HAS_SSE2=$(grep sse2 /proc/cpuinfo)
+            if [ "${HAS_SSE2}" ]
+            then
+                DIR="amd64sse2"
+            fi
+        fi
     elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
     then
         # If the system has >=ARMv8.2 (https://en.wikipedia.org/wiki/AArch64), choose the corresponding build, else fall back to a v8.0
         # compat build. Unfortunately, the ARM ISA level cannot be read directly, we need to guess from the "features" in /proc/cpuinfo.
         # Also, the flags in /proc/cpuinfo are named differently than the flags passed to the compiler (cmake/cpu_features.cmake).
-        ARMV82=$(grep -m 1 'Features' /proc/cpuinfo | awk '/asimd/ && /sha1/ && /aes/ && /atomics/ && /lrcpc/')
-        if [ "${ARMV82}" ]
+        HAS_ARMV82=$(grep -m 1 'Features' /proc/cpuinfo | awk '/asimd/ && /sha1/ && /aes/ && /atomics/ && /lrcpc/')
+        if [ "${HAS_ARMV82}" ]
         then
             DIR="aarch64"
         else
