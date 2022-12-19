@@ -1,5 +1,13 @@
 -- Tags: no-parallel
 
+drop table if exists pr_t;
+drop table if exists dist_pr_t;
+drop table if exists dist_t_different_dbs;
+drop table if exists shard_1.t_different_dbs;
+drop table if exists t_different_dbs;
+drop table if exists dist_t;
+drop table if exists t;
+
 create table t(a UInt64, b UInt64) engine=MergeTree order by a;
 system stop merges t;
 insert into t select number, number from numbers_mt(1e6);
@@ -43,8 +51,10 @@ create table dist_t_different_dbs as t engine = Distributed(test_cluster_two_sha
 -- { echoOn } --
 explain pipeline select a, count() from dist_t_different_dbs group by a order by a limit 5 offset 500;
 
+set query_plan_remove_redundant_order_by=0; -- disable it temporary
 select a, count() from dist_t_different_dbs group by a order by a limit 5 offset 500;
 select a, count() from dist_t_different_dbs group by a, b order by a limit 5 offset 500;
+set query_plan_remove_redundant_order_by=1; -- enable back
 
 -- { echoOff } --
 
@@ -64,9 +74,10 @@ select a, count() from dist_pr_t group by a, b order by a limit 5 offset 500;
 
 -- { echoOff } --
 
-drop table dist_pr_t;
-drop table dist_t_different_dbs;
-drop table shard_1.t_different_dbs;
-drop table t_different_dbs;
-drop table dist_t;
-drop table t;
+-- drop table if exists pr_t;
+-- drop table dist_pr_t;
+-- drop table dist_t_different_dbs;
+-- drop table shard_1.t_different_dbs;
+-- drop table t_different_dbs;
+-- drop table dist_t;
+-- drop table t;
