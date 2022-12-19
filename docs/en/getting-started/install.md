@@ -26,6 +26,42 @@ Once your Cloud service is provisioned, you will be able to [connect to it](/doc
 
 ## Self-Managed Install
 
+1. The simplest way to download ClickHouse locally is to run the following command. If your operating system is supported, an appropriate ClickHouse binary will be downloaded and made runnable:
+  ```bash
+  curl https://clickhouse.com/ | sh
+  ```
+
+1. Run the `install` command, which defines a collection of useful symlinks along with the files and folders used by ClickHouse - all of which you can see in the output of the install script:
+  ```bash
+  sudo ./clickhouse install
+  ```
+
+1. At the end of the install script, you are prompted for a password for the `default` user. Feel free to enter a password, or you can optionally leave it blank:
+  ```response
+  Creating log directory /var/log/clickhouse-server.
+  Creating data directory /var/lib/clickhouse.
+  Creating pid directory /var/run/clickhouse-server.
+   chown -R clickhouse:clickhouse '/var/log/clickhouse-server'
+   chown -R clickhouse:clickhouse '/var/run/clickhouse-server'
+   chown  clickhouse:clickhouse '/var/lib/clickhouse'
+  Enter password for default user:
+  ```
+  You should see the following output:
+  ```response
+   ClickHouse has been successfully installed.
+
+   Start clickhouse-server with:
+    sudo clickhouse start
+
+   Start clickhouse-client with:
+    clickhouse-client
+  ```
+
+1. Run the following command to start the ClickHouse server:
+  ```bash
+  sudo clickhouse start
+  ```
+
 :::tip
 The [Quick Start](/docs/en/quick-start.mdx/#step-1-get-clickhouse) walks through the steps to download and run ClickHouse, connect to it, and insert data.
 :::
