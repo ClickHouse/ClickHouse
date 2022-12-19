@@ -1107,10 +1107,8 @@ void FileCache::reduceSizeToDownloaded(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    CreateFileSegmentSettings create_settings{ .is_persistent = file_segment->is_persistent };
-
     cell->file_segment = std::make_shared<FileSegment>(
-        offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, create_settings);
+        offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{});
 
     assert(file_segment->reserved_size == downloaded_size);
 }

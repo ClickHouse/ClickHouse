@@ -5,7 +5,6 @@ import logging
 import subprocess
 import os
 import sys
-from typing import List, Tuple
 
 from github import Github
 
@@ -45,10 +44,8 @@ def get_run_command(
     return cmd
 
 
-def process_results(
-    result_folder: str, server_log_path: str, run_log_path: str
-) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
-    test_results = []  # type: List[Tuple[str, str]]
+def process_results(result_folder, server_log_path, run_log_path):
+    test_results = []
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content
@@ -92,7 +89,7 @@ def process_results(
 
     results_path = os.path.join(result_folder, "test_results.tsv")
     with open(results_path, "r", encoding="utf-8") as results_file:
-        test_results = list(csv.reader(results_file, delimiter="\t"))  # type: ignore
+        test_results = list(csv.reader(results_file, delimiter="\t"))
     if len(test_results) == 0:
         raise Exception("Empty results")
 
@@ -145,7 +142,7 @@ if __name__ == "__main__":
     )
     logging.info("Going to run func tests: %s", run_command)
 
-    with TeePopen(run_command, run_log_path, timeout=60 * 150) as process:
+    with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")

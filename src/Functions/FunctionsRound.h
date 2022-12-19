@@ -16,6 +16,7 @@
 #include <cmath>
 #include <type_traits>
 #include <array>
+#include <base/bit_cast.h>
 #include <base/sort.h>
 #include <algorithm>
 

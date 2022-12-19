@@ -2,11 +2,11 @@
 
 #include <string>
 
-#include <Common/AsynchronousMetrics.h>
+#include <Interpreters/AsynchronousMetrics.h>
+
 #include <IO/WriteBuffer.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-
 
 namespace DB
 {

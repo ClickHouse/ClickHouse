@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <QueryPipeline/PipelineResourcesHolder.h>
 
 namespace DB
 {

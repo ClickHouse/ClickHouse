@@ -49,28 +49,18 @@ then
     exit 1
 fi
 
-clickhouse_download_filename_prefix="clickhouse"
-clickhouse="$clickhouse_download_filename_prefix"
-
-i=0
-while [ -f "$clickhouse" ]
-do
-    clickhouse="${clickhouse_download_filename_prefix}.${i}"
-    i=$(($i+1))
-done
-
 URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo
-echo "Will download ${URL} into ${clickhouse}"
+echo "Will download ${URL}"
 echo
-curl "${URL}" -o "${clickhouse}" && chmod a+x "${clickhouse}" || exit 1
+curl -O "${URL}" && chmod a+x clickhouse || exit 1
 echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
-    ./${clickhouse}"
+    ./clickhouse"
 
 if [ "${OS}" = "Linux" ]
 then
     echo
     echo "You can also install it:
-    sudo ./${clickhouse} install"
+    sudo ./clickhouse install"
 fi

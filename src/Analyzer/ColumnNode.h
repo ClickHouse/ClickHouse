@@ -112,6 +112,11 @@ public:
         return QueryTreeNodeType::COLUMN;
     }
 
+    String getName() const override
+    {
+        return column.name;
+    }
+
     DataTypePtr getResultType() const override
     {
         return column.type;

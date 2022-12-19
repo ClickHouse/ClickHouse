@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class InterpreterSelectQueryAnalyzer : public IInterpreter
+class InterpreterSelectQueryAnalyzer : public IInterpreter, public WithContext
 {
 public:
     /// Initialize interpreter with query AST
@@ -25,23 +25,11 @@ public:
         const SelectQueryOptions & select_query_options_,
         ContextPtr context_);
 
-    const ContextPtr & getContext() const
-    {
-        return context;
-    }
-
-    ContextPtr & getContext()
-    {
-        return context;
-    }
-
     Block getSampleBlock();
 
     BlockIO execute() override;
 
     QueryPlan && extractQueryPlan() &&;
-
-    void addStorageLimits(const StorageLimitsList & storage_limits);
 
     bool supportsTransactions() const override { return true; }
 
@@ -55,7 +43,6 @@ private:
     ASTPtr query;
     QueryTreeNodePtr query_tree;
     SelectQueryOptions select_query_options;
-    ContextPtr context;
     Planner planner;
 };
 

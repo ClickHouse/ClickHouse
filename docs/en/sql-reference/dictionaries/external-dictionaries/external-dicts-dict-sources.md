@@ -1,15 +1,12 @@
 ---
 slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources
 sidebar_position: 43
-sidebar_label: Dictionary Sources
+sidebar_label: Sources of External Dictionaries
 ---
-import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
-# Dictionary Sources
+# Sources of External Dictionaries
 
-<CloudDetails />
-
-A dictionary can be connected to ClickHouse from many different sources.
+An external dictionary can be connected to ClickHouse from many different sources.
 
 If the dictionary is configured using an xml-file, the configuration looks like this:
 
@@ -68,13 +65,13 @@ Types of sources (`source_type`):
 -   [Executable Pool](#dicts-external_dicts_dict_sources-executable_pool)
 -   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 -   DBMS
-    -   [ODBC](#odbc)
-    -   [MySQL](#mysql)
-    -   [ClickHouse](#clickhouse)
-    -   [MongoDB](#mongodb)
-    -   [Redis](#redis)
-    -   [Cassandra](#cassandra)
-    -   [PostgreSQL](#postgresql)
+    -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
+    -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+    -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    -   [Redis](#dicts-external_dicts_dict_sources-redis)
+    -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
 ## Local File
 
@@ -824,7 +821,3 @@ Setting fields:
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
-
-## Related Content
-
-- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

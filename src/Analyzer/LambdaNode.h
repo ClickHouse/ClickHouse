@@ -84,9 +84,16 @@ public:
         return QueryTreeNodeType::LAMBDA;
     }
 
+    String getName() const override;
+
     DataTypePtr getResultType() const override
     {
         return getExpression()->getResultType();
+    }
+
+    ConstantValuePtr getConstantValueOrNull() const override
+    {
+        return getExpression()->getConstantValueOrNull();
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
