@@ -484,28 +484,42 @@ size_t HashJoin::getTotalRowCount() const
         }
     }
 
-
     return res;
 }
 
 size_t HashJoin::getTotalByteCount() const
 {
+#ifdef NDEBUG
+    size_t debug_blocks_allocated_size = 0;
+    for (const auto & block : data->blocks)
+        debug_blocks_allocated_size += block.allocatedBytes();
+
+    if (data->blocks_allocated_size != debug_blocks_allocated_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "data->blocks_allocated_size != debug_blocks_allocated_size ({} != {})",
+                        data->blocks_allocated_size, debug_blocks_allocated_size);
+
+    size_t debug_blocks_nullmaps_allocated_size = 0;
+    for (const auto & nullmap : data->blocks_nullmaps)
+        debug_blocks_nullmaps_allocated_size += nullmap.second->allocatedBytes();
+
+    if (data->blocks_nullmaps_allocated_size != debug_blocks_nullmaps_allocated_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "data->blocks_nullmaps_allocated_size != debug_blocks_nullmaps_allocated_size ({} != {})",
+                        data->blocks_nullmaps_allocated_size, debug_blocks_nullmaps_allocated_size);
+#endif
+
     size_t res = 0;
 
-    if (data->type == Type::CROSS)
-    {
-        for (const auto & block : data->blocks)
-            res += block.bytes();
-    }
-    else
+    res += data->blocks_allocated_size;
+    res += data->blocks_nullmaps_allocated_size;
+    res += data->pool.size();
+
+    if (data->type != Type::CROSS)
     {
         for (const auto & map : data->maps)
         {
             joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
         }
-        res += data->pool.size();
     }
-
     return res;
 }
 
@@ -691,6 +705,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             throw DB::Exception("addJoinedBlock called when HashJoin locked to prevent updates",
                                 ErrorCodes::LOGICAL_ERROR);
 
+        data->blocks_allocated_size += structured_block.allocatedBytes();
         data->blocks.emplace_back(std::move(structured_block));
         Block * stored_block = &data->blocks.back();
 
@@ -759,10 +774,16 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             }
 
             if (!multiple_disjuncts && save_nullmap)
+            {
+                data->blocks_nullmaps_allocated_size += null_map_holder->allocatedBytes();
                 data->blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+            }
 
             if (!multiple_disjuncts && not_joined_map)
+            {
+                data->blocks_nullmaps_allocated_size += not_joined_map->allocatedBytes();
                 data->blocks_nullmaps.emplace_back(stored_block, std::move(not_joined_map));
+            }
 
             if (!check_limits)
                 return true;
@@ -1715,6 +1736,16 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
 }
 
+HashJoin::~HashJoin()
+{
+    if (!data)
+    {
+        LOG_DEBUG(log, "Join data has been released");
+        return;
+    }
+    LOG_DEBUG(log, "Join data is being destroyed, {} bytes and {} rows in hash table", getTotalByteCount(), getTotalRowCount());
+}
+
 template <typename Mapped>
 struct AdderNonJoined
 {
@@ -1752,7 +1783,6 @@ struct AdderNonJoined
         }
     }
 };
-
 
 /// Stream from not joined earlier rows of the right table.
 /// Based on:

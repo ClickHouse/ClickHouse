@@ -149,6 +149,8 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
+    ~HashJoin() override;
+
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     /** Add block of data from right hand of JOIN to the map.
@@ -337,6 +339,8 @@ public:
         Arena pool;
 
         bool released = false;
+        size_t blocks_allocated_size = 0;
+        size_t blocks_nullmaps_allocated_size = 0;
     };
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;

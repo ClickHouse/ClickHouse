@@ -96,7 +96,7 @@ private:
     void addJoinedBlockImpl(Block block);
 
     /// Check that @join satisifes limits on rows/bytes in @table_join.
-    bool fitsInMemory() const;
+    bool hasMemoryOverflow() const;
 
     /// Create new bucket at the end of @destination.
     void addBucket(Buckets & destination);
