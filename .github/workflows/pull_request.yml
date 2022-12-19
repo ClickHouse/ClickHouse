@@ -59,7 +59,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix aarch64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
@@ -76,7 +76,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix amd64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: changed_images_amd64
           path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
@@ -89,12 +89,12 @@ jobs:
         with:
           clear-repository: true
       - name: Download changed aarch64 images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}
       - name: Download changed amd64 images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images_amd64
           path: ${{ runner.temp }}
@@ -103,7 +103,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
@@ -124,7 +124,7 @@ jobs:
       - name: Download changed images
         # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
         continue-on-error: true
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
@@ -158,7 +158,7 @@ jobs:
         with:
           clear-repository: true
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
@@ -188,7 +188,7 @@ jobs:
         with:
           clear-repository: true
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: CompatibilityCheck
@@ -219,7 +219,7 @@ jobs:
         with:
           clear-repository: true
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Shared build check
@@ -251,7 +251,7 @@ jobs:
           BUILD_NAME=package_release
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -269,7 +269,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -293,7 +293,7 @@ jobs:
           BUILD_NAME=binary_release
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -310,7 +310,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -334,7 +334,7 @@ jobs:
           BUILD_NAME=package_aarch64
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ runner.temp }}/images_path
@@ -352,7 +352,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -376,7 +376,7 @@ jobs:
           BUILD_NAME=package_asan
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -393,7 +393,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -417,7 +417,7 @@ jobs:
           BUILD_NAME=package_ubsan
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -434,7 +434,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -458,7 +458,7 @@ jobs:
           BUILD_NAME=package_tsan
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -475,7 +475,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -499,7 +499,7 @@ jobs:
           BUILD_NAME=package_msan
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -516,7 +516,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -540,7 +540,7 @@ jobs:
           BUILD_NAME=package_debug
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -557,7 +557,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -584,7 +584,7 @@ jobs:
           BUILD_NAME=binary_shared
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -601,7 +601,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -625,7 +625,7 @@ jobs:
           BUILD_NAME=binary_tidy
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -642,7 +642,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -666,7 +666,7 @@ jobs:
           BUILD_NAME=binary_darwin
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -683,7 +683,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -707,7 +707,7 @@ jobs:
           BUILD_NAME=binary_aarch64
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -724,7 +724,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -748,7 +748,7 @@ jobs:
           BUILD_NAME=binary_freebsd
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -765,7 +765,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -789,7 +789,7 @@ jobs:
           BUILD_NAME=binary_darwin_aarch64
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -806,7 +806,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -830,7 +830,7 @@ jobs:
           BUILD_NAME=binary_ppc64le
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -847,7 +847,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -871,7 +871,7 @@ jobs:
           BUILD_NAME=binary_amd64sse2
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -888,7 +888,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -912,7 +912,7 @@ jobs:
           BUILD_NAME=binary_aarch64_v80compat
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -929,7 +929,7 @@ jobs:
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -990,7 +990,7 @@ jobs:
           NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1036,7 +1036,7 @@ jobs:
           NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1075,7 +1075,7 @@ jobs:
           KILL_TIMEOUT=10800
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1111,7 +1111,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1147,7 +1147,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1183,7 +1183,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1219,7 +1219,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1253,7 +1253,7 @@ jobs:
           KILL_TIMEOUT=10800
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1289,7 +1289,7 @@ jobs:
           RUN_BY_HASH_TOTAL=2
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1325,7 +1325,7 @@ jobs:
           RUN_BY_HASH_TOTAL=2
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1361,7 +1361,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1397,7 +1397,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1433,7 +1433,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1469,7 +1469,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1505,7 +1505,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1541,7 +1541,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1577,7 +1577,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1613,7 +1613,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1649,7 +1649,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1685,7 +1685,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1721,7 +1721,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1755,7 +1755,7 @@ jobs:
           KILL_TIMEOUT=10800
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1791,7 +1791,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1827,7 +1827,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1863,7 +1863,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1899,7 +1899,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1935,7 +1935,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -1971,7 +1971,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2007,7 +2007,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2043,7 +2043,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2079,7 +2079,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2115,7 +2115,7 @@ jobs:
           RUN_BY_HASH_TOTAL=2
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2151,7 +2151,7 @@ jobs:
           RUN_BY_HASH_TOTAL=2
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2187,7 +2187,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2223,7 +2223,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2259,7 +2259,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2295,7 +2295,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2331,7 +2331,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2367,7 +2367,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2403,7 +2403,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2439,7 +2439,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2475,7 +2475,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2511,7 +2511,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2547,7 +2547,7 @@ jobs:
           RUN_BY_HASH_TOTAL=5
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2581,7 +2581,7 @@ jobs:
           KILL_TIMEOUT=3600
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2615,7 +2615,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/tests_bugfix_check/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2663,7 +2663,7 @@ jobs:
           KILL_TIMEOUT=3600
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2697,7 +2697,7 @@ jobs:
           KILL_TIMEOUT=3600
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2731,7 +2731,7 @@ jobs:
           KILL_TIMEOUT=3600
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2765,7 +2765,7 @@ jobs:
           KILL_TIMEOUT=3600
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2799,7 +2799,7 @@ jobs:
           KILL_TIMEOUT=3600
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2833,7 +2833,7 @@ jobs:
           KILL_TIMEOUT=3600
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2867,7 +2867,7 @@ jobs:
           KILL_TIMEOUT=3600
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2903,7 +2903,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2940,7 +2940,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -2973,7 +2973,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/stress_memory/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3006,7 +3006,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/stress_undefined/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3039,7 +3039,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/stress_debug/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3075,7 +3075,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/ast_fuzzer_asan/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3108,7 +3108,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/ast_fuzzer_tsan/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3141,7 +3141,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/ast_fuzzer_ubsan/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3174,7 +3174,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/ast_fuzzer_msan/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3207,7 +3207,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/ast_fuzzer_debug/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3245,7 +3245,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3280,7 +3280,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3315,7 +3315,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3350,7 +3350,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3385,7 +3385,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3420,7 +3420,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3455,7 +3455,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3490,7 +3490,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3525,7 +3525,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3560,7 +3560,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3595,7 +3595,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3630,7 +3630,7 @@ jobs:
           RUN_BY_HASH_TOTAL=6
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3665,7 +3665,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3700,7 +3700,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3735,7 +3735,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3770,7 +3770,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3803,7 +3803,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/integration_tests_asan_flaky_check/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3839,7 +3839,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3872,7 +3872,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3905,7 +3905,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/unit_tests_tsan/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3938,7 +3938,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/unit_tests_msan/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -3971,7 +3971,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/unit_tests_ubsan/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4009,7 +4009,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4044,7 +4044,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4079,7 +4079,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4114,7 +4114,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4149,7 +4149,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4184,7 +4184,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4219,7 +4219,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4254,7 +4254,7 @@ jobs:
           RUN_BY_HASH_TOTAL=4
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4290,7 +4290,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/sqlancer_release/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
@@ -4323,7 +4323,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/sqlancer_debug/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
