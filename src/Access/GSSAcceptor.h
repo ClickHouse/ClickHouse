@@ -29,6 +29,7 @@ public:
         String mechanism = "1.2.840.113554.1.2.2"; // OID: krb5
         String principal;
         String realm;
+        String keytab;
     };
 
     explicit GSSAcceptorContext(const Params & params_);
