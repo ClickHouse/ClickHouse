@@ -92,10 +92,8 @@ public:
     void * alloc(size_t size, size_t alignment = 0)
     {
         checkSize(size);
-        auto trace = CurrentMemoryTracker::alloc(size);
-        void * ptr = allocNoTrack(size, alignment);
-        trace.onAlloc(ptr, size);
-        return ptr;
+        CurrentMemoryTracker::alloc(size);
+        return allocNoTrack(size, alignment);
     }
 
     /// Free memory range.
@@ -105,8 +103,7 @@ public:
         {
             checkSize(size);
             freeNoTrack(buf, size);
-            auto trace = CurrentMemoryTracker::free(size);
-            trace.onFree(buf, size);
+            CurrentMemoryTracker::free(size);
         }
         catch (...)
         {
@@ -132,16 +129,13 @@ public:
                  && alignment <= MALLOC_MIN_ALIGNMENT)
         {
             /// Resize malloc'd memory region with no special alignment requirement.
-            auto trace = CurrentMemoryTracker::realloc(old_size, new_size);
-            trace.onFree(buf, old_size);
+            CurrentMemoryTracker::realloc(old_size, new_size);
 
             void * new_buf = ::realloc(buf, new_size);
             if (nullptr == new_buf)
                 DB::throwFromErrno(fmt::format("Allocator: Cannot realloc from {} to {}.", ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             buf = new_buf;
-            trace.onAlloc(buf, new_size);
-
             if constexpr (clear_memory)
                 if (new_size > old_size)
                     memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
@@ -149,8 +143,7 @@ public:
         else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
         {
             /// Resize mmap'd memory region.
-            auto trace = CurrentMemoryTracker::realloc(old_size, new_size);
-            trace.onFree(buf, old_size);
+            CurrentMemoryTracker::realloc(old_size, new_size);
 
             // On apple and freebsd self-implemented mremap used (common/mremap.h)
             buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE,
@@ -159,17 +152,14 @@ public:
                 DB::throwFromErrno(fmt::format("Allocator: Cannot mremap memory chunk from {} to {}.",
                     ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_MREMAP);
 
-            trace.onAlloc(buf, new_size);
             /// No need for zero-fill, because mmap guarantees it.
         }
         else if (new_size < MMAP_THRESHOLD)
         {
             /// Small allocs that requires a copy. Assume there's enough memory in system. Call CurrentMemoryTracker once.
-            auto trace = CurrentMemoryTracker::realloc(old_size, new_size);
-            trace.onFree(buf, old_size);
+            CurrentMemoryTracker::realloc(old_size, new_size);
 
             void * new_buf = allocNoTrack(new_size, alignment);
-            trace.onAlloc(new_buf, new_size);
             memcpy(new_buf, buf, std::min(old_size, new_size));
             freeNoTrack(buf, old_size);
             buf = new_buf;

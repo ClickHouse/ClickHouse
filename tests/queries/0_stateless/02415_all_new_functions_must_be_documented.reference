@@ -322,7 +322,7 @@ farmHash64
 file
 filesystemAvailable
 filesystemCapacity
-filesystemUnreserved
+filesystemFree
 finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC

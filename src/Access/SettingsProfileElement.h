@@ -71,8 +71,6 @@ public:
     std::vector<UUID> toProfileIDs() const;
 
     bool isBackupAllowed() const;
-
-    static bool isAllowBackupSetting(const String & setting_name);
 };
 
 }

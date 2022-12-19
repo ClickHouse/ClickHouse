@@ -806,7 +806,7 @@ def test_custom_auth_headers_exclusion(started_cluster):
         print(result)
 
     assert ei.value.returncode == 243
-    assert "HTTP response code: 403" in ei.value.stderr
+    assert "Forbidden Error" in ei.value.stderr
 
 
 def test_infinite_redirect(started_cluster):
@@ -1714,7 +1714,7 @@ def test_ast_auth_headers(started_cluster):
         f"select count() from s3('http://resolver:8080/{bucket}/{filename}', 'CSV')"
     )
 
-    assert "HTTP response code: 403" in result
+    assert "Forbidden Error" in result
     assert "S3_ERROR" in result
 
     result = instance.query(
