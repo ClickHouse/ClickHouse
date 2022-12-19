@@ -19,7 +19,6 @@ namespace ErrorCodes
 }
 
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const Settings & settings)
-    : PartUploadSettings()
 {
     updateFromSettingsImpl(settings, false);
     validate();
@@ -45,7 +44,6 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
 }
 
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedCollection & collection)
-    : PartUploadSettings()
 {
     min_upload_part_size = collection.getOrDefault<UInt64>("min_upload_part_size", min_upload_part_size);
     upload_part_size_multiply_factor = collection.getOrDefault<UInt64>("upload_part_size_multiply_factor", upload_part_size_multiply_factor);

@@ -113,7 +113,7 @@ void WriteBufferFromS3::nextImpl()
     if (multipart_upload_id.empty() && last_part_size > settings.max_single_part_upload_size)
         createMultipartUpload();
 
-    assert(upload_part_size>0);
+    chassert(upload_part_size > 0);
     if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
     {
         writePart();
