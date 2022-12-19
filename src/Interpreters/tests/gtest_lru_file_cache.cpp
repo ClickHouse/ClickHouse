@@ -159,7 +159,7 @@ TEST_F(FileCacheTest, get)
             ASSERT_TRUE(segments[0]->reserve(segments[0]->range().size()));
             assertRange(2, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADING);
 
-            download(segments[0]);
+            download(cache_base_path, segments[0]);
             segments[0]->completeWithoutState();
             assertRange(3, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
         }
@@ -180,7 +180,7 @@ TEST_F(FileCacheTest, get)
             assertRange(5, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::EMPTY);
 
             ASSERT_TRUE(segments[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            prepareAndDownload(segments[1]);
+            prepareAndDownload(cache_base_path, segments[1]);
             segments[1]->completeWithoutState();
             assertRange(6, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
         }
