@@ -1,14 +1,14 @@
 #pragma once
 
+#include <optional>
+#include <city.h>
+#include <Disks/IDisk.h>
+#include <IO/CompressionMethod.h>
+#include <IO/HashingWriteBuffer.h>
+#include <IO/WriteBufferFromFile.h>
+#include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <libnuraft/raft_server.hxx>
-#include <city.h>
-#include <optional>
-#include <base/defines.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/HashingWriteBuffer.h>
-#include <IO/CompressionMethod.h>
-#include <Disks/IDisk.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
 namespace DB
@@ -61,10 +61,7 @@ struct ChangelogFileDescription
     std::string path;
 
     /// How many entries should be stored in this log
-    uint64_t storedLogCount() const
-    {
-        return to_log_index - from_log_index + 1;
-    }
+    uint64_t expectedEntriesCountInLog() const { return to_log_index - from_log_index + 1; }
 };
 
 class ChangelogWriter;
@@ -74,10 +71,14 @@ class ChangelogWriter;
 /// Able to read broken files/entries and discard them. Not thread safe.
 class Changelog
 {
-
 public:
-    Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_,
-            bool force_sync_, Poco::Logger * log_, bool compress_logs_ = true);
+    Changelog(
+        const std::string & changelogs_dir_,
+        uint64_t rotate_interval_,
+        bool force_sync_,
+        Poco::Logger * log_,
+        bool compress_logs_ = true,
+        uint64_t max_log_file_size = 0);
 
     /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
     /// Truncate broken entries, remove files after broken entries.
@@ -92,15 +93,9 @@ public:
     /// Remove log files with to_log_index <= up_to_log_index.
     void compact(uint64_t up_to_log_index);
 
-    uint64_t getNextEntryIndex() const
-    {
-        return max_log_id + 1;
-    }
+    uint64_t getNextEntryIndex() const { return max_log_id + 1; }
 
-    uint64_t getStartIndex() const
-    {
-        return min_log_id;
-    }
+    uint64_t getStartIndex() const { return min_log_id; }
 
     /// Last entry in log, or fake entry with term 0 if log is empty
     LogEntryPtr getLastEntry() const;
@@ -127,10 +122,7 @@ public:
 
     void shutdown();
 
-    uint64_t size() const
-    {
-        return logs.size();
-    }
+    uint64_t size() const { return logs.size(); }
 
     uint64_t lastDurableIndex() const
     {
