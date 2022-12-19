@@ -1862,13 +1862,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         //     bool found_different_types = false;
         //     size_t pos = 0;
 
-        //     std::stringstream ss;
-        //     ss << "==== " << Block(actual_result_columns).dumpStructure() << std::endl;
-        //     for (const auto & expected : *expected_result_columns)
-        //         ss << "--- " << expected.name << ' ' << expected.type->getName() << std::endl;
-
-        //     std::cerr << ss.str() << std::endl;
-
         //     for (const auto & expected : *expected_result_columns)
         //     {
         //         const auto & actual = actual_result_columns[pos];
