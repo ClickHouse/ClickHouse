@@ -57,7 +57,7 @@ queries do not increment the cache miss counter.
 
 The cache exists once per ClickHouse server process but cache results are by default not shared between users (see below).
 
-Query results are referenced in the cache by the AST of their query. This means that caching is agnostic to upper/lowercase, for example `SELECT 1` and `select 1` are treated as the same query.
+Query results are referenced in the cache by the [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of their query. This means that caching is agnostic to upper/lowercase, for example `SELECT 1` and `select 1` are treated as the same query.
 
 ### Further Configuration Options:
 
