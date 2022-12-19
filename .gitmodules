@@ -294,3 +294,6 @@
 [submodule "contrib/google-benchmark"]
 	path = contrib/google-benchmark
 	url = https://github.com/google/benchmark.git
+[submodule "contrib/libdivide"]
+	path = contrib/libdivide
+	url = https://github.com/ridiculousfish/libdivide.git

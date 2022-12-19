@@ -486,6 +486,7 @@ th
 tmp
 tokenization
 toml
+toolchain
 toolset
 transactionally
 tskv
@@ -493,6 +494,7 @@ tsv
 tui
 turbostat
 txt
+ubuntu
 uint
 unary
 unencrypted
