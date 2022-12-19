@@ -26,11 +26,10 @@ jobs:
     # Run the first check always, even if the CI is cancelled
     if: ${{ always() }}
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -39,11 +38,10 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -52,11 +50,10 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -70,11 +67,10 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -88,11 +84,10 @@ jobs:
     needs: [DockerHubPushAmd64, DockerHubPushAarch64, PythonUnitTests]
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Download changed aarch64 images
         uses: actions/download-artifact@v2
         with:
@@ -133,11 +128,10 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Style Check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -159,14 +153,10 @@ jobs:
           REPO_COPY=${{runner.temp}}/fasttest/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
           EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE"
-          mkdir "$GITHUB_WORKSPACE"
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
@@ -193,11 +183,10 @@ jobs:
           REPO_COPY=${{runner.temp}}/compatibility_check/ClickHouse
           REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
@@ -225,11 +214,10 @@ jobs:
           REPO_COPY=${{runner.temp}}/split_build_check/ClickHouse
           REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
@@ -267,17 +255,14 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
         with:
+          clear-repository: true
           fetch-depth: 0  # for performance artifact
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -312,15 +297,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -355,17 +338,14 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/images_path
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
         with:
+          clear-repository: true
+          submodules: true
           fetch-depth: 0  # for performance artifact
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -400,15 +380,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -443,15 +421,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -486,15 +462,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -529,15 +503,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -572,15 +544,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -618,15 +588,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -661,15 +629,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -704,15 +670,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -747,15 +711,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -790,15 +752,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -833,15 +793,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -876,15 +834,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -919,15 +875,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -962,15 +916,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
+          submodules: true
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -996,12 +948,10 @@ jobs:
       - BuilderDebAarch64
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
         with:
+          clear-repository: true
           fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
       - name: Check docker clickhouse/clickhouse-server building
         run: |
@@ -1043,11 +993,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Report Builder
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1090,11 +1039,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Report Builder
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1130,11 +1078,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1167,11 +1114,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1204,11 +1150,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1241,11 +1186,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1278,11 +1222,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1313,11 +1256,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1350,11 +1292,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1387,11 +1328,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1424,11 +1364,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1461,11 +1400,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1498,11 +1436,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1535,11 +1472,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1572,11 +1508,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1609,11 +1544,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1646,11 +1580,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1683,11 +1616,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1720,11 +1652,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1757,11 +1688,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1794,11 +1724,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1829,11 +1758,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1866,11 +1794,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1903,11 +1830,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1940,11 +1866,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1977,11 +1902,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2014,11 +1938,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2051,11 +1974,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2088,11 +2010,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2125,11 +2046,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2162,11 +2082,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2199,11 +2118,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2236,11 +2154,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2273,11 +2190,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2310,11 +2226,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2347,11 +2262,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2384,11 +2298,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2421,11 +2334,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2458,11 +2370,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2495,11 +2406,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2532,11 +2442,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2569,11 +2478,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2606,11 +2514,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2643,11 +2550,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2678,11 +2584,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2713,11 +2618,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Bugfix test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2762,11 +2666,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2797,11 +2700,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2832,11 +2734,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2867,11 +2768,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2902,11 +2802,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2937,11 +2836,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -2972,11 +2870,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3009,11 +2906,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Stress test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3047,11 +2943,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Stress test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3081,11 +2976,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Stress test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3115,11 +3009,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Stress test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3149,11 +3042,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Stress test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3186,11 +3078,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Fuzzer
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3220,11 +3111,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Fuzzer
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3254,11 +3144,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Fuzzer
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3288,11 +3177,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Fuzzer
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3322,11 +3210,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Fuzzer
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3361,11 +3248,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3397,11 +3283,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3433,11 +3318,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3469,11 +3353,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3505,11 +3388,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3541,11 +3423,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3577,11 +3458,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3613,11 +3493,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3649,11 +3528,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3685,11 +3563,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3721,11 +3598,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3757,11 +3633,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3793,11 +3668,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3829,11 +3703,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3865,11 +3738,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3901,11 +3773,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3935,11 +3806,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -3972,11 +3842,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Unit test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4006,11 +3875,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Unit test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4040,11 +3908,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Unit test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4074,11 +3941,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Unit test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4108,11 +3974,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Unit test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4147,11 +4012,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Performance Comparison
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4183,11 +4047,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Performance Comparison
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4219,11 +4082,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Performance Comparison
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4255,11 +4117,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Performance Comparison
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4291,11 +4152,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Performance Comparison
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4327,11 +4187,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Performance Comparison
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4363,11 +4222,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Performance Comparison
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4399,11 +4257,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Performance Comparison
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4436,11 +4293,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: SQLancer
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4470,11 +4326,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: SQLancer
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -4600,11 +4455,10 @@ jobs:
       - SQLancerTestDebug
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
