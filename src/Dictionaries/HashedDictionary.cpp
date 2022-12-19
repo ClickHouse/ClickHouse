@@ -4,7 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
-#include <Interpreters/createBlockSelector.h>
 
 #include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
@@ -88,12 +87,7 @@ public:
         for (size_t shard = 0; shard < shards; ++shard)
             shards_blocks[shard] = block.cloneEmpty();
 
-        IColumn::Selector selector;
-        if (simple_key)
-            selector = createBlockSelector<UInt64>(*block.getByPosition(0).column, shards_slots);
-        else
-            selector = createComplexBlockSelector(block, shards_slots);
-
+        IColumn::Selector selector = createShardSelector(block, shards_slots);
         splitBlock(selector, block, shards_blocks);
 
         for (size_t shard = 0; shard < shards; ++shard)
@@ -137,7 +131,7 @@ private:
         while (shard_queue.pop(block))
         {
             Stopwatch watch;
-            dictionary.blockToAttributes(block);
+            dictionary.blockToAttributes(block, shard);
             UInt64 elapsed_us = watch.elapsedMicroseconds();
             if (elapsed_us > 1'000'000)
                 LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {}).", shard, elapsed_us, block.rows());
@@ -159,7 +153,7 @@ private:
         }
     }
 
-    IColumn::Selector createComplexBlockSelector(const Block & block, const std::vector<UInt64> & slots)
+    IColumn::Selector createShardSelector(const Block & block, const std::vector<UInt64> & slots)
     {
         size_t num_rows = block.rows();
         IColumn::Selector selector(num_rows);
@@ -688,12 +682,12 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
     if (update_field_loaded_block)
     {
         resize(update_field_loaded_block->rows());
-        blockToAttributes(*update_field_loaded_block.get());
+        blockToAttributes(*update_field_loaded_block.get(), /* shard= */ 0);
     }
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(const Block & block)
+size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(const Block & block, UInt64 shard)
 {
     size_t skip_keys_size_offset = dict_struct.getKeysSize();
     size_t new_element_count = 0;
@@ -718,7 +712,6 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes
         for (size_t key_index = 0; key_index < keys_size; ++key_index)
         {
             auto key = keys_extractor.extractCurrentKey();
-            size_t shard = getShard(key);
 
             if constexpr (std::is_same_v<KeyType, StringRef>)
                 key = copyStringInArena(*string_arenas[shard], key);
@@ -746,7 +739,6 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes
             for (size_t key_index = 0; key_index < keys_size; ++key_index)
             {
                 auto key = keys_extractor.extractCurrentKey();
-                size_t shard = getShard(key);
                 auto & container = containers[shard];
 
                 auto it = container.find(key);
@@ -916,7 +908,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
             if (parallel_loader)
                 parallel_loader->addBlock(block);
             else
-                blockToAttributes(block);
+                blockToAttributes(block, /* shard= */ 0);
         }
 
         if (parallel_loader)
