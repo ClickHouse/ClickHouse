@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 /*
@@ -61,7 +62,7 @@ bool ExtractKeyValuePairs::isSuitableForShortCircuitArgumentsExecution(const Dat
     return false;
 }
 
-size_t ExtractKeyValuePairs::getNumberOfArguments() const
+std::size_t ExtractKeyValuePairs::getNumberOfArguments() const
 {
     return 0u;
 }
@@ -87,21 +88,21 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
         return ParsedArguments{data_column, {}, {}, {}, {}, value_special_characters_allow_list};
     }
 
-    auto escape_character = arguments[1].column->getDataAt(0).toView().front();
+    auto escape_character = extractControlCharacter(arguments[1].column);
 
     if (arguments.size() == 2u)
     {
         return ParsedArguments{data_column, escape_character, {}, {}, {}, value_special_characters_allow_list};
     }
 
-    auto key_value_pair_delimiter = arguments[2].column->getDataAt(0).toView().front();
+    auto key_value_pair_delimiter = extractControlCharacter(arguments[2].column);
 
     if (arguments.size() == 3u)
     {
         return ParsedArguments{data_column, escape_character, key_value_pair_delimiter, {}, {}, value_special_characters_allow_list};
     }
 
-    auto item_delimiter = arguments[3].column->getDataAt(0).toView().front();
+    auto item_delimiter = extractControlCharacter(arguments[3].column);
 
     if (arguments.size() == 4u)
     {
@@ -109,7 +110,7 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
             data_column, escape_character, key_value_pair_delimiter, item_delimiter, {}, value_special_characters_allow_list};
     }
 
-    auto enclosing_character = arguments[4].column->getDataAt(0).toView().front();
+    auto enclosing_character = extractControlCharacter(arguments[4].column);
 
     if (arguments.size() == 5u)
     {
@@ -129,6 +130,18 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
 
     return ParsedArguments{
         data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list};
+}
+
+char ExtractKeyValuePairs::extractControlCharacter(ColumnPtr column)
+{
+    auto view = column->getDataAt(0).toView();
+
+    if (view.size() != 1u)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Control character argument must contain exactly 1 character");
+    }
+
+    return view.front();
 }
 
 std::shared_ptr<KeyValuePairExtractor<ExtractKeyValuePairs::EscapingProcessorOutput>> ExtractKeyValuePairs::getExtractor(

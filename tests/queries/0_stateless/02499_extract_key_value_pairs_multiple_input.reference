@@ -17,9 +17,9 @@ select extractKeyValuePairs('name: neymar, favorite_quote: Premature\\ optimizat
 {'name':'neymar','favorite_quote':'Premature optimization is the r$$t of all evil','age':'30'}
 ----- Mix Strings -----
 
--- Expected output: {'no:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}
-select extractKeyValuePairs('9 ads =nm,  no\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\ picasso, team: psg,', '\\', ':', ',', '"', '.');
-{'no:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}
+-- Expected output: {'na:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}
+select extractKeyValuePairs('9 ads =nm,  na\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\ picasso, team: psg,', '\\', ':', ',', '"', '.');
+{'na:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}
 -- Expected output: {'XNFHGSSF_RHRUZHVBS_KWBT':'F'}
 SELECT extractKeyValuePairs('XNFHGSSF_RHRUZHVBS_KWBT: F,', '\\', ':', ',', '"');
 {'XNFHGSSF_RHRUZHVBS_KWBT':'F'}
