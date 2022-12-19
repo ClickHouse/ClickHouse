@@ -6,7 +6,7 @@ slug: /en/install
 
 # Installing ClickHouse
 
-You have two options for getting up and running with ClickHouse:
+You have three options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
 - **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture
@@ -352,15 +352,11 @@ To continue experimenting, you can download one of the test data sets or go thro
 
 ### CPU Architecture
 
-ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture.
+ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, AArch64, or PowerPC64LE CPU architecture.
 
-Official pre-built binaries are typically compiled for x86_64 and leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports it becomes an additional system requirement. Here’s the command to check if current CPU has support for SSE 4.2:
+Official binaries are available for x86-64 and AArch64.
 
-``` bash
-$ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
-```
-
-To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or PowerPC64LE architecture, you should [build ClickHouse from sources](#from-sources) with proper configuration adjustments.
+It is also possible to build ClickHouse from source, (see above)[#from-sources] for details.
 
 ClickHouse implements parallel data processing and uses all the hardware resources available. When choosing a processor, take into account that ClickHouse works more efficiently at configurations with a large number of cores but a lower clock rate than at configurations with fewer cores and a higher clock rate. For example, 16 cores with 2600 MHz is preferable to 8 cores with 3600 MHz.
 
