@@ -119,10 +119,10 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names,const
     const auto & columns = getMetadataForQuery()->getColumns();
     for (const auto & name : column_names)
     {
-        std::string column_name  = name;
+        const std::string & column_name  = name;
         std::string substituted_column_name = name;
         std::string::size_type pos = 0u;
-        for (auto parameter : parameter_values)
+        for (const auto & parameter : parameter_values)
         {
             if ((pos = substituted_column_name.find("_CAST(" + parameter.second)) != std::string::npos)
             {

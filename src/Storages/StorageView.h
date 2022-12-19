@@ -50,9 +50,15 @@ public:
         parameter_values = parameter_values_;
     }
 
+    NameToNameMap getParameterValues() const
+    {
+        return parameter_types;
+    }
+
 protected:
     bool is_parameterized_view;
     NameToNameMap parameter_values;
+    NameToNameMap parameter_types;
 };
 
 }

@@ -10,8 +10,8 @@ namespace DB
 class QueryParameterVisitor
 {
 public:
-    explicit QueryParameterVisitor(NameSet & parameters_name)
-        : query_parameters(parameters_name)
+    explicit QueryParameterVisitor(NameToNameMap & parameters)
+        : query_parameters(parameters)
     {
     }
 
@@ -27,30 +27,44 @@ public:
     }
 
 private:
-    NameSet & query_parameters;
+    NameToNameMap & query_parameters;
 
     void visitQueryParameter(const ASTQueryParameter & query_parameter)
     {
-        query_parameters.insert(query_parameter.name);
+        query_parameters[query_parameter.name]= query_parameter.type;
     }
 };
 
 
 NameSet analyzeReceiveQueryParams(const std::string & query)
 {
-    NameSet query_params;
+    NameToNameMap query_params;
     const char * query_begin = query.data();
     const char * query_end = query.data() + query.size();
 
     ParserQuery parser(query_end);
     ASTPtr extract_query_ast = parseQuery(parser, query_begin, query_end, "analyzeReceiveQueryParams", 0, 0);
     QueryParameterVisitor(query_params).visit(extract_query_ast);
-    return query_params;
+
+    NameSet query_param_names;
+    for (const auto & query_param : query_params)
+        query_param_names.insert(query_param.first);
+    return query_param_names;
 }
 
 NameSet analyzeReceiveQueryParams(const ASTPtr & ast)
 {
-    NameSet query_params;
+    NameToNameMap query_params;
+    QueryParameterVisitor(query_params).visit(ast);
+    NameSet query_param_names;
+    for (const auto & query_param : query_params)
+        query_param_names.insert(query_param.first);
+    return query_param_names;
+}
+
+NameToNameMap analyzeReceiveQueryParamsWithType(const ASTPtr & ast)
+{
+    NameToNameMap query_params;
     QueryParameterVisitor(query_params).visit(ast);
     return query_params;
 }

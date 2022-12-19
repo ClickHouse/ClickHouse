@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -102,6 +103,7 @@ StorageView::StorageView(
 
     description.inner_query = query.select->ptr();
     is_parameterized_view = query.isParameterizedView();
+    parameter_types = analyzeReceiveQueryParamsWithType(description.inner_query);
     storage_metadata.setSelectQuery(description);
     setInMemoryMetadata(storage_metadata);
 }

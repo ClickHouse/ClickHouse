@@ -131,7 +131,8 @@ public:
         const Names & required_result_columns = {},
         std::shared_ptr<TableJoin> table_join = {},
         bool is_parameterized_view = false,
-        const NameToNameMap parameter_values = {}) const;
+        const NameToNameMap parameter_values = {},
+        const NameToNameMap parameter_types = {}) const;
 
 private:
     static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view = false);
