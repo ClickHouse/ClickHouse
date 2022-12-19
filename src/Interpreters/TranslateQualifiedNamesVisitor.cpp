@@ -256,9 +256,13 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                             {
                                 if ((pos = column_name.find(parameter.first)) != std::string::npos)
                                 {
-                                    String parameter_name("_CAST(" + parameter.second + ", '" + column.type->getName() + "')");
-                                    column_name.replace(pos, parameter.first.size(), parameter_name);
-                                    break;
+                                    auto parameter_datatype_iterator = data.parameter_types.find(parameter.first);
+                                    if (parameter_datatype_iterator != data.parameter_types.end())
+                                    {
+                                        String parameter_name("_CAST(" + parameter.second + ", '" + parameter_datatype_iterator->second + "')");
+                                        column_name.replace(pos, parameter.first.size(), parameter_name);
+                                        break;
+                                    }
                                 }
                             }
                             addIdentifier(columns, table.table, column_name);

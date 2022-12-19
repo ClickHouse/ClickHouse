@@ -362,10 +362,11 @@ using ReplacePositionalArgumentsVisitor = InDepthNodeVisitor<OneTypeMatcher<Repl
 /// Expand asterisks and qualified asterisks with column names.
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const NameSet & source_columns_set,
-                             const TablesWithColumns & tables_with_columns, const NameToNameMap & parameter_values = {})
+                             const TablesWithColumns & tables_with_columns, const NameToNameMap & parameter_values = {},
+                             const NameToNameMap & parameter_types = {})
 {
     LogAST log;
-    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns, true/* has_columns */, parameter_values);
+    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns, true/* has_columns */, parameter_values, parameter_types);
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 
@@ -1305,7 +1306,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     const Names & required_result_columns,
     std::shared_ptr<TableJoin> table_join,
     bool is_parameterized_view,
-    const NameToNameMap parameter_values) const
+    const NameToNameMap parameter_values,
+    const NameToNameMap parameter_types) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
@@ -1343,7 +1345,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
-    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns, parameter_values);
+    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns, parameter_values, parameter_types);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
@@ -1408,9 +1410,13 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             {
                 if ((pos = column_name.find(parameter.first)) != std::string::npos)
                 {
-                    String parameter_name("_CAST(" + parameter.second + ", '" + column.type->getName() + "')");
-                    column.name.replace(pos, parameter.first.size(), parameter_name);
-                    break;
+                    auto parameter_datatype_iterator = parameter_types.find(parameter.first);
+                    if (parameter_datatype_iterator != parameter_types.end())
+                    {
+                        String parameter_name("_CAST(" + parameter.second + ", '" + parameter_datatype_iterator->second + "')");
+                        column.name.replace(pos, parameter.first.size(), parameter_name);
+                        break;
+                    }
                 }
             }
         }

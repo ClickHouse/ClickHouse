@@ -13,4 +13,6 @@ NameSet analyzeReceiveQueryParams(const std::string & query);
 
 NameSet analyzeReceiveQueryParams(const ASTPtr & ast);
 
+NameToNameMap analyzeReceiveQueryParamsWithType(const ASTPtr & ast);
+
 }
