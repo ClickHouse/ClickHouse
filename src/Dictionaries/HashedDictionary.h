@@ -211,7 +211,7 @@ private:
 
     void createAttributes();
 
-    size_t blockToAttributes(const Block & block);
+    size_t blockToAttributes(const Block & block, UInt64 shard);
 
     void updateData();
 
@@ -225,7 +225,9 @@ private:
     {
         if constexpr (!sharded)
             return 0;
-        return key % configuration.shards;
+        /// NOTE: function here should not match with the DefaultHash<> since
+        /// it used for the HashMap/sparse_hash_map.
+        return intHashCRC32(key) % configuration.shards;
     }
     UInt64 getShard(StringRef key) const
     {
