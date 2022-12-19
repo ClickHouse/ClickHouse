@@ -486,7 +486,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             if (conflict_block_ids.empty())
                 break;
             ++retry_times;
-            LOG_DEBUG(log, "Found depulicate block IDs: {}, retry times {}", toString(conflict_block_ids), retry_times);
+            LOG_DEBUG(log, "Found duplicate block IDs: {}, retry times {}", toString(conflict_block_ids), retry_times);
             /// partition clean conflict
             rewriteBlock(log, partition, conflict_block_ids);
             if (partition.block_id.empty())
