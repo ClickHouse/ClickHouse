@@ -327,13 +327,22 @@ bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
     return true;
 }
 
-bool GraceHashJoin::fitsInMemory() const
+bool GraceHashJoin::hasMemoryOverflow() const
 {
     /// One row can't be split, avoid loop
     if (hash_join->getTotalRowCount() < 2)
-        return true;
+        return false;
 
-    return table_join->sizeLimits().softCheck(hash_join->getTotalRowCount(), hash_join->getTotalByteCount());
+    size_t total_rows = hash_join->getTotalRowCount();
+    size_t total_bytes = hash_join->getTotalByteCount();
+
+    bool has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
+
+    if (has_overflow)
+        LOG_TRACE(log, "GraceHashJoin has memory overflow {} / {} bytes, {} / {} rows",
+            ReadableSize(total_bytes), ReadableSize(table_join->sizeLimits().max_bytes),
+            total_rows, table_join->sizeLimits().max_rows);
+    return has_overflow;
 }
 
 GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
@@ -571,7 +580,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
     }
 
-    LOG_TRACE(log, "Finished loading all buckets");
+    LOG_TRACE(log, "Finished loading all {} buckets", buckets.size());
 
     current_bucket = nullptr;
     return nullptr;
@@ -593,8 +602,8 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
     {
         std::lock_guard lock(hash_join_mutex);
 
-        hash_join->addJoinedBlock(blocks[bucket_index], /* check_limits = */ false);
-        bool overflow = !fitsInMemory();
+        hash_join->addJoinedBlock(std::move(blocks[bucket_index]), /* check_limits = */ false);
+        bool overflow = hasMemoryOverflow();
 
         if (overflow)
         {
@@ -612,7 +621,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
             blocks = JoinCommon::scatterBlockByHash(right_key_names, blocks, buckets_snapshot.size());
             hash_join = makeInMemoryJoin();
             hash_join->addJoinedBlock(blocks[bucket_index], /* check_limits = */ false);
-            overflow = !fitsInMemory();
+            overflow = hasMemoryOverflow();
         }
         blocks[bucket_index].clear();
     }
