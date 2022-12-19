@@ -297,8 +297,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 {
     part = merge_task->getFuture().get();
 
-    /// Task is not needed
-    merge_task.reset();
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
 
     try
