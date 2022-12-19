@@ -6,11 +6,10 @@ slug: /en/install
 
 # Installing ClickHouse
 
-You have three options for getting up and running with ClickHouse:
+You have two options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
-- **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture
-- **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** Read the guide with the official image in Docker Hub
+- **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, ARM, or PowerPC64LE CPU architecture
 
 ## ClickHouse Cloud
 
@@ -266,21 +265,21 @@ sudo ./clickhouse install
 
 ### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
 
-For non-Linux operating systems and for AArch64 CPU architecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
+For non-Linux operating systems and for ARM CPU architecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
 
--   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse)
+-   [MacOS x86-64](https://builds.clickhouse.com/master/macos/clickhouse)
      ```bash
      curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse
      ```
--   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse)
+-   [MacOS ARM (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse)
     ```bash
     curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse
     ```
--   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse)
+-   [FreeBSD x86-64](https://builds.clickhouse.com/master/freebsd/clickhouse)
     ```bash
     curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse
     ```
--   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse)
+-   [Linux ARM](https://builds.clickhouse.com/master/aarch64/clickhouse)
     ```bash
     curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse
     ```
@@ -388,9 +387,9 @@ To continue experimenting, you can download one of the test data sets or go thro
 
 ### CPU Architecture
 
-ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, AArch64, or PowerPC64LE CPU architecture.
+ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, ARM, or PowerPC64LE CPU architecture.
 
-Official binaries are available for x86-64 and AArch64.
+Official binaries are available for x86-64 and ARM.
 
 It is also possible to build ClickHouse from source, (see above)[#from-sources] for details.
 
