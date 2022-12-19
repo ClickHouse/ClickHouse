@@ -1,5 +1,11 @@
 -- Tags: no-parallel
 
+-- Warm up: If the query result cache has not been used yet, its event counters don't show up in
+-- system.events (instead of simply being shown as 0). Insert into query result cache once to
+-- initialize the hit (**) and miss counters (*).
+SELECT 42 SETTINGS enable_experimental_query_result_cache = true; -- (*)
+SELECT 42 SETTINGS enable_experimental_query_result_cache_passive_usage = true; -- (**)
+
 SYSTEM DROP QUERY RESULT CACHE;
 DROP TABLE IF EXISTS old;
 
