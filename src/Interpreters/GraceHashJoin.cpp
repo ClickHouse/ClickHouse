@@ -288,6 +288,9 @@ GraceHashJoin::GraceHashJoin(
 
 void GraceHashJoin::initBuckets()
 {
+    if (!buckets.empty())
+        return;
+
     const auto & settings = context->getSettingsRef();
 
     size_t initial_num_buckets = roundUpToPowerOfTwoOrZero(std::clamp<size_t>(settings.grace_hash_join_initial_buckets, 1, settings.grace_hash_join_max_buckets));
