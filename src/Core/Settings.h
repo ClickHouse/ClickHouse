@@ -671,7 +671,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, grace_hash_join_max_buckets, 1024, "Limit on the number of grace hash join buckets", 0) \
     M(Bool, optimize_distinct_in_order, true, "Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement", 0) \
     M(Bool, optimize_sorting_by_input_stream_properties, true, "Optimize sorting by sorting properties of input stream", 0) \
-    M(Bool, enable_experimental_query_result_cache, false, "Store and retrieve results of SELECT queries in/from the query result cache", 0) \
+    M(Bool, enable_experimental_query_result_cache, true, "Store and retrieve results of SELECT queries in/from the query result cache", 0) \
     M(Bool, enable_experimental_query_result_cache_passive_usage, false, "Only retrieve results of SELECT queries from the query result cache", 0) \
     M(Bool, query_result_cache_store_results_of_queries_with_nondeterministic_functions, false, "Store results of queries with non-deterministic functions (e.g. rand(), now()) in the query result cache", 0) \
     M(UInt64, query_result_cache_size, (1ull << 30), "Maximum size of the query result cache in bytes. 0 means disabled.", 0) \
