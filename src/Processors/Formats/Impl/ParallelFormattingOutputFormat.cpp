@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 
 #include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -97,6 +98,10 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupStatusPtr & thread_group)
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
         setThreadName("Collector");
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
@@ -154,6 +159,10 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group)
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
         setThreadName("Formatter");
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);

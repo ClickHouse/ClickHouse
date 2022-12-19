@@ -25,6 +25,7 @@ CentOS
 ClickHouse
 ClickHouse's
 Config
+ConnectionDetails
 Contrib
 Ctrl
 CustomSeparated
@@ -97,6 +98,7 @@ MySQLDump
 NEKUDOTAYIM
 NULLIF
 NVME
+NYPD
 NuRaft
 ObjectId
 Ok
@@ -110,13 +112,13 @@ Precompiled
 PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
-PrettyNoEscapes
-PrettySpace
-PrettySpaceNoEscapes
 PrettyCompactNoEscapesMonoBlock
 PrettyMonoBlock
+PrettyNoEscapes
 PrettyNoEscapesMonoBlock
+PrettySpace
 PrettySpaceMonoBlock
+PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
@@ -124,6 +126,7 @@ QTCreator
 RBAC
 RawBLOB
 RedHat
+ReplicatedMergeTree
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
@@ -136,6 +139,7 @@ SQLInsert
 SQLSTATE
 SSSE
 Schemas
+SelfManaged
 Stateful
 Submodules
 Subqueries
@@ -193,9 +197,9 @@ boolean
 bools
 boringssl
 brotli
-buildable
 bson
 bsoneachrow
+buildable
 camelCase
 capn
 capnproto
@@ -206,6 +210,7 @@ ccache
 cctz
 cfg
 changelog
+changelogs
 charset
 charsets
 checkouting
@@ -247,6 +252,7 @@ ddl
 deallocation
 debian
 decompressor
+denormalizing
 denormals
 deserialization
 deserialized
@@ -385,13 +391,13 @@ prestable
 prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
-prettynoescapes
-prettyspace
-prettyspacenoescapes
 prettycompactnoescapesmonoblock
 prettymonoblock
+prettynoescapes
 prettynoescapesmonoblock
+prettyspace
 prettyspacemonoblock
+prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prlimit
 prometheus
@@ -414,6 +420,7 @@ representable
 requestor
 resultset
 rethrow
+retriable
 risc
 riscv
 ro
@@ -475,12 +482,15 @@ th
 tmp
 tokenization
 toml
+toolchain
 toolset
 tskv
 tsv
 tui
 turbostat
 txt
+ubuntu
+uint
 unary
 unencrypted
 unixodbc
@@ -489,7 +499,6 @@ userspace
 userver
 utils
 uuid
-uint
 variadic
 varint
 vectorized
@@ -510,7 +519,3 @@ zkcopy
 zlib
 znodes
 zstd
-NYPD
-denormalizing
-ConnectionDetails
-SelfManaged

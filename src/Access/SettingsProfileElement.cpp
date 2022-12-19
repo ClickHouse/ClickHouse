@@ -248,4 +248,9 @@ bool SettingsProfileElements::isBackupAllowed() const
     return true;
 }
 
+bool SettingsProfileElements::isAllowBackupSetting(const String & setting_name)
+{
+    return setting_name == ALLOW_BACKUP_SETTING_NAME;
+}
+
 }
