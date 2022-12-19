@@ -37,17 +37,6 @@ struct S3Settings
             size_t max_single_part_upload_size = 32 * 1024 * 1024;
             size_t max_single_operation_copy_size = 5ULL * 1024 * 1024 * 1024;
 
-            inline bool operator==(const PartUploadSettings & other) const
-            {
-                return min_upload_part_size == other.min_upload_part_size
-                    && max_upload_part_size == other.max_upload_part_size
-                    && upload_part_size_multiply_factor == other.upload_part_size_multiply_factor
-                    && upload_part_size_multiply_parts_count_threshold == other.upload_part_size_multiply_parts_count_threshold
-                    && max_part_number == other.max_part_number
-                    && max_single_part_upload_size == other.max_single_part_upload_size
-                    && max_single_operation_copy_size == other.max_single_operation_copy_size;
-            }
-
             void updateFromSettings(const Settings & settings) { updateFromSettingsImpl(settings, true); }
             void validate();
 
@@ -79,17 +68,6 @@ struct S3Settings
 
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
 
-        inline bool operator==(const RequestSettings & other) const
-        {
-            return upload_settings == other.upload_settings
-                && max_single_read_retries == other.max_single_read_retries
-                && max_connections == other.max_connections
-                && check_objects_after_upload == other.check_objects_after_upload
-                && max_unexpected_write_error_retries == other.max_unexpected_write_error_retries
-                && get_request_throttler == other.get_request_throttler
-                && put_request_throttler == other.put_request_throttler;
-        }
-
         RequestSettings() = default;
         explicit RequestSettings(const Settings & settings);
         explicit RequestSettings(const NamedCollection & collection);
@@ -115,11 +93,6 @@ struct S3Settings
 
     S3::AuthSettings auth_settings;
     RequestSettings request_settings;
-
-    inline bool operator==(const S3Settings & other) const
-    {
-        return auth_settings == other.auth_settings && request_settings == other.request_settings;
-    }
 };
 
 /// Settings for the StorageS3.
