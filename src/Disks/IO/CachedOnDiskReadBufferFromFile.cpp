@@ -7,6 +7,7 @@
 #include <Common/hex.h>
 #include <Common/getRandomASCIIString.h>
 #include <Interpreters/Context.h>
+#include <magic_enum.hpp>
 
 
 namespace ProfileEvents
@@ -1010,24 +1011,42 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         first_offset,
         file_segments_holder->toString());
 
-    if (size == 0 && file_offset_of_buffer_end < read_until_position)
+    const bool range_not_finished = size == 0 && file_offset_of_buffer_end < read_until_position;
+    if (range_not_finished)
     {
-        size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
-        auto cache_file_path = getFileNameFromReadBuffer(*implementation_buffer);
-
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Having zero bytes, but range is not finished: file offset: {}, starting offset: {}, "
-            "reading until: {}, read type: {}, cache file size: {}, cache file path: {}, "
-            "cache file offset: {}, current file segment: {}",
+        const size_t file_size = getFileSizeFromReadBuffer(*implementation_buffer);
+        const auto file_name = getFileNameFromReadBuffer(*implementation_buffer);
+        const std::string log_message = fmt::format(
+            "Having zero bytes, but range is not finished. "
+            "Read type: {}, ",
+            "file offset of buffer end: {}, "
+            "starting offset: {}, "
+            "reading until: {}, "
+            "read buffer file offset: {}, "
+            "file size: {}, "
+            "file name: {}, "
+            "source file name: {}, "
+            "current file segment info: {}",
+            toString(read_type),
             file_offset_of_buffer_end,
             first_offset,
             read_until_position,
-            toString(read_type),
-            cache_file_size ? std::to_string(cache_file_size) : "None",
-            cache_file_path,
             implementation_buffer->getFileOffsetOfBufferEnd(),
+            file_size,
+            file_name,
+            source_file_path,
             file_segment->getInfoForLog());
+
+        if (read_type == ReadType::REMOTE_FS_READ_BYPASS_CACHE)
+        {
+            /// If we are not using cache, allow to return zero bytes if expected range is not finished,
+            /// to make behaviour consistent with how it works without caching.
+            LOG_WARNING(log, "{}", log_message);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, log_message);
+        }
     }
 
     return result;
