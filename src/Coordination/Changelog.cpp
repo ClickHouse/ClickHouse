@@ -19,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CORRUPTED_DATA;
-    extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int LOGICAL_ERROR;
 }
