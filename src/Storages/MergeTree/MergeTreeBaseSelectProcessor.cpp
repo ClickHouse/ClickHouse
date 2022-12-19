@@ -453,8 +453,6 @@ namespace
     {
         explicit VirtualColumnsInserter(Block & block_) : block(block_) {}
 
-        bool columnExists(const String & name) const { return block.has(name); }
-
         void insertStringColumn(const ColumnPtr & column, const String & name)
         {
             block.insert({column, std::make_shared<DataTypeString>(), name});
@@ -501,21 +499,6 @@ static void injectNonConstVirtualColumns(
     VirtualColumnsInserter inserter(block);
     for (const auto & virtual_column_name : virtual_columns)
     {
-        if (virtual_column_name == "_part_offset")
-        {
-            if (!rows)
-            {
-                inserter.insertUInt64Column(DataTypeUInt64().createColumn(), virtual_column_name);
-            }
-            else
-            {
-                if (!inserter.columnExists(virtual_column_name))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Column {} must have been filled part reader",
-                        virtual_column_name);
-            }
-        }
-
         if (virtual_column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
         {
                 /// If _row_exists column isn't present in the part then fill it here with 1s

@@ -21,7 +21,7 @@ void StorageSnapshot::init()
     for (const auto & [name, type] : storage.getVirtuals())
     {
         virtual_columns[name] = type;
-        if (name == "_part_offset")  // TODO: properly make _part_offset a system column
+        if (storage.isNonConstVirtualColumn(name))
             system_columns[name] = type;
     }
 

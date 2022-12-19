@@ -7090,6 +7090,11 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
     };
 }
 
+bool MergeTreeData::isNonConstVirtualColumn(const String & column_name) const
+{
+    return (column_name == "_part_offset");
+}
+
 size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
 {
     return getContext()->getMergeList().getMergesWithTTLCount();

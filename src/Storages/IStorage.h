@@ -223,6 +223,10 @@ public:
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
+    /// In many cases virtual columns are constant for the whole table or table part, but virtual columns like
+    /// `_part_offset` have different value in each row.
+    virtual bool isNonConstVirtualColumn(const String & /*column_name*/) const { return false; }
+
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
     virtual void adjustCreateQueryForBackup(ASTPtr & create_query) const;
 

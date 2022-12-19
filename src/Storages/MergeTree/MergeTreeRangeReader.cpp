@@ -1095,11 +1095,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             if (block.has(column_name))
                 continue;
 
-            if (column_name == "_part_offset")
-            {
-                /// Do nothing, it is filled by the merge tree reader at the appropriate step.
-            }
-            else if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
+            if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
             {
                 /// Do nothing, it will be added later
             }

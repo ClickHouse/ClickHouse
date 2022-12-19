@@ -27,6 +27,8 @@ public:
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
 
+    bool isNonConstVirtualColumn(const String & column_name) const override { return data_part->storage.isNonConstVirtualColumn(column_name); }
+
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
     AlterConversions getAlterConversions() const override { return data_part->storage.getAlterConversionsForPart(data_part); }

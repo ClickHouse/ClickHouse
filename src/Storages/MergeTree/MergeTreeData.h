@@ -439,6 +439,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    bool isNonConstVirtualColumn(const String & column_name) const override;
+
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
 
     /// Snapshot for MergeTree contains the current set of data parts

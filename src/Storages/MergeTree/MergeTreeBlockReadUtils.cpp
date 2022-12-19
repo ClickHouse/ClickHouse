@@ -282,7 +282,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const Names & system_columns,
+    const Names & virtual_columns,
     const PrewhereInfoPtr & prewhere_info,
     bool with_subcolumns)
 {
@@ -290,9 +290,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     Names pre_column_names;
 
     /// Read system columns such as lightweight delete mask "_row_exists" if it is persisted in the part
-    for (const auto & name : system_columns)
+    for (const auto & name : virtual_columns)
     {
-        if (data_part_info_for_reader.getColumns().contains(name) || name == "_part_offset")    /// TODO: fix this hack
+        if (data_part_info_for_reader.getColumns().contains(name) || data_part_info_for_reader.isNonConstVirtualColumn(name))
             column_names.push_back(name);
     }
 
