@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+// #include <Planner/Utils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -9,6 +10,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
@@ -106,6 +108,23 @@ protected:
 };
 
 constexpr bool debug_logging_enabled = true;
+
+class IsQueryDistributed : public QueryPlanVisitor<IsQueryDistributed, debug_logging_enabled>
+{
+public:
+    explicit IsQueryDistributed(QueryPlan::Node * root_) : QueryPlanVisitor<IsQueryDistributed, debug_logging_enabled>(root_) { }
+
+    explicit operator bool() const { return distributed_query; }
+
+    void visitBottomUp(QueryPlan::Node * current_node, QueryPlan::Node *)
+    {
+        if (typeid_cast<ReadFromRemote *>(current_node->step.get()))
+            distributed_query = true;
+    }
+
+private:
+    bool distributed_query = false;
+};
 
 class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy, debug_logging_enabled>
 {
@@ -268,9 +287,6 @@ private:
             if (typeid_cast<const WindowStep *>(step))
                 return false;
 
-            if (typeid_cast<const UnionStep *>(step))
-                return false;
-
             if (const auto * join_step = typeid_cast<const JoinStep *>(step); join_step)
             {
                 if (typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get()))
@@ -284,6 +300,9 @@ private:
 
 void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 {
+    if (IsQueryDistributed(root).operator bool())
+        return;
+
     RemoveRedundantOrderBy(root).visit();
 }
 
