@@ -13,7 +13,7 @@ function random {
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q "
 drop table if exists ttt;
-create table ttt (id Int32, value String) engine=MergeTree() order by tuple()  settings storage_policy='s3_cache_small_segment_size';
+create table ttt (id Int32, value String) engine=MergeTree() order by tuple()  settings storage_policy='s3_cache_small_segment_size', min_bytes_for_wide_part=0;
 insert into ttt select number, toString(number) from numbers(100000) settings throw_on_error_from_cache_on_write_operations = 1;
 "
 
