@@ -430,6 +430,7 @@ rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
 rsync
+runnable
 runningAccumulate
 runtime
 russian
@@ -482,12 +483,14 @@ th
 tmp
 tokenization
 toml
+toolchain
 toolset
 tskv
 tsv
 tui
 turbostat
 txt
+ubuntu
 uint
 unary
 unencrypted
