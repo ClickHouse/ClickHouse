@@ -34,6 +34,7 @@
 #include <Interpreters/replaceForPositionalArguments.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -2020,10 +2021,15 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     col.column = col.type->createColumn();
             Block res_block(std::move(res_cols));
 
-            const auto & keys = query_analyzer.aggregationKeys();
+            auto keys = query_analyzer.aggregationKeys().getNames();
             const auto & aggregates = query_analyzer.aggregates();
 
-            auto actual_header = Aggregator::Params::getHeader(res_block, false, keys.getNames(), aggregates, true);
+            auto actual_header = Aggregator::Params::getHeader(res_block, false, keys, aggregates, true);
+
+            //std::cerr << actual_header.dumpStructure() << std::endl;
+            //std::cerr << (query_analyzer.group_by_kind != GroupByKind::ORDINARY) << std::endl;
+            actual_header = AggregatingStep::appendGroupingColumn(std::move(actual_header), keys, query_analyzer.group_by_kind != GroupByKind::ORDINARY, settings.group_by_use_nulls);
+            //std::cerr << actual_header.dumpStructure() << std::endl;
 
             Block expected_header;
             for (const auto & expected : query_analyzer.aggregated_columns)
