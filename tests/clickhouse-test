@@ -456,6 +456,7 @@ class SettingsRandomizer:
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
+        "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(0, 1),
     }
 
     @staticmethod
