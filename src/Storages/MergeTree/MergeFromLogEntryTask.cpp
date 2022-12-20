@@ -298,6 +298,13 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     part = merge_task->getFuture().get();
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
+    /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
+    /// not able to remove the part and will throw an exception (because someone holds the pointer).
+    ///
+    /// Why we cannot reset task right after obtaining part from getFuture()? Because it holds RAII wrapper for
+    /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
+    /// and it's really needed.
+    merge_task.reset();
 
     try
     {
