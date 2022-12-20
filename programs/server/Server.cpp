@@ -70,6 +70,8 @@
 #include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <IO/Resource/registerSchedulerNodes.h>
+#include <IO/Resource/registerResourceManagers.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -715,6 +717,8 @@ try
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
+    registerSchedulerNodes();
+    registerResourceManagers();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -1287,6 +1291,11 @@ try
             {
                 auto new_pool_size = config->getUInt64("background_distributed_schedule_pool_size");
                 global_context->getDistributedSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("resources"))
+            {
+                global_context->getResourceManager()->updateConfiguration(*config);
             }
 
             if (!initial_loading)
