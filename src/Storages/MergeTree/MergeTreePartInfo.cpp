@@ -167,7 +167,25 @@ bool MergeTreePartInfo::contains(const String & outer_part_name, const String & 
 }
 
 
-String MergeTreePartInfo::getPartName() const
+String MergeTreePartInfo::getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const
+{
+    if (format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        getPartNameV1();
+
+    /// We cannot just call getPartNameV0 because it requires extra arguments, but at least we can warn about it.
+    chassert(false);  /// Catch it in CI. Feel free to remove this line.
+    throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Trying to get part name in new format for old format version."
+                    "Either some new feature is incompatible with deprecated *MergeTree definition syntax or it's a bug.");
+}
+
+
+String MergeTreePartInfo::getPartNameForLogs() const
+{
+    /// We don't care about format version here
+    return getPartNameV1();
+}
+
+String MergeTreePartInfo::getPartNameV1() const
 {
     WriteBufferFromOwnString wb;
 
