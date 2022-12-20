@@ -386,8 +386,13 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
         CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
 
     /// Replica was already readonly, but we should decrement the metric, because we are detaching/dropping table.
-    if (on_shutdown)
+    /// if first pass wasn't done we don't have to decrement because it wasn't incremented in the first place
+    /// the task should be deactivated if it's full shutdown so no race is present
+    if (!first_time && on_shutdown)
+    {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+    }
 }
 
 void ReplicatedMergeTreeRestartingThread::setNotReadonly()
@@ -397,7 +402,10 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
     /// because we don't want to change this metric if replication is started successfully.
     /// So we should not decrement it when replica stopped being readonly on startup.
     if (storage.is_readonly.compare_exchange_strong(old_val, false) && !first_time)
+    {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+    }
 }
 
 }
