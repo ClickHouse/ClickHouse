@@ -1716,7 +1716,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
 void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types, bool disallow_arrayJoin)
 {
     ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
-    getRootActions(expr, only_types, step.actions(), false /* only_consts */,  disallow_arrayJoin);
+    getRootActions(expr, only_types, step.actions(), false /* only_consts */, disallow_arrayJoin);
     step.addRequiredOutput(expr->getColumnName());
 }
 
