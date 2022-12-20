@@ -85,7 +85,7 @@ try
         for (BlockInfo & block : block_infos)
         {
             Coordination::GetResponse resp = block.contents_future.get();
-            if (resp.error == Coordination::Error::ZOK && lock_holder_paths.contains(resp.data))
+            if (resp.error == Coordination::Error::ZOK && lock_holder_paths.count(resp.data))
             {
                 ++total_count;
                 current_inserts[block.partition].insert(block.number);

@@ -31,8 +31,8 @@ public:
     /// probably it worth to try to increase stack size for coroutines.
     ///
     /// Current value is just enough for all tests in our CI. It's not selected in some special
-    /// way. We will have 80 pages with 4KB page size.
-    static constexpr size_t default_stack_size = 320 * 1024; /// 64KB was not enough for tests
+    /// way. We will have 40 pages with 4KB page size.
+    static constexpr size_t default_stack_size = 192 * 1024; /// 64KB was not enough for tests
 
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
@@ -57,8 +57,7 @@ public:
         }
 
         /// Do not count guard page in memory usage.
-        auto trace = CurrentMemoryTracker::alloc(num_pages * page_size);
-        trace.onAlloc(vp, num_pages * page_size);
+        CurrentMemoryTracker::alloc(num_pages * page_size);
 
         boost::context::stack_context sctx;
         sctx.size = num_bytes;
@@ -78,7 +77,6 @@ public:
         ::munmap(vp, sctx.size);
 
         /// Do not count guard page in memory usage.
-        auto trace = CurrentMemoryTracker::free(sctx.size - page_size);
-        trace.onFree(vp, sctx.size - page_size);
+        CurrentMemoryTracker::free(sctx.size - page_size);
     }
 };

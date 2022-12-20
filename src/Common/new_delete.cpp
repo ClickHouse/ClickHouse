@@ -1,7 +1,6 @@
-#include <cassert>
-#include <new>
-#include "config.h"
 #include <Common/memory.h>
+#include <Common/config.h>
+#include <new>
 
 #if defined(OS_DARWIN) && (USE_JEMALLOC)
 /// In case of OSX jemalloc register itself as a default zone allocator.
@@ -50,74 +49,26 @@ static struct InitializeJemallocZoneAllocatorForOSX
 
 void * operator new(std::size_t size)
 {
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace);
-    void * ptr = Memory::newImpl(size);
-    trace.onAlloc(ptr, actual_size);
-    return ptr;
-}
-
-void * operator new(std::size_t size, std::align_val_t align)
-{
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace, align);
-    void * ptr = Memory::newImpl(size, align);
-    trace.onAlloc(ptr, actual_size);
-    return ptr;
+    Memory::trackMemory(size);
+    return Memory::newImpl(size);
 }
 
 void * operator new[](std::size_t size)
 {
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace);
-    void * ptr =  Memory::newImpl(size);
-    trace.onAlloc(ptr, actual_size);
-    return ptr;
-}
-
-void * operator new[](std::size_t size, std::align_val_t align)
-{
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace, align);
-    void * ptr = Memory::newImpl(size, align);
-    trace.onAlloc(ptr, actual_size);
-    return ptr;
+    Memory::trackMemory(size);
+    return Memory::newImpl(size);
 }
 
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace);
-    void * ptr = Memory::newNoExept(size);
-    trace.onAlloc(ptr, actual_size);
-    return ptr;
+    Memory::trackMemory(size);
+    return Memory::newNoExept(size);
 }
 
 void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace);
-    void * ptr = Memory::newNoExept(size);
-    trace.onAlloc(ptr, actual_size);
-    return ptr;
-}
-
-void * operator new(std::size_t size, std::align_val_t align, const std::nothrow_t &) noexcept
-{
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace, align);
-    void * ptr = Memory::newNoExept(size, align);
-    trace.onAlloc(ptr, actual_size);
-    return ptr;
-}
-
-void * operator new[](std::size_t size, std::align_val_t align, const std::nothrow_t &) noexcept
-{
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace, align);
-    void * ptr = Memory::newNoExept(size, align);
-    trace.onAlloc(ptr, actual_size);
-    return ptr;
+    Memory::trackMemory(size);
+    return Memory::newNoExept(size);
 }
 
 /// delete
@@ -130,67 +81,26 @@ void * operator new[](std::size_t size, std::align_val_t align, const std::nothr
 /// It's unspecified whether size-aware or size-unaware version is called when deleting objects of
 /// incomplete type and arrays of non-class and trivially-destructible class types.
 
-
 void operator delete(void * ptr) noexcept
 {
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::untrackMemory(ptr, trace);
-    trace.onFree(ptr, actual_size);
-    Memory::deleteImpl(ptr);
-}
-
-void operator delete(void * ptr, std::align_val_t align) noexcept
-{
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::untrackMemory(ptr, trace, 0, align);
-    trace.onFree(ptr, actual_size);
+    Memory::untrackMemory(ptr);
     Memory::deleteImpl(ptr);
 }
 
 void operator delete[](void * ptr) noexcept
 {
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::untrackMemory(ptr, trace);
-    trace.onFree(ptr, actual_size);
-    Memory::deleteImpl(ptr);
-}
-
-void operator delete[](void * ptr, std::align_val_t align) noexcept
-{
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::untrackMemory(ptr, trace, 0, align);
-    trace.onFree(ptr, actual_size);
+    Memory::untrackMemory(ptr);
     Memory::deleteImpl(ptr);
 }
 
 void operator delete(void * ptr, std::size_t size) noexcept
 {
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::untrackMemory(ptr, trace, size);
-    trace.onFree(ptr, actual_size);
+    Memory::untrackMemory(ptr, size);
     Memory::deleteSized(ptr, size);
-}
-
-void operator delete(void * ptr, std::size_t size, std::align_val_t align) noexcept
-{
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::untrackMemory(ptr, trace, size, align);
-    trace.onFree(ptr, actual_size);
-    Memory::deleteSized(ptr, size, align);
 }
 
 void operator delete[](void * ptr, std::size_t size) noexcept
 {
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::untrackMemory(ptr, trace, size);
-    trace.onFree(ptr, actual_size);
+    Memory::untrackMemory(ptr, size);
     Memory::deleteSized(ptr, size);
-}
-
-void operator delete[](void * ptr, std::size_t size, std::align_val_t align) noexcept
-{
-    AllocationTrace trace;
-    std::size_t actual_size = Memory::untrackMemory(ptr, trace, size, align);
-    trace.onFree(ptr, actual_size);
-    Memory::deleteSized(ptr, size, align);
 }

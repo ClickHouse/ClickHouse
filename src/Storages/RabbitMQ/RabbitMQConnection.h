@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/UVLoop.h>
+#include <Storages/RabbitMQ/UVLoop.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 
 

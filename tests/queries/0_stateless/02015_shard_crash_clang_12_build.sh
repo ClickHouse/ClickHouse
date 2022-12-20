@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: shard, no-fasttest
+# Tags: shard
 
 # This test reproduces crash in case of insufficient coroutines stack size
 

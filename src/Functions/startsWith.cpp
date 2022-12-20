@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionStartsWith = FunctionStartsEndsWith<NameStartsWith>;
 
-REGISTER_FUNCTION(StartsWith)
+void registerFunctionStartsWith(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionStartsWith>();
 }

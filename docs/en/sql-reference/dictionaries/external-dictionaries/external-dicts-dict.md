@@ -1,13 +1,9 @@
 ---
-slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict
-sidebar_position: 40
-sidebar_label: Configuring a Dictionary
+toc_priority: 40
+toc_title: Configuring an External Dictionary
 ---
-import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
-# Configuring a Dictionary
-
-<CloudDetails />
+# Configuring an External Dictionary {#dicts-external-dicts-dict}
 
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 
@@ -52,6 +48,3 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 -   [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md) — Structure of the dictionary . A key and attributes that can be retrieved by this key.
 -   [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) — Frequency of dictionary updates.
 
-## Related Content
-
-- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

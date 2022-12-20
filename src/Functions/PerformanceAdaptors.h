@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Functions/TargetSpecific.h>
 #include <Functions/IFunction.h>
 
-#include <Common/TargetSpecific.h>
 #include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 

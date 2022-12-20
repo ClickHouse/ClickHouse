@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -109,7 +109,7 @@ template <>
 const char * FunctionPolygonsDistance<SphericalPoint>::name = "polygonsDistanceSpherical";
 
 
-REGISTER_FUNCTION(PolygonsDistance)
+void registerFunctionPolygonsDistance(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonsDistance<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsDistance<SphericalPoint>>();

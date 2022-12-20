@@ -1,6 +1,6 @@
-2020-01-01 00:00:00	DateTime	2020-01-01 00:01:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Asia/Istanbul\')	2020-01-01 00:04:00.220	DateTime64(3, \'Asia/Istanbul\')	2020-01-01 00:05:00	DateTime	2020-01-01 00:06:00	DateTime(\'Asia/Istanbul\')	2020-01-01 00:06:00	DateTime
-2020-01-01 00:00:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Asia/Istanbul\')	2020-01-01 00:04:00.220	DateTime64(3, \'Asia/Istanbul\')	2020-01-01 00:05:00	DateTime
-2020-01-01 00:00:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Asia/Istanbul\')	2020-01-01 00:04:00.220	DateTime64(3, \'Asia/Istanbul\')	2020-01-01 00:05:00	DateTime
+2020-01-01 00:00:00	DateTime	2020-01-01 00:01:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Europe/Moscow\')	2020-01-01 00:04:00.220	DateTime64(3, \'Europe/Moscow\')	2020-01-01 00:05:00	DateTime	2020-01-01 00:06:00	DateTime(\'Europe/Moscow\')	2020-01-01 00:06:00	DateTime
+2020-01-01 00:00:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Europe/Moscow\')	2020-01-01 00:04:00.220	DateTime64(3, \'Europe/Moscow\')	2020-01-01 00:05:00	DateTime
+2020-01-01 00:00:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Europe/Moscow\')	2020-01-01 00:04:00.220	DateTime64(3, \'Europe/Moscow\')	2020-01-01 00:05:00	DateTime
 2020-01-01 00:00:00	DateTime
 parseDateTimeBestEffort
 2020-05-14 03:37:03.000	DateTime64(3, \'UTC\')

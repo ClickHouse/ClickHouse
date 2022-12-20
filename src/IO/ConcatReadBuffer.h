@@ -23,12 +23,6 @@ public:
         assert(!buffers.empty());
     }
 
-    ConcatReadBuffer(std::unique_ptr<ReadBuffer> buf1, std::unique_ptr<ReadBuffer> buf2) : ConcatReadBuffer()
-    {
-        appendBuffer(std::move(buf1));
-        appendBuffer(std::move(buf2));
-    }
-
     ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ConcatReadBuffer()
     {
         appendBuffer(wrapReadBufferReference(buf1));

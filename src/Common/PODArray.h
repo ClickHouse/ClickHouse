@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstring>
+#include <string.h>
 #include <cstddef>
 #include <cassert>
 #include <algorithm>
@@ -231,7 +231,9 @@ public:
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
+#if defined(__clang__)
     ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
+#endif
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
@@ -437,7 +439,7 @@ public:
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
-        this->c_end += sizeof(T);
+        this->c_end += this->byte_size(1);
     }
 
     /** This method doesn't allow to pass parameters for Allocator,
@@ -450,12 +452,12 @@ public:
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
-        this->c_end += sizeof(T);
+        this->c_end += this->byte_size(1);
     }
 
     void pop_back() /// NOLINT
     {
-        this->c_end -= sizeof(T);
+        this->c_end -= this->byte_size(1);
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
@@ -502,7 +504,7 @@ public:
     template <typename It1, typename It2, typename ... TAllocatorParams>
     void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
-        static_assert(pad_right_ >= PADDING_FOR_SIMD - 1);
+        static_assert(pad_right_ >= 15);
         static_assert(sizeof(T) == sizeof(*from_begin));
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
@@ -707,9 +709,10 @@ public:
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
         if (bytes_to_copy)
+        {
             memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-
-        this->c_end = this->c_start + bytes_to_copy;
+            this->c_end = this->c_start + bytes_to_copy;
+        }
     }
 
     // ISO C++ has strict ambiguity rules, thus we cannot apply TAllocatorParams here.
@@ -778,13 +781,14 @@ void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, P
 
 /// Prevent implicit template instantiation of PODArray for common numeric types
 
-extern template class PODArray<UInt8, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<UInt16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<UInt32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<UInt64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<UInt8, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<UInt16, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<UInt32, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<UInt64, 4096, Allocator<false>, 15, 16>;
 
-extern template class PODArray<Int8, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<Int16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<Int32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<Int64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<Int8, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<Int16, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<Int32, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<Int64, 4096, Allocator<false>, 15, 16>;
+
 }

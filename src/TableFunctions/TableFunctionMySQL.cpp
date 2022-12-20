@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #include <Databases/MySQL/FetchTablesColumnsList.h>
@@ -81,7 +81,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
 {
     auto columns = getActualTableStructure(context);
 
-    auto res = std::make_shared<StorageMySQL>(
+    auto res = StorageMySQL::create(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
         configuration->database,
