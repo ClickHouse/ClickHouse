@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
@@ -44,6 +45,8 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <fmt/format.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -1151,7 +1154,20 @@ void TCPHandler::receiveHello()
     }
 
     session = makeSession();
-    session->authenticate(user, password, socket().peerAddress());
+    auto & client_info = session->getClientInfo();
+
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
+    Strings forwarded_addresses;
+    if (!client_info.forwarded_for.empty())
+        boost::split(forwarded_addresses, client_info.forwarded_for, boost::is_any_of(","));
+    if (!forwarded_addresses.empty() && server.config().getBool("auth_use_forwarded_address", false))
+    {
+        boost::trim(forwarded_addresses.back());
+        session->authenticate(user, password, Poco::Net::SocketAddress(forwarded_addresses.back(), socket().peerAddress().port()));
+    }
+    else
+        session->authenticate(user, password, socket().peerAddress());
 }
 
 void TCPHandler::receiveAddendum()
