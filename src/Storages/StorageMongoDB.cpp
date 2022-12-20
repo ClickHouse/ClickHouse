@@ -181,12 +181,12 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
     {
         validateNamedCollection(
             *named_collection,
-            {"host", "port", "username", "password", "database", "collection", "table"},
+            {"host", "port", "user", "password", "database", "collection", "table"},
             {"options"});
 
         configuration.host = named_collection->get<String>("host");
         configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-        configuration.username = named_collection->get<String>("username");
+        configuration.username = named_collection->get<String>("user");
         configuration.password = named_collection->get<String>("password");
         configuration.database = named_collection->get<String>("database");
         configuration.table = named_collection->getOrDefault<String>("collection", named_collection->get<String>("table"));

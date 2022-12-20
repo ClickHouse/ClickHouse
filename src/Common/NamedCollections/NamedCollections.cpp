@@ -231,15 +231,23 @@ public:
 
     Keys getKeys(ssize_t depth, const std::string & prefix) const
     {
-        if (depth == -1)
-        {
-            /// Return all keys with full depth.
-            return keys;
-        }
-
         std::queue<std::string> enumerate_input;
-        if (!prefix.empty())
+
+        if (prefix.empty())
+        {
+            if (depth == -1)
+            {
+                /// Return all keys with full depth.
+                return keys;
+            }
+        }
+        else
+        {
+            if (!Configuration::hasConfigValue(*config, prefix))
+                return {};
+
             enumerate_input.push(prefix);
+        }
 
         Keys result;
         Configuration::listKeys(*config, enumerate_input, result, depth);
