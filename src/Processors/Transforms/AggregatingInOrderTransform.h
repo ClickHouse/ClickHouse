@@ -23,13 +23,13 @@ class AggregatingInOrderTransform : public IProcessor
 {
 public:
     AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
+                                InputOrderInfoPtr group_by_info_,
                                 const SortDescription & group_by_description_,
                                 size_t max_block_size_, size_t max_block_bytes_,
                                 ManyAggregatedDataPtr many_data, size_t current_variant);
 
     AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
+                                InputOrderInfoPtr group_by_info_,
                                 const SortDescription & group_by_description_,
                                 size_t max_block_size_, size_t max_block_bytes_);
 
@@ -58,6 +58,7 @@ private:
     AggregatingTransformParamsPtr params;
     ColumnsMask aggregates_mask;
 
+    InputOrderInfoPtr group_by_info;
     /// For sortBlock()
     SortDescription sort_description;
     SortDescriptionWithPositions group_by_description;

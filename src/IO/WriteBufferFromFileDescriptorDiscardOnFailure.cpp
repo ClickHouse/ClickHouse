@@ -17,10 +17,7 @@ void WriteBufferFromFileDescriptorDiscardOnFailure::nextImpl()
 
         if ((-1 == res || 0 == res) && errno != EINTR)
         {
-            /// Never send this profile event to trace log because it may cause another
-            /// write into the same fd and likely will trigger the same error
-            /// and will lead to infinite recursion.
-            ProfileEvents::incrementNoTrace(ProfileEvents::CannotWriteToWriteBufferDiscard);
+            ProfileEvents::increment(ProfileEvents::CannotWriteToWriteBufferDiscard);
             break;  /// Discard
         }
 

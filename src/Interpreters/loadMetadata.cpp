@@ -390,8 +390,8 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     catch (Exception & e)
     {
         e.addMessage("Exception while trying to convert database {} from Ordinary to Atomic. It may be in some intermediate state."
-            " You can finish conversion manually by moving the rest tables from {} to {} (using RENAME TABLE)"
-            " and executing DROP DATABASE {} and RENAME DATABASE {} TO {}.",
+            "You can finish conversion manually by moving the rest tables from {} to {} (using RENAME TABLE)"
+            "and executing DROP DATABASE {} and RENAME DATABASE {} TO {}.",
             database_name, database_name, tmp_name, database_name, tmp_name, database_name);
         throw;
     }

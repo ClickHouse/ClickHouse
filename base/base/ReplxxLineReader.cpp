@@ -1,7 +1,6 @@
 #include <base/ReplxxLineReader.h>
 #include <base/errnoToString.h>
 
-#include <stdexcept>
 #include <chrono>
 #include <cerrno>
 #include <cstring>
@@ -14,168 +13,27 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
-#include <filesystem>
 #include <fmt/format.h>
-#include "config.h" // USE_SKIM
 
-#if USE_SKIM
-#include <skim.h>
-#endif
 
 namespace
 {
 
 /// Trim ending whitespace inplace
-void rightTrim(String & s)
+void trim(String & s)
 {
     s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
 std::string getEditor()
 {
-    const char * editor = std::getenv("EDITOR"); // NOLINT(concurrency-mt-unsafe)
+    const char * editor = std::getenv("EDITOR");
 
     if (!editor || !*editor)
         editor = "vim";
 
     return editor;
 }
-
-/// See comments in ShellCommand::executeImpl()
-/// (for the vfork via dlsym())
-int executeCommand(char * const argv[])
-{
-#if !defined(USE_MUSL)
-    /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
-      *  because of the resolving of symbols in the shared library
-      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
-      * Therefore, separate the resolving of the symbol from the call.
-      */
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-#else
-    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork);
-#endif
-    if (!real_vfork)
-        throw std::runtime_error("Cannot find vfork symbol");
-
-    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
-
-    if (-1 == pid)
-        throw std::runtime_error(fmt::format("Cannot vfork {}: {}", argv[0], errnoToString()));
-
-    /// Child
-    if (0 == pid)
-    {
-        sigset_t mask;
-        sigemptyset(&mask);
-        sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
-        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
-
-        execvp(argv[0], argv);
-        _exit(-1);
-    }
-
-    int status = 0;
-    do
-    {
-        int exited_pid = waitpid(pid, &status, 0);
-        if (exited_pid != -1)
-            break;
-
-        if (errno == EINTR)
-            continue;
-
-        throw std::runtime_error(fmt::format("Cannot waitpid {}: {}", pid, errnoToString()));
-    } while (true);
-
-    return status;
-}
-
-void writeRetry(int fd, const std::string & data)
-{
-    size_t bytes_written = 0;
-    const char * begin = data.c_str();
-    size_t offset = data.size();
-
-    while (bytes_written != offset)
-    {
-        ssize_t res = ::write(fd, begin + bytes_written, offset - bytes_written);
-        if ((-1 == res || 0 == res) && errno != EINTR)
-            throw std::runtime_error(fmt::format("Cannot write to {}: {}", fd, errnoToString()));
-        bytes_written += res;
-    }
-}
-std::string readFile(const std::string & path)
-{
-    std::ifstream t(path);
-    std::string str;
-    t.seekg(0, std::ios::end);
-    str.reserve(t.tellg());
-    t.seekg(0, std::ios::beg);
-    str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-    return str;
-}
-
-/// Simple wrapper for temporary files.
-class TemporaryFile
-{
-private:
-    std::string path;
-    int fd = -1;
-
-public:
-    explicit TemporaryFile(const char * pattern)
-        : path(pattern)
-    {
-        size_t dot_pos = path.rfind('.');
-        if (dot_pos != std::string::npos)
-            fd = ::mkstemps(path.data(), static_cast<int>(path.size() - dot_pos));
-        else
-            fd = ::mkstemp(path.data());
-
-        if (-1 == fd)
-            throw std::runtime_error(fmt::format("Cannot create temporary file {}: {}", path, errnoToString()));
-    }
-    ~TemporaryFile()
-    {
-        try
-        {
-            close();
-            unlink();
-        }
-        catch (const std::runtime_error & e)
-        {
-            fmt::print(stderr, "{}", e.what());
-        }
-    }
-
-    void close()
-    {
-        if (fd == -1)
-            return;
-
-        if (0 != ::close(fd))
-            throw std::runtime_error(fmt::format("Cannot close temporary file {}: {}", path, errnoToString()));
-        fd = -1;
-    }
-
-    void write(const std::string & data)
-    {
-        if (fd == -1)
-            throw std::runtime_error(fmt::format("Cannot write to uninitialized file {}", path));
-
-        writeRetry(fd, data);
-    }
-
-    void unlink()
-    {
-        if (0 != ::unlink(path.c_str()))
-            throw std::runtime_error(fmt::format("Cannot remove temporary file {}: {}", path, errnoToString()));
-    }
-
-    std::string & getPath() { return path; }
-};
 
 /// Copied from replxx::src/util.cxx::now_ms_str() under the terms of 3-clause BSD license of Replxx.
 /// Copyright (c) 2017-2018, Marcin Konarski (amok at codestation.org)
@@ -218,7 +76,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
     if (!in)
     {
         rx.print("Cannot open %s reading (for conversion): %s\n",
-            path.c_str(), errnoToString().c_str());
+            path.c_str(), errnoToString(errno).c_str());
         return;
     }
 
@@ -226,7 +84,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
     if (getline(in, line).bad())
     {
         rx.print("Cannot read from %s (for conversion): %s\n",
-            path.c_str(), errnoToString().c_str());
+            path.c_str(), errnoToString(errno).c_str());
         return;
     }
 
@@ -255,7 +113,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
     if (!out)
     {
         rx.print("Cannot open %s for writing (for conversion): %s\n",
-            path.c_str(), errnoToString().c_str());
+            path.c_str(), errnoToString(errno).c_str());
         return;
     }
 
@@ -293,7 +151,7 @@ ReplxxLineReader::ReplxxLineReader(
         history_file_fd = open(history_file_path.c_str(), O_RDWR);
         if (history_file_fd < 0)
         {
-            rx.print("Open of history file failed: %s\n", errnoToString().c_str());
+            rx.print("Open of history file failed: %s\n", errnoToString(errno).c_str());
         }
         else
         {
@@ -301,18 +159,18 @@ ReplxxLineReader::ReplxxLineReader(
 
             if (flock(history_file_fd, LOCK_SH))
             {
-                rx.print("Shared lock of history file failed: %s\n", errnoToString().c_str());
+                rx.print("Shared lock of history file failed: %s\n", errnoToString(errno).c_str());
             }
             else
             {
                 if (!rx.history_load(history_file_path))
                 {
-                    rx.print("Loading history failed: %s\n", errnoToString().c_str());
+                    rx.print("Loading history failed: %s\n", errnoToString(errno).c_str());
                 }
 
                 if (flock(history_file_fd, LOCK_UN))
                 {
-                    rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
+                    rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
                 }
             }
         }
@@ -362,84 +220,12 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
 
     rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
-
-    /// readline insert-comment
-    auto insert_comment_action = [this](char32_t code)
-    {
-        replxx::Replxx::State state(rx.get_state());
-        const char * line = state.text();
-        const char * line_end = line + strlen(line);
-
-        std::string commented_line;
-        if (std::find(line, line_end, '\n') != line_end)
-        {
-            /// If query has multiple lines, multiline comment is used over
-            /// commenting each line separately for easier uncomment (though
-            /// with invoking editor it is simpler to uncomment multiple lines)
-            ///
-            /// Note, that using multiline comment is OK even with nested
-            /// comments, since nested comments are supported.
-            commented_line = fmt::format("/* {} */", state.text());
-        }
-        else
-        {
-            // In a simplest case use simple comment.
-            commented_line = fmt::format("-- {}", state.text());
-        }
-        rx.set_state(replxx::Replxx::State(commented_line.c_str(), static_cast<int>(commented_line.size())));
-
-        return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
-    };
-    rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
-
-#if USE_SKIM
-    auto interactive_history_search = [this](char32_t code)
-    {
-        std::vector<std::string> words;
-        {
-            auto hs(rx.history_scan());
-            while (hs.next())
-                words.push_back(hs.get().text());
-        }
-
-        std::string new_query;
-        try
-        {
-            new_query = std::string(skim(words));
-        }
-        catch (const std::exception & e)
-        {
-            rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
-        }
-        if (!new_query.empty())
-            rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
-
-        if (bracketed_paste_enabled)
-            enableBracketedPaste();
-
-        rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
-        return rx.invoke(Replxx::ACTION::REPAINT, code);
-    };
-
-    rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
-
-    /// Rebind regular incremental search to C-T.
-    ///
-    /// NOTE: C-T by default this is a binding to swap adjustent chars
-    /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
-    rx.bind_key(Replxx::KEY::control('T'), [this](char32_t)
-    {
-        /// Reverse search is detected by C-R.
-        uint32_t reverse_search = Replxx::KEY::control('R');
-        return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
-    });
-#endif
 }
 
 ReplxxLineReader::~ReplxxLineReader()
 {
     if (close(history_file_fd))
-        rx.print("Close of history file failed: %s\n", errnoToString().c_str());
+        rx.print("Close of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
@@ -451,7 +237,7 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
         return (errno != EAGAIN) ? ABORT : RESET_LINE;
     input = cinput;
 
-    rightTrim(input);
+    trim(input);
     return INPUT_LINE;
 }
 
@@ -464,7 +250,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     // and that is why flock() is added here.
     bool locked = false;
     if (flock(history_file_fd, LOCK_EX))
-        rx.print("Lock of history file failed: %s\n", errnoToString().c_str());
+        rx.print("Lock of history file failed: %s\n", errnoToString(errno).c_str());
     else
         locked = true;
 
@@ -472,34 +258,122 @@ void ReplxxLineReader::addToHistory(const String & line)
 
     // flush changes to the disk
     if (!rx.history_save(history_file_path))
-        rx.print("Saving history failed: %s\n", errnoToString().c_str());
+        rx.print("Saving history failed: %s\n", errnoToString(errno).c_str());
 
     if (locked && 0 != flock(history_file_fd, LOCK_UN))
-        rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
+        rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
+}
+
+/// See comments in ShellCommand::executeImpl()
+/// (for the vfork via dlsym())
+int ReplxxLineReader::executeEditor(const std::string & path)
+{
+    std::vector<char> argv0(editor.data(), editor.data() + editor.size() + 1);
+    std::vector<char> argv1(path.data(), path.data() + path.size() + 1);
+    char * const argv[] = {argv0.data(), argv1.data(), nullptr};
+
+    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
+    if (!real_vfork)
+    {
+        rx.print("Cannot find symbol vfork in myself: %s\n", errnoToString(errno).c_str());
+        return -1;
+    }
+
+    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
+
+    if (-1 == pid)
+    {
+        rx.print("Cannot vfork: %s\n", errnoToString(errno).c_str());
+        return -1;
+    }
+
+    /// Child
+    if (0 == pid)
+    {
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigprocmask(0, nullptr, &mask);
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+
+        execvp(editor.c_str(), argv);
+        rx.print("Cannot execute %s: %s\n", editor.c_str(), errnoToString(errno).c_str());
+        _exit(-1);
+    }
+
+    int status = 0;
+    do
+    {
+        int exited_pid = waitpid(pid, &status, 0);
+        if (exited_pid == -1)
+        {
+            if (errno == EINTR)
+                continue;
+
+            rx.print("Cannot waitpid: %s\n", errnoToString(errno).c_str());
+            return -1;
+        }
+        else
+            break;
+    } while (true);
+    return status;
 }
 
 void ReplxxLineReader::openEditor()
 {
-    TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
-    editor_file.write(rx.get_state().text());
-    editor_file.close();
-
-    char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
-    try
+    char filename[] = "clickhouse_replxx_XXXXXX.sql";
+    int fd = ::mkstemps(filename, 4);
+    if (-1 == fd)
     {
-        if (executeCommand(argv) == 0)
-        {
-            const std::string & new_query = readFile(editor_file.getPath());
-            rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
-        }
+        rx.print("Cannot create temporary file to edit query: %s\n", errnoToString(errno).c_str());
+        return;
     }
-    catch (const std::runtime_error & e)
+
+    replxx::Replxx::State state(rx.get_state());
+
+    size_t bytes_written = 0;
+    const char * begin = state.text();
+    size_t offset = strlen(state.text());
+    while (bytes_written != offset)
     {
-        rx.print(e.what());
+        ssize_t res = ::write(fd, begin + bytes_written, offset - bytes_written);
+        if ((-1 == res || 0 == res) && errno != EINTR)
+        {
+            rx.print("Cannot write to temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
+            break;
+        }
+        bytes_written += res;
+    }
+
+    if (0 != ::close(fd))
+    {
+        rx.print("Cannot close temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
+        return;
+    }
+
+    if (0 == executeEditor(filename))
+    {
+        try
+        {
+            std::ifstream t(filename);
+            std::string str;
+            t.seekg(0, std::ios::end);
+            str.reserve(t.tellg());
+            t.seekg(0, std::ios::beg);
+            str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+            rx.set_state(replxx::Replxx::State(str.c_str(), str.size()));
+        }
+        catch (...)
+        {
+            rx.print("Cannot read from temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
+            return;
+        }
     }
 
     if (bracketed_paste_enabled)
         enableBracketedPaste();
+
+    if (0 != ::unlink(filename))
+        rx.print("Cannot remove temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
 }
 
 void ReplxxLineReader::enableBracketedPaste()

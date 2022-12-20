@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/mannwhitneyutest
 sidebar_position: 310
 sidebar_label: mannWhitneyUTest
 ---

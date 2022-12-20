@@ -4,6 +4,7 @@
 #include <Common/logger_useful.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <IO/ReadSettings.h>
 
 
 namespace CurrentMetrics
@@ -36,12 +37,11 @@ namespace ErrorCodes
 
 
 AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRemoteFS(
-        IAsynchronousReader & reader_,
+        AsynchronousReaderPtr reader_,
         const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t min_bytes_for_seek_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
-    , read_settings(settings_)
     , reader(reader_)
     , priority(settings_.priority)
     , impl(impl_)
@@ -111,7 +111,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
         request.ignore = bytes_to_ignore;
         bytes_to_ignore = 0;
     }
-    return reader.submit(request);
+    return reader->submit(request);
 }
 
 
@@ -125,7 +125,6 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
         return;
 
     /// Prefetch even in case hasPendingData() == true.
-    chassert(prefetch_buffer.size() == read_settings.remote_fs_buffer_size);
     prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size());
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
@@ -133,25 +132,14 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t position)
 {
-    /// Do not reinitialize internal state in case the new end of range is already included.
-    /// Actually it is likely that we will anyway reinitialize it as seek method is called after
-    /// changing end position, but seek avoiding feature might help to avoid reinitialization,
-    /// so this check is useful to save the prefetch for the time when we try to avoid seek by
-    /// reading and ignoring some data.
-    if (!read_until_position || position > *read_until_position)
+    if (prefetch_future.valid())
     {
-        /// We must wait on future and reset the prefetch here, because otherwise there might be
-        /// a race between reading the data in the threadpool and impl->setReadUntilPosition()
-        /// which reinitializes internal remote read buffer (because if we have a new read range
-        /// then we need a new range request) and in case of reading from cache we need to request
-        /// and hold more file segment ranges from cache.
-        if (prefetch_future.valid())
-        {
-            ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
-            prefetch_future.wait();
-            prefetch_future = {};
-        }
+        prefetch_future.wait();
+        prefetch_future = {};
+    }
 
+    if (position > read_until_position)
+    {
         read_until_position = position;
         impl->setReadUntilPosition(*read_until_position);
     }
@@ -160,6 +148,12 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
 
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilEnd()
 {
+    if (prefetch_future.valid())
+    {
+        prefetch_future.wait();
+        prefetch_future = {};
+    }
+
     read_until_position = impl->getFileSize();
     impl->setReadUntilPosition(*read_until_position);
 }
@@ -205,7 +199,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
 
-        chassert(memory.size() == read_settings.remote_fs_buffer_size);
         auto result = asyncReadInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;

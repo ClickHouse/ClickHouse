@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/monitoring
 sidebar_position: 45
 sidebar_label: "Мониторинг"
 ---

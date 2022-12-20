@@ -32,15 +32,11 @@ AzureObjectStorage::AzureObjectStorage(
     , settings(std::move(settings_))
     , log(&Poco::Logger::get("AzureObjectStorage"))
 {
-    data_source_description.type = DataSourceType::AzureBlobStorage;
-    data_source_description.description = client.get()->GetUrl();
-    data_source_description.is_cached = false;
-    data_source_description.is_encrypted = false;
 }
 
 std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString(32);
+    return getRandomASCIIString();
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const
@@ -107,12 +103,12 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
 
     if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto & reader = getThreadPoolReader();
+        auto reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(reader_impl));
     }
     else
     {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(reader_impl), disk_read_settings);
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(reader_impl));
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings_ptr->min_bytes_for_seek);
     }
 }
@@ -141,31 +137,18 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.absolute_path);
 }
 
-void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
+void AzureObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
     auto client_ptr = client.get();
 
     Azure::Storage::Blobs::ListBlobsOptions blobs_list_options;
     blobs_list_options.Prefix = path;
-    if (max_keys)
-        blobs_list_options.PageSizeHint = max_keys;
-    else
-        blobs_list_options.PageSizeHint = settings.get()->list_object_keys_size;
 
     auto blobs_list_response = client_ptr->ListBlobs(blobs_list_options);
-    for (;;)
-    {
-        auto blobs_list = blobs_list_response.Blobs;
+    auto blobs_list = blobs_list_response.Blobs;
 
-        for (const auto & blob : blobs_list)
-            children.emplace_back(blob.Name, blob.BlobSize);
-
-        if (max_keys && children.size() >= static_cast<size_t>(max_keys))
-            break;
-        if (!blobs_list_response.HasPage())
-            break;
-        blobs_list_response.MoveToNextPage();
-    }
+    for (const auto & blob : blobs_list)
+        children.emplace_back(blob.Name, blob.BlobSize);
 }
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.

@@ -91,8 +91,6 @@ public:
 
     const String & getDescription() const override { return description; }
 
-    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
-
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
@@ -158,6 +156,7 @@ private:
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
+    std::optional<ThreadStatus> thread_status;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;

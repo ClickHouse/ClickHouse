@@ -1,4 +1,3 @@
-#include <base/defines.h>
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 
 namespace DB
@@ -17,7 +16,7 @@ std::string toString(MetadataFromDiskTransactionState state)
         case MetadataFromDiskTransactionState::PARTIALLY_ROLLED_BACK:
             return "PARTIALLY_ROLLED_BACK";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 }
