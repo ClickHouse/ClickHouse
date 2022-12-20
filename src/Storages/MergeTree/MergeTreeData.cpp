@@ -1954,7 +1954,35 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool
 
 void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed)
 {
+    if (parts_to_remove.empty())
+        return;
+
     const auto settings = getSettings();
+
+    auto remove_single_thread = [this, &parts_to_remove, part_names_succeed]()
+    {
+        LOG_DEBUG(log, "Removing {} parts from filesystem: {}", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
+        for (const DataPartPtr & part : parts_to_remove)
+        {
+            preparePartForRemoval(part)->remove();
+            if (part_names_succeed)
+                part_names_succeed->insert(part->name);
+        }
+    };
+
+    if (settings->max_part_removal_threads <= 1 || parts_to_remove.size() <= settings->concurrent_part_removal_threshold)
+    {
+        remove_single_thread();
+        return;
+    }
+
+    /// Parallel parts removal.
+    /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
+    LOG_DEBUG(log, "Removing {} parts from filesystem: {} (concurrently)", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
+    size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
+    std::mutex part_names_mutex;
+    ThreadPool pool(num_threads);
+
     bool has_zero_copy_parts = false;
     if (supportsReplication() && settings->allow_remote_fs_zero_copy_replication)
     {
@@ -1964,21 +1992,11 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         );
     }
 
-    if (parts_to_remove.size() > 1
-        && settings->max_part_removal_threads > 1
-        && parts_to_remove.size() > settings->concurrent_part_removal_threshold
-        && !has_zero_copy_parts) /// parts must be removed in order for zero-copy replication
+    if (!has_zero_copy_parts)
     {
-        /// Parallel parts removal.
-        size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
-        std::mutex part_names_mutex;
-        ThreadPool pool(num_threads);
-
-        /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
-        LOG_DEBUG(log, "Removing {} parts from filesystem: {} (concurrently)", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
-            pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
+            pool.scheduleOrThrowOnError([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
             {
                 SCOPE_EXIT_SAFE(
                     if (thread_group)
@@ -1995,19 +2013,69 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                 }
             });
         }
+        return;
+    }
 
-        pool.wait();
-    }
-    else if (!parts_to_remove.empty())
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        LOG_DEBUG(log, "Removing {} parts from filesystem: {}", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
-        for (const DataPartPtr & part : parts_to_remove)
-        {
-            preparePartForRemoval(part)->remove();
-            if (part_names_succeed)
-                part_names_succeed->insert(part->name);
-        }
+        remove_single_thread();
+        return;
     }
+
+    /// We have "zero copy replication" parts and we are going to remove them in parallel.
+    /// The problem is that all parts in a mutation chain must be removed sequentially to avoid "key does not exits" issues.
+    /// We remove disjoint subsets of parts in parallel.
+    /// The problem is that it's not trivial to divide Outdated parts into disjoint subsets,
+    /// because Outdated parts legally can be intersecting (but intersecting parts must be separated by a DROP_RANGE).
+    /// So we ignore level and version and use block numbers only.
+    ActiveDataPartSet independent_ranges_set(format_version);
+    for (const auto & part : parts_to_remove)
+    {
+        MergeTreePartInfo range_info = part->info;
+        range_info.level = static_cast<UInt32>(range_info.max_block - range_info.min_block);
+        range_info.mutation = 0;
+        independent_ranges_set.addImpl(range_info, range_info.getPartName());
+    }
+
+    auto independent_ranges_infos = independent_ranges_set.getPartInfos();
+    size_t sum_of_ranges = 0;
+    for (auto range : independent_ranges_infos)
+    {
+        range.level = MergeTreePartInfo::MAX_LEVEL;
+        range.mutation = MergeTreePartInfo::MAX_BLOCK_NUMBER;
+
+        DataPartsVector parts_in_range;
+        for (const auto & part : parts_to_remove)
+            if (range.contains(part->info))
+                parts_in_range.push_back(part);
+        sum_of_ranges += parts_in_range.size();
+
+        LOG_TRACE(log, "Scheduling removal of {} parts in blocks range {}", parts_in_range.size(), range.getPartName());
+
+        pool.scheduleOrThrowOnError([&part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup(), batch = std::move(parts_in_range)]
+        {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
+
+            for (auto & part : batch)
+            {
+                preparePartForRemoval(part)->remove();
+                if (part_names_succeed)
+                {
+                    std::lock_guard lock(part_names_mutex);
+                    part_names_succeed->insert(part->name);
+                }
+            }
+        });
+    }
+
+    if (parts_to_remove.size() != sum_of_ranges)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of removed parts is not equal to number of parts in independent ranges "
+                                                   "({} != {}), it's a bug", parts_to_remove.size(), sum_of_ranges);
 }
 
 size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()

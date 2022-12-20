@@ -23,8 +23,13 @@ ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_,
 
 bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
 {
-    /// TODO make it exception safe (out_replaced_parts->push_back(...) may throw)
     auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
+    return addImpl(part_info, name, out_replaced_parts);
+}
+
+bool ActiveDataPartSet::addImpl(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts)
+{
+    /// TODO make it exception safe (out_replaced_parts->push_back(...) may throw)
 
     if (getContainingPartImpl(part_info) != part_info_to_name.end())
         return false;
@@ -158,6 +163,17 @@ Strings ActiveDataPartSet::getParts() const
         res.push_back(kv.second);
 
     return res;
+}
+
+std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfos() const
+{
+    std::vector<MergeTreePartInfo> res;
+    res.reserve(part_info_to_name.size());
+    for (const auto & kv : part_info_to_name)
+        res.push_back(kv.first);
+
+    return res;
+
 }
 
 size_t ActiveDataPartSet::size() const
