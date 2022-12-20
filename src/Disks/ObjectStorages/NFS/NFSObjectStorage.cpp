@@ -54,7 +54,19 @@ void NFSObjectStorage::shutdown()
 
 std::string NFSObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString(32);
+    /// Path to store the new NFS object.
+
+    /// Total length is 32 a-z characters for enough randomness.
+    /// First 3 characters are used as a prefix for
+    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+
+    constexpr size_t key_name_total_size = 32;
+    constexpr size_t key_name_prefix_size = 3;
+
+    /// Path to store new NFS object.
+    return fmt::format("{}/{}",
+                       getRandomASCIIString(key_name_prefix_size),
+                       getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 }
 
 bool NFSObjectStorage::exists(const StoredObject & object) const
@@ -127,6 +139,20 @@ std::unique_ptr<WriteBufferFromFileBase> NFSObjectStorage::writeObject( /// NOLI
             ErrorCodes::UNSUPPORTED_METHOD,
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
+    const String & nfs_file = object.absolute_path.substr(object.absolute_path.find_last_of('/') + 1, object.absolute_path.size() - object.absolute_path.find_last_of('/'));
+    const String & nfs_path = object.absolute_path.substr(0, object.absolute_path.find_last_of('/') + 1);
+    if (!fs::is_directory(nfs_path))
+    {
+        try
+        {
+            fs::create_directories(nfs_path);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Cannot create the directory of disk {} ({}).", name, nfs_path);
+            throw;
+        }
+    }
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     auto nfs_buffer = std::make_unique<WriteBufferFromNFS>(
         object.absolute_path, config, patchSettings(write_settings), buf_size,
