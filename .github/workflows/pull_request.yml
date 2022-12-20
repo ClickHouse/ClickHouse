@@ -250,7 +250,7 @@ jobs:
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
   BuilderDebRelease:
-    needs: [DockerHubPush, FastTest, StyleCheck]
+    needs: [DockerHubPush, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -295,7 +295,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   BuilderBinRelease:
-    needs: [DockerHubPush, FastTest, StyleCheck]
+    needs: [DockerHubPush, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -338,7 +338,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAarch64:
-    needs: [DockerHubPush, FastTest, StyleCheck]
+    needs: [DockerHubPush, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -383,7 +383,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAsan:
-    needs: [DockerHubPush, FastTest, StyleCheck]
+    needs: [DockerHubPush, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -426,7 +426,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebUBsan:
-    needs: [DockerHubPush, FastTest, StyleCheck]
+    needs: [DockerHubPush, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -469,7 +469,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebTsan:
-    needs: [DockerHubPush, FastTest, StyleCheck]
+    needs: [DockerHubPush, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -512,7 +512,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebMsan:
-    needs: [DockerHubPush, FastTest, StyleCheck]
+    needs: [DockerHubPush, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -555,7 +555,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebDebug:
-    needs: [DockerHubPush, FastTest, StyleCheck]
+    needs: [DockerHubPush, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
