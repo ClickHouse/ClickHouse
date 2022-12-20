@@ -512,7 +512,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
     std::vector<String> part_tags;
 
-    size_t upload_part_size = settings_ptr->request_settings.min_upload_part_size;
+    size_t upload_part_size = settings_ptr->request_settings.getUploadSettings().min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
         ProfileEvents::increment(ProfileEvents::S3UploadPartCopy);
