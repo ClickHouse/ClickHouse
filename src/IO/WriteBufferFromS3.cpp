@@ -368,7 +368,9 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
     req.SetPartNumber(static_cast<int>(part_number));
     req.SetUploadId(multipart_upload_id);
     req.SetContentLength(temporary_buffer->tellp());
-    req.SetBody(temporary_buffer);
+    auto other_stream = Aws::MakeShared<Aws::OtherStream>("other stream");
+    other_stream->impl = std::move(temporary_buffer);
+    req.SetBody(other_stream);
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
@@ -518,7 +520,9 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req, s
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetContentLength(temporary_buffer->tellp());
-    req.SetBody(temporary_buffer);
+    auto other_stream = Aws::MakeShared<Aws::OtherStream>("other stream");
+    other_stream->impl = std::move(temporary_buffer);
+    req.SetBody(other_stream);
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
 

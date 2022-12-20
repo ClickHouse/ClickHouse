@@ -15,6 +15,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
 
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
@@ -368,10 +369,16 @@ void PocoHTTPClient::makeRequestInternal(
 
                 if (attempt > 0) /// rewind content body buffer.
                 {
-                    request.GetContentBody()->clear();
-                    request.GetContentBody()->seekg(0);
+                    request.GetContentBody()->startReadingFromStart();
                 }
-                auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
+
+                const auto & body = request.GetContentBody();
+                size_t size = 0;
+                if (body->impl)
+                    size = Poco::StreamCopier::copyStream(*body->impl, request_body_stream);
+                else
+                    size = Poco::StreamCopier::copyStream(body->ss, request_body_stream);
+
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Written {} bytes to request body", size);
             }
