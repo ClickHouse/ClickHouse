@@ -23,11 +23,10 @@ jobs:
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -40,11 +39,10 @@ jobs:
   DockerHubPushAmd64:
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -58,11 +56,10 @@ jobs:
     needs: [DockerHubPushAmd64, DockerHubPushAarch64]
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Download changed aarch64 images
         uses: actions/download-artifact@v3
         with:
@@ -97,11 +94,10 @@ jobs:
           ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
           RCSK
           EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v0
+        with:
+          clear-repository: true
       - name: Download changed images
         uses: actions/download-artifact@v3
         with:
