@@ -243,17 +243,15 @@ static void injection(
     }
 }
 
-void ThreadFuzzer::maybeInjectSleep()
-{
-    auto & fuzzer = ThreadFuzzer::instance();
-    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.sleep_probability, fuzzer.sleep_time_us);
-}
 
 void ThreadFuzzer::signalHandler(int)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;
-    maybeInjectSleep();
+
+    auto & fuzzer = ThreadFuzzer::instance();
+    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.sleep_probability, fuzzer.sleep_time_us);
+
     errno = saved_errno;
 }
 

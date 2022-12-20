@@ -8,37 +8,24 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 # shellcheck source=./transactions.lib
 . "$CURDIR"/transactions.lib
-# shellcheck source=./parts.lib
-. "$CURDIR"/parts.lib
 set -e
 
 # https://github.com/ept/hermitage
 
-function hard_reset_table()
-{
-    # Merges aren;t blocked, when they runs they left parts which are removed after old_parts_lifetime
-    # Test have to set old_parts_lifetime in low value in order to be able to wait deleting empty parts
-    $CLICKHOUSE_CLIENT -q "drop table if exists test"
-    $CLICKHOUSE_CLIENT -q "create table test (id int, value int) engine=MergeTree order by id SETTINGS old_parts_lifetime = 5"
-    $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (1, 10);"
-    $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (2, 20);"
-}
+$CLICKHOUSE_CLIENT -q "drop table if exists test"
+$CLICKHOUSE_CLIENT -q "create table test (id int, value int) engine=MergeTree order by id"
 
 function reset_table()
 {
     $CLICKHOUSE_CLIENT -q "truncate table test;"
     $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (1, 10);"
     $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (2, 20);"
-
-    # The is a chance that old parts are held by the oldest snapshot existed on a node
-    # In order not to wait too long (>60s) there is used a fallback to table recreation
-    wait_for_delete_empty_parts "test" $CLICKHOUSE_DATABASE 1>/dev/null 2>&1 || hard_reset_table
 }
 
 # TODO update test after implementing Read Committed
 
 # G0
-hard_reset_table
+reset_table
 tx 1 "begin transaction"
 tx 2                                            "begin transaction"
 tx 1 "alter table test update value=11 where id=1"
@@ -121,7 +108,6 @@ tx_async 12 "commit"
 tx_wait 12
 tx_wait 13
 $CLICKHOUSE_CLIENT -q "select 16, * from test order by id"
-
 
 # PMP write
 reset_table

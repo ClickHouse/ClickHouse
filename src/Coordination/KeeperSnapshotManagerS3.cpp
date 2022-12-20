@@ -65,7 +65,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
 
         auto endpoint = config.getString(config_prefix + ".endpoint");
-        auto new_uri = S3::URI{endpoint};
+        auto new_uri = S3::URI{Poco::URI(endpoint)};
 
         {
             std::lock_guard client_lock{snapshot_s3_client_mutex};
@@ -93,7 +93,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             auth_settings.region,
             RemoteHostFilter(), s3_max_redirects,
             enable_s3_requests_logging,
-            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {});
+            /* for_disk_s3 = */ false);
 
         client_configuration.endpointOverride = new_uri.endpoint;
 
@@ -135,8 +135,8 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
         if (s3_client == nullptr)
             return;
 
-        S3Settings::RequestSettings request_settings_1;
-        request_settings_1.setEmptyFieldsByDefault();
+        S3Settings::ReadWriteSettings read_write_settings;
+        read_write_settings.upload_part_size_multiply_parts_count_threshold = 10000;
 
         const auto create_writer = [&](const auto & key)
         {
@@ -145,9 +145,27 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
                 s3_client->client,
                 s3_client->uri.bucket,
                 key,
-                request_settings_1
+                read_write_settings
             };
         };
+
+        const auto file_exists = [&](const auto & key)
+        {
+            Aws::S3::Model::HeadObjectRequest request;
+            request.SetBucket(s3_client->uri.bucket);
+            request.SetKey(key);
+            auto outcome = s3_client->client->HeadObject(request);
+
+            if (outcome.IsSuccess())
+                return true;
+
+            const auto & error = outcome.GetError();
+            if (error.GetErrorType() != Aws::S3::S3Errors::NO_SUCH_KEY && error.GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
+                throw S3Exception(error.GetErrorType(), "Failed to verify existence of lock file: {}", error.GetMessage());
+
+            return false;
+        };
+
 
         LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_path);
         ReadBufferFromFile snapshot_file(snapshot_path);
@@ -155,7 +173,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
         auto snapshot_name = fs::path(snapshot_path).filename().string();
         auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
 
-        if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, snapshot_name))
+        if (file_exists(snapshot_name))
         {
             LOG_ERROR(log, "Snapshot {} already exists", snapshot_name);
             return;
@@ -163,7 +181,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
 
         // First we need to verify that there isn't already a lock file for the snapshot we want to upload
         // Only leader uploads a snapshot, but there can be a rare case where we have 2 leaders in NuRaft
-        if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, lock_file))
+        if (file_exists(lock_file))
         {
             LOG_ERROR(log, "Lock file for {} already, exists. Probably a different node is already uploading the snapshot", snapshot_name);
             return;
@@ -176,15 +194,13 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
         lock_writer.finalize();
 
         // We read back the written UUID, if it's the same we can upload the file
-        S3Settings::RequestSettings request_settings_2;
-        request_settings_2.max_single_read_retries = 1;
         ReadBufferFromS3 lock_reader
         {
             s3_client->client,
             s3_client->uri.bucket,
             lock_file,
             "",
-            request_settings_2,
+            1,
             {}
         };
 

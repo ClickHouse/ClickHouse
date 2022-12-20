@@ -311,29 +311,19 @@ private:
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
         }
 
-        std::string signal_description = "Unknown signal";
-
-        /// Some of these are not really signals, but our own indications on failure reason.
-        if (sig == StdTerminate)
-            signal_description = "std::terminate";
-        else if (sig == SanitizerTrap)
-            signal_description = "sanitizer trap";
-        else if (sig >= 0)
-            signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
         LOG_FATAL(log, "########################################");
 
         if (query_id.empty())
         {
             LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (no query) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, signal_description, sig);
+                thread_num, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, query_id, query, signal_description, sig);
+                thread_num, query_id, query, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context)
         }
 
         String error_message;
@@ -365,33 +355,27 @@ private:
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
         /// Please keep the below log messages in-sync with the ones in programs/server/Server.cpp
-
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
         {
-            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read.");
+            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read."
+                " (calculated checksum: {})", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == daemon.stored_binary_hash)
+        {
+            LOG_FATAL(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
         }
         else
         {
-            String calculated_binary_hash = getHashOfLoadedBinaryHex();
-            if (calculated_binary_hash == daemon.stored_binary_hash)
-            {
-                LOG_FATAL(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
-            }
-            else
-            {
-                LOG_FATAL(
-                    log,
-                    "Calculated checksum of the executable ({0}) does not correspond"
-                    " to the reference checksum stored in the executable ({1})."
-                    " This may indicate one of the following:"
-                    " - the executable was changed just after startup;"
-                    " - the executable was corrupted on disk due to faulty hardware;"
-                    " - the loaded executable was corrupted in memory due to faulty hardware;"
-                    " - the file was intentionally modified;"
-                    " - a logical error in the code.",
-                    calculated_binary_hash,
-                    daemon.stored_binary_hash);
-            }
+            LOG_FATAL(log, "Calculated checksum of the executable ({0}) does not correspond"
+                " to the reference checksum stored in the executable ({1})."
+                " This may indicate one of the following:"
+                " - the executable was changed just after startup;"
+                " - the executable was corrupted on disk due to faulty hardware;"
+                " - the loaded executable was corrupted in memory due to faulty hardware;"
+                " - the file was intentionally modified;"
+                " - a logical error in the code."
+                , calculated_binary_hash, daemon.stored_binary_hash);
         }
 #endif
 

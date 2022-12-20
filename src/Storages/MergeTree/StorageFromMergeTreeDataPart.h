@@ -47,10 +47,10 @@ public:
         const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
     {
         const auto & storage_columns = metadata_snapshot->getColumns();
-        if (!hasDynamicSubcolumns(storage_columns))
+        if (!hasObjectColumns(storage_columns))
             return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
-        auto object_columns = getConcreteObjectColumns(
+        auto object_columns = getObjectColumns(
             parts.begin(), parts.end(),
             storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 

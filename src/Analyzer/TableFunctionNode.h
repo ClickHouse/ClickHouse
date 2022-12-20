@@ -127,6 +127,8 @@ public:
         return QueryTreeNodeType::TABLE_FUNCTION;
     }
 
+    String getName() const override;
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:

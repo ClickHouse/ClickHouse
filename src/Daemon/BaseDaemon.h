@@ -136,7 +136,11 @@ protected:
     /// fork the main process and watch if it was killed
     void setupWatchdog();
 
-    void waitForTerminationRequest() override;
+    void waitForTerminationRequest()
+#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
+    override
+#endif
+    ;
     /// thread safe
     virtual void onInterruptSignals(int signal_id);
 
