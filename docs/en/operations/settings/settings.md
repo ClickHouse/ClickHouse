@@ -3454,6 +3454,33 @@ This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. E
 
 Disabled by default.
 
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
+
+Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
+
+Example:
+
+```sql
+INSERT INTO FUNCTION null('foo String') SETTINGS max_threads=1 VALUES ('bar');
+```
+
+But the following query will work only with `allow_settings_after_format_in_insert`:
+
+```sql
+SET allow_settings_after_format_in_insert=1;
+INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
+```
+
+Possible values:
+
+-   0 — Disallow.
+-   1 — Allow.
+
+Default value: `0`.
+
+!!! note "Warning"
+    Use this setting only for backward compatibility if your use cases depend on old syntax.
+
 # Format settings {#format-settings}
 
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
