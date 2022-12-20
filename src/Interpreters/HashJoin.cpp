@@ -469,6 +469,9 @@ bool HashJoin::alwaysReturnsEmptySet() const
 
 size_t HashJoin::getTotalRowCount() const
 {
+    if (!data)
+        return 0;
+
     size_t res = 0;
 
     if (data->type == Type::CROSS)
@@ -489,6 +492,9 @@ size_t HashJoin::getTotalRowCount() const
 
 size_t HashJoin::getTotalByteCount() const
 {
+    if (!data)
+        return 0;
+
 #ifdef NDEBUG
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
@@ -670,34 +676,44 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     }
 }
 
-Block HashJoin::structureRightBlock(const Block & block) const
+Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
 {
     Block structured_block;
-    for (const auto & sample_column : savedBlockSample().getColumnsWithTypeAndName())
+    for (const auto & sample_column : saved_block_sample_.getColumnsWithTypeAndName())
     {
         ColumnWithTypeAndName column = block.getByName(sample_column.name);
         if (sample_column.column->isNullable())
             JoinCommon::convertColumnToNullable(column);
-        structured_block.insert(column);
-    }
 
+        /// There's no optimization for right side const columns. Remove constness if any.
+        column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
+        structured_block.insert(std::move(column));
+    }
     return structured_block;
+}
+
+Block HashJoin::prepareRightBlock(const Block & block) const
+{
+    return prepareRightBlock(block, savedBlockSample());
 }
 
 bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 {
+    if (!data)
+        throw Exception("Join data was released", ErrorCodes::LOGICAL_ERROR);
+
+    Block structured_block = source_block;
+    prepareRightBlock(structured_block);
+
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
-    if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
-        throw Exception("Too many rows in right table block for HashJoin: " + toString(source_block.rows()), ErrorCodes::NOT_IMPLEMENTED);
+    if (unlikely(structured_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
+        throw Exception("Too many rows in right table block for HashJoin: " + toString(structured_block.rows()), ErrorCodes::NOT_IMPLEMENTED);
 
-    /// There's no optimization for right side const columns. Remove constness if any.
-    Block block = materializeBlock(source_block);
-    size_t rows = block.rows();
+    size_t rows = structured_block.rows();
 
-    ColumnRawPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(block, table_join->getAllNames(JoinTableSide::Right));
+    ColumnRawPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(structured_block, table_join->getAllNames(JoinTableSide::Right));
 
-    Block structured_block = structureRightBlock(block);
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
@@ -733,14 +749,14 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
                     save_nullmap |= (*null_map)[i];
             }
 
-            auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
+            auto join_mask_col = JoinCommon::getColumnAsMask(structured_block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             if (!multiple_disjuncts && isRightOrFull(kind) && !join_mask_col.isConstant())
             {
                 const auto & join_mask = join_mask_col.getData();
                 /// Save rows that do not hold conditions
-                not_joined_map = ColumnUInt8::create(block.rows(), 0);
+                not_joined_map = ColumnUInt8::create(rows, 0);
                 for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
                 {
                     /// Condition hold, do not save row
@@ -1697,7 +1713,7 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    if (data->released)
+    if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
     for (const auto & onexpr : table_join->getClauses())
@@ -1794,7 +1810,10 @@ class NotJoinedHash final : public NotJoinedBlocks::RightColumnsFiller
 public:
     NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_)
         : parent(parent_), max_block_size(max_block_size_), current_block_start(0)
-    {}
+    {
+        if (parent.data == nullptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
+    }
 
     Block getEmptyBlock() override { return parent.savedBlockSample().cloneEmpty(); }
 
@@ -1991,7 +2010,6 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
         size_t left_columns_count = left_sample_block.columns();
         auto non_joined = std::make_unique<NotJoinedHash<true>>(*this, max_block_size);
         return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
-
     }
     else
     {
@@ -2020,10 +2038,18 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     }
 }
 
-BlocksList HashJoin::releaseJoinedBlocks()
+BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
 {
     BlocksList right_blocks = std::move(data->blocks);
-    data->released = true;
+    if (!restructure)
+    {
+        data.reset();
+        return right_blocks;
+    }
+
+    data->maps.clear();
+    data->blocks_nullmaps.clear();
+
     BlocksList restored_blocks;
 
     /// names to positions optimization
@@ -2052,6 +2078,7 @@ BlocksList HashJoin::releaseJoinedBlocks()
         restored_blocks.emplace_back(std::move(restored_block));
     }
 
+    data.reset();
     return restored_blocks;
 }
 

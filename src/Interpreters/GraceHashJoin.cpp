@@ -41,7 +41,7 @@ namespace
     public:
         AccumulatedBlockReader(TemporaryFileStream & reader_,
                                std::mutex & mutex_,
-                               size_t result_block_size_ = DEFAULT_BLOCK_SIZE * 8)
+                               size_t result_block_size_ = 0)
             : reader(reader_)
             , mutex(mutex_)
             , result_block_size(result_block_size_)
@@ -59,7 +59,7 @@ namespace
 
             Blocks blocks;
             size_t rows_read = 0;
-            while (rows_read < result_block_size)
+            while (true)
             {
                 Block block = reader.read();
                 rows_read += block.rows();
@@ -69,6 +69,9 @@ namespace
                     return concatenateBlocks(blocks);
                 }
                 blocks.push_back(std::move(block));
+
+                if (rows_read >= result_block_size)
+                    break;
             }
 
             return concatenateBlocks(blocks);
@@ -124,15 +127,14 @@ public:
         TemporaryFileStream::Stat right;
     };
 
-    explicit FileBucket(size_t bucket_index_,
-                        TemporaryFileStream & left_file_,
-                        TemporaryFileStream & right_file_,
-                        Poco::Logger * log_)
+    explicit FileBucket(size_t bucket_index_, GraceHashJoin & grace_join_)
         : idx{bucket_index_}
-        , left_file{left_file_}
-        , right_file{right_file_}
+        , left_file{
+            grace_join_.tmp_data->createStream(grace_join_.left_sample_block)}
+        , right_file{
+            grace_join_.tmp_data->createStream(grace_join_.prepareRightBlock(grace_join_.right_sample_block))}
         , state{State::WRITING_BLOCKS}
-        , log(log_)
+        , log{grace_join_.log}
     {
     }
 
@@ -174,14 +176,13 @@ public:
     {
         LOG_TRACE(log, "Joining file bucket {}", idx);
 
-        {
-            std::unique_lock<std::mutex> left_lock(left_file_mutex);
-            std::unique_lock<std::mutex> right_lock(right_file_mutex);
+        std::unique_lock<std::mutex> left_lock(left_file_mutex);
+        std::unique_lock<std::mutex> right_lock(right_file_mutex);
 
-            stats.left = left_file.finishWriting();
-            stats.right = right_file.finishWriting();
-            state = State::JOINING_BLOCKS;
-        }
+        stats.left = left_file.finishWriting();
+        stats.right = right_file.finishWriting();
+
+        state = State::JOINING_BLOCKS;
 
         return AccumulatedBlockReader(right_file, right_file_mutex);
     }
@@ -238,15 +239,17 @@ private:
 
 namespace
 {
+
 template <JoinTableSide table_side>
-void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & buckets)
+void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & buckets, size_t except_index = 0)
 {
     chassert(blocks.size() == buckets.size());
     retryForEach(
         generateRandomPermutation(1, buckets.size()), // skipping 0 block, since we join it in memory w/o spilling on disk
         [&](size_t i)
         {
-            if (!blocks[i].rows())
+            /// Skip empty and current bucket
+            if (!blocks[i].rows() || i == except_index)
                 return true;
 
             bool flushed = false;
@@ -281,6 +284,7 @@ GraceHashJoin::GraceHashJoin(
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(std::make_unique<TemporaryDataOnDisk>(tmp_data_, CurrentMetrics::TemporaryFilesForJoin))
     , hash_join(makeInMemoryJoin())
+    , hash_join_sample_block(hash_join->savedBlockSample())
 {
     if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
@@ -303,7 +307,7 @@ void GraceHashJoin::initBuckets()
     if (buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No buckets created");
 
-    LOG_TRACE(log, "Initialize {} buckets", buckets.size());
+    LOG_TRACE(log, "Initialize {} bucket{}", buckets.size(), buckets.size() > 1 ? "s" : "");
 
     current_bucket = buckets.front().get();
     current_bucket->startJoining();
@@ -323,8 +327,24 @@ bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
     Block materialized = materializeBlock(block);
-    addJoinedBlockImpl(materialized);
+    addJoinedBlockImpl(std::move(materialized));
     return true;
+}
+
+bool GraceHashJoin::hasMemoryOverflow(const Block & block) const
+{
+    /// One row can't be split, avoid loop
+    if (block.rows() < 2)
+        return false;
+
+    bool has_overflow = !table_join->sizeLimits().softCheck(block.rows(), block.allocatedBytes());
+
+    if (has_overflow)
+        LOG_TRACE(log, "GraceHashJoin has memory overflow, block {} / {} bytes, {} / {} rows",
+            ReadableSize(block.allocatedBytes()), ReadableSize(table_join->sizeLimits().max_bytes),
+            block.rows(), table_join->sizeLimits().max_rows);
+
+    return has_overflow;
 }
 
 bool GraceHashJoin::hasMemoryOverflow() const
@@ -339,7 +359,7 @@ bool GraceHashJoin::hasMemoryOverflow() const
     bool has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 
     if (has_overflow)
-        LOG_TRACE(log, "GraceHashJoin has memory overflow {} / {} bytes, {} / {} rows",
+        LOG_TRACE(log, "GraceHashJoin has memory overflow, hash {} / {} bytes, {} / {} rows",
             ReadableSize(total_bytes), ReadableSize(table_join->sizeLimits().max_bytes),
             total_rows, table_join->sizeLimits().max_rows);
     return has_overflow;
@@ -353,7 +373,7 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
     if (to_size <= current_size)
         return buckets;
 
-    assert(isPowerOf2(to_size));
+    chassert(isPowerOf2(to_size));
 
     if (to_size > max_num_buckets)
     {
@@ -373,8 +393,7 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
 
 void GraceHashJoin::addBucket(Buckets & destination)
 {
-    BucketPtr new_bucket = std::make_shared<FileBucket>(
-        destination.size(), tmp_data->createStream(left_sample_block), tmp_data->createStream(right_sample_block), log);
+    BucketPtr new_bucket = std::make_shared<FileBucket>(destination.size(), *this);
     destination.emplace_back(std::move(new_bucket));
 }
 
@@ -538,17 +557,11 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     if (hash_join)
     {
-        auto right_blocks = hash_join->releaseJoinedBlocks();
-        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_blocks, buckets.size());
-
-        for (size_t i = 0; i < blocks.size(); ++i)
+        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
+        for (auto & block : right_blocks)
         {
-            if (blocks[i].rows() == 0 || i == bucket_idx)
-                continue;
-
-            if (i < bucket_idx)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected bucket index {} when current bucket is {}", i, bucket_idx);
-            buckets[i]->addRightBlock(blocks[i]);
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets.size());
+            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets, bucket_idx);
         }
     }
 
@@ -591,42 +604,58 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin()
     return std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row);
 }
 
+Block GraceHashJoin::prepareRightBlock(const Block & block)
+{
+    return HashJoin::prepareRightBlock(block, hash_join_sample_block);
+}
+
 void GraceHashJoin::addJoinedBlockImpl(Block block)
 {
     Buckets buckets_snapshot = getCurrentBuckets();
-    Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size());
     size_t bucket_index = current_bucket->idx;
+    Block current_block;
+
+    {
+        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size());
+        flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
+        current_block = std::move(blocks[bucket_index]);
+    }
 
     // Add block to the in-memory join
-    if (blocks[bucket_index].rows() > 0)
+    if (current_block.rows() > 0)
     {
         std::lock_guard lock(hash_join_mutex);
 
-        hash_join->addJoinedBlock(std::move(blocks[bucket_index]), /* check_limits = */ false);
-        bool overflow = hasMemoryOverflow();
+        hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
 
-        if (overflow)
+        if (!hasMemoryOverflow())
+            return;
+
+        current_block = {};
+
+        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
+
+        for (const auto & right_block : right_blocks)
         {
-            auto right_blocks = hash_join->releaseJoinedBlocks();
-            right_blocks.pop_back();
-
-            for (const auto & right_block : right_blocks)
-                blocks.push_back(right_block);
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
+            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
+            current_block = blocks[bucket_index];
         }
 
-        while (overflow)
+        while (hasMemoryOverflow(current_block))
         {
             buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
 
-            blocks = JoinCommon::scatterBlockByHash(right_key_names, blocks, buckets_snapshot.size());
-            hash_join = makeInMemoryJoin();
-            hash_join->addJoinedBlock(blocks[bucket_index], /* check_limits = */ false);
-            overflow = hasMemoryOverflow();
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, current_block, buckets_snapshot.size());
+            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
+            current_block = blocks[bucket_index];
         }
-        blocks[bucket_index].clear();
-    }
 
-    flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot);
+        hash_join = makeInMemoryJoin();
+
+        if (current_block.rows() > 0)
+            hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
+    }
 }
 
 size_t GraceHashJoin::getNumBuckets() const
