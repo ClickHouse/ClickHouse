@@ -346,6 +346,8 @@ public:
         const ContextPtr & context);
 
 private:
+    NodeRawConstPtrs getParents(const Node * target) const;
+
     Node & addNode(Node node);
 
 #if USE_EMBEDDED_COMPILER

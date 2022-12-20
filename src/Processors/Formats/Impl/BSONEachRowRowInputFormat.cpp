@@ -772,27 +772,27 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         case BSONType::DOUBLE:
         {
             in.ignore(sizeof(Float64));
-            return makeNullable(std::make_shared<DataTypeFloat64>());
+            return std::make_shared<DataTypeFloat64>();
         }
         case BSONType::BOOL:
         {
             in.ignore(sizeof(UInt8));
-            return makeNullable(DataTypeFactory::instance().get("Bool"));
+            return DataTypeFactory::instance().get("Bool");
         }
         case BSONType::INT64:
         {
             in.ignore(sizeof(Int64));
-            return makeNullable(std::make_shared<DataTypeInt64>());
+            return std::make_shared<DataTypeInt64>();
         }
         case BSONType::DATETIME:
         {
             in.ignore(sizeof(Int64));
-            return makeNullable(std::make_shared<DataTypeDateTime64>(6, "UTC"));
+            return std::make_shared<DataTypeDateTime64>(6, "UTC");
         }
         case BSONType::INT32:
         {
             in.ignore(sizeof(Int32));
-            return makeNullable(std::make_shared<DataTypeInt32>());
+            return std::make_shared<DataTypeInt32>();
         }
         case BSONType::SYMBOL: [[fallthrough]];
         case BSONType::JAVA_SCRIPT_CODE: [[fallthrough]];
@@ -802,7 +802,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
             BSONSizeT size;
             readBinary(size, in);
             in.ignore(size);
-            return makeNullable(std::make_shared<DataTypeString>());
+            return std::make_shared<DataTypeString>();
         }
         case BSONType::DOCUMENT:
         {
@@ -856,10 +856,10 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
             {
                 case BSONBinarySubtype::BINARY_OLD: [[fallthrough]];
                 case BSONBinarySubtype::BINARY:
-                    return makeNullable(std::make_shared<DataTypeString>());
+                    return std::make_shared<DataTypeString>();
                 case BSONBinarySubtype::UUID_OLD: [[fallthrough]];
                 case BSONBinarySubtype::UUID:
-                    return makeNullable(std::make_shared<DataTypeUUID>());
+                    return std::make_shared<DataTypeUUID>();
                 default:
                     throw Exception(ErrorCodes::UNKNOWN_TYPE, "BSON binary subtype {} is not supported", getBSONBinarySubtypeName(subtype));
             }
