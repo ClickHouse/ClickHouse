@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 select h3ToParent(641573946153969375, 1);
 select h3ToParent(641573946153969375, arrayJoin([1,2]));
 
