@@ -45,7 +45,7 @@ public:
                                                         const MergeTreeTransaction *,
                                                         String *)>;
 
-    MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_);
+    MergeTreeDataMergerMutator(MergeTreeData & data_);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
@@ -155,7 +155,6 @@ public :
 
 private:
     MergeTreeData & data;
-    const size_t max_tasks_count;
 
     Poco::Logger * log;
 
