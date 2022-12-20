@@ -217,7 +217,7 @@ ColumnPtr ExtractKeyValuePairs::escape(RawColumns & raw_columns, char escape_cha
     auto escaped_keys = ColumnString::create();
     auto escaped_values = ColumnString::create();
 
-    auto escape_character_string = std::string('1', escape_character);
+    auto escape_character_string = std::string(1, escape_character);
 
     using ReplaceString = ReplaceStringImpl<ReplaceStringTraits::Replace::All>;
 
