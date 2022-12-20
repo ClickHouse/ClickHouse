@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeThreadSelectAlgorithm::MergeTreeThreadSelectAlgorithm(
+MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     size_t thread_,
     const MergeTreeReadPoolPtr & pool_,
     size_t min_marks_to_read_,
@@ -28,7 +28,7 @@ MergeTreeThreadSelectAlgorithm::MergeTreeThreadSelectAlgorithm(
     const Names & virt_column_names_,
     std::optional<ParallelReadingExtension> extension_)
     :
-    IMergeTreeSelectAlgorithm{
+    MergeTreeBaseSelectProcessor{
         pool_->getHeader(), storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
@@ -86,18 +86,18 @@ MergeTreeThreadSelectAlgorithm::MergeTreeThreadSelectAlgorithm(
     }
 
 
-    ordered_names = getHeader().getNames();
+    ordered_names = getPort().getHeader().getNames();
 }
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
-bool MergeTreeThreadSelectAlgorithm::getNewTaskImpl()
+bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
 {
     task = pool->getTask(min_marks_to_read, thread, ordered_names);
     return static_cast<bool>(task);
 }
 
 
-void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
+void MergeTreeThreadSelectProcessor::finalizeNewTask()
 {
     const std::string part_name = task->data_part->isProjectionPart() ? task->data_part->getParentPart()->name : task->data_part->name;
 
@@ -105,37 +105,49 @@ void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };
     const auto & metadata_snapshot = storage_snapshot->metadata;
 
-    IMergeTreeReader::ValueSizeMap value_size_map;
-
     if (!reader)
     {
         if (use_uncompressed_cache)
             owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
         owned_mark_cache = storage.getContext()->getMarkCache();
-    }
-    else if (part_name != last_readed_part_name)
-    {
-        value_size_map = reader->getAvgValueSizeHints();
-    }
 
-    const bool init_new_readers = !reader || part_name != last_readed_part_name;
-    if (init_new_readers)
+        reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
+            owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+            IMergeTreeReader::ValueSizeMap{}, profile_callback);
+
+        if (prewhere_info)
+            pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                IMergeTreeReader::ValueSizeMap{}, profile_callback);
+    }
+    else
     {
-        initializeMergeTreeReadersForPart(task->data_part, task->task_columns, metadata_snapshot,
-            task->mark_ranges, value_size_map, profile_callback);
+        /// in other case we can reuse readers, anyway they will be "seeked" to required mark
+        if (part_name != last_readed_part_name)
+        {
+            /// retain avg_value_size_hints
+            reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                reader->getAvgValueSizeHints(), profile_callback);
+
+            if (prewhere_info)
+                pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                reader->getAvgValueSizeHints(), profile_callback);
+        }
     }
 
     last_readed_part_name = part_name;
 }
 
 
-void MergeTreeThreadSelectAlgorithm::finish()
+void MergeTreeThreadSelectProcessor::finish()
 {
     reader.reset();
-    pre_reader_for_step.clear();
+    pre_reader.reset();
 }
 
 
-MergeTreeThreadSelectAlgorithm::~MergeTreeThreadSelectAlgorithm() = default;
+MergeTreeThreadSelectProcessor::~MergeTreeThreadSelectProcessor() = default;
 
 }

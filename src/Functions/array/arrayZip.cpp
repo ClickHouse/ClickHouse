@@ -93,7 +93,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(ArrayZip)
+void registerFunctionArrayZip(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayZip>();
 }

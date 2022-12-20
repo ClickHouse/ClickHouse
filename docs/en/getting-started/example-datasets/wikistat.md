@@ -1,11 +1,11 @@
 ---
-slug: /en/getting-started/example-datasets/wikistat
-sidebar_label: WikiStat
+toc_priority: 17
+toc_title: WikiStat
 ---
 
-# WikiStat
+# WikiStat {#wikistat}
 
-See http://dumps.wikimedia.org/other/pagecounts-raw/ for details.
+See: http://dumps.wikimedia.org/other/pagecounts-raw/
 
 Creating a table:
 

@@ -1,4 +1,0 @@
-<clickhouse>
-    <disable_internal_dns_cache>1</disable_internal_dns_cache>
-    <max_concurrent_queries>250</max_concurrent_queries>
-</clickhouse>

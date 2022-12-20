@@ -1,9 +1,9 @@
 ---
-slug: /en/sql-reference/statements/describe-table
-sidebar_position: 42
-sidebar_label: DESCRIBE TABLE
-title: "DESCRIBE TABLE"
+toc_priority: 42
+toc_title: DESCRIBE
 ---
+
+# DESCRIBE TABLE {#misc-describe-table}
 
 Returns information about table columns.
 

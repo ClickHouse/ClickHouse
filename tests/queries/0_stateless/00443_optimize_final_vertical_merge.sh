@@ -16,7 +16,7 @@ function get_num_parts {
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $name"
 
-$CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 -q "CREATE TABLE $name (
+$CLICKHOUSE_CLIENT -q "CREATE TABLE $name (
 date Date,
 Sign Int8,
 ki UInt64,

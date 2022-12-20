@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/topkweighted
-sidebar_position: 109
+toc_priority: 109
 ---
 
 # topKWeighted {#topkweighted}

@@ -56,11 +56,11 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 
     if (max_rows != 0 && size() > max_rows)
     {
-        size_serialization->serializeBinary(0, ostr, {});
+        size_serialization->serializeBinary(0, ostr);
         return;
     }
 
-    size_serialization->serializeBinary(size(), ostr, {});
+    size_serialization->serializeBinary(size(), ostr);
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
@@ -74,9 +74,8 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
 
-        const auto & column = *block.getByPosition(i).column;
-        serialization->serializeBinaryBulkStatePrefix(column, settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(column, 0, size(), settings, state);
+        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
         serialization->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
@@ -90,7 +89,7 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
 
     Field field_rows;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
-    size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr, {});
+    size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr);
     size_t rows_to_read = field_rows.get<size_t>();
 
     if (rows_to_read == 0)
@@ -200,7 +199,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     size_t limit,
     ClearableSetVariants & variants) const
 {
-    /// Like DistinctSortedTransform.
+    /// Like DistinctSortedBlockInputStream.
     typename Method::State state(column_ptrs, key_sizes, nullptr);
 
     bool has_new_data = false;
@@ -251,7 +250,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_sample_block(index_sample_block_)
 {
     for (const auto & name : index_sample_block.getNames())
-        if (!key_columns.contains(name))
+        if (!key_columns.count(name))
             key_columns.insert(name);
 
     const auto & select = query.query->as<ASTSelectQuery &>();
@@ -357,11 +356,11 @@ bool MergeTreeIndexConditionSet::atomFromAST(ASTPtr & node) const
         return true;
 
     if (const auto * identifier = node->as<ASTIdentifier>())
-        return key_columns.contains(identifier->getColumnName());
+        return key_columns.count(identifier->getColumnName()) != 0;
 
     if (auto * func = node->as<ASTFunction>())
     {
-        if (key_columns.contains(func->getColumnName()))
+        if (key_columns.count(func->getColumnName()))
         {
             /// Function is already calculated.
             node = std::make_shared<ASTIdentifier>(func->getColumnName());
@@ -447,7 +446,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
 
     if (const auto * func = node->as<ASTFunction>())
     {
-        if (key_columns.contains(func->getColumnName()))
+        if (key_columns.count(func->getColumnName()))
             return false;
 
         const ASTs & args = func->arguments->children;
@@ -485,7 +484,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
-}
+};
 
 bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
 {
