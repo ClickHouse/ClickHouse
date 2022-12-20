@@ -14,7 +14,6 @@
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -32,6 +31,10 @@
 #include <Storages/NamedCollections/NamedCollections.h>
 #include <Storages/ReadFromStorageProgress.h>
 
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
 
@@ -44,7 +47,6 @@
 #include <QueryPipeline/narrowPipe.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -112,9 +114,25 @@ namespace ErrorCodes
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+static void addPathToVirtualColumns(Block & block, const String & path, size_t idx)
+{
+    if (block.has("_path"))
+        block.getByName("_path").column->assumeMutableRef().insert(path);
+
+    if (block.has("_file"))
+    {
+        auto pos = path.find_last_of('/');
+        assert(pos != std::string::npos);
+
+        auto file = path.substr(pos + 1);
+        block.getByName("_file").column->assumeMutableRef().insert(file);
+    }
+
+    block.getByName("_idx").column->assumeMutableRef().insert(idx);
+}
+
 class StorageS3Source::DisclosedGlobIterator::Impl : WithContext
 {
-
 public:
     Impl(
         const Aws::S3::S3Client & client_,
@@ -122,7 +140,7 @@ public:
         ASTPtr & query_,
         const Block & virtual_header_,
         ContextPtr context_,
-        std::unordered_map<String, S3::ObjectInfo> * object_infos_,
+        ObjectInfos * object_infos_,
         Strings * read_keys_,
         const S3Settings::RequestSettings & request_settings_)
         : WithContext(context_)
@@ -133,6 +151,8 @@ public:
         , object_infos(object_infos_)
         , read_keys(read_keys_)
         , request_settings(request_settings_)
+        , list_objects_pool(1)
+        , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
             throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -142,35 +162,23 @@ public:
         /// We don't have to list bucket, because there is no asterisks.
         if (key_prefix.size() == globbed_uri.key.size())
         {
-            buffer.emplace_back(globbed_uri.key);
+            buffer.emplace_back(globbed_uri.key, std::nullopt);
             buffer_iter = buffer.begin();
             is_finished = true;
             return;
         }
 
-        /// Create a virtual block with one row to construct filter
-        if (query && virtual_header)
-        {
-            /// Append "key" column as the filter result
-            virtual_header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "_key"});
-
-            auto block = virtual_header.cloneEmpty();
-            MutableColumns columns = block.mutateColumns();
-            for (auto & column : columns)
-                column->insertDefault();
-            block.setColumns(std::move(columns));
-            VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
-        }
-
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
+
+        outcome_future = listObjectsAsync();
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
         recursive = globbed_uri.key == "/**" ? true : false;
         fillInternalBufferAssumeLocked();
     }
 
-    String next()
+    KeyWithInfo next()
     {
         std::lock_guard lock(mutex);
         return nextAssumeLocked();
@@ -181,9 +189,15 @@ public:
         return total_size;
     }
 
-private:
+    ~Impl()
+    {
+        list_objects_pool.wait();
+    }
 
-    String nextAssumeLocked()
+private:
+    using ListObjectsOutcome = Aws::S3::Model::ListObjectsV2Outcome;
+
+    KeyWithInfo nextAssumeLocked()
     {
         if (buffer_iter != buffer.end())
         {
@@ -196,7 +210,6 @@ private:
             return {};
 
         fillInternalBufferAssumeLocked();
-
         return nextAssumeLocked();
     }
 
@@ -204,8 +217,9 @@ private:
     {
         buffer.clear();
 
-        ProfileEvents::increment(ProfileEvents::S3ListObjects);
-        outcome = client.ListObjectsV2(request);
+        assert(outcome_future.valid());
+        auto outcome = outcome_future.get();
+
         if (!outcome.IsSuccess())
             throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
                             quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
@@ -213,109 +227,136 @@ private:
 
         const auto & result_batch = outcome.GetResult().GetContents();
 
+        /// It returns false when all objects were returned
+        is_finished = !outcome.GetResult().GetIsTruncated();
+
+        if (!is_finished)
+        {
+            /// Even if task is finished the thread may be not freed in pool.
+            /// So wait until it will be freed before scheduling a new task.
+            list_objects_pool.wait();
+            outcome_future = listObjectsAsync();
+        }
+
+        KeysWithInfo temp_buffer;
+        temp_buffer.reserve(result_batch.size());
+
+        for (const auto & row : result_batch)
+        {
+            String key = row.GetKey();
+            if (recursive || re2::RE2::FullMatch(key, *matcher))
+            {
+                S3::ObjectInfo info =
+                {
+                    .size = size_t(row.GetSize()),
+                    .last_modification_time = row.GetLastModified().Millis() / 1000,
+                };
+
+                if (object_infos)
+                    (*object_infos)[fs::path(globbed_uri.bucket) / key] = info;
+
+                temp_buffer.emplace_back(std::move(key), std::move(info));
+            }
+        }
+
+        if (temp_buffer.empty())
+        {
+            buffer_iter = buffer.begin();
+            return;
+        }
+
+        if (!is_initialized)
+        {
+            createFilterAST(temp_buffer.front().key);
+            is_initialized = true;
+        }
+
         if (filter_ast)
         {
             auto block = virtual_header.cloneEmpty();
-            MutableColumnPtr path_column;
-            MutableColumnPtr file_column;
-            MutableColumnPtr key_column = block.getByName("_key").column->assumeMutable();
-
-            if (block.has("_path"))
-                path_column = block.getByName("_path").column->assumeMutable();
-
-            if (block.has("_file"))
-                file_column = block.getByName("_file").column->assumeMutable();
-
-            std::unordered_map<String, S3::ObjectInfo> all_object_infos;
-            for (const auto & key_info : result_batch)
-            {
-                const String & key = key_info.GetKey();
-                if (recursive || re2::RE2::FullMatch(key, *matcher))
-                {
-                    String path = fs::path(globbed_uri.bucket) / key;
-                    const size_t key_size = key_info.GetSize();
-
-                    all_object_infos.emplace(path, S3::ObjectInfo{.size = key_size, .last_modification_time = key_info.GetLastModified().Millis() / 1000});
-
-                    if (path_column)
-                    {
-                        path_column->insert(path);
-                    }
-                    if (file_column)
-                    {
-                        String file = path.substr(path.find_last_of('/') + 1);
-                        file_column->insert(file);
-                    }
-
-                    key_column->insert(key);
-                }
-            }
+            for (size_t i = 0; i < temp_buffer.size(); ++i)
+                addPathToVirtualColumns(block, fs::path(globbed_uri.bucket) / temp_buffer[i].key, i);
 
             VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
-            const ColumnString & keys = typeid_cast<const ColumnString &>(*block.getByName("_key").column);
-            size_t rows = block.rows();
-            buffer.reserve(rows);
-            for (size_t i = 0; i < rows; ++i)
+            const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
+
+            buffer.reserve(block.rows());
+            for (UInt64 idx : idxs.getData())
             {
-                auto key = keys.getDataAt(i).toString();
-                std::string path = fs::path(globbed_uri.bucket) / key;
-
-                const auto & object_info = all_object_infos.at(path);
-                total_size += object_info.size;
-                if (object_infos)
-                    object_infos->emplace(path, object_info);
-
-                buffer.emplace_back(key);
+                total_size += temp_buffer[idx].info->size;
+                buffer.emplace_back(std::move(temp_buffer[idx]));
             }
         }
         else
         {
-            buffer.reserve(result_batch.size());
-            for (const auto & key_info : result_batch)
-            {
-                String key = key_info.GetKey();
-                if (recursive || re2::RE2::FullMatch(key, *matcher))
-                {
-                    const size_t key_size = key_info.GetSize();
-                    total_size += key_size;
-                    if (object_infos)
-                    {
-                        const std::string path = fs::path(globbed_uri.bucket) / key;
-                        (*object_infos)[path] = {.size = key_size, .last_modification_time = key_info.GetLastModified().Millis() / 1000};
-                    }
-                    buffer.emplace_back(std::move(key));
-                }
-            }
+            buffer = std::move(temp_buffer);
+            for (const auto & [_, info] : buffer)
+                total_size += info->size;
         }
 
         /// Set iterator only after the whole batch is processed
         buffer_iter = buffer.begin();
 
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-
-        /// It returns false when all objects were returned
-        is_finished = !outcome.GetResult().GetIsTruncated();
-
         if (read_keys)
-            read_keys->insert(read_keys->end(), buffer.begin(), buffer.end());
+        {
+            read_keys->reserve(read_keys->size() + buffer.size());
+            for (const auto & [key, _] : buffer)
+                read_keys->push_back(key);
+        }
+    }
+
+    void createFilterAST(const String & any_key)
+    {
+        if (!query || !virtual_header)
+            return;
+
+        /// Create a virtual block with one row to construct filter
+        /// Append "idx" column as the filter result
+        virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+
+        auto block = virtual_header.cloneEmpty();
+        addPathToVirtualColumns(block, fs::path(globbed_uri.bucket) / any_key, 0);
+        VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
+    }
+
+    std::future<ListObjectsOutcome> listObjectsAsync()
+    {
+        return list_objects_scheduler([this]
+        {
+            ProfileEvents::increment(ProfileEvents::S3ListObjects);
+            auto outcome = client.ListObjectsV2(request);
+
+            /// Outcome failure will be handled on the caller side.
+            if (outcome.IsSuccess())
+                request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+
+            return outcome;
+        }, 0);
     }
 
     std::mutex mutex;
-    Strings buffer;
-    Strings::iterator buffer_iter;
+
+    KeysWithInfo buffer;
+    KeysWithInfo::iterator buffer_iter;
+
     Aws::S3::S3Client client;
     S3::URI globbed_uri;
     ASTPtr query;
     Block virtual_header;
+    bool is_initialized{false};
     ASTPtr filter_ast;
-    Aws::S3::Model::ListObjectsV2Request request;
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
     std::unique_ptr<re2::RE2> matcher;
     bool recursive{false};
     bool is_finished{false};
-    std::unordered_map<String, S3::ObjectInfo> * object_infos;
+    ObjectInfos * object_infos;
     Strings * read_keys;
+
+    Aws::S3::Model::ListObjectsV2Request request;
     S3Settings::RequestSettings request_settings;
+
+    ThreadPool list_objects_pool;
+    ThreadPoolCallbackRunner<ListObjectsOutcome> list_objects_scheduler;
+    std::future<ListObjectsOutcome> outcome_future;
     size_t total_size = 0;
 };
 
@@ -325,14 +366,14 @@ StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
     ASTPtr query,
     const Block & virtual_header,
     ContextPtr context,
-    std::unordered_map<String, S3::ObjectInfo> * object_infos_,
+    ObjectInfos * object_infos_,
     Strings * read_keys_,
     const S3Settings::RequestSettings & request_settings_)
     : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_, query, virtual_header, context, object_infos_, read_keys_, request_settings_))
 {
 }
 
-String StorageS3Source::DisclosedGlobIterator::next()
+StorageS3Source::KeyWithInfo StorageS3Source::DisclosedGlobIterator::next()
 {
     return pimpl->next();
 }
@@ -353,24 +394,23 @@ public:
         ASTPtr query_,
         const Block & virtual_header_,
         ContextPtr context_,
-        std::unordered_map<String, S3::ObjectInfo> * object_infos_)
+        ObjectInfos * object_infos_,
+        Strings * read_keys_)
         : WithContext(context_)
-        , keys(keys_)
         , bucket(bucket_)
         , query(query_)
         , virtual_header(virtual_header_)
     {
+        Strings all_keys = keys_;
+
         /// Create a virtual block with one row to construct filter
-        if (query && virtual_header)
+        if (query && virtual_header && !all_keys.empty())
         {
-            /// Append "key" column as the filter result
-            virtual_header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "_key"});
+            /// Append "idx" column as the filter result
+            virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
             auto block = virtual_header.cloneEmpty();
-            MutableColumns columns = block.mutateColumns();
-            for (auto & column : columns)
-                column->insertDefault();
-            block.setColumns(std::move(columns));
+            addPathToVirtualColumns(block, fs::path(bucket) / all_keys.front(), 0);
 
             ASTPtr filter_ast;
             VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
@@ -378,71 +418,49 @@ public:
             if (filter_ast)
             {
                 block = virtual_header.cloneEmpty();
-                MutableColumnPtr path_column;
-                MutableColumnPtr file_column;
-                MutableColumnPtr key_column = block.getByName("_key").column->assumeMutable();
-
-                if (block.has("_path"))
-                    path_column = block.getByName("_path").column->assumeMutable();
-
-                if (block.has("_file"))
-                    file_column = block.getByName("_file").column->assumeMutable();
-
-                std::unordered_map<String, S3::ObjectInfo> all_object_infos;
-                for (const auto & key : keys)
-                {
-                    const String path = fs::path(bucket) / key;
-
-                    /// To avoid extra requests update total_size only if object_infos != nullptr
-                    /// (which means we eventually need this info anyway, so it should be ok to do it now).
-                    if (object_infos_)
-                    {
-                        auto key_info = S3::getObjectInfo(client_, bucket, key, version_id_, true, false);
-                        all_object_infos.emplace(path, S3::ObjectInfo{.size = key_info.size, .last_modification_time = key_info.last_modification_time});
-                    }
-
-                    if (path_column)
-                    {
-                        path_column->insert(path);
-                    }
-                    if (file_column)
-                    {
-                        const String file = path.substr(path.find_last_of('/') + 1);
-                        file_column->insert(file);
-                    }
-                    key_column->insert(key);
-                }
+                for (size_t i = 0; i < all_keys.size(); ++i)
+                    addPathToVirtualColumns(block, fs::path(bucket) / all_keys[i], i);
 
                 VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
-                const ColumnString & keys_col = typeid_cast<const ColumnString &>(*block.getByName("_key").column);
-                size_t rows = block.rows();
+                const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
+
                 Strings filtered_keys;
-                filtered_keys.reserve(rows);
-                for (size_t i = 0; i < rows; ++i)
-                {
-                    auto key = keys_col.getDataAt(i).toString();
+                filtered_keys.reserve(block.rows());
+                for (UInt64 idx : idxs.getData())
+                    filtered_keys.emplace_back(std::move(all_keys[idx]));
 
-                    if (object_infos_)
-                    {
-                        std::string path = fs::path(bucket) / key;
-                        const auto & object_info = all_object_infos.at(path);
-                        total_size += object_info.size;
-                        object_infos_->emplace(path, object_info);
-                    }
-
-                    filtered_keys.emplace_back(key);
-                }
-
-                keys = std::move(filtered_keys);
+                all_keys = std::move(filtered_keys);
             }
+        }
+
+        if (read_keys_)
+            *read_keys_ = all_keys;
+
+        for (auto && key : all_keys)
+        {
+            std::optional<S3::ObjectInfo> info;
+
+            /// To avoid extra requests update total_size only if object_infos != nullptr
+            /// (which means we eventually need this info anyway, so it should be ok to do it now)
+            if (object_infos_)
+            {
+                info = S3::getObjectInfo(client_, bucket, key, version_id_, true, false);
+                total_size += info->size;
+
+                String path = fs::path(bucket) / key;
+                (*object_infos_)[std::move(path)] = *info;
+            }
+
+            keys.emplace_back(std::move(key), std::move(info));
         }
     }
 
-    String next()
+    KeyWithInfo next()
     {
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
         if (current_index >= keys.size())
-            return "";
+            return {};
+
         return keys[current_index];
     }
 
@@ -452,7 +470,7 @@ public:
     }
 
 private:
-    Strings keys;
+    KeysWithInfo keys;
     std::atomic_size_t index = 0;
 
     String bucket;
@@ -470,13 +488,15 @@ StorageS3Source::KeysIterator::KeysIterator(
     ASTPtr query,
     const Block & virtual_header,
     ContextPtr context,
-    std::unordered_map<String, S3::ObjectInfo> * object_infos_)
+    ObjectInfos * object_infos,
+    Strings * read_keys)
     : pimpl(std::make_shared<StorageS3Source::KeysIterator::Impl>(
-                client_, version_id_, keys_, bucket_, query, virtual_header, context, object_infos_))
+        client_, version_id_, keys_, bucket_, query,
+        virtual_header, context, object_infos, read_keys))
 {
 }
 
-String StorageS3Source::KeysIterator::next()
+StorageS3Source::KeyWithInfo StorageS3Source::KeysIterator::next()
 {
     return pimpl->next();
 }
@@ -509,8 +529,7 @@ StorageS3Source::StorageS3Source(
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
-    const size_t download_thread_num_,
-    const std::unordered_map<String, S3::ObjectInfo> & object_infos_)
+    const size_t download_thread_num_)
     : ISource(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
     , name(std::move(name_))
@@ -527,9 +546,12 @@ StorageS3Source::StorageS3Source(
     , requested_virtual_columns(requested_virtual_columns_)
     , file_iterator(file_iterator_)
     , download_thread_num(download_thread_num_)
-    , object_infos(object_infos_)
+    , create_reader_pool(1)
+    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
-    initialize();
+    reader = createReader();
+    if (reader)
+        reader_future = createReaderAsync();
 }
 
 
@@ -541,17 +563,21 @@ void StorageS3Source::onCancel()
 }
 
 
-bool StorageS3Source::initialize()
+StorageS3Source::ReaderHolder StorageS3Source::createReader()
 {
-    String current_key = (*file_iterator)();
+    auto [current_key, info] = (*file_iterator)();
     if (current_key.empty())
-        return false;
+        return {};
 
-    file_path = fs::path(bucket) / current_key;
+    size_t object_size = info
+        ? info->size
+        : S3::getObjectSize(*client, bucket, current_key, version_id, true, false);
 
     int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
-    read_buf = wrapReadBufferWithCompressionMethod(
-        createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint), zstd_window_log_max);
+    auto read_buf = wrapReadBufferWithCompressionMethod(
+        createS3ReadBuffer(current_key, object_size),
+        chooseCompressionMethod(current_key, compression_hint),
+        zstd_window_log_max);
 
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
@@ -564,32 +590,36 @@ bool StorageS3Source::initialize()
             { return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext()); });
     }
 
-    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-    reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+    auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return true;
+    return ReaderHolder{fs::path(bucket) / current_key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
 }
 
-std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key)
+std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
 {
-    size_t object_size;
-    auto it = object_infos.find(fs::path(bucket) / key);
-    if (it != object_infos.end())
-        object_size = it->second.size;
-    else
-        object_size = DB::S3::getObjectSize(*client, bucket, key, version_id, false, false);
+    return create_reader_scheduler([this] { return createReader(); }, 0);
+}
+
+std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key, size_t object_size)
+{
+    auto read_settings = getContext()->getReadSettings().adjustBufferSize(object_size);
+    read_settings.enable_filesystem_cache = false;
 
     auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
     const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
     const bool object_too_small = object_size < download_thread_num * download_buffer_size;
+
     if (!use_parallel_download || object_too_small)
     {
         LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
-        return std::make_unique<ReadBufferFromS3>(client, bucket, key, version_id, request_settings, getContext()->getReadSettings());
+        if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+            return createAsyncS3ReadBuffer(key, read_settings, object_size);
+
+        return std::make_unique<ReadBufferFromS3>(client, bucket, key, version_id, request_settings, read_settings);
     }
 
     assert(object_size > 0);
-
     if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
     {
         LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes", download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
@@ -597,11 +627,53 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     }
 
     auto factory = std::make_unique<ReadBufferS3Factory>(
-        client, bucket, key, version_id, download_buffer_size, object_size, request_settings, getContext()->getReadSettings());
-    LOG_TRACE(
-        log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}.", download_thread_num, object_size, download_buffer_size);
+        client, bucket, key, version_id, download_buffer_size, object_size, request_settings, read_settings);
+
+    LOG_TRACE(log,
+        "Downloading from S3 in {} threads. Object size: {}, Range size: {}.",
+        download_thread_num, object_size, download_buffer_size);
 
     return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"), download_thread_num);
+}
+
+std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
+    const String & key, const ReadSettings & read_settings, size_t object_size)
+{
+    auto read_buffer_creator =
+        [this, read_settings]
+        (const std::string & path, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_shared<ReadBufferFromS3>(
+            client,
+            bucket,
+            path,
+            version_id,
+            request_settings,
+            read_settings,
+            /* use_external_buffer */true,
+            /* offset */0,
+            read_until_position,
+            /* restricted_seek */true);
+    };
+
+    auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
+        StoredObjects{StoredObject{key, object_size}},
+        read_settings);
+
+    auto & pool_reader = getContext()->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+    auto async_reader = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(pool_reader, read_settings, std::move(s3_impl));
+
+    async_reader->setReadUntilEnd();
+    if (read_settings.remote_fs_prefetch)
+        async_reader->prefetch();
+
+    return async_reader;
+}
+
+StorageS3Source::~StorageS3Source()
+{
+    create_reader_pool.wait();
 }
 
 String StorageS3Source::getName() const
@@ -621,11 +693,12 @@ Chunk StorageS3Source::generate()
         {
             UInt64 num_rows = chunk.getNumRows();
 
-            auto it = object_infos.find(file_path);
-            if (num_rows && it != object_infos.end())
+            const auto & file_path = reader.getPath();
+            size_t total_size = file_iterator->getTotalSize();
+            if (num_rows && total_size)
             {
                 updateRowsProgressApprox(
-                    *this, chunk, file_iterator->getTotalSize(), total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                    *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
             for (const auto & virtual_column : requested_virtual_columns)
@@ -647,50 +720,20 @@ Chunk StorageS3Source::generate()
 
         {
             std::lock_guard lock(reader_mutex);
-            reader.reset();
-            pipeline.reset();
-            read_buf.reset();
 
-            if (!initialize())
+            assert(reader_future.valid());
+            reader = reader_future.get();
+
+            if (!reader)
                 break;
+
+            /// Even if task is finished the thread may be not freed in pool.
+            /// So wait until it will be freed before scheduling a new task.
+            create_reader_pool.wait();
+            reader_future = createReaderAsync();
         }
     }
     return {};
-}
-
-static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> & client, const String & bucket, const String & key)
-{
-    bool is_finished = false;
-    Aws::S3::Model::ListObjectsV2Request request;
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-    request.SetBucket(bucket);
-    request.SetPrefix(key);
-    while (!is_finished)
-    {
-        ProfileEvents::increment(ProfileEvents::S3ListObjects);
-        outcome = client->ListObjectsV2(request);
-        if (!outcome.IsSuccess())
-            throw Exception(
-                ErrorCodes::S3_ERROR,
-                "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
-                quoteString(bucket),
-                quoteString(key),
-                backQuote(outcome.GetError().GetExceptionName()),
-                quoteString(outcome.GetError().GetMessage()));
-
-        const auto & result_batch = outcome.GetResult().GetContents();
-        for (const auto & obj : result_batch)
-        {
-            if (obj.GetKey() == key)
-                return true;
-        }
-
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-        is_finished = !outcome.GetResult().GetIsTruncated();
-    }
-
-    return false;
 }
 
 class StorageS3Sink : public SinkToStorage
@@ -902,7 +945,9 @@ StorageS3::StorageS3(
             distributed_processing_,
             is_key_with_globs,
             format_settings,
-            context_);
+            context_,
+            &object_infos);
+
         storage_metadata.setColumns(columns);
     }
     else
@@ -930,7 +975,7 @@ std::shared_ptr<StorageS3Source::IIterator> StorageS3::createFileIterator(
     ContextPtr local_context,
     ASTPtr query,
     const Block & virtual_block,
-    std::unordered_map<String, S3::ObjectInfo> * object_infos,
+    ObjectInfos * object_infos,
     Strings * read_keys)
 {
     if (distributed_processing)
@@ -946,11 +991,10 @@ std::shared_ptr<StorageS3Source::IIterator> StorageS3::createFileIterator(
     }
     else
     {
-        if (read_keys)
-            *read_keys = keys;
-
         return std::make_shared<StorageS3Source::KeysIterator>(
-            *s3_configuration.client, s3_configuration.uri.version_id, keys, s3_configuration.uri.bucket, query, virtual_block, local_context, object_infos);
+            *s3_configuration.client, s3_configuration.uri.version_id, keys,
+            s3_configuration.uri.bucket, query, virtual_block, local_context,
+            object_infos, read_keys);
     }
 }
 
@@ -1042,9 +1086,9 @@ Pipe StorageS3::read(
             s3_configuration.uri.bucket,
             s3_configuration.uri.version_id,
             iterator_wrapper,
-            max_download_threads,
-            object_infos));
+            max_download_threads));
     }
+
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
     narrowPipe(pipe, num_streams);
@@ -1083,7 +1127,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
 
         bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
 
-        if (!truncate_in_insert && checkIfObjectExists(s3_configuration.client, s3_configuration.uri.bucket, keys.back()))
+        if (!truncate_in_insert && S3::objectExists(*s3_configuration.client, s3_configuration.uri.bucket, keys.back(), s3_configuration.uri.version_id))
         {
             if (local_context->getSettingsRef().s3_create_new_file_on_insert)
             {
@@ -1095,7 +1139,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
                     new_key = keys[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : keys[0].substr(pos));
                     ++index;
                 }
-                while (checkIfObjectExists(s3_configuration.client, s3_configuration.uri.bucket, new_key));
+                while (S3::objectExists(*s3_configuration.client, s3_configuration.uri.bucket, new_key, s3_configuration.uri.version_id));
                 keys.push_back(new_key);
             }
             else
@@ -1118,7 +1162,6 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             keys.back());
     }
 }
-
 
 void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
@@ -1153,10 +1196,8 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
-    if (upd.request_settings != settings.request_settings)
-        upd.request_settings = settings.request_settings;
-
-    upd.request_settings.updateFromSettingsIfEmpty(ctx->getSettings());
+    upd.request_settings = settings.request_settings;
+    upd.request_settings.updateFromSettings(ctx->getSettings());
 
     if (upd.client)
     {
@@ -1202,6 +1243,8 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
     std::string filename;
 
+    configuration.request_settings = S3Settings::RequestSettings(collection);
+
     for (const auto & key : collection)
     {
         if (key == "url")
@@ -1220,25 +1263,6 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
             configuration.structure = collection.get<String>(key);
         else if (key == "use_environment_credentials")
             configuration.auth_settings.use_environment_credentials = collection.get<UInt64>(key);
-        else if (key == "max_single_read_retries")
-            configuration.request_settings.max_single_read_retries = collection.get<UInt64>(key);
-        else if (key == "min_upload_part_size")
-            configuration.request_settings.min_upload_part_size = collection.get<UInt64>(key);
-        else if (key == "upload_part_size_multiply_factor")
-            configuration.request_settings.upload_part_size_multiply_factor = collection.get<UInt64>(key);
-        else if (key == "upload_part_size_multiply_parts_count_threshold")
-            configuration.request_settings.upload_part_size_multiply_parts_count_threshold = collection.get<UInt64>(key);
-        else if (key == "max_single_part_upload_size")
-            configuration.request_settings.max_single_part_upload_size = collection.get<UInt64>(key);
-        else if (key == "max_connections")
-            configuration.request_settings.max_connections = collection.get<UInt64>(key);
-        else
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Unknown configuration key `{}` for StorageS3, "
-                "expected: url, [access_key_id, secret_access_key], "
-                "name of used format and [compression_method].",
-                key);
     }
     if (!filename.empty())
         configuration.url = std::filesystem::path(configuration.url) / filename;
@@ -1304,7 +1328,7 @@ ColumnsDescription StorageS3::getTableStructureFromData(
     bool distributed_processing,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx,
-    std::unordered_map<String, S3::ObjectInfo> * object_infos)
+    ObjectInfos * object_infos)
 {
     S3Configuration s3_configuration{
         configuration.url,
@@ -1327,12 +1351,17 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     bool is_key_with_globs,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx,
-    std::unordered_map<String, S3::ObjectInfo> * object_infos)
+    ObjectInfos * object_infos)
 {
     std::vector<String> read_keys;
 
-    auto file_iterator
-        = createFileIterator(s3_configuration, {s3_configuration.uri.key}, is_key_with_globs, distributed_processing, ctx, nullptr, {}, object_infos, &read_keys);
+    auto file_iterator = createFileIterator(
+        s3_configuration,
+        {s3_configuration.uri.key},
+        is_key_with_globs,
+        distributed_processing,
+        ctx, nullptr,
+        {}, object_infos, &read_keys);
 
     std::optional<ColumnsDescription> columns_from_cache;
     size_t prev_read_keys_size = read_keys.size();
@@ -1341,7 +1370,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
     ReadBufferIterator read_buffer_iterator = [&, first = true](ColumnsDescription & cached_columns) mutable -> std::unique_ptr<ReadBuffer>
     {
-        auto key = (*file_iterator)();
+        auto [key, _] = (*file_iterator)();
 
         if (key.empty())
         {
@@ -1482,7 +1511,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
     const Strings::const_iterator & begin,
     const Strings::const_iterator & end,
     const S3Configuration & s3_configuration,
-    std::unordered_map<String, S3::ObjectInfo> * object_infos,
+    ObjectInfos * object_infos,
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & ctx)
@@ -1510,6 +1539,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
 
             if (info.last_modification_time)
                 return info.last_modification_time;
+
             return std::nullopt;
         };
 
