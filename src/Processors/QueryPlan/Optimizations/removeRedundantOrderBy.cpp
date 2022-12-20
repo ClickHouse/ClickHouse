@@ -116,6 +116,10 @@ public:
 
     explicit operator bool() const { return distributed_query; }
 
+    static bool visitTopDown(QueryPlan::Node *, QueryPlan::Node *)
+    {
+        return true;
+    }
     void visitBottomUp(QueryPlan::Node * current_node, QueryPlan::Node *)
     {
         if (typeid_cast<ReadFromRemote *>(current_node->step.get()))
@@ -300,7 +304,9 @@ private:
 
 void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 {
-    if (IsQueryDistributed(root).operator bool())
+    IsQueryDistributed is_distributed(root);
+    is_distributed.visit();
+    if (is_distributed.operator bool())
         return;
 
     RemoveRedundantOrderBy(root).visit();
