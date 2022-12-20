@@ -233,7 +233,7 @@ public:
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
 
         /// Set filter or replace old one. Filter must have more zeroes than previous.
-        void setFilter(const ColumnPtr & new_filter);
+//        void setFilter(const ColumnPtr & new_filter);
         /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
         void optimize(ColumnPtr current_filter, bool can_read_incomplete_granules);
         /// Remove all rows from granules.
@@ -258,9 +258,8 @@ public:
         /// to reduce memory copies and applying heavy filters multiple times
         bool need_filter = false;
 
-        Block block_before_prewhere;  // TODO: think how to keep it properly synced with filter
-                                        // test 01097_one_more_range_reader_test with wide parts triggers the problem:
-                                        // Code: 9. DB::Exception: Size of filter (2) doesn't match size of column (5): While executing MergeTreeInOrder. (SIZES_OF_COLUMNS_DOESNT_MATCH)
+        Block block_before_prewhere;    /// TODO: Rename into additional_columns because it can contain columns
+                                        /// that are not included into result but are needed for default values calculation.
 
         RangesInfo started_ranges;
         /// The number of rows read from each granule.
@@ -296,10 +295,8 @@ public:
 private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
-    void fillMissingColumns(Columns & columns, const ReadResult & read_result);
     void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
-//    void optimize(ReadResult & result, ColumnPtr current_step_filter) const;
-    void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+//    void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
