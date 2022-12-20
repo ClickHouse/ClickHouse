@@ -49,6 +49,7 @@ def rabbitmq_check_result(result, check=False, ref_file="test_rabbitmq_json.refe
 
 
 def wait_rabbitmq_to_start(rabbitmq_docker_id, timeout=180):
+    logging.getLogger("pika").propagate = False
     start = time.time()
     while time.time() - start < timeout:
         try:
@@ -609,6 +610,7 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
 def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     NUM_CONSUMERS = 10
     NUM_QUEUES = 10
+    logging.getLogger("pika").propagate = False
 
     instance.query(
         """
@@ -618,7 +620,8 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'test_sharding',
                      rabbitmq_num_queues = 10,
                      rabbitmq_num_consumers = 10,
-                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size = 100,
+                     rabbitmq_flush_interval_ms=10000,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64, channel_id String)
@@ -671,8 +674,10 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     while True:
         result1 = instance.query("SELECT count() FROM test.view")
         time.sleep(1)
-        if int(result1) == messages_num * threads_num:
+        expected = messages_num * threads_num
+        if int(result1) == expected:
             break
+        print(f"Result {result1} / {expected}")
 
     result2 = instance.query("SELECT count(DISTINCT channel_id) FROM test.view")
 
@@ -688,6 +693,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
     NUM_MV = 5
     NUM_CONSUMERS = 4
+    logging.getLogger("pika").propagate = False
 
     instance.query(
         """
@@ -696,6 +702,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'combo',
                      rabbitmq_queue_base = 'combo',
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_num_consumers = 2,
                      rabbitmq_num_queues = 5,
@@ -761,8 +768,10 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
             result += int(
                 instance.query("SELECT count() FROM test.combo_{0}".format(mv_id))
             )
-        if int(result) == messages_num * threads_num * NUM_MV:
+        expected = messages_num * threads_num * NUM_MV
+        if int(result) == expected:
             break
+        print(f"Result: {result} / {expected}")
         time.sleep(1)
 
     for thread in threads:
@@ -1005,8 +1014,8 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_num_consumers = 5,
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_num_queues = 10,
-                     rabbitmq_max_block_size = 10000,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -1017,6 +1026,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
@@ -1059,8 +1069,10 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     while True:
         result = instance.query("SELECT count() FROM test.view_overload")
         time.sleep(1)
-        if int(result) == messages_num * threads_num:
+        expected = messages_num * threads_num
+        if int(result) == expected:
             break
+        print(f"Result: {result} / {expected}")
 
     instance.query(
         """
@@ -1849,6 +1861,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
                          rabbitmq_num_queues = 2,
                          rabbitmq_num_consumers = 2,
                          rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_queue_base = 'many_consumers',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
@@ -1939,6 +1952,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_exchange_name = 'producer_reconnect',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_num_consumers = 2,
@@ -2008,6 +2022,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
 
 
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
+    logging.getLogger("pika").propagate = False
     instance.query(
         """
         CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
@@ -2015,7 +2030,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'consumer_reconnect',
                      rabbitmq_num_consumers = 10,
-                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_flush_interval_ms = 100,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_num_queues = 10,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
@@ -2070,10 +2086,11 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     # revive_rabbitmq()
 
     while True:
-        result = instance.query("SELECT count(DISTINCT key) FROM test.view")
-        time.sleep(1)
+        result = instance.query("SELECT count(DISTINCT key) FROM test.view").strip()
         if int(result) == messages_num:
             break
+        print(f"Result: {result} / {messages_num}")
+        time.sleep(1)
 
     instance.query(
         """
@@ -2088,6 +2105,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
 
 
 def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
+    logging.getLogger("pika").propagate = False
     instance.query(
         """
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -2195,6 +2213,7 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_num_consumers = '5',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
@@ -2423,12 +2442,11 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
 
     time.sleep(5)
 
-    result = instance.query(
-        "SELECT count() FROM test.rabbitmq_settings", ignore_error=True
-    )
-    while int(result) != 10:
-        time.sleep(0.5)
+    while True:
         result = instance.query("SELECT count() FROM test.view", ignore_error=True)
+        if int(result) == 10:
+            break
+        time.sleep(0.5)
 
     instance.query("DROP TABLE test.rabbitmq_settings")
 
@@ -2696,7 +2714,8 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
 
     rabbitmq_check_result(result, True)
 
-    instance.query("DROP VIEW test.consumer")
+    instance.query("DROP VIEW test.consumer NO DELAY")
+    time.sleep(10)
     for i in range(50, 60):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
