@@ -69,7 +69,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_DATA;
 }
 
