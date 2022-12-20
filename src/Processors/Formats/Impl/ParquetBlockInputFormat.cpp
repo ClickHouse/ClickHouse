@@ -4,7 +4,7 @@
 #if USE_PARQUET
 
 #include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/copyData.h>
 #include <arrow/api.h>
