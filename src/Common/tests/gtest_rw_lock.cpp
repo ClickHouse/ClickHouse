@@ -262,7 +262,7 @@ TEST(Common, RWLockPerfTestReaders)
     }
 }
 
-TEST(Common, RWLockUpgradeableNoQuery)
+TEST(Common, RWLockNotUpgradeableWithNoQuery)
 {
     updatePHDRCache();
 
@@ -270,12 +270,9 @@ TEST(Common, RWLockUpgradeableNoQuery)
 
     std::thread read_thread([&] ()
     {
-        std::cerr << "taking read lock\n";
         auto lock = rw_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY, std::chrono::duration<int, std::milli>(50000));
-        std::cerr << "read lock taken, starting sleep\n";
         auto sleep_for = std::chrono::duration<int, std::milli>(5000);
         std::this_thread::sleep_for(sleep_for);
-        std::cerr << "sleep finished\n";
     });
 
     {
@@ -283,12 +280,9 @@ TEST(Common, RWLockUpgradeableNoQuery)
         std::this_thread::sleep_for(sleep_for);
 
         Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-        std::cerr << "taking lock\n";
         auto get_lock = rw_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY, std::chrono::duration<int, std::milli>(50000));
 
         EXPECT_NE(get_lock.get(), nullptr);
-
-        std::cerr << "lock taken in: " << watch.elapsedMilliseconds() << "ms" << std::endl;
         /// It took some time
         EXPECT_GT(watch.elapsedMilliseconds(), 3000);
     }
