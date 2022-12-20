@@ -176,6 +176,3 @@ Configuration fields:
 
 -   [Functions for working with dictionaries](../../../sql-reference/functions/ext-dict-functions.md).
 
-## Related Content
-
-- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

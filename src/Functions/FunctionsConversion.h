@@ -2148,13 +2148,7 @@ struct ToNumberMonotonicity
             return { .is_monotonic = true, .is_always_monotonic = true };
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
-        bool is_type_float = false;
-        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
-            is_type_float = WhichDataType(low_cardinality->getDictionaryType()).isFloat();
-        else
-            is_type_float = WhichDataType(type).isFloat();
-
-        if (is_type_float)
+        if (WhichDataType(type).isFloat())
         {
             if (left.isNull() || right.isNull())
                 return {};
@@ -2670,6 +2664,8 @@ public:
 
     String getName() const override { return cast_name; }
 
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool hasInformationAboutMonotonicity() const override
