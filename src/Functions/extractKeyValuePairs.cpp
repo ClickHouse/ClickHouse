@@ -210,17 +210,19 @@ ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<K
     return {std::move(keys), std::move(values), std::move(offsets)};
 }
 
-ColumnPtr ExtractKeyValuePairs::escape(RawColumns & raw_columns)
+ColumnPtr ExtractKeyValuePairs::escape(RawColumns & raw_columns, char escape_character)
 {
     auto & [raw_keys, raw_values, offsets] = raw_columns;
 
     auto escaped_keys = ColumnString::create();
     auto escaped_values = ColumnString::create();
 
+    auto escape_character_string = std::string('1', escape_character);
+
     using ReplaceString = ReplaceStringImpl<ReplaceStringTraits::Replace::All>;
 
-    ReplaceString::vector(raw_keys->getChars(), raw_keys->getOffsets(), "\\", "", escaped_keys->getChars(), escaped_keys->getOffsets());
-    ReplaceString::vector(raw_values->getChars(), raw_values->getOffsets(), "\\", "", escaped_values->getChars(), escaped_values->getOffsets());
+    ReplaceString::vector(raw_keys->getChars(), raw_keys->getOffsets(), escape_character_string, "", escaped_keys->getChars(), escaped_keys->getOffsets());
+    ReplaceString::vector(raw_values->getChars(), raw_values->getOffsets(), escape_character_string, "", escaped_values->getChars(), escaped_values->getOffsets());
 
     ColumnPtr keys_ptr = std::move(escaped_keys);
 
