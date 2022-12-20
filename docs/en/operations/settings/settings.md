@@ -3588,6 +3588,13 @@ y	Nullable(String)
 z	IPv4
 ```
 
+## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
+
+Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
+If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+
+Default value: `false`.
+
 ## input_format_try_infer_integers {#input_format_try_infer_integers}
 
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
