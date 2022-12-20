@@ -338,7 +338,6 @@ public:
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
 
-        bool released = false;
         size_t blocks_allocated_size = 0;
         size_t blocks_nullmaps_allocated_size = 0;
     };
@@ -355,7 +354,13 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
-    BlocksList releaseJoinedBlocks();
+    BlocksList releaseJoinedBlocks(bool restructure = false);
+
+    /// Modify (structure) right block to save it in block list
+    static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);
+    Block prepareRightBlock(const Block & block) const;
+
+    const Block & savedBlockSample() const { return data->sample_block; }
 
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
     bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
@@ -407,10 +412,6 @@ private:
 
     void dataMapInit(MapsVariant &);
 
-    const Block & savedBlockSample() const { return data->sample_block; }
-
-    /// Modify (structure) right block to save it in block list
-    Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure(Block & saved_block_sample);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
