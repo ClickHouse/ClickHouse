@@ -108,6 +108,9 @@ private:
     /// Columns that are requested to read.
     NamesAndTypesList requested_columns;
 
+    /// Consists of columns_to_read and non-constant virtual columns like _part_offset.
+    NamesAndTypesList available_columns;
+
     /// Actual columns description in part.
     ColumnsDescription part_columns;
 

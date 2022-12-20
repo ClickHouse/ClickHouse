@@ -57,11 +57,13 @@ IMergeTreeReader::IMergeTreeReader(
         {
             assert(part_offset_column_index == -1);
             part_offset_column_index = i;
+            available_columns.emplace_back(column);
         }
         else
         {
             columns_to_read.emplace_back(getColumnInPart(column));
             serializations.emplace_back(getSerializationInPart(column));
+            available_columns.emplace_back(columns_to_read.back());
         }
         ++i;
     }
@@ -120,7 +122,6 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
 {
     try
     {
-        NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
         DB::fillMissingColumns(
             res_columns, num_rows,
             Nested::convertToSubcolumns(requested_columns),
@@ -320,7 +321,7 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 {
     if (num_columns_to_read != columns_to_read.size())
         throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
-                        "Expected " + toString(requested_columns.size()) + ", "
+                        "Expected " + toString(columns_to_read.size()) + ", "
                         "got " + toString(num_columns_to_read), ErrorCodes::LOGICAL_ERROR);
 }
 
