@@ -54,7 +54,7 @@ public:
 
         auto serialization = elem.type->getDefaultSerialization();
 
-        serialization->serializeBinaryBulkStatePrefix(*full_column, settings, state);
+        serialization->serializeBinaryBulkStatePrefix(settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*full_column,
             0 /** offset */, 0 /** limit */,
             settings, state);

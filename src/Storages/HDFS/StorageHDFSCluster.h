@@ -44,7 +44,6 @@ private:
     String uri;
     String format_name;
     String compression_method;
-    bool add_columns_structure_to_query = false;
 };
 
 

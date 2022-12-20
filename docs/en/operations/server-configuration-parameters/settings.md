@@ -268,14 +268,14 @@ The path to the table in ZooKeeper.
 
 ## dictionaries_config {#server_configuration_parameters-dictionaries_config}
 
-The path to the config file for dictionaries.
+The path to the config file for external dictionaries.
 
 Path:
 
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
+See also “[External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
 
 **Example**
 

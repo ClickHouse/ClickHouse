@@ -195,22 +195,21 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(info.engine);
 
-        if (columns_mask[src_index++])
+        if (part->isStoredOnDisk())
         {
-            if (part->isStoredOnDisk())
-                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
-            else
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->data_part_storage->getDiskName());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->data_part_storage->getFullPath());
+        }
+        else
+        {
+            if (columns_mask[src_index++])
+                columns[res_index++]->insertDefault();
+            if (columns_mask[src_index++])
                 columns[res_index++]->insertDefault();
         }
 
-        if (columns_mask[src_index++])
-        {
-            // The full path changes at clean up thread under deleting state, do not read it, avoid the race
-            if (part->isStoredOnDisk() && part_state != State::Deleting)
-                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
-            else
-                columns[res_index++]->insertDefault();
-        }
 
         {
             MinimalisticDataPartChecksums helper;

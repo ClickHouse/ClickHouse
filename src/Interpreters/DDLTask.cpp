@@ -8,11 +8,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
-#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -169,13 +168,6 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
 }
 
-void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
-{
-    /// Convert rewritten AST back to string.
-    query_str = queryToString(*query);
-    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
-}
-
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
 {
     auto query_context = Context::createCopy(from_context);
@@ -273,7 +265,6 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
-    /// Rewrite AST without ON CLUSTER.
     WithoutOnClusterASTRewriteParams params;
     params.default_database = address_in_cluster.default_database;
     params.host_id = address_in_cluster.toString();
@@ -414,7 +405,6 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
-    formatRewrittenQuery(context);
 }
 
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)

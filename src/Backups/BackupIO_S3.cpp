@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
-    extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -47,7 +46,7 @@ namespace
             context->getRemoteHostFilter(),
             static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
             context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
-            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {});
+            /* for_disk_s3 = */ false);
 
         client_configuration.endpointOverride = s3_uri.endpoint;
         client_configuration.maxConnections = static_cast<unsigned>(context->getSettingsRef().s3_max_connections);
@@ -87,10 +86,9 @@ BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
     : s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
+    , max_single_read_retries(context_->getSettingsRef().s3_max_single_read_retries)
     , read_settings(context_->getReadSettings())
-    , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
 {
-    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
 
 DataSourceDescription BackupReaderS3::getDataSourceDescription() const
@@ -117,7 +115,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file_name)
 {
     return std::make_unique<ReadBufferFromS3>(
-        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
+        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, max_single_read_retries, read_settings);
 }
 
 
@@ -125,12 +123,11 @@ BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
     : s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
+    , max_single_read_retries(context_->getSettingsRef().s3_max_single_read_retries)
     , read_settings(context_->getReadSettings())
-    , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
-    , log(&Poco::Logger::get("BackupWriterS3"))
+    , rw_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).rw_settings)
 {
-    request_settings.updateFromSettingsIfEmpty(context_->getSettingsRef());
-    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
+    rw_settings.updateFromSettingsIfEmpty(context_->getSettingsRef());
 }
 
 DataSourceDescription BackupWriterS3::getDataSourceDescription() const
@@ -149,12 +146,9 @@ void BackupWriterS3::copyObjectImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    const Aws::S3::Model::HeadObjectResult & head,
-    const std::optional<ObjectAttributes> & metadata) const
+    std::optional<Aws::S3::Model::HeadObjectResult> head,
+    std::optional<ObjectAttributes> metadata) const
 {
-    size_t size = head.GetContentLength();
-    LOG_TRACE(log, "Copying {} bytes using single-operation copy", size);
-
     Aws::S3::Model::CopyObjectRequest request;
     request.SetCopySource(src_bucket + "/" + src_key);
     request.SetBucket(dst_bucket);
@@ -193,11 +187,13 @@ void BackupWriterS3::copyObjectMultipartImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    const Aws::S3::Model::HeadObjectResult & head,
-    const std::optional<ObjectAttributes> & metadata) const
+    std::optional<Aws::S3::Model::HeadObjectResult> head,
+    std::optional<ObjectAttributes> metadata) const
 {
-    size_t size = head.GetContentLength();
-    LOG_TRACE(log, "Copying {} bytes using multipart upload copy", size);
+    if (!head)
+        head = requestObjectHeadData(src_bucket, src_key).GetResult();
+
+    size_t size = head->GetContentLength();
 
     String multipart_upload_id;
 
@@ -218,33 +214,16 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
     std::vector<String> part_tags;
 
-    size_t position = 0;
-    size_t upload_part_size = request_settings.min_upload_part_size;
-
-    for (size_t part_number = 1; position < size; ++part_number)
+    size_t upload_part_size = rw_settings.min_upload_part_size;
+    for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
-        /// Check that part number is not too big.
-        if (part_number > request_settings.max_part_number)
-        {
-            throw Exception(
-                ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
-                "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_operation_copy_size = {}",
-                request_settings.max_part_number, size, request_settings.min_upload_part_size, request_settings.max_upload_part_size,
-                request_settings.upload_part_size_multiply_factor, request_settings.upload_part_size_multiply_parts_count_threshold,
-                request_settings.max_single_operation_copy_size);
-        }
-
-        size_t next_position = std::min(position + upload_part_size, size);
-
-        /// Make a copy request to copy a part.
         Aws::S3::Model::UploadPartCopyRequest part_request;
         part_request.SetCopySource(src_bucket + "/" + src_key);
         part_request.SetBucket(dst_bucket);
         part_request.SetKey(dst_key);
         part_request.SetUploadId(multipart_upload_id);
         part_request.SetPartNumber(static_cast<int>(part_number));
-        part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, next_position - 1));
+        part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
 
         auto outcome = client->UploadPartCopy(part_request);
         if (!outcome.IsSuccess())
@@ -261,15 +240,6 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
         auto etag = outcome.GetResult().GetCopyPartResult().GetETag();
         part_tags.push_back(etag);
-
-        position = next_position;
-
-        /// Maybe increase `upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
-        if (part_number % request_settings.upload_part_size_multiply_parts_count_threshold == 0)
-        {
-            upload_part_size *= request_settings.upload_part_size_multiply_factor;
-            upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
-        }
     }
 
     {
@@ -311,14 +281,15 @@ void BackupWriterS3::copyFileNative(DiskPtr from_disk, const String & file_name_
         auto file_path = fs::path(s3_uri.key) / file_name_to;
 
         auto head = requestObjectHeadData(source_bucket, objects[0].absolute_path).GetResult();
-        if (static_cast<size_t>(head.GetContentLength()) < request_settings.max_single_operation_copy_size)
+        static constexpr int64_t multipart_upload_threashold = 5UL * 1024 * 1024 * 1024;
+        if (head.GetContentLength() >= multipart_upload_threashold)
         {
-            copyObjectImpl(
+            copyObjectMultipartImpl(
                 source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
         }
         else
         {
-            copyObjectMultipartImpl(
+            copyObjectImpl(
                 source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
         }
     }
@@ -348,7 +319,7 @@ bool BackupWriterS3::fileContentsEqual(const String & file_name, const String & 
     try
     {
         auto in = std::make_unique<ReadBufferFromS3>(
-            client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
+            client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, max_single_read_retries, read_settings);
         String actual_file_contents(expected_file_contents.size(), ' ');
         return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
             && (actual_file_contents == expected_file_contents) && in->eof();
@@ -366,54 +337,13 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         client,
         s3_uri.bucket,
         fs::path(s3_uri.key) / file_name,
-        request_settings,
+        rw_settings,
         std::nullopt,
         DBMS_DEFAULT_BUFFER_SIZE,
         threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
 }
 
-void BackupWriterS3::removeFile(const String & file_name)
-{
-    Aws::S3::Model::DeleteObjectRequest request;
-    request.SetBucket(s3_uri.bucket);
-    request.SetKey(fs::path(s3_uri.key) / file_name);
-    auto outcome = client->DeleteObject(request);
-    if (!outcome.IsSuccess())
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
-}
-
 void BackupWriterS3::removeFiles(const Strings & file_names)
-{
-    try
-    {
-        if (!supports_batch_delete.has_value() || supports_batch_delete.value() == true)
-        {
-            removeFilesBatch(file_names);
-            supports_batch_delete = true;
-        }
-        else
-        {
-            for (const auto & file_name : file_names)
-                removeFile(file_name);
-        }
-    }
-    catch (const Exception &)
-    {
-        if (!supports_batch_delete.has_value())
-        {
-            supports_batch_delete = false;
-            LOG_TRACE(log, "DeleteObjects is not supported. Retrying with plain DeleteObject.");
-
-            for (const auto & file_name : file_names)
-                removeFile(file_name);
-        }
-        else
-            throw;
-    }
-
-}
-
-void BackupWriterS3::removeFilesBatch(const Strings & file_names)
 {
     /// One call of DeleteObjects() cannot remove more than 1000 keys.
     size_t chunk_size_limit = 1000;

@@ -39,8 +39,8 @@ public:
 private:
     S3::URI s3_uri;
     std::shared_ptr<Aws::S3::S3Client> client;
+    UInt64 max_single_read_retries;
     ReadSettings read_settings;
-    S3Settings::RequestSettings request_settings;
 };
 
 
@@ -54,7 +54,6 @@ public:
     UInt64 getFileSize(const String & file_name) override;
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
-    void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
 
     DataSourceDescription getDataSourceDescription() const override;
@@ -62,6 +61,7 @@ public:
     void copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to) override;
 
 private:
+
     Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
 
     void copyObjectImpl(
@@ -69,25 +69,22 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        const Aws::S3::Model::HeadObjectResult & head,
-        const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
     void copyObjectMultipartImpl(
         const String & src_bucket,
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        const Aws::S3::Model::HeadObjectResult & head,
-        const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
-
-    void removeFilesBatch(const Strings & file_names);
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
     S3::URI s3_uri;
     std::shared_ptr<Aws::S3::S3Client> client;
+    UInt64 max_single_read_retries;
     ReadSettings read_settings;
-    S3Settings::RequestSettings request_settings;
-    Poco::Logger * log;
-    std::optional<bool> supports_batch_delete;
+    S3Settings::ReadWriteSettings rw_settings;
 };
 
 }
