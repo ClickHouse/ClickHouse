@@ -62,7 +62,7 @@ public:
     /// We want to control the number of rows in a chunk inserted into RabbitMQ
     bool prefersLargeBlocks() const override { return false; }
 
-    void pushConsumer(RabbitMQConsumerPtr buf);
+    void pushConsumer(RabbitMQConsumerPtr consumer);
     RabbitMQConsumerPtr popConsumer();
     RabbitMQConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
