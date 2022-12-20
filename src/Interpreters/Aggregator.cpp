@@ -236,15 +236,19 @@ void initDataVariantsWithSizeHint(
             else
             {
                 const auto adjusted = std::max(lower_limit, hint->median_size);
-                if (worthConvertToTwoLevel(
-                        params.group_by_two_level_threshold,
-                        hint->sum_of_sizes,
-                        /*group_by_two_level_threshold_bytes*/ 0,
-                        /*result_size_bytes*/ 0))
-                    method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
-                result.init(method_chosen, adjusted);
-                ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
-                return;
+                /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
+                if (max_threads != 1 || adjusted >= 1'000'000)
+                {
+                    if (worthConvertToTwoLevel(
+                            params.group_by_two_level_threshold,
+                            hint->sum_of_sizes,
+                            /*group_by_two_level_threshold_bytes*/ 0,
+                            /*result_size_bytes*/ 0))
+                        method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
+                    result.init(method_chosen, adjusted);
+                    ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
+                    return;
+                }
             }
         }
     }
