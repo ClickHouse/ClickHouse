@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/count
 sidebar_position: 1
 ---
 

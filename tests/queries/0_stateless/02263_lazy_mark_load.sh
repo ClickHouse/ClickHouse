@@ -30,7 +30,7 @@ EOF
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES lazy_mark_test"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO lazy_mark_test select number, number % 3, number % 5, number % 10, number % 13, number % 15, number % 17, number % 18, number % 22, number % 25 from numbers(1000000)"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP MARK CACHE"
-${CLICKHOUSE_CLIENT} --log_queries=1 --query_id "${QUERY_ID}" -q "SELECT * FROM lazy_mark_test WHERE n3==11 SETTINGS load_marks_asynchronously=0"
+${CLICKHOUSE_CLIENT} --log_queries=1 --query_id "${QUERY_ID}" -q "SELECT * FROM lazy_mark_test WHERE n3==11"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 
 ${CLICKHOUSE_CLIENT} -q "select ProfileEvents['FileOpen'] from system.query_log where query_id = '${QUERY_ID}' and type = 'QueryFinish' and current_database = currentDatabase()"

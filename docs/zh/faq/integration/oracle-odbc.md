@@ -1,5 +1,4 @@
 ---
-slug: /zh/faq/integration/oracle-odbc
 title: What if I have a problem with encodings when using Oracle via ODBC?
 toc_hidden: true
 sidebar_position: 20

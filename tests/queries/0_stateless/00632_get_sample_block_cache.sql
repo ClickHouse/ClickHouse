@@ -1,4 +1,4 @@
--- Tags: long, no-s3-storage, no-asan
+-- Tags: long
 
 SET joined_subquery_requires_alias = 0;
 

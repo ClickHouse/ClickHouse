@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/quantiledeterministic
 sidebar_position: 206
 ---
 
