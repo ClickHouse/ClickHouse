@@ -54,6 +54,7 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
+#include <IO/ResourceManagerFactory.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -221,6 +222,7 @@ struct ContextSharedPart : boost::noncopyable
     String system_profile_name;                             /// Profile used by system processes
     String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
     std::unique_ptr<AccessControl> access_control;
+    mutable ResourceManagerPtr resource_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
@@ -1065,6 +1067,21 @@ std::vector<UUID> Context::getEnabledProfiles() const
 }
 
 
+ResourceManagerPtr Context::getResourceManager() const
+{
+    auto lock = getLock();
+    if (!shared->resource_manager)
+        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "static"));
+    return shared->resource_manager;
+}
+
+ClassifierPtr Context::getClassifier() const
+{
+    auto lock = getLock();
+    return getResourceManager()->acquire(getSettingsRef().workload);
+}
+
+
 const Scalars & Context::getScalars() const
 {
     return scalars;
@@ -1411,6 +1428,11 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     applySettingsQuirks(settings);
 }
 
+
+void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements) const
+{
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements);
+}
 
 void Context::checkSettingsConstraints(const SettingChange & change) const
 {
