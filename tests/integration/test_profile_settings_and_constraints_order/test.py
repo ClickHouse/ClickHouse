@@ -5,12 +5,8 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1", user_configs=["configs/constraints_first.xml"]
-)
-node2 = cluster.add_instance(
-    "node2", user_configs=["configs/constraints_last.xml"]
-)
+node1 = cluster.add_instance("node1", user_configs=["configs/constraints_first.xml"])
+node2 = cluster.add_instance("node2", user_configs=["configs/constraints_last.xml"])
 
 
 @pytest.fixture(scope="module")
@@ -42,4 +38,3 @@ log_queries	1"""
     )
 
     assert TSV(settings) == TSV(expected)
-
