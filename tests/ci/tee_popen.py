@@ -4,6 +4,7 @@ from io import TextIOWrapper
 from subprocess import Popen, PIPE, STDOUT
 from threading import Thread
 from time import sleep
+from typing import Optional
 import logging
 import os
 import sys
