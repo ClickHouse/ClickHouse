@@ -218,13 +218,11 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     SettingsConstraints res{access_control};
     for (const auto & elem : *this)
         if (!elem.setting_name.empty() && elem.isConstraint() && elem.setting_name != ALLOW_BACKUP_SETTING_NAME)
-        {
             res.set(
                 elem.setting_name,
                 elem.min_value,
                 elem.max_value,
                 elem.writability ? *elem.writability : SettingConstraintWritability::WRITABLE);
-        }
     return res;
 }
 
