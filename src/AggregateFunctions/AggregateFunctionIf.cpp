@@ -183,6 +183,11 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
+    bool isCompilable() const override
+    {
+        return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
+    }
+
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
@@ -359,6 +364,11 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
+    }
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
