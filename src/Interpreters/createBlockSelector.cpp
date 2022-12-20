@@ -5,10 +5,7 @@
 
 #include <type_traits>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2 1
-#endif
-
+#include <libdivide-config.h>
 #include <libdivide.h>
 
 
