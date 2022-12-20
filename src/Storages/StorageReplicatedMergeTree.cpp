@@ -7810,6 +7810,14 @@ void StorageReplicatedMergeTree::lockSharedData(
     if (zookeeper->isNull())
         return;
 
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        /// I did not find a better place for this.
+        Context::getGlobalContextInstance()->addWarningMessage(
+            "You are using old MergeTree syntax (deprecated) together with zero copy replication (experimental)."
+            "There are no guarantees that this combination will work. Also this can be forbidden in future.");
+    }
+
     String id = part.getUniqueId();
     boost::replace_all(id, "/", "_");
 
