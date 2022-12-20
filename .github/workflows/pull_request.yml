@@ -901,7 +901,7 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  BuilderBinAmd64SSE2:
+  BuilderBinAmd64Compat:
     needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
@@ -912,7 +912,7 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_amd64sse2
+          BUILD_NAME=binary_amd64_compat
           EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
@@ -1071,7 +1071,7 @@ jobs:
       - BuilderBinFreeBSD
       # - BuilderBinGCC
       - BuilderBinPPC64
-      - BuilderBinAmd64SSE2
+      - BuilderBinAmd64Compat
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy
       - BuilderDebShared
