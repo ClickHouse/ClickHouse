@@ -27,6 +27,8 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
@@ -41,6 +43,7 @@
 #include <Poco/MemoryStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <chrono>
 #include <sstream>
@@ -469,9 +472,21 @@ bool HTTPHandler::authenticateUser(
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
     client_info.quota_key = quota_key;
 
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
+    Strings forwarded_addresses;
+    if (!client_info.forwarded_for.empty())
+        boost::split(forwarded_addresses, client_info.forwarded_for, boost::is_any_of(","));
+
     try
     {
-        session->authenticate(*request_credentials, request.clientAddress());
+        if (!forwarded_addresses.empty() && server.config().getBool("auth_use_forwarded_address", false))
+        {
+            boost::trim(forwarded_addresses.back());
+            session->authenticate(*request_credentials, Poco::Net::SocketAddress(forwarded_addresses.back(), request.clientAddress().port()));
+        }
+        else
+            session->authenticate(*request_credentials, request.clientAddress());
     }
     catch (const Authentication::Require<BasicCredentials> & required_credentials)
     {
