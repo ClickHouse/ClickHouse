@@ -121,8 +121,9 @@ def check_for_success_run(
     s3_prefix: str,
     build_name: str,
     build_config: BuildConfig,
-):
-    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix)
+) -> None:
+    # the final empty argument is necessary for distinguish build and build_suffix
+    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix, "")
     logging.info("Checking for artifacts in %s", logged_prefix)
     try:
         # TODO: theoretically, it would miss performance artifact for pr==0,
