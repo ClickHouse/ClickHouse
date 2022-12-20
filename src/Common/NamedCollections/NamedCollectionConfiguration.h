@@ -14,6 +14,10 @@ namespace NamedCollectionConfiguration
 
 ConfigurationPtr createEmptyConfiguration(const std::string & root_name);
 
+bool hasConfigValue(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & path);
+
 template <typename T> T getConfigValue(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & path);

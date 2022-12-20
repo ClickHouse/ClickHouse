@@ -395,7 +395,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
     {
         validateNamedCollection(
             *named_collection,
-            {"username", "user", "password", "database", "table"},
+            {"user", "password", "database", "table"},
             {"schema", "on_conflict", "addresses_expr", "host", "port"});
 
         configuration.addresses_expr = named_collection->getOrDefault<String>("addresses_expr", "");
@@ -405,7 +405,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
         }
 
-        configuration.username = named_collection->getOrDefault<String>("username", named_collection->get<String>("user"));
+        configuration.username = named_collection->get<String>("user");
         configuration.password = named_collection->get<String>("password");
         configuration.database = named_collection->get<String>("database");
         configuration.table = named_collection->get<String>("table");
@@ -433,7 +433,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         }
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
         configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
-        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
+        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "user");
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
 
         if (engine_args.size() >= 6)

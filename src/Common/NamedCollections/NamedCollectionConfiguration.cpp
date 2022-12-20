@@ -16,6 +16,13 @@ namespace ErrorCodes
 namespace NamedCollectionConfiguration
 {
 
+bool hasConfigValue(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & path)
+{
+    return config.has(path);
+}
+
 template <typename T> T getConfigValue(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & path)

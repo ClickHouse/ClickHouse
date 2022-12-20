@@ -3,7 +3,7 @@
 #include <IO/S3Common.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Storages/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Exception.h>
 #include <Common/Throttler.h>
 #include <Interpreters/Context.h>

@@ -1242,6 +1242,9 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
+    configuration.url = collection.get<String>("url");
+
+    auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
         configuration.url = std::filesystem::path(configuration.url) / filename;
 

@@ -330,12 +330,12 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         {
             validateNamedCollection(
                 *named_collection,
-                {"host", "port", "username", "password", "database", "table"},
+                {"host", "port", "user", "password", "database", "table"},
                 {"schema", "on_conflict", "use_table_cache"});
 
             configuration.host = named_collection->get<String>("host");
             configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.username = named_collection->get<String>("username");
+            configuration.username = named_collection->get<String>("user");
             configuration.password = named_collection->get<String>("password");
             configuration.database = named_collection->get<String>("database");
             configuration.table = named_collection->get<String>("table");
@@ -405,12 +405,12 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         {
             validateNamedCollection(
                 *named_collection,
-                {"host", "port", "username", "password", "database", "table"},
+                {"host", "port", "user", "password", "database", "table"},
                 {"schema"});
 
             configuration.host = named_collection->get<String>("host");
             configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.username = named_collection->get<String>("username");
+            configuration.username = named_collection->get<String>("user");
             configuration.password = named_collection->get<String>("password");
             configuration.database = named_collection->get<String>("database");
             configuration.table = named_collection->get<String>("table");
