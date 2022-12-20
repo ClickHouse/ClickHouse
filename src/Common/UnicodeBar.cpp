@@ -33,22 +33,25 @@ namespace UnicodeBar
         return (x - min) / (max - min) * max_width;
     }
 
-    /// We use the following Unicode characters to draw the bar:
-    /// U+2588 "█" Full block
-    /// U+2589 "▉" Left seven eighths block
-    /// U+258A "▊" Left three quarters block
-    /// U+258B "▋" Left five eighths block
-    /// U+258C "▌" Left half block
-    /// U+258D "▍" Left three eighths block
-    /// U+258E "▎" Left one quarter block
-    /// U+258F "▏" Left one eighth block
-    constexpr size_t GRADES_IN_FULL_BAR = 8;
-    constexpr char FULL_BAR[] = "█";
-    constexpr char FRACTIONAL_BARS[] = "▏▎▍▌▋▊▉";   /// 7 elements: 1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8
+    namespace
+    {
+        /// We use the following Unicode characters to draw the bar:
+        /// U+2588 "█" Full block
+        /// U+2589 "▉" Left seven eighths block
+        /// U+258A "▊" Left three quarters block
+        /// U+258B "▋" Left five eighths block
+        /// U+258C "▌" Left half block
+        /// U+258D "▍" Left three eighths block
+        /// U+258E "▎" Left one quarter block
+        /// U+258F "▏" Left one eighth block
+        constexpr size_t GRADES_IN_FULL_BAR = 8;
+        constexpr char FULL_BAR[] = "█";
+        constexpr char FRACTIONAL_BARS[] = "▏▎▍▌▋▊▉";   /// 7 elements: 1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8
+    }
 
     size_t getWidthInBytes(double width)
     {
-        Int64 int_width = Int64(width * GRADES_IN_FULL_BAR);
+        Int64 int_width = static_cast<Int64>(width * GRADES_IN_FULL_BAR);
         return (int_width / GRADES_IN_FULL_BAR) * UNICODE_BAR_CHAR_SIZE + (int_width % GRADES_IN_FULL_BAR ? UNICODE_BAR_CHAR_SIZE : 0);
     }
 
@@ -66,7 +69,7 @@ namespace UnicodeBar
 
     void render(double width, char * dst, const char * dst_end)
     {
-        Int64 int_width = Int64(width * GRADES_IN_FULL_BAR);
+        Int64 int_width = static_cast<Int64>(width * GRADES_IN_FULL_BAR);
         size_t floor_width = (int_width / GRADES_IN_FULL_BAR);
 
         for (size_t i = 0; i < floor_width; ++i)
