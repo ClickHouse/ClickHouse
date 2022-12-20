@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/TargetSpecific.h>
+#include "Core/NamesAndTypes.h"
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/range.h>
@@ -419,19 +420,22 @@ std::string MergeTreeRangeReader::ReadResult::dumpInfo() const
     return out.str();
 }
 
+static std::string dumpNames(const NamesAndTypesList & columns)
+{
+    WriteBufferFromOwnString out;
+    for (auto it = columns.begin(); it != columns.end(); ++it)
+    {
+        if (it != columns.begin())
+            out << ", ";
+        out << it->name;
+    }
+    return out.str();
+}
+
 void MergeTreeRangeReader::ReadResult::setFilterConstTrue()
 {
     clearFilter();
 }
-
-#if 0
-void MergeTreeRangeReader::ReadResult::setFilterConstFalse()
-{
-    clearFilter();
-    columns.clear();
-    num_rows = 0;
-}
-#endif
 
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second);
 
@@ -914,8 +918,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         read_result = startReadingChain(max_rows, ranges);
         read_result.num_rows = read_result.numReadRows();
 
-        LOG_TEST(log, "First reader returned {}, requested columns {}",
-            read_result.dumpInfo(), merge_tree_reader->getColumns().toString());
+        LOG_TEST(log, "First reader returned: {}, requested columns: {}",
+            read_result.dumpInfo(), dumpNames(merge_tree_reader->getColumns()));
 
         if (read_result.num_rows == 0)
             return read_result;
