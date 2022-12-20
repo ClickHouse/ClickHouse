@@ -110,7 +110,7 @@ public:
 
     ~ExpressionAnalyzer();
 
-    void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
+    void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types, bool disallow_arrayJoin = false);
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
     /// If add_aliases, only the calculated values in the desired order and add aliases.
@@ -175,7 +175,7 @@ protected:
 
     ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAGPtr & actions, bool is_left) const;
 
-    void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
+    void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false, bool disallow_arrayJoin = false);
 
     /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
       * analyzeAggregation which happens earlier than analyzing PREWHERE and WHERE. If we did, the

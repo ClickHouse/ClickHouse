@@ -861,7 +861,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         {
             if (!actions_chain.steps.empty())
                 actions_chain.addStep();
-            stage.analyzer->appendExpression(actions_chain, ast, dry_run);
+            stage.analyzer->appendExpression(actions_chain, ast, dry_run, true /* disallow_arrayJoin */);
             stage.filter_column_names.push_back(ast->getColumnName());
         }
 
@@ -871,7 +871,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
                 actions_chain.addStep();
 
             for (const auto & kv : stage.column_to_updated)
-                stage.analyzer->appendExpression(actions_chain, kv.second, dry_run);
+                stage.analyzer->appendExpression(actions_chain, kv.second, dry_run, true /* disallow_arrayJoin */);
 
             auto & actions = actions_chain.getLastStep().actions();
 
@@ -883,6 +883,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
                 actions->addOrReplaceInOutputs(alias);
             }
         }
+
 
         /// Remove all intermediate columns.
         actions_chain.addStep();
