@@ -150,7 +150,7 @@ def configure_from_zk(zk, querier=None):
             zk.create(path=path, value=value, makepath=True)
             has_changed = True
         except NodeExistsError:
-            if zk.get(path) != value:
+            if zk.get(path)[0] != value:
                 zk.set(path=path, value=value)
                 has_changed = True
         if has_changed and querier is not None:
