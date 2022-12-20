@@ -375,7 +375,7 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
         return new_part_info.getPartNameV0(min_date, max_date);
     }
     else
-        return new_part_info.getPartName();
+        return new_part_info.getPartNameV1();
 }
 
 std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & column_name) const

@@ -19,7 +19,7 @@ bool DropPartsRanges::isAffectedByDropRange(const std::string & new_part_name, s
     {
         if (!drop_range.isDisjoint(entry_info))
         {
-            postpone_reason = fmt::format("Has DROP RANGE affecting entry {} producing part {}. Will postpone it's execution.", drop_range.getPartName(), new_part_name);
+            postpone_reason = fmt::format("Has DROP RANGE affecting entry {} producing part {}. Will postpone it's execution.", drop_range.getPartNameForLogs(), new_part_name);
             return true;
         }
     }

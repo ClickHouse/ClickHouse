@@ -1484,8 +1484,11 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
 
 MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry& entry) const
 {
+    if (format_version != MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        return {};
+
     const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
-    const String part_new_name = actual_part_info.getPartName();
+    const String part_new_name = actual_part_info.getPartNameV1();
 
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
@@ -1496,7 +1499,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             if (!part_info || part_info->partition_id != actual_part_info.partition_id)
                 continue;
 
-            const String part_old_name = part_info->getPartName();
+            const String part_old_name = part_info->getPartNameV1();
 
             const VolumePtr volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
 
@@ -3849,7 +3852,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 bool StorageReplicatedMergeTree::partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const
 {
     auto zookeeper = getZooKeeper();
-    return zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "parallel" / part_info.getPartName());
+    return zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "parallel" / part_info.getPartNameAndCheckFormat(format_version));
 }
 
 
@@ -3871,7 +3874,7 @@ bool StorageReplicatedMergeTree::partIsLastQuorumPart(const MergeTreePartInfo & 
     if (partition_it == parts_with_quorum.added_parts.end())
         return false;
 
-    return partition_it->second == part_info.getPartName();
+    return partition_it->second == part_info.getPartNameAndCheckFormat(format_version);
 }
 
 
@@ -5048,7 +5051,7 @@ String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const 
         return part_info.getPartNameV0(left_date, right_date);
     }
 
-    return part_info.getPartName();
+    return part_info.getPartNameV1();
 }
 
 bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info,
@@ -7540,7 +7543,7 @@ void StorageReplicatedMergeTree::enqueuePartForCheck(const String & part_name, t
     if (queue.hasDropRange(MergeTreePartInfo::fromPartName(part_name, format_version), &covering_drop_range))
     {
         LOG_WARNING(log, "Do not enqueue part {} for check because it's covered by DROP_RANGE {} and going to be removed",
-                    part_name, covering_drop_range.getPartName());
+                    part_name, covering_drop_range.getPartNameForLogs());
         return;
     }
     part_check_thread.enqueuePart(part_name, delay_to_check_seconds);

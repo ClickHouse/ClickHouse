@@ -362,7 +362,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
         part_name = new_part_info.getPartNameV0(min_date, max_date);
     }
     else
-        part_name = new_part_info.getPartName();
+        part_name = new_part_info.getPartNameV1();
 
     String part_dir = TMP_PREFIX + part_name;
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
