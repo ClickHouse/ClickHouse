@@ -535,7 +535,8 @@ ActionsMatcher::Data::Data(
     bool only_consts_,
     bool create_source_for_in_,
     AggregationKeysInfo aggregation_keys_info_,
-    bool build_expression_with_window_functions_)
+    bool build_expression_with_window_functions_,
+    bool disallow_arrayjoin_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -549,6 +550,7 @@ ActionsMatcher::Data::Data(
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
     , build_expression_with_window_functions(build_expression_with_window_functions_)
+    , disallow_arrayjoin(disallow_arrayjoin_)
     , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
 }
@@ -887,6 +889,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     /// Function arrayJoin.
     if (node.name == "arrayJoin")
     {
+        if (data.disallow_arrayjoin)
+            throw Exception("arrayJoin is disallowed in mutations", ErrorCodes::UNEXPECTED_EXPRESSION);
+
         if (node.arguments->children.size() != 1)
             throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::TYPE_MISMATCH);
 
