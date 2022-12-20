@@ -116,10 +116,8 @@ public:
 
     explicit operator bool() const { return distributed_query; }
 
-    static bool visitTopDown(QueryPlan::Node *, QueryPlan::Node *)
-    {
-        return true;
-    }
+    static bool visitTopDown(QueryPlan::Node *, QueryPlan::Node *) { return true; }
+
     void visitBottomUp(QueryPlan::Node * current_node, QueryPlan::Node *)
     {
         if (typeid_cast<ReadFromRemote *>(current_node->step.get()))
@@ -275,9 +273,7 @@ private:
             }
         }
 
-        /// (2) for window function we do ORDER BY in 2 Sorting steps,
-        /// so do not delete Sorting if window function step is on top
-        /// (3) rough check for disributed query via Union step check
+        /// check steps on stack if there are some which can prevent from removing SortingStep
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {
             const QueryPlan::Node * node = it->node;
@@ -288,7 +284,17 @@ private:
                 break;
 
             const auto * step = node->step.get();
+
+            /// (2) for window function we do ORDER BY in 2 Sorting steps,
+            /// so do not delete Sorting if window function step is on top
             if (typeid_cast<const WindowStep *>(step))
+                return false;
+
+            /// (3) TODO: need to understand that plan is part of distributed one
+            /// and don't try to optimize it since it's already optimized, AFAIU
+            /// for now, rough check for disributed query via Union step check
+            /// example in 02315_optimize_monotonous_functions_in_order_by_remote.sql
+            if (typeid_cast<const UnionStep *>(step))
                 return false;
 
             if (const auto * join_step = typeid_cast<const JoinStep *>(step); join_step)
