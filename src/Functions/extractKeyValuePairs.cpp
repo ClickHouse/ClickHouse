@@ -49,7 +49,8 @@ ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & argum
 
     auto raw_columns = extract(extractor, data_column);
 
-    return escape(raw_columns);
+    // improve escape character..
+    return escape(raw_columns, escape_character ? escape_character.value() : '\\');
 }
 
 bool ExtractKeyValuePairs::isVariadic() const
