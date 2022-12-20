@@ -1,6 +1,5 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Storages/NamedCollections.h>
-#include <Storages/NamedCollectionUtils.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 #include <gtest/gtest.h>
@@ -29,7 +28,7 @@ TEST(NamedCollections, SimpleConfig)
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
 
-    NamedCollectionUtils::loadFromConfig(*config);
+    NamedCollectionFactory::instance().initialize(*config);
 
     ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection1"));
     ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection2"));
@@ -77,16 +76,16 @@ key5:	5
 key6:	6.6
 )CONFIG");
 
-    collection2_copy->setOrUpdate<String>("key4", "value44");
-    ASSERT_EQ(collection2_copy->get<String>("key4"), "value44");
-    ASSERT_EQ(collection2->get<String>("key4"), "value4");
+    collection2_copy->set<String>("key4", "value44", true);
+    ASSERT_TRUE(collection2_copy->get<String>("key4") == "value44");
+    ASSERT_TRUE(collection2->get<String>("key4") == "value4");
 
     collection2_copy->remove("key4");
-    ASSERT_EQ(collection2_copy->getOrDefault<String>("key4", "N"), "N");
-    ASSERT_EQ(collection2->getOrDefault<String>("key4", "N"), "value4");
+    ASSERT_TRUE(collection2_copy->getOrDefault<String>("key4", "N") == "N");
+    ASSERT_TRUE(collection2->getOrDefault<String>("key4", "N") == "value4");
 
-    collection2_copy->setOrUpdate<String>("key4", "value45");
-    ASSERT_EQ(collection2_copy->getOrDefault<String>("key4", "N"), "value45");
+    collection2_copy->set<String>("key4", "value45");
+    ASSERT_TRUE(collection2_copy->getOrDefault<String>("key4", "N") == "value45");
 
     NamedCollectionFactory::instance().remove("collection2_copy");
     ASSERT_FALSE(NamedCollectionFactory::instance().exists("collection2_copy"));
@@ -98,7 +97,7 @@ TEST(NamedCollections, NestedConfig)
 {
     std::string xml(R"CONFIG(<clickhouse>
     <named_collections>
-        <collection3>
+        <collection1>
             <key1>
                 <key1_1>value1</key1_1>
             </key1>
@@ -111,22 +110,21 @@ TEST(NamedCollections, NestedConfig)
                     </key2_3>
                 </key2_2>
             </key2>
-        </collection3>
+        </collection1>
     </named_collections>
 </clickhouse>)CONFIG");
 
     Poco::XML::DOMParser dom_parser;
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    NamedCollectionFactory::instance().reload(*config);
 
-    NamedCollectionUtils::loadFromConfig(*config);
+    ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection1"));
 
-    ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection3"));
+    auto collection1 = NamedCollectionFactory::instance().get("collection1");
+    ASSERT_TRUE(collection1 != nullptr);
 
-    auto collection = NamedCollectionFactory::instance().get("collection3");
-    ASSERT_TRUE(collection != nullptr);
-
-    ASSERT_EQ(collection->dumpStructure(),
+    ASSERT_EQ(collection1->dumpStructure(),
               R"CONFIG(key1:
 	key1_1:	value1
 key2:
@@ -137,9 +135,9 @@ key2:
 			key2_5:	5
 )CONFIG");
 
-    ASSERT_EQ(collection->get<String>("key1.key1_1"), "value1");
-    ASSERT_EQ(collection->get<String>("key2.key2_1"), "value2_1");
-    ASSERT_EQ(collection->get<Int64>("key2.key2_2.key2_3.key2_4"), 4);
-    ASSERT_EQ(collection->get<Int64>("key2.key2_2.key2_3.key2_5"), 5);
+    ASSERT_EQ(collection1->get<String>("key1.key1_1"), "value1");
+    ASSERT_EQ(collection1->get<String>("key2.key2_1"), "value2_1");
+    ASSERT_EQ(collection1->get<Int64>("key2.key2_2.key2_3.key2_4"), 4);
+    ASSERT_EQ(collection1->get<Int64>("key2.key2_2.key2_3.key2_5"), 5);
 
 }

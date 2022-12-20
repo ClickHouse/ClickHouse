@@ -151,17 +151,17 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(offsets);
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
     {
-        callback(*offsets);
+        callback(offsets);
         offsets->forEachSubcolumnRecursively(callback);
-        callback(*data);
+        callback(data);
         data->forEachSubcolumnRecursively(callback);
     }
 
