@@ -6,10 +6,11 @@ slug: /en/install
 
 # Installing ClickHouse
 
-You have two options for getting up and running with ClickHouse:
+You have three options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
 - **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, ARM, or PowerPC64LE CPU architecture
+- **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** Read the guide with the official image in Docker Hub
 
 ## ClickHouse Cloud
 
@@ -254,50 +255,16 @@ For production environments, it’s recommended to use the latest `stable`-versi
 
 To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Those images use official `deb` packages inside.
 
-### Single Binary {#from-single-binary}
-
-You can install ClickHouse on Linux using a single portable binary from the latest commit of the `master` branch: [https://builds.clickhouse.com/master/amd64/clickhouse].
-
-``` bash
-curl -O 'https://builds.clickhouse.com/master/amd64/clickhouse' && chmod a+x clickhouse
-sudo ./clickhouse install
-```
-
-### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
-
-For non-Linux operating systems and for ARM CPU architecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
-
--   [MacOS x86-64](https://builds.clickhouse.com/master/macos/clickhouse)
-     ```bash
-     curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse
-     ```
--   [MacOS ARM (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse)
-    ```bash
-    curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse
-    ```
--   [FreeBSD x86-64](https://builds.clickhouse.com/master/freebsd/clickhouse)
-    ```bash
-    curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse
-    ```
--   [Linux ARM](https://builds.clickhouse.com/master/aarch64/clickhouse)
-    ```bash
-    curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse
-    ```
-
-Run `sudo ./clickhouse install` to install ClickHouse system-wide (also with needed configuration files, configuring users etc.). Then run `sudo clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it.
-
-Use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
-
 ### From Sources {#from-sources}
 
 To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/development/build.md) or [Mac OS X](/docs/en/development/build-osx.md).
 
-You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
+You can compile packages and install them or use programs without installing packages.
 
-      Client: programs/clickhouse-client
-      Server: programs/clickhouse-server
+      Client: <build_directory>/programs/clickhouse-client
+      Server: <build_directory>/programs/clickhouse-server
 
-You’ll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
+You’ll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
       /var/lib/clickhouse/data/default/
       /var/lib/clickhouse/metadata/default/
@@ -383,44 +350,32 @@ SELECT 1
 
 To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/en/tutorial.md).
 
-## Self-Managed Requirements
-
-### CPU Architecture
+## Recommendations for Self-Managed ClickHouse
 
 ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, ARM, or PowerPC64LE CPU architecture.
 
-Official binaries are available for x86-64 and ARM.
+ClickHouse uses all hardware resources available to process data.
 
-It is also possible to build ClickHouse from source, (see above)[#from-sources] for details.
+ClickHouse tends to work more efficiently with a large number of cores at a lower clock rate than with fewer cores at a higher clock rate.
 
-ClickHouse implements parallel data processing and uses all the hardware resources available. When choosing a processor, take into account that ClickHouse works more efficiently at configurations with a large number of cores but a lower clock rate than at configurations with fewer cores and a higher clock rate. For example, 16 cores with 2600 MHz is preferable to 8 cores with 3600 MHz.
+We recommend using a minimum of 4GB of RAM to perform non-trivial queries. The ClickHouse server can run with a much smaller amount of RAM, but queries will then frequently abort.
 
-It is recommended to use **Turbo Boost** and **hyper-threading** technologies. It significantly improves performance with a typical workload.
-
-### RAM {#ram}
-
-We recommend using a minimum of 4GB of RAM to perform non-trivial queries. The ClickHouse server can run with a much smaller amount of RAM, but it requires memory for processing queries.
-
-The required volume of RAM depends on:
+The required volume of RAM generally depends on:
 
 -   The complexity of queries.
 -   The amount of data that is processed in queries.
 
-To calculate the required volume of RAM, you should estimate the size of temporary data for [GROUP BY](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/en/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/en/sql-reference/statements/select/join.md#select-join) and other operations you use.
+To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/en/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/en/sql-reference/statements/select/join.md#select-join) and other operations you use.
 
-ClickHouse can use external memory for temporary data. See [GROUP BY in External Memory](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
+To reduce memory consumption, ClickHouse can swap temporary data to external storage. See [GROUP BY in External Memory](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
 
-### Swap File {#swap-file}
+We recommend to disable the operating system's swap file in production environments.
 
-Disable the swap file for production environments.
+The ClickHouse binary requires at least 2.5 GB of disk space for installation.
 
-### Storage Subsystem {#storage-subsystem}
+The volume of storage required for your data may be calculated separately based on
 
-You need to have 2GB of free disk space to install ClickHouse.
-
-The volume of storage required for your data should be calculated separately. Assessment should include:
-
--   Estimation of the data volume.
+-   an estimation of the data volume.
 
     You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
 
@@ -430,13 +385,6 @@ The volume of storage required for your data should be calculated separately. As
 
 To calculate the final volume of data to be stored, apply the compression coefficient to the estimated data volume. If you plan to store data in several replicas, then multiply the estimated volume by the number of replicas.
 
-### Network {#network}
+For distributed ClickHouse deployments (clustering), we recommend at least 10G class network connectivity.
 
-If possible, use networks of 10G or higher class.
-
-The network bandwidth is critical for processing distributed queries with a large amount of intermediate data. Besides, network speed affects replication processes.
-
-### Software {#software}
-
-ClickHouse is developed primarily for the Linux family of operating systems. The recommended Linux distribution is Ubuntu. The `tzdata` package should be installed in the system.
-
+Network bandwidth is critical for processing distributed queries with a large amount of intermediate data. Besides, network speed affects replication processes.
