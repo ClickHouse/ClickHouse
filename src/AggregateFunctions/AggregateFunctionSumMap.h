@@ -16,6 +16,7 @@
 #include <Common/FieldVisitorSum.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <map>
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
@@ -427,7 +428,10 @@ public:
     }
 
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
-    String getName() const override { return static_cast<const Derived &>(*this).getName(); }
+    String getName() const override { return getNameImpl(); }
+
+private:
+    static String getNameImpl() { return Derived::getNameImpl(); }
 };
 
 template <typename T, bool overflow, bool tuple_argument>
@@ -446,10 +450,10 @@ public:
     {
         // The constructor accepts parameters to have a uniform interface with
         // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
+        assertNoParameters(getNameImpl(), params_);
     }
 
-    String getName() const override
+    static String getNameImpl()
     {
         if constexpr (overflow)
         {
@@ -490,13 +494,13 @@ public:
         if (params_.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Aggregate function '{}' requires exactly one parameter "
-                "of Array type", getName());
+                "of Array type", getNameImpl());
 
         Array keys_to_keep_values;
         if (!params_.front().tryGet<Array>(keys_to_keep_values))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function {} requires an Array as a parameter",
-                getName());
+                getNameImpl());
 
         keys_to_keep.reserve(keys_to_keep_values.size());
 
@@ -504,7 +508,7 @@ public:
             keys_to_keep.emplace(f.safeGet<T>());
     }
 
-    String getName() const override
+    static String getNameImpl()
     { return overflow ? "sumMapFilteredWithOverflow" : "sumMapFiltered"; }
 
     bool keepKey(const T & key) const { return keys_to_keep.count(key); }
@@ -609,10 +613,10 @@ public:
     {
         // The constructor accepts parameters to have a uniform interface with
         // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
+        assertNoParameters(getNameImpl(), params_);
     }
 
-    String getName() const override { return "minMap"; }
+    static String getNameImpl() { return "minMap"; }
 
     bool keepKey(const T &) const { return true; }
 };
@@ -633,10 +637,10 @@ public:
     {
         // The constructor accepts parameters to have a uniform interface with
         // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
+        assertNoParameters(getNameImpl(), params_);
     }
 
-    String getName() const override { return "maxMap"; }
+    static String getNameImpl() { return "maxMap"; }
 
     bool keepKey(const T &) const { return true; }
 };
