@@ -55,6 +55,7 @@ FileSegment::FileSegment(
         {
             reserved_size = downloaded_size = size_;
             is_downloaded = true;
+            chassert(std::filesystem::file_size(getPathInLocalCache()) == size_);
             break;
         }
         case (State::SKIP_CACHE):
@@ -330,6 +331,8 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         cache_writer->next();
 
         downloaded_size += size;
+
+        chassert(std::filesystem::file_size(getPathInLocalCache()) == downloaded_size);
     }
     catch (Exception & e)
     {
@@ -344,9 +347,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         throw;
     }
 
-#ifndef NDEBUG
     chassert(getFirstNonDownloadedOffset() == offset + size);
-#endif
 }
 
 FileSegment::State FileSegment::wait()
@@ -541,6 +542,13 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         resetDownloaderUnlocked(segment_lock);
     }
 
+    if (cache_writer && (is_downloader || is_last_holder))
+    {
+        cache_writer->finalize();
+        cache_writer.reset();
+        remote_file_reader.reset();
+    }
+
     switch (download_state)
     {
         case State::SKIP_CACHE:
@@ -552,8 +560,9 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         case State::DOWNLOADED:
         {
             chassert(getDownloadedSizeUnlocked(segment_lock) == range().size());
-            assert(is_downloaded);
-            assert(!cache_writer);
+            chassert(getDownloadedSizeUnlocked(segment_lock) == std::filesystem::file_size(getPathInLocalCache()));
+            chassert(is_downloaded);
+            chassert(!cache_writer);
             break;
         }
         case State::DOWNLOADING:
