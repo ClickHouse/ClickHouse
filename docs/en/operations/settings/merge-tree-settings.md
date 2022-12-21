@@ -127,6 +127,13 @@ Default value: 100000.
 
 A large number of parts in a table reduces performance of ClickHouse queries and increases ClickHouse boot time. Most often this is a consequence of an incorrect design (mistakes when choosing a partitioning strategy - too small partitions).
 
+## simultaneous_parts_removal_limit {#simultaneous-parts-removal-limit}
+
+If there are a lot of outdated parts cleanup thread will try to delete up to `simultaneous_parts_removal_limit` parts during one iteration.
+`simultaneous_parts_removal_limit` set to `0` means unlimited.
+
+Default value: 0.
+
 ## replicated_deduplication_window {#replicated-deduplication-window}
 
 The number of most recently inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
