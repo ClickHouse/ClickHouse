@@ -60,16 +60,17 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
 
     if (!settings.allow_suspicious_fixed_string_types)
     {
-            auto basic_type = removeLowCardinality(removeNullable(type));
-            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
-            {
-                if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "Cannot create column with type '{}' because fixed string with size > {} is suspicious. "
-                        "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
-                        type->getName(), MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
-            }
+        auto basic_type = removeLowCardinality(removeNullable(type));
+        if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
+        {
+            if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because fixed string with size > {} is suspicious. "
+                    "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
+                    type->getName(),
+                    MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
+        }
     }
 }
 
