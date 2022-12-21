@@ -597,7 +597,7 @@ SELECT xxHash64('')
 
 A `UInt32` or `UInt64` data type hash value.
 
-Type: `UInt32` or `UInt64`.
+Type: `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.
 
 **Example**
 
