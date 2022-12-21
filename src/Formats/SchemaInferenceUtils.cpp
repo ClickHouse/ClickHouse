@@ -363,7 +363,7 @@ namespace
             transformJSONTuplesAndArraysToArrays(data_types, settings, type_indexes, json_info);
 
             /// Convert Maps to Objects if needed.
-            if (settings.json.try_infer_objects)
+            if (settings.json.allow_object_type)
                 transformMapsAndObjectsToObjects(data_types, type_indexes);
 
             if (settings.json.read_objects_as_strings)
@@ -713,7 +713,7 @@ namespace
         {
             if constexpr (is_json)
             {
-                if (settings.json.try_infer_objects)
+                if (settings.json.allow_object_type)
                     return std::make_shared<DataTypeObject>("json", true);
             }
             /// Empty Map is Map(Nothing, Nothing)
@@ -732,7 +732,7 @@ namespace
             transformInferredTypesIfNeededImpl<is_json>(value_types, settings, json_info);
             if (!checkIfTypesAreEqual(value_types))
             {
-                if (settings.json.try_infer_objects)
+                if (settings.json.allow_object_type)
                     return std::make_shared<DataTypeObject>("json", true);
                 if (settings.json.read_objects_as_strings)
                     return makeNullable(std::make_shared<DataTypeString>());

@@ -1,5 +1,6 @@
 #pragma once
 #include <Functions/FunctionsConversion.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 namespace DB
 {
@@ -32,10 +33,11 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    explicit CastOverloadResolverImpl(std::optional<Diagnostic> diagnostic_, bool keep_nullable_, bool cast_ipv4_ipv6_default_on_conversion_error_)
+    explicit CastOverloadResolverImpl(std::optional<Diagnostic> diagnostic_, bool keep_nullable_, bool cast_ipv4_ipv6_default_on_conversion_error_, const DataTypeValidationSettings & data_type_validation_settings_)
         : diagnostic(std::move(diagnostic_))
         , keep_nullable(keep_nullable_)
         , cast_ipv4_ipv6_default_on_conversion_error(cast_ipv4_ipv6_default_on_conversion_error_)
+        , data_type_validation_settings(data_type_validation_settings_)
     {
     }
 
@@ -44,15 +46,15 @@ public:
         const auto & settings_ref = context->getSettingsRef();
 
         if constexpr (internal)
-            return createImpl({}, false /*keep_nullable*/, settings_ref.cast_ipv4_ipv6_default_on_conversion_error);
+            return createImpl({}, false /*keep_nullable*/, settings_ref.cast_ipv4_ipv6_default_on_conversion_error, DataTypeValidationSettings(settings_ref));
 
-        return createImpl({}, settings_ref.cast_keep_nullable, settings_ref.cast_ipv4_ipv6_default_on_conversion_error);
+        return createImpl({}, settings_ref.cast_keep_nullable, settings_ref.cast_ipv4_ipv6_default_on_conversion_error, DataTypeValidationSettings(settings_ref));
     }
 
-    static FunctionOverloadResolverPtr createImpl(std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, bool cast_ipv4_ipv6_default_on_conversion_error = false)
+    static FunctionOverloadResolverPtr createImpl(std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, bool cast_ipv4_ipv6_default_on_conversion_error = false, const DataTypeValidationSettings & data_type_validation_settings = {})
     {
         assert(!internal || !keep_nullable);
-        return std::make_unique<CastOverloadResolverImpl>(std::move(diagnostic), keep_nullable, cast_ipv4_ipv6_default_on_conversion_error);
+        return std::make_unique<CastOverloadResolverImpl>(std::move(diagnostic), keep_nullable, cast_ipv4_ipv6_default_on_conversion_error, data_type_validation_settings);
     }
 
 protected:
@@ -83,6 +85,7 @@ protected:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        validateDataType(type, data_type_validation_settings);
 
         if constexpr (cast_type == CastType::accurateOrNull)
             return makeNullable(type);
@@ -104,6 +107,7 @@ private:
     std::optional<Diagnostic> diagnostic;
     bool keep_nullable;
     bool cast_ipv4_ipv6_default_on_conversion_error;
+    DataTypeValidationSettings data_type_validation_settings;
 };
 
 

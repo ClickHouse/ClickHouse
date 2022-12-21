@@ -421,10 +421,10 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             break;
         case FormatSettings::EscapingRule::JSON:
             result += fmt::format(
-                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, try_infer_objects={}",
+                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, allow_object_type={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
-                settings.json.try_infer_objects);
+                settings.json.allow_object_type);
             break;
         default:
             break;
