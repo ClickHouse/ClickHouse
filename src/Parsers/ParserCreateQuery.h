@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataTypes/DataTypeFactory.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -240,7 +240,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         if (!expr_parser.parse(pos, default_expression, expected) && type)
         {
             ephemeral_default = true;
-            default_expression = std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(type)->getDefault());
+
+            auto default_function = std::make_shared<ASTFunction>();
+            default_function->name = "defaultValueOfTypeName";
+            default_function->arguments = std::make_shared<ASTExpressionList>();
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatWithSecretsHidden()));
+            default_expression = default_function;
         }
 
         if (!default_expression && !type)
