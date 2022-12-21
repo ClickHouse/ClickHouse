@@ -13,21 +13,21 @@ MessageQueueSink::MessageQueueSink(
     std::unique_ptr<IMessageProducer> producer_,
     const String & storage_name_,
     const ContextPtr & context_)
-    : SinkToStorage(header), WithContext(context_), format_name(format_name_), max_rows_per_message(max_rows_per_message_), producer(std::move(producer_)), storage_name(storage_name_)
+    : SinkToStorage(header), format_name(format_name_), max_rows_per_message(max_rows_per_message_), producer(std::move(producer_)), storage_name(storage_name_), context(context_)
 {
 }
 
 void MessageQueueSink::onStart()
 {
     initialize();
-    producer->start(getContext());
+    producer->start(context);
 
     buffer = std::make_unique<WriteBufferFromOwnString>();
 
-    auto format_settings = getFormatSettings(getContext());
+    auto format_settings = getFormatSettings(context);
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
-    format = FormatFactory::instance().getOutputFormat(format_name, *buffer, getHeader(), getContext(), format_settings);
+    format = FormatFactory::instance().getOutputFormat(format_name, *buffer, getHeader(), context, format_settings);
     row_format = dynamic_cast<IRowOutputFormat *>(format.get());
 }
 
