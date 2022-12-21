@@ -219,6 +219,9 @@ private:
         /// (1) aggregation
         if (const AggregatingStep * parent_aggr = typeid_cast<AggregatingStep *>(step_affect_order); parent_aggr)
         {
+            if (parent_aggr->inOrder())
+                return false;
+
             auto const & aggregates = parent_aggr->getParams().aggregates;
             for (const auto & aggregate : aggregates)
             {
