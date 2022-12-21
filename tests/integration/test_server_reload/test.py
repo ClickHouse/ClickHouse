@@ -33,6 +33,9 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/default_passwd.xml"],
     with_zookeeper=True,
+    # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+    # second_deadlock_stack -- just ordinary option we use everywhere, don't want to overwrite it
+    env_variables={"TSAN_OPTIONS": "report_atomic_races=0 second_deadlock_stack=1"},
 )
 
 
