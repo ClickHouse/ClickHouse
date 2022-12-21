@@ -45,7 +45,7 @@ public:
                                                         const MergeTreeTransaction *,
                                                         String *)>;
 
-    explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
+    MergeTreeDataMergerMutator(MergeTreeData & data_);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
