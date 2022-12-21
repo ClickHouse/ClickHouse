@@ -3447,12 +3447,17 @@ Default value: 2.
 
 ## compatibility {#compatibility}
 
-This setting changes other settings according to provided ClickHouse version.
-If a behaviour in ClickHouse was changed by using a different default value for some setting, this compatibility setting allows you to use default values from previous versions for all the settings that were not set by the user.
+The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
 
-This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. Empty value means that this setting is disabled.
+If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
+
+This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
 
 Disabled by default.
+
+:::note
+In ClickHouse Cloud the compatibility setting must be set by ClickHouse Cloud support.  Please [open a case](https://clickhouse.cloud/support) to have it set.
+:::
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
