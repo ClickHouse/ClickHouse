@@ -6,6 +6,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -201,12 +202,17 @@ DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
     if (in.eof())
         return {};
 
-    return JSONUtils::readRowAndGetDataTypesForJSONCompactEachRow(in, format_settings, reader.yieldStrings());
+    return JSONUtils::readRowAndGetDataTypesForJSONCompactEachRow(in, format_settings, &inference_info);
 }
 
-void JSONCompactEachRowRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+void JSONCompactEachRowRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredJSONTypesIfNeeded(type, new_type, format_settings);
+    transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
+}
+
+void JSONCompactEachRowRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
+{
+    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONCompactEachRow(FormatFactory & factory)

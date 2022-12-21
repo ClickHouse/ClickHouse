@@ -80,7 +80,7 @@ void complete(const DB::FileSegmentsHolder & holder)
     {
         ASSERT_TRUE(file_segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(file_segment);
-        file_segment->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        file_segment->completeWithoutState();
     }
 }
 
@@ -127,7 +127,7 @@ TEST(FileCache, get)
             assertRange(2, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADING);
 
             download(segments[0]);
-            segments[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+            segments[0]->completeWithoutState();
             assertRange(3, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
         }
 
@@ -148,7 +148,7 @@ TEST(FileCache, get)
 
             ASSERT_TRUE(segments[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments[1]);
-            segments[1]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+            segments[1]->completeWithoutState();
             assertRange(6, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
         }
 
@@ -205,7 +205,7 @@ TEST(FileCache, get)
             ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments[2]);
 
-            segments[2]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+            segments[2]->completeWithoutState();
 
             assertRange(14, segments[3], DB::FileSegment::Range(17, 20), DB::FileSegment::State::DOWNLOADED);
 
@@ -246,7 +246,7 @@ TEST(FileCache, get)
             ASSERT_TRUE(segments[3]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments[3]);
 
-            segments[3]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+            segments[3]->completeWithoutState();
             ASSERT_TRUE(segments[3]->state() == DB::FileSegment::State::DOWNLOADED);
         }
 
@@ -269,8 +269,8 @@ TEST(FileCache, get)
             ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments[0]);
             prepareAndDownload(segments[2]);
-            segments[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
-            segments[2]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+            segments[0]->completeWithoutState();
+            segments[2]->completeWithoutState();
         }
 
         /// Current cache:    [____][_]  [][___][__]
@@ -292,8 +292,8 @@ TEST(FileCache, get)
             ASSERT_TRUE(s1[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(s5[0]);
             prepareAndDownload(s1[0]);
-            s5[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
-            s1[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+            s5[0]->completeWithoutState();
+            s1[0]->completeWithoutState();
 
             /// Current cache:    [___]       [_][___][_]   [__]
             ///                   ^   ^       ^  ^   ^  ^   ^  ^
@@ -395,7 +395,7 @@ TEST(FileCache, get)
             }
 
             prepareAndDownload(segments[2]);
-            segments[2]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+            segments[2]->completeWithoutState();
             ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
 
             other_1.join();
@@ -460,7 +460,7 @@ TEST(FileCache, get)
 
                 ASSERT_TRUE(segments_2[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
                 prepareAndDownload(segments_2[1]);
-                segments_2[1]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+                segments_2[1]->completeWithoutState();
             });
 
             {
