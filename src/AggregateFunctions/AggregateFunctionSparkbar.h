@@ -6,6 +6,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
+#include <Common/PODArray.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
@@ -103,6 +105,7 @@ private:
     X min_x;
     X max_x;
     bool specified_min_max_x;
+    using Chars = PaddedPODArray<char>;
 
     template <class T>
     String getBar(const T value) const
@@ -136,9 +139,9 @@ private:
      *  the actual y value of the first position + the actual second position y*0.1, and the remaining y*0.9 is reserved for the next bucket.
      *  The next bucket will use the last y*0.9 + the actual third position y*0.2, and the remaining y*0.8 will be reserved for the next bucket. And so on.
      */
-    String render(const AggregateFunctionSparkbarData<X, Y> & data) const
+    Chars render(const AggregateFunctionSparkbarData<X, Y> & data) const
     {
-        String value;
+        Chars value;
         if (data.points.empty() || !width)
             return value;
 
@@ -167,13 +170,17 @@ private:
                 {
                     auto it = data.points.find(static_cast<X>(min_x_local + i));
                     bool found = it != data.points.end();
-                    value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
+                    auto bar = getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
+                    value.insert(bar.begin(), bar.end());
                 }
             }
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    value += getBar(data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
+                {
+                    auto bar = getBar(data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
+                    value.insert(bar.begin(), bar.end());
+                }
             }
         }
         else
@@ -242,11 +249,13 @@ private:
 
             auto get_bars = [&] (const std::optional<Float64> & point_y)
             {
-                value += getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
+                auto bar = getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
+                value.insert(bar.begin(), bar.end());
             };
             auto get_bars_for_constant = [&] (const std::optional<Float64> & point_y)
             {
-                value += getBar(point_y ? 1 : 0);
+                auto bar = getBar(point_y ? 1 : 0);
+                value.insert(bar.begin(), bar.end());
             };
 
             if (diff_y != 0.0)
@@ -319,7 +328,7 @@ public:
     {
         auto & to_column = assert_cast<ColumnString &>(to);
         const auto & data = this->data(place);
-        const String & value = render(data);
+        const auto & value = render(data);
         to_column.insertData(value.data(), value.size());
     }
 };
