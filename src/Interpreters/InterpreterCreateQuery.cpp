@@ -76,8 +76,6 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 
-#define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
-
 namespace DB
 {
 
