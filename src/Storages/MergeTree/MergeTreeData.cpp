@@ -1348,6 +1348,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         loadDataPartsFromDisk(
             broken_parts_to_detach, duplicate_parts_to_remove, pool, num_parts, parts_queue, skip_sanity_checks, settings);
 
+    bool is_static_storage = isStaticStorage();
+
     if (settings->in_memory_parts_enable_wal)
     {
         std::map<String, MutableDataPartsVector> disk_wal_part_map;
@@ -1408,11 +1410,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         return;
     }
 
-    for (auto & part : broken_parts_to_detach)
-        part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+    if (!is_static_storage)
+    {
+        for (auto & part : broken_parts_to_detach)
+        {
+            /// detached parts must not have '_' in prefixes
+            part->renameToDetached("broken-on-start");
+        }
 
-    for (auto & part : duplicate_parts_to_remove)
-        part->remove();
+        for (auto & part : duplicate_parts_to_remove)
+            part->remove();
+    }
 
     auto deactivate_part = [&] (DataPartIteratorByStateAndInfo it)
     {
