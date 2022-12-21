@@ -22,10 +22,10 @@ struct DataTypeValidationSettings
     {
     }
 
-    bool allow_suspicious_low_cardinality_types = false;
-    bool allow_experimental_geo_types = false;
-    bool allow_experimental_object_type = false;
-    bool allow_suspicious_fixed_string_types = false;
+    bool allow_suspicious_low_cardinality_types = true;
+    bool allow_experimental_geo_types = true;
+    bool allow_experimental_object_type = true;
+    bool allow_suspicious_fixed_string_types = true;
 };
 
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);
