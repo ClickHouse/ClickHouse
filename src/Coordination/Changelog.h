@@ -64,6 +64,8 @@ struct ChangelogFileDescription
     uint64_t expectedEntriesCountInLog() const { return to_log_index - from_log_index + 1; }
 };
 
+using ChangelogFileDescriptionPtr = std::shared_ptr<ChangelogFileDescription>;
+
 class ChangelogWriter;
 
 /// Simplest changelog with files rotation.
@@ -140,7 +142,7 @@ private:
     static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
 
     /// Currently existing changelogs
-    std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
+    std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
 
     using ChangelogIter = decltype(existing_changelogs)::iterator;
     void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
@@ -151,7 +153,7 @@ private:
     /// Remove all logs from disk
     void removeAllLogs();
     /// Init writer for existing log with some entries already written
-    void initWriter(ChangelogFileDescription & description);
+    void initWriter(ChangelogFileDescriptionPtr description);
 
     /// Clean useless log files in a background thread
     void cleanLogThread();
