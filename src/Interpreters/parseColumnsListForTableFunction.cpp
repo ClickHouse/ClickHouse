@@ -86,8 +86,9 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
         throw Exception("Could not cast AST to ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false);
+    auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
     for (const auto & [name, type] : columns.getAll())
-        validateDataType(type, DataTypeValidationSettings(context->getSettingsRef()));
+        validateDataType(type, validation_settings);
     return columns;
 }
 
@@ -110,8 +111,9 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     try
     {
         columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false);
+        auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
         for (const auto & [name, type] : columns.getAll())
-            validateDataType(type, DataTypeValidationSettings(context->getSettingsRef()));
+            validateDataType(type, validation_settings);
         return true;
     }
     catch (...)
