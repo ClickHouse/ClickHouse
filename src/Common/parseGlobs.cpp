@@ -11,6 +11,123 @@
 
 namespace DB
 {
+
+namespace
+{
+
+std::string rangeToPattern(size_t begin, size_t end, size_t width)
+{
+    std::string pattern;
+    std::string x = fmt::format("{0:0{1}}", begin, width);
+    std::string y = fmt::format("{0:0{1}}", end, width);
+
+    size_t any_digits_count = 0;
+    size_t leading_zeros = 0;
+    size_t i = 0;
+
+    for (; i < x.size() && i < y.size(); ++i)
+    {
+        if (x[i] == '0' && y[i] == '0')
+            ++leading_zeros;
+        else
+            break;
+    }
+
+    if (leading_zeros > 2)
+        pattern += fmt::format("0{{{}}}", leading_zeros);
+    else
+        i = 0;
+
+    for (; i < x.size() && i < y.size(); ++i)
+    {
+        if (x[i] == y[i])
+            pattern += x[i];
+        else if (x[i] != '0' || y[i] != '9')
+            pattern += fmt::format("[{}-{}]", x[i], y[i]);
+        else
+            ++any_digits_count;
+    }
+
+    if (any_digits_count > 0)
+        pattern += "\\d";
+
+    if (any_digits_count > 1)
+        pattern += fmt::format("{{{}}}", any_digits_count);
+
+    return pattern;
+}
+
+size_t fillByNines(size_t i, int nines_count)
+{
+    return i - (i % intExp10(nines_count)) + intExp10(nines_count) - 1;
+}
+
+size_t fillByzeros(size_t i, int zeros_count)
+{
+    return i - (i % intExp10(zeros_count));
+}
+
+std::vector<size_t> splitToRanges(size_t begin, size_t end)
+{
+    std::vector<size_t> stops = {end};
+
+    int nines_count = 1;
+    size_t stop = fillByNines(begin, nines_count);
+    while (begin <= stop && stop < end && nines_count < 20)
+    {
+        stops.push_back(stop);
+        ++nines_count;
+        stop = fillByNines(begin, nines_count);
+    }
+
+    int zeros_count = 1;
+    stop = fillByzeros(end + 1, zeros_count);
+    stop = stop ? stop - 1 : 0;
+    while (begin < stop && stop <= end && zeros_count < 20)
+    {
+        stops.push_back(stop);
+        ++zeros_count;
+        stop = fillByzeros(end + 1, zeros_count);
+        stop = stop ? stop - 1 : 0;
+    }
+
+    std::sort(stops.begin(), stops.end());
+    stops.erase(std::unique(stops.begin(), stops.end()), stops.end());
+    return stops;
+}
+
+std::vector<std::string> splitToPatterns(size_t begin, size_t end, size_t width)
+{
+    std::vector<std::string> subpatterns;
+
+    size_t start = begin;
+    std::vector<size_t> ranges = splitToRanges(begin, end);
+    for (auto stop : ranges)
+    {
+        subpatterns.push_back(rangeToPattern(start, stop, width));
+        start = stop + 1;
+    }
+
+    return subpatterns;
+}
+
+std::string regexForRange(size_t begin, size_t end, size_t width)
+{
+    std::string result;
+    std::vector<std::string> patterns = splitToPatterns(begin, end, width);
+    for (size_t i = 0; i < patterns.size(); i++)
+    {
+        if (i != 0)
+            result += '|';
+
+        result += patterns[i];
+    }
+
+    return result;
+}
+
+}
+
 /* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library for matching
  * with such steps:
  * 1) search intervals like {0..9} and enums like {abc,xyz,qwe} in {}, replace them by regexp with pipe (expr1|expr2|expr3),
@@ -43,6 +160,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         std::string buffer = matched.ToString();
         oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
+        /// Check whether it is a numeric range
         if (buffer.find(',') == std::string::npos)
         {
             size_t range_begin = 0;
@@ -64,20 +182,10 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             }
             if (range_begin_width == 1 && leading_zeros)
                 output_width = 1;   ///Special Case: {0..10} {0..999}
-            else
+            else if (leading_zeros)
                 output_width = std::max(range_begin_width, range_end_width);
 
-            if (leading_zeros)
-                oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
-            oss_for_replacing << range_begin;
-
-            for (size_t i = range_begin + 1; i <= range_end; ++i)
-            {
-                oss_for_replacing << '|';
-                if (leading_zeros)
-                    oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
-                oss_for_replacing << i;
-            }
+            oss_for_replacing << regexForRange(range_begin, range_end, output_width);
         }
         else
         {
