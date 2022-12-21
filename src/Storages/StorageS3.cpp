@@ -529,7 +529,8 @@ StorageS3Source::StorageS3Source(
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
-    const size_t download_thread_num_)
+    const size_t download_thread_num_,
+    bool only_need_virtual_columns_)
     : ISource(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
     , name(std::move(name_))
@@ -543,6 +544,7 @@ StorageS3Source::StorageS3Source(
     , client(client_)
     , sample_block(sample_block_)
     , format_settings(format_settings_)
+    , only_need_virtual_columns(only_need_virtual_columns_)
     , requested_virtual_columns(requested_virtual_columns_)
     , file_iterator(file_iterator_)
     , download_thread_num(download_thread_num_)
@@ -568,6 +570,9 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     auto [current_key, info] = (*file_iterator)();
     if (current_key.empty())
         return {};
+
+    if (only_need_virtual_columns)
+        return ReaderHolder{fs::path(bucket) / current_key, nullptr, nullptr, nullptr};
 
     size_t object_size = info
         ? info->size
@@ -683,6 +688,33 @@ String StorageS3Source::getName() const
 
 Chunk StorageS3Source::generate()
 {
+    auto add_virtual_column = [&](Chunk & chunk, UInt64 num_rows)
+    {
+        const auto & file_path = reader.getPath();
+        
+        for (const auto & virtual_column : requested_virtual_columns)
+        {
+            if (virtual_column.name == "_path")
+            {
+                chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+            }
+            else if (virtual_column.name == "_file")
+            {
+                size_t last_slash_pos = file_path.find_last_of('/');
+                auto column = virtual_column.type->createColumnConst(num_rows, file_path.substr(last_slash_pos + 1));
+                chunk.addColumn(column->convertToFullColumnIfConst());
+            }
+        }
+    };
+
+    if (!reader.getPath().empty() && only_need_virtual_columns)
+    {
+        Chunk chunk;
+        add_virtual_column(chunk, 1);
+        only_need_virtual_columns = false;
+        return chunk;
+    }
+
     while (true)
     {
         if (!reader || isCancelled())
@@ -693,7 +725,6 @@ Chunk StorageS3Source::generate()
         {
             UInt64 num_rows = chunk.getNumRows();
 
-            const auto & file_path = reader.getPath();
             size_t total_size = file_iterator->getTotalSize();
             if (num_rows && total_size)
             {
@@ -701,20 +732,7 @@ Chunk StorageS3Source::generate()
                     *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
-            for (const auto & virtual_column : requested_virtual_columns)
-            {
-                if (virtual_column.name == "_path")
-                {
-                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
-                }
-                else if (virtual_column.name == "_file")
-                {
-                    size_t last_slash_pos = file_path.find_last_of('/');
-                    auto column = virtual_column.type->createColumnConst(num_rows, file_path.substr(last_slash_pos + 1));
-                    chunk.addColumn(column->convertToFullColumnIfConst());
-                }
-            }
-
+            add_virtual_column(chunk, num_rows);
             return chunk;
         }
 
@@ -1035,6 +1053,10 @@ Pipe StorageS3::read(
             requested_virtual_columns.push_back(virtual_column);
     }
 
+    bool only_need_virtual_columns = true;
+    if (column_names_set.size() > requested_virtual_columns.size())
+        only_need_virtual_columns = false;
+
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(
         s3_configuration,
         keys,
@@ -1047,25 +1069,28 @@ Pipe StorageS3::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (supportsSubsetOfColumns())
+    if (!only_need_virtual_columns)
     {
-        auto fetch_columns = column_names;
-        const auto & virtuals = getVirtuals();
-        std::erase_if(
-            fetch_columns,
-            [&](const String & col)
-            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
+        if (supportsSubsetOfColumns())
+        {
+            auto fetch_columns = column_names;
+            const auto & virtuals = getVirtuals();
+            std::erase_if(
+                fetch_columns,
+                [&](const String & col)
+                { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
 
-        if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+            if (fetch_columns.empty())
+                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
-        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
+            columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
+            block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+        }
+        else 
+        {
+            columns_description = storage_snapshot->metadata->getColumns();
+            block_for_format = storage_snapshot->metadata->getSampleBlock();
+        }
     }
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
@@ -1086,7 +1111,8 @@ Pipe StorageS3::read(
             s3_configuration.uri.bucket,
             s3_configuration.uri.version_id,
             iterator_wrapper,
-            max_download_threads));
+            max_download_threads,
+            only_need_virtual_columns));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

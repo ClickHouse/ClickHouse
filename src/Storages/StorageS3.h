@@ -137,7 +137,8 @@ public:
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
-        size_t download_thread_num);
+        size_t download_thread_num,
+        bool only_need_virtual_columns_ = false);
 
     ~StorageS3Source() override;
 
@@ -159,6 +160,7 @@ private:
     std::shared_ptr<const Aws::S3::S3Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
+    bool only_need_virtual_columns{false};
 
     struct ReaderHolder
     {
