@@ -1766,7 +1766,10 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         for (auto it = outdated_parts_range.begin(); it != outdated_parts_range.end(); ++it)
         {
             if (parts_to_delete.size() == current_removal_limit)
+            {
+                LOG_TRACE(log, "Found {} parts to remove and reached the limit for one removal iteration", current_removal_limit);
                 break;
+            }
 
             const DataPartPtr & part = *it;
 
