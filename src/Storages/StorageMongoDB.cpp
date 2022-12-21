@@ -173,6 +173,13 @@ SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const Storage
     return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
 }
 
+struct KeysCmp
+{
+    constexpr bool operator()(const auto & lhs, const auto & rhs) const
+    {
+        return lhs == rhs || ((lhs == "table") && (rhs == "collection")) || ((rhs == "table") && (lhs == "collection"));
+    }
+};
 StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     Configuration configuration;
@@ -181,7 +188,7 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
     {
         validateNamedCollection(
             *named_collection,
-            {"host", "port", "user", "password", "database", "collection", "table"},
+            std::unordered_multiset<std::string_view, std::hash<std::string_view>, KeysCmp>{"host", "port", "user", "password", "database", "collection", "table"},
             {"options"});
 
         configuration.host = named_collection->get<String>("host");
@@ -189,7 +196,7 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
         configuration.username = named_collection->get<String>("user");
         configuration.password = named_collection->get<String>("password");
         configuration.database = named_collection->get<String>("database");
-        configuration.table = named_collection->getOrDefault<String>("collection", named_collection->get<String>("table"));
+        configuration.table = named_collection->getOrDefault<String>("collection", named_collection->getOrDefault<String>("table", ""));
         configuration.options = named_collection->getOrDefault<String>("options", "");
     }
     else

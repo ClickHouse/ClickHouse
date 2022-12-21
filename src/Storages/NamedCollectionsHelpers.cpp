@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace
 {
     NamedCollectionPtr tryGetNamedCollectionFromASTs(ASTs asts)
@@ -78,50 +73,6 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
     }
 
     return collection_copy;
-}
-
-void validateNamedCollection(
-    const NamedCollection & collection,
-    const std::unordered_set<std::string_view> & required_keys,
-    const std::unordered_set<std::string_view> & optional_keys,
-    const std::vector<std::regex> & optional_regex_keys)
-{
-    const auto & keys = collection.getKeys();
-    auto required_keys_copy = required_keys;
-
-    for (const auto & key : keys)
-    {
-        auto it = required_keys_copy.find(key);
-        if (it != required_keys_copy.end())
-        {
-            required_keys_copy.erase(it);
-            continue;
-        }
-
-        if (optional_keys.contains(key))
-            continue;
-
-        auto match = std::find_if(
-            optional_regex_keys.begin(), optional_regex_keys.end(),
-            [&](const std::regex & regex) { return std::regex_search(key, regex); })
-            != optional_regex_keys.end();
-
-        if (!match)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected key `{}` in named collection. Required keys: {}, optional keys: {}",
-                key, fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
-        }
-    }
-
-    if (!required_keys_copy.empty())
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Required keys ({}) are not specified. All required keys: {}, optional keys: {}",
-            fmt::join(required_keys_copy, ", "), fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
-    }
 }
 
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection)
