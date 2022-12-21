@@ -70,6 +70,8 @@
 #include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <IO/Resource/registerSchedulerNodes.h>
+#include <IO/Resource/registerResourceManagers.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -287,7 +289,6 @@ namespace ErrorCodes
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
-    extern const int SYSTEM_ERROR;
 }
 
 
@@ -661,51 +662,6 @@ static void sanityChecks(Server & server)
     }
 }
 
-#if defined(OS_LINUX)
-/// Sends notification to systemd, analogous to sd_notify from libsystemd
-static void systemdNotify(const std::string_view & command)
-{
-    const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
-
-    if (path == nullptr)
-        return; /// not using systemd
-
-    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-
-    if (s == -1)
-        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
-
-    SCOPE_EXIT({ close(s); });
-
-    const size_t len = strlen(path);
-
-    struct sockaddr_un addr;
-
-    addr.sun_family = AF_UNIX;
-
-    if (len < 2 || len > sizeof(addr.sun_path) - 1)
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
-
-    memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
-
-    size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
-
-    /// '@' meass this is Linux abstract socket, per documentation it must be sun_path[0] must be set to '\0' for it.
-    if (path[0] == '@')
-        addr.sun_path[0] = 0;
-    else if (path[0] == '/')
-        addrlen += 1; /// non-abstract-addresses should be zero terminated.
-    else
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
-
-    const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
-
-    if (sendto(s, command.data(), command.size(), 0, sock_addr, static_cast <socklen_t>(addrlen)) != static_cast <ssize_t>(command.size()))
-        throw Exception("Failed to notify systemd.", ErrorCodes::SYSTEM_ERROR);
-
-}
-#endif
-
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -761,6 +717,8 @@ try
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
+    registerSchedulerNodes();
+    registerResourceManagers();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -1335,6 +1293,11 @@ try
                 global_context->getDistributedSchedulePool().increaseThreadsCount(new_pool_size);
             }
 
+            if (config->has("resources"))
+            {
+                global_context->getResourceManager()->updateConfiguration(*config);
+            }
+
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
@@ -1861,6 +1824,9 @@ try
         }
 
 #if defined(OS_LINUX)
+        /// Tell the service manager that service startup is finished.
+        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
+        /// the child process notifies 'READY=1'.
         systemdNotify("READY=1\n");
 #endif
 

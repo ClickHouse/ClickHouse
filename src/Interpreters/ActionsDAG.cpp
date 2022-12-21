@@ -1537,12 +1537,39 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     return res;
 }
 
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getParents(const Node * target) const
+{
+    NodeRawConstPtrs parents;
+    for (const auto & node : getNodes())
+    {
+        for (const auto & child : node.children)
+        {
+            if (child == target)
+            {
+                parents.push_back(&node);
+                break;
+            }
+        }
+    }
+    return parents;
+}
+
 ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameSet & sort_columns) const
 {
     std::unordered_set<const Node *> split_nodes;
     for (const auto & sort_column : sort_columns)
         if (const auto * node = tryFindInOutputs(sort_column))
+        {
             split_nodes.insert(node);
+            /// Sorting can materialize const columns, so if we have const expression used in sorting,
+            /// we should also add all it's parents, otherwise, we can break the header
+            /// (function can expect const column, but will get materialized).
+            if (node->column && isColumnConst(*node->column))
+            {
+                auto parents = getParents(node);
+                split_nodes.insert(parents.begin(), parents.end());
+            }
+        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Sorting column {} wasn't found in the ActionsDAG's outputs. DAG:\n{}",
