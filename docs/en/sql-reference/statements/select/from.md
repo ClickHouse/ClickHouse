@@ -19,6 +19,8 @@ Subquery is another `SELECT` query that may be specified in parenthesis inside `
 
 ## FINAL Modifier
 
+The FINAL modifier can be used only for a SELECT from ReplacingMergeTree, SummingMergeTree, AggregatingMergeTree, CollapsingMergeTree and VersionedCollapsingMergeTree tables. 
+
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
 
 It is applicable when selecting data from tables that use the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-engine family. Also supported for:
