@@ -113,7 +113,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (group_by_with_cube)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
 
-    if (group_by_with_grouping_sets)
+    if (groupBy() && group_by_with_grouping_sets)
     {
         auto nested_frame = frame;
         nested_frame.surround_each_list_element_with_parens = true;
