@@ -2013,6 +2013,8 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                 }
             });
         }
+
+        pool.wait();
         return;
     }
 
@@ -2050,9 +2052,8 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                 parts_in_range.push_back(part);
         sum_of_ranges += parts_in_range.size();
 
-        LOG_TRACE(log, "Scheduling removal of {} parts in blocks range {}", parts_in_range.size(), range.getPartName());
-
-        pool.scheduleOrThrowOnError([&part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup(), batch = std::move(parts_in_range)]
+        pool.scheduleOrThrowOnError(
+            [this, range, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup(), batch = std::move(parts_in_range)]
         {
             SCOPE_EXIT_SAFE(
                 if (thread_group)
@@ -2061,7 +2062,9 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
             if (thread_group)
                 CurrentThread::attachToIfDetached(thread_group);
 
-            for (auto & part : batch)
+            LOG_TRACE(log, "Removing {} parts in blocks range {}", batch.size(), range.getPartName());
+
+            for (const auto & part : batch)
             {
                 preparePartForRemoval(part)->remove();
                 if (part_names_succeed)
@@ -2072,6 +2075,8 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
             }
         });
     }
+
+    pool.wait();
 
     if (parts_to_remove.size() != sum_of_ranges)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of removed parts is not equal to number of parts in independent ranges "
