@@ -5665,7 +5665,24 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     {
         try
         {
-            auto log_entries = zookeeper->getChildren(fs::path(zookeeper_path) / "log");
+            std::vector<std::string> paths;
+            paths.push_back(fs::path(zookeeper_path) / "log");
+            paths.push_back(fs::path(zookeeper_path) / "replicas");
+
+            auto children_result = zookeeper->getChildren(paths);
+            const auto & log_entries = children_result[0].names;
+            const auto & all_replicas = children_result[1].names;
+
+            paths.clear();
+            paths.push_back(fs::path(replica_path) / "log_pointer");
+            for (const String & replica : all_replicas)
+                paths.push_back(fs::path(zookeeper_path) / "replicas" / replica / "is_active");
+
+            auto get_result = zookeeper->tryGet(paths);
+            const auto & log_pointer_str = get_result[0].data;
+
+            if (get_result[0].error == Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException(get_result[0].error);
 
             if (!log_entries.empty())
             {
@@ -5673,17 +5690,14 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
                 res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
             }
 
-            String log_pointer_str = zookeeper->get(fs::path(replica_path) / "log_pointer");
             res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
-
-            auto all_replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
             res.total_replicas = all_replicas.size();
 
-            for (const String & replica : all_replicas)
+            for (size_t i = 0, size = all_replicas.size(); i < size; ++i)
             {
-                bool is_replica_active = zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active");
+                bool is_replica_active = get_result[i + 1].error != Coordination::Error::ZNONODE;
                 res.active_replicas += static_cast<UInt8>(is_replica_active);
-                res.replica_is_active.emplace(replica, is_replica_active);
+                res.replica_is_active.emplace(all_replicas[i], is_replica_active);
             }
         }
         catch (const Coordination::Exception &)
