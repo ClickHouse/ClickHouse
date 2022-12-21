@@ -73,6 +73,11 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
 
     auto & file_segment = file_segments.back();
 
+    SCOPE_EXIT({
+        if (file_segments.back()->isDownloader())
+            file_segments.back()->completePartAndResetDownloader();
+    });
+
     while (size > 0)
     {
         size_t available_size = file_segment->range().size() - file_segment->getDownloadedSize();
@@ -113,9 +118,6 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
         offset += size_to_write;
         data += size_to_write;
     }
-
-    if (file_segments.back()->isDownloader())
-        file_segments.back()->completePartAndResetDownloader();
 
     return true;
 }
