@@ -93,6 +93,8 @@ public:
 
     Protocol::Compression getCompression() const { return compression; }
 
+    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return password_complexity_rules; }
+
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
@@ -206,6 +208,8 @@ private:
       * Only traffic for transferring blocks is accounted. Other packets don't.
       */
     ThrottlerPtr throttler;
+
+    std::vector<std::pair<String, String>> password_complexity_rules;
 
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;

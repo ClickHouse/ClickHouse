@@ -448,12 +448,7 @@ else()
     link_libraries(global-group)
 endif ()
 
-if (NOT (OS_LINUX OR OS_DARWIN))
-    # Using system libs can cause a lot of warnings in includes (on macro expansion).
-    option(WERROR "Enable -Werror compiler option" OFF)
-else ()
-    option(WERROR "Enable -Werror compiler option" ON)
-endif ()
+option(WERROR "Enable -Werror compiler option" ON)
 
 if (WERROR)
     # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
@@ -498,13 +493,9 @@ endif ()
 
 enable_testing() # Enable for tests without binary
 
-option(ENABLE_EXTERNAL_OPENSSL "This option is insecure and not recommended for any occasions. If it is enabled, it allows building with alternative OpenSSL library. By default, ClickHouse is using BoringSSL, which is better. Do not use this option." OFF)
+option(ENABLE_OPENSSL "This option performs a build with OpenSSL. NOTE! This option is insecure and should never be used. By default, ClickHouse uses and only supports BoringSSL" OFF)
 
-if (ENABLE_EXTERNAL_OPENSSL)
-    message (STATUS "Build and uses OpenSSL library instead of BoringSSL. This is strongly discouraged. Your build of ClickHouse will be unsupported.")
-    set(ENABLE_SSL 1)
-    target_compile_options(global-group INTERFACE "-Wno-deprecated-declarations")
-endif ()
+option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." OFF)
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
@@ -618,6 +609,8 @@ if (NATIVE_BUILD_TARGETS
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
             "-DENABLE_CCACHE=${ENABLE_CCACHE}"
+            # Avoid overriding .cargo/config.toml with native toolchain.
+            "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
         ${CMAKE_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
