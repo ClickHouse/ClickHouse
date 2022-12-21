@@ -1378,13 +1378,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                                 ErrorCodes::CORRUPTED_DATA);
 
                         write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
-                        for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext(), part_lock))
+                        for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext(), part_lock, is_static_storage))
                             disk_wal_parts.push_back(std::move(part));
                     }
                     else
                     {
                         MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
-                        for (auto && part : wal.restore(metadata_snapshot, getContext(), part_lock))
+                        for (auto && part : wal.restore(metadata_snapshot, getContext(), part_lock, is_static_storage))
                             disk_wal_parts.push_back(std::move(part));
                     }
                 }
