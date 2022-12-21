@@ -229,8 +229,11 @@ private:
             return true;
         }
         /// (2) sorting
-        else if (typeid_cast<SortingStep *>(step_affect_order))
-            return true;
+        else if (const auto * next_sorting = typeid_cast<const SortingStep *>(step_affect_order); next_sorting)
+        {
+            if (next_sorting->getType() == SortingStep::Type::Full)
+                return true;
+        }
 
         return false;
     }
@@ -290,13 +293,6 @@ private:
             if (typeid_cast<const WindowStep *>(step))
                 return false;
 
-            /// (3) TODO: need to understand that plan is part of distributed one
-            /// and don't try to optimize it since it's already optimized, AFAIU
-            /// for now, rough check for disributed query via Union step check
-            /// example in 02315_optimize_monotonous_functions_in_order_by_remote.sql
-            if (typeid_cast<const UnionStep *>(step))
-                return false;
-
             if (const auto * join_step = typeid_cast<const JoinStep *>(step); join_step)
             {
                 if (typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get()))
@@ -310,10 +306,10 @@ private:
 
 void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 {
-    IsQueryDistributed is_distributed(root);
-    is_distributed.visit();
-    if (is_distributed.operator bool())
-        return;
+    // IsQueryDistributed is_distributed(root);
+    // is_distributed.visit();
+    // if (is_distributed.operator bool())
+    //     return;
 
     RemoveRedundantOrderBy(root).visit();
 }
