@@ -338,7 +338,7 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
 
-    auto & function = *node.function_base;
+    const auto & function = *node.function_base;
 
     IFunction::ShortCircuitSettings settings;
     if (function.isShortCircuit(settings, node.children.size()))
