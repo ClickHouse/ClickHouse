@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int POSTGRESQL_CONNECTION_FAILURE;
+    extern const int LOGICAL_ERROR;
 }
 }
 
@@ -69,6 +70,9 @@ PoolWithFailover::PoolWithFailover(
 ConnectionHolderPtr PoolWithFailover::get()
 {
     std::lock_guard lock(mutex);
+
+    if (replicas_with_priority.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No address specified");
 
     DB::WriteBufferFromOwnString error_message;
     for (size_t try_idx = 0; try_idx < max_tries; ++try_idx)

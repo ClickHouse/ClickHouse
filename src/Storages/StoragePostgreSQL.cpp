@@ -403,6 +403,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         {
             configuration.host = named_collection->get<String>("host");
             configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
         }
 
         configuration.username = named_collection->get<String>("user");
@@ -415,9 +416,14 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
     else
     {
         if (engine_args.size() < 5 || engine_args.size() > 7)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage PostgreSQL requires from 5 to 7 parameters: "
-                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password' [, 'schema', 'ON CONFLICT ...']. Got: {}",
-                            engine_args.size());
+        {
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Storage PostgreSQL requires from 5 to 7 parameters: "
+                "PostgreSQL('host:port', 'database', 'table', 'username', 'password' "
+                "[, 'schema', 'ON CONFLICT ...']. Got: {}",
+                engine_args.size());
+        }
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);

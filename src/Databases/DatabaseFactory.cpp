@@ -330,7 +330,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         {
             validateNamedCollection(
                 *named_collection,
-                {"host", "port", "user", "password", "database", "table"},
+                {"host", "port", "user", "password", "database"},
                 {"schema", "on_conflict", "use_table_cache"});
 
             configuration.host = named_collection->get<String>("host");
@@ -338,7 +338,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             configuration.username = named_collection->get<String>("user");
             configuration.password = named_collection->get<String>("password");
             configuration.database = named_collection->get<String>("database");
-            configuration.table = named_collection->get<String>("table");
             configuration.schema = named_collection->getOrDefault<String>("schema", "");
             configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
             use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
@@ -405,7 +404,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         {
             validateNamedCollection(
                 *named_collection,
-                {"host", "port", "user", "password", "database", "table"},
+                {"host", "port", "user", "password", "database"},
                 {"schema"});
 
             configuration.host = named_collection->get<String>("host");
@@ -413,7 +412,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             configuration.username = named_collection->get<String>("user");
             configuration.password = named_collection->get<String>("password");
             configuration.database = named_collection->get<String>("database");
-            configuration.table = named_collection->get<String>("table");
             configuration.schema = named_collection->getOrDefault<String>("schema", "");
         }
         else
