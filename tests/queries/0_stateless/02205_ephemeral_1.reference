@@ -7,7 +7,7 @@ z	UInt32	DEFAULT	5
 7	5
 21	5
 x	UInt32	DEFAULT	y			
-y	UInt32	EPHEMERAL	0			
+y	UInt32	EPHEMERAL	defaultValueOfTypeName(\'UInt32\')			
 z	UInt32	DEFAULT	5			
 1	2
 0	2
