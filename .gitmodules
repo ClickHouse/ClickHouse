@@ -277,3 +277,6 @@
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/ClickHouse/c-ares
+[submodule "contrib/libdivide"]
+	path = contrib/libdivide
+	url = https://github.com/ridiculousfish/libdivide.git
