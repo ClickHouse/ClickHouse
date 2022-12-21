@@ -275,7 +275,7 @@ private:
             }
 
             /// Digits
-            while (n >= 10)
+            while (w >= 100)
             {
                 w /= 100;
 
