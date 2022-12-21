@@ -307,7 +307,7 @@ protected:
 class ParserAllCollectionsOfLiterals : public IParserBase
 {
 public:
-    ParserAllCollectionsOfLiterals(bool allow_map_ = true) : allow_map(allow_map_) {}
+    explicit ParserAllCollectionsOfLiterals(bool allow_map_ = true) : allow_map(allow_map_) {}
 
 protected:
     const char * getName() const override { return "combination of maps, arrays, tuples"; }

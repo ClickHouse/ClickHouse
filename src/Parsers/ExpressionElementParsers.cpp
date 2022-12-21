@@ -1113,7 +1113,7 @@ template <class Container, TokenType end_token>
 class CommonCollection : public ICollection
 {
 public:
-    CommonCollection(const IParser::Pos & pos) : begin(pos) {}
+    explicit CommonCollection(const IParser::Pos & pos) : begin(pos) {}
 
     bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) override;
 
@@ -1125,7 +1125,7 @@ private:
 class MapCollection : public ICollection
 {
 public:
-    MapCollection(const IParser::Pos & pos) : begin(pos) {}
+    explicit MapCollection(const IParser::Pos & pos) : begin(pos) {}
 
     bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) override;
 
