@@ -235,6 +235,7 @@ TEST_P(CoordinationTest, ChangelogTestSimple)
 {
     auto params = GetParam();
     ChangelogDirTest test("./logs");
+
     DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
     changelog.init(1, 0);
     auto entry = getLogEntry("hello world", 77);
@@ -405,6 +406,7 @@ TEST_P(CoordinationTest, ChangelogTestAppendAfterRead)
     EXPECT_EQ(changelog_reader.size(), 11);
 
     waitDurableLogs(changelog_reader);
+
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
@@ -874,7 +876,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
 
     DB::WriteBufferFromFile plain_buf("./logs/changelog_1_20.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
-    plain_buf.truncate(140);
+    plain_buf.truncate(30);
 
     DB::KeeperLogStore changelog_reader("./logs", 20, true, params.enable_compression);
     changelog_reader.init(1, 0);
@@ -2161,6 +2163,7 @@ TEST_P(CoordinationTest, TestDurableState)
     const auto reload_state_manager = [&]
     {
         state_manager.emplace(1, "localhost", 9181, "./logs", "./state");
+        state_manager->loadLogStore(1, 0);
     };
 
     reload_state_manager();
