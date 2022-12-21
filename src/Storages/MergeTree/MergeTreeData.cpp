@@ -84,6 +84,7 @@
 #include <base/sort.h>
 
 #include <algorithm>
+#include <atomic>
 #include <iomanip>
 #include <optional>
 #include <set>
@@ -1762,9 +1763,12 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         {
             const DataPartPtr & part = *it;
 
+            part->last_removal_attemp_time.store(time_now, std::memory_order_relaxed);
+
             /// Do not remove outdated part if it may be visible for some transaction
             if (!part->version.canBeRemoved())
             {
+                part->removal_state.store(DataPartRemovalState::VISIBLE_TO_TRANSACTIONS, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
@@ -1772,20 +1776,27 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             /// Grab only parts that are not used by anyone (SELECTs for example).
             if (!part.unique())
             {
+                part->removal_state.store(DataPartRemovalState::NON_UNIQUE_OWNERSHIP, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
-            if ((part_remove_time < time_now && time_now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds() && !has_skipped_mutation_parent(part))
+            bool reached_removal_time = part_remove_time < time_now && time_now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds();
+            if ((reached_removal_time && !has_skipped_mutation_parent(part))
                 || force
                 || isInMemoryPart(part)     /// Remove in-memory parts immediately to not store excessive data in RAM
                 || (part->version.creation_csn == Tx::RolledBackCSN && getSettings()->remove_rolled_back_parts_immediately))
             {
+                part->removal_state.store(DataPartRemovalState::REMOVED, std::memory_order_relaxed);
                 parts_to_delete.emplace_back(it);
             }
             else
             {
+                if (!reached_removal_time)
+                    part->removal_state.store(DataPartRemovalState::NOT_REACHED_REMOVAL_TIME, std::memory_order_relaxed);
+                else
+                    part->removal_state.store(DataPartRemovalState::HAS_SKIPPED_MUTATION_PARENT, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
@@ -2600,7 +2611,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 }
             }
 
-            dropped_columns.emplace(command.column_name);
+            if (old_metadata.columns.has(command.column_name))
+            {
+                dropped_columns.emplace(command.column_name);
+            }
+            else
+            {
+                const auto & nested = old_metadata.columns.getNested(command.column_name);
+                for (const auto & nested_column : nested)
+                    dropped_columns.emplace(nested_column.name);
+            }
+
         }
         else if (command.type == AlterCommand::RESET_SETTING)
         {
@@ -2665,6 +2686,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
+
         for (const auto & changed_setting : new_changes)
         {
             const auto & setting_name = changed_setting.name;
@@ -3675,13 +3698,13 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr q
             parts_count_in_partition, ReadableSize(average_part_size));
     }
 
-    if (k_inactive < 0 && parts_count_in_partition < parts_to_delay_insert)
+    if (k_inactive < 0 && (parts_count_in_partition < parts_to_delay_insert || parts_are_large_enough_in_average))
         return;
 
     const ssize_t k_active = ssize_t(parts_count_in_partition) - ssize_t(parts_to_delay_insert);
     size_t max_k;
     size_t k;
-    if (k_active > k_inactive && !parts_are_large_enough_in_average)
+    if (k_active > k_inactive)
     {
         max_k = parts_to_throw_insert - parts_to_delay_insert;
         k = k_active + 1;
@@ -3882,9 +3905,9 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return res;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states, DataPartsLock * acquired_lock)
 {
-    auto lock = lockParts();
+    auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
 
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())
@@ -3897,9 +3920,9 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInf
     return nullptr;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states, DataPartsLock * acquired_lock)
 {
-    return getPartIfExists(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states);
+    return getPartIfExists(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states, acquired_lock);
 }
 
 
@@ -4523,6 +4546,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         auto read_buffer = backup_entry->getReadBuffer();
         auto write_buffer = disk->writeFile(temp_part_dir / filename);
         copyData(*read_buffer, *write_buffer);
+        write_buffer->finalize();
         reservation->update(reservation->getSize() - backup_entry->getSize());
     }
 
@@ -7339,6 +7363,12 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     auto lock = lockParts();
     snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+}
+
+StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutParts(const StorageMetadataPtr & metadata_snapshot) const
+{
+    auto lock = lockParts();
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)

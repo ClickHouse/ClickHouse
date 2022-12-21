@@ -450,6 +450,9 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
+    /// The same as above but does not hold vector of data parts.
+    StorageSnapshotPtr getStorageSnapshotWithoutParts(const StorageMetadataPtr & metadata_snapshot) const;
+
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
 
@@ -514,8 +517,8 @@ public:
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
 
     /// Returns the part with the given name and state or nullptr if no such part.
-    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
-    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states, DataPartsLock * acquired_lock = nullptr);
+    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock * acquired_lock = nullptr);
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -783,8 +786,6 @@ public:
         auto lock = lockParts();
         return column_sizes;
     }
-
-    const ColumnsDescription & getConcreteObjectColumns() const { return object_columns; }
 
     /// Creates description of columns of data type Object from the range of data parts.
     static ColumnsDescription getConcreteObjectColumns(

@@ -117,10 +117,9 @@
         FORMAT Null;
     </query>
 
-    <drop_query>DROP TABLE IF EXISTS simple_key_range_hashed_dictionary_source_table;</drop_query>
-    <drop_query>DROP TABLE IF EXISTS complex_key_range_hashed_dictionary_source_table;</drop_query>
-
     <drop_query>DROP DICTIONARY IF EXISTS simple_key_range_hashed_dictionary;</drop_query>
     <drop_query>DROP DICTIONARY IF EXISTS complex_key_range_hashed_dictionary;</drop_query>
 
+    <drop_query>DROP TABLE IF EXISTS simple_key_range_hashed_dictionary_source_table;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS complex_key_range_hashed_dictionary_source_table;</drop_query>
 </test>
