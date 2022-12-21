@@ -84,7 +84,7 @@ namespace UnicodeBar
             dst = checkedCopy(&FRACTIONAL_BARS[(remainder - 1) * UNICODE_BAR_CHAR_SIZE], UNICODE_BAR_CHAR_SIZE, dst, dst_end);
         }
 
-        dst = checkedCopy("\0", 1, dst, dst_end);
+        checkedCopy("\0", 1, dst, dst_end);
     }
 
     std::string render(double width)
