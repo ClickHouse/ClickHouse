@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 set allow_experimental_object_type=0;
 select CAST('{"x" : 1}', 'JSON'); -- {serverError ILLEGAL_COLUMN}
 desc file(nonexist.json, JSONAsObject); -- {serverError ILLEGAL_COLUMN}
