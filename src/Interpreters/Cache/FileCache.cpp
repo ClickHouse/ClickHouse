@@ -20,7 +20,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int REMOTE_FS_OBJECT_CACHE_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -114,7 +113,7 @@ void FileCache::assertInitialized(std::lock_guard<std::mutex> & /* cache_lock */
         if (initialization_exception)
             std::rethrow_exception(initialization_exception);
         else
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache not initialized");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache not initialized");
     }
 }
 
@@ -578,12 +577,12 @@ FileSegmentPtr FileCache::createFileSegmentForDownload(
 #endif
 
     if (!settings.unbounded && size > max_file_segment_size)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Requested size exceeds max file segment size");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Requested size exceeds max file segment size");
 
     auto * cell = getCell(key, offset, cache_lock);
     if (cell)
         throw Exception(
-            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            ErrorCodes::LOGICAL_ERROR,
             "Cache cell already exists for key `{}` and offset {}",
             key.toString(), offset);
 
@@ -775,7 +774,7 @@ bool FileCache::tryReserveForMainList(
         auto * cell = getCell(entry_key, entry_offset, cache_lock);
         if (!cell)
             throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                ErrorCodes::LOGICAL_ERROR,
                 "Cache became inconsistent. Key: {}, offset: {}",
                 key.toString(), offset);
 
@@ -1001,7 +1000,7 @@ void FileCache::remove(
         catch (...)
         {
             throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                ErrorCodes::LOGICAL_ERROR,
                 "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
                 key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
         }
@@ -1018,7 +1017,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
     /// cache_base_path / key_prefix / key / offset
     if (!files.empty())
         throw Exception(
-            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            ErrorCodes::LOGICAL_ERROR,
             "Cache initialization is partially made. "
             "This can be a result of a failed first attempt to initialize cache. "
             "Please, check log for error messages");
@@ -1257,7 +1256,7 @@ FileCache::FileSegmentCell::FileSegmentCell(
         }
         default:
             throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                ErrorCodes::LOGICAL_ERROR,
                 "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state, got: {}",
                 FileSegment::stateToString(file_segment->download_state));
     }
