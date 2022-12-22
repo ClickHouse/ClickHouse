@@ -335,6 +335,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             configuration.host = named_collection->get<String>("host");
             configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             configuration.username = named_collection->get<String>("user");
             configuration.password = named_collection->get<String>("password");
             configuration.database = named_collection->get<String>("database");
@@ -409,6 +410,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             configuration.host = named_collection->get<String>("host");
             configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             configuration.username = named_collection->get<String>("user");
             configuration.password = named_collection->get<String>("password");
             configuration.database = named_collection->get<String>("database");
