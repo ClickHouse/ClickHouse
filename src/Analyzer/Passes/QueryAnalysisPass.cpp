@@ -1217,7 +1217,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, ProjectionNames> resolved_expressions;
 
     /// Results of scalar sub queries
-    std::unordered_map<QueryTreeNodeConstRawPtrWithHashIgnoreConstant, std::shared_ptr<ConstantValue>> scalars;
+    std::unordered_map<QueryTreeNodeConstRawPtrWithHash, std::shared_ptr<ConstantValue>> scalars;
 
 };
 
