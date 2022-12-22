@@ -181,6 +181,8 @@ public:
 
     bool isDetached() const;
 
+    bool isCompleted() const;
+
     void assertCorrectness() const;
 
     /**
@@ -294,6 +296,7 @@ private:
     /// "detached" file segment means that it is not owned by cache ("detached" from cache).
     /// In general case, all file segments are owned by cache.
     bool is_detached = false;
+    bool is_completed = false;
 
     bool is_downloaded{false};
 
@@ -316,11 +319,6 @@ struct FileSegmentsHolder : private boost::noncopyable
     ~FileSegmentsHolder();
 
     String toString();
-
-    FileSegments::iterator add(FileSegmentPtr && file_segment)
-    {
-        return file_segments.insert(file_segments.end(), file_segment);
-    }
 
     FileSegments file_segments{};
 };
