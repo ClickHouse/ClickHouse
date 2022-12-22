@@ -198,23 +198,6 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
         is_group_by_all == rhs_typed.is_group_by_all;
 }
 
-bool QueryNode::isEqualImplIgnoreConstant(const IQueryTreeNode & rhs) const
-{
-    const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
-
-    return is_subquery == rhs_typed.is_subquery &&
-        is_cte == rhs_typed.is_cte &&
-        cte_name == rhs_typed.cte_name &&
-        projection_columns == rhs_typed.projection_columns &&
-        is_distinct == rhs_typed.is_distinct &&
-        is_limit_with_ties == rhs_typed.is_limit_with_ties &&
-        is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
-        is_group_by_with_rollup == rhs_typed.is_group_by_with_rollup &&
-        is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
-        is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
-        is_group_by_all == rhs_typed.is_group_by_all;
-}
-
 void QueryNode::updateTreeHashImpl(HashState & state) const
 {
     state.update(is_subquery);

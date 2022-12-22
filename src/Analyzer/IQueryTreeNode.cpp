@@ -75,7 +75,7 @@ struct NodePairHash
 
 }
 
-bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, bool ignore_constant) const
+bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
 {
     std::vector<NodePair> nodes_to_process;
     std::unordered_set<NodePair, NodePairHash> equals_pairs;
@@ -97,17 +97,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, bool ignore_constant) c
         assert(rhs_node_to_compare);
 
         if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
-            lhs_node_to_compare->alias != rhs_node_to_compare->alias)
+            lhs_node_to_compare->alias != rhs_node_to_compare->alias ||
+            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
             return false;
-
-        /// ignore_constant is used for scalar subqueries cache
-        if (ignore_constant && lhs_node_to_compare->as<QueryNode>() && rhs_node_to_compare->as<QueryNode>())
-        {
-            if (!lhs_node_to_compare->as<QueryNode>()->isEqualImplIgnoreConstant(*rhs_node_to_compare))
-                return false;
-        }
-        else if (!lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
-                return false;
 
         const auto & lhs_children = lhs_node_to_compare->children;
         const auto & rhs_children = rhs_node_to_compare->children;

@@ -567,7 +567,6 @@ public:
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
-    bool isEqualImplIgnoreConstant(const IQueryTreeNode & rhs) const;
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
