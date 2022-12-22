@@ -23,7 +23,9 @@ When `FINAL` is specified, ClickHouse fully merges the data before returning the
 
 It is applicable when selecting data from ReplacingMergeTree, SummingMergeTree, AggregatingMergeTree, CollapsingMergeTree and VersionedCollapsingMergeTree tables.
 
-Now `SELECT` queries with `FINAL` are executed in parallel and slightly faster. But there are drawbacks (see below). The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
+`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
+
+There are drawbacks to using `FINAL` (see below). 
 
 ### Drawbacks
 
