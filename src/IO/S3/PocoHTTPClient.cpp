@@ -177,7 +177,7 @@ namespace
     bool checkRequestCanReturn2xxAndErrorInBody(Aws::Http::HttpRequest & request)
     {
         auto query_params = request.GetQueryStringParameters();
-        if (request.HasHeader("z-amz-copy-source"))
+        if (request.HasHeader("x-amz-copy-source"))
         {
             /// CopyObject https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html
             if (query_params.empty())
