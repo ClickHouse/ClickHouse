@@ -19,7 +19,6 @@
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/ColumnsDescription.h>
-#include <Analyzer/ConstantValue.h>
 #include <IO/IResourceManager.h>
 
 #include <Server/HTTP/HTTPContext.h>
@@ -208,6 +207,7 @@ struct SharedContextHolder
 private:
     std::unique_ptr<ContextSharedPart> shared;
 };
+
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
