@@ -791,7 +791,7 @@ KeyCondition::KeyCondition(
 }
 
 KeyCondition::KeyCondition(
-    ActionDAGNodes dag_nodes,
+    ActionsDAGPtr filter_dag,
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
@@ -811,13 +811,13 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
-    if (dag_nodes.nodes.empty())
+    if (!filter_dag)
     {
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
 
-    auto inverted_dag = cloneASTWithInversionPushDown(std::move(dag_nodes.nodes), context);
+    auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
     assert(inverted_dag->getOutputs().size() == 1);
 
     const auto * inverted_dag_filter_node = inverted_dag->getOutputs()[0];

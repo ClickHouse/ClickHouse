@@ -1202,6 +1202,7 @@ SELECT * FROM json_each_row_nested
 - [input_format_import_nested_json](../operations/settings/settings.md#input_format_import_nested_json) - map nested JSON data to nested tables (it works for JSONEachRow format). Default value - `false`.
 - [input_format_json_read_bools_as_numbers](../operations/settings/settings.md#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
 - [input_format_json_read_numbers_as_strings](../operations/settings/settings.md#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `false`.
+- [input_format_json_read_objects_as_strings](../operations/settings/settings.md#input_format_json_read_objects_as_strings) - allow to parse JSON objects as strings in JSON input formats. Default value - `false`.
 - [output_format_json_quote_64bit_integers](../operations/settings/settings.md#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
 - [output_format_json_quote_64bit_floats](../operations/settings/settings.md#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
 - [output_format_json_quote_denormals](../operations/settings/settings.md#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
@@ -1414,7 +1415,7 @@ Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 
 
 ## RowBinary {#rowbinary}
 
-Formats and parses data by row in binary format. Rows and values are listed consecutively, without separators.
+Formats and parses data by row in binary format. Rows and values are listed consecutively, without separators. Because data is in the binary format the delimiter after `FORMAT RowBinary` is strictly specified as next: any number of whitespaces (`' '` - space, code `0x20`; `'\t'` - tab, code `0x09`; `'\f'` - form feed, code `0x0C`) followed by exactly one new line sequence (Windows style `"\r\n"` or Unix style `'\n'`), immediately followed by binary data.
 This format is less efficient than the Native format since it is row-based.
 
 Integers use fixed-length little-endian representation. For example, UInt64 uses 8 bytes.

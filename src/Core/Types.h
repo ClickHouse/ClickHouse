@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <unordered_set>
 #include <base/strong_typedef.h>
 #include <base/Decimal.h>
 #include <base/defines.h>
@@ -96,4 +97,5 @@ using Int256 = ::Int256;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
+using TypeIndexesSet = std::unordered_set<TypeIndex>;
 }

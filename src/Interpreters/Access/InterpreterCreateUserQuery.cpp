@@ -108,6 +108,12 @@ BlockIO InterpreterCreateUserQuery::execute()
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Authentication type NO_PASSWORD must be explicitly specified, check the setting allow_implicit_no_password in the server configuration");
 
+    if (!query.attach && query.temporary_password_for_checks)
+    {
+        access_control.checkPasswordComplexityRules(query.temporary_password_for_checks.value());
+        query.temporary_password_for_checks.reset();
+    }
+
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {
@@ -118,11 +124,18 @@ BlockIO InterpreterCreateUserQuery::execute()
                 access->checkAdminOption(role);
         }
     }
-    if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)
+    {
         settings_from_query = SettingsProfileElements{*query.settings, access_control};
+
+        if (!query.attach)
+            getContext()->checkSettingsConstraints(*settings_from_query);
+    }
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, getContext());
 
     if (query.alter)
     {

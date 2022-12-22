@@ -929,6 +929,84 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool sample_factor_column_queried,
     Poco::Logger * log)
 {
+    const auto & settings = context->getSettingsRef();
+    if (settings.allow_experimental_analyzer || settings.query_plan_optimize_primary_key)
+    {
+        ActionsDAG::NodeRawConstPtrs nodes;
+
+        if (prewhere_info)
+        {
+            {
+                const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+                nodes.push_back(&node);
+            }
+
+            if (prewhere_info->row_level_filter)
+            {
+                const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
+                nodes.push_back(&node);
+            }
+        }
+
+        for (const auto & node : added_filter_nodes.nodes)
+            nodes.push_back(node);
+
+        std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+
+        if (context->getSettingsRef().allow_experimental_analyzer)
+        {
+            const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
+            for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
+            {
+                const auto & column = table_expression_data.getColumnOrThrow(column_name);
+                node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
+            }
+        }
+
+        auto updated_query_info_with_filter_dag = query_info;
+        updated_query_info_with_filter_dag.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_node_column, context);
+
+        return selectRangesToReadImpl(
+            parts,
+            metadata_snapshot_base,
+            metadata_snapshot,
+            updated_query_info_with_filter_dag,
+            context,
+            num_streams,
+            max_block_numbers_to_read,
+            data,
+            real_column_names,
+            sample_factor_column_queried,
+            log);
+    }
+
+    return selectRangesToReadImpl(
+        parts,
+        metadata_snapshot_base,
+        metadata_snapshot,
+        query_info,
+        context,
+        num_streams,
+        max_block_numbers_to_read,
+        data,
+        real_column_names,
+        sample_factor_column_queried,
+        log);
+}
+
+MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
+    MergeTreeData::DataPartsVector parts,
+    const StorageMetadataPtr & metadata_snapshot_base,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr context,
+    size_t num_streams,
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
+    const MergeTreeData & data,
+    const Names & real_column_names,
+    bool sample_factor_column_queried,
+    Poco::Logger * log)
+{
     AnalysisResult result;
     const auto & settings = context->getSettingsRef();
 
@@ -952,42 +1030,24 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    Names primary_key_columns = primary_key.column_names;
+    const Names & primary_key_column_names = primary_key.column_names;
     std::optional<KeyCondition> key_condition;
 
     if (settings.query_plan_optimize_primary_key)
     {
-        ActionDAGNodes nodes;
-        if (prewhere_info)
-        {
-            {
-                const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
-                nodes.nodes.push_back(&node);
-            }
-
-            if (prewhere_info->row_level_filter)
-            {
-                const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
-                nodes.nodes.push_back(&node);
-            }
-        }
-
-        for (const auto & node : added_filter_nodes.nodes)
-            nodes.nodes.push_back(node);
-
         NameSet array_join_name_set;
         if (query_info.syntax_analyzer_result)
             array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
 
-        key_condition.emplace(std::move(nodes),
+        key_condition.emplace(query_info.filter_actions_dag,
             context,
-            primary_key_columns,
+            primary_key_column_names,
             primary_key.expression,
             array_join_name_set);
     }
     else
     {
-        key_condition.emplace(query_info, context, primary_key_columns, primary_key.expression);
+        key_condition.emplace(query_info, context, primary_key_column_names, primary_key.expression);
     }
 
     if (settings.force_primary_key && key_condition->alwaysUnknownOrTrue())
@@ -996,7 +1056,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             .result = std::make_exception_ptr(Exception(
                 ErrorCodes::INDEX_NOT_USED,
                 "Primary key ({}) is not used and setting 'force_primary_key' is set",
-                fmt::join(primary_key_columns, ", ")))});
+                fmt::join(primary_key_column_names, ", ")))});
     }
     LOG_DEBUG(log, "Key condition: {}", key_condition->toString());
 
@@ -1380,7 +1440,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
     auto result = getAnalysisResult();
-    auto index_stats = std::move(result.index_stats);
+    const auto & index_stats = result.index_stats;
 
     std::string prefix(format_settings.offset, format_settings.indent_char);
     if (!index_stats.empty())

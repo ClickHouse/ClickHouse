@@ -24,12 +24,13 @@ send -- "SELECT 1\r"
 expect "1"
 expect ":) "
 
-# Do reverse-search.
-send -- ""
+# Do regular reverse-search (Ctrl-T).
+send -- ""
 expect "(reverse-i-search)"
 send -- "1"
 expect "(reverse-i-search)"
 # This will trigger the container-overflow under ASAN before the fix.
+# NOTE: that the next search in the list is still Ctrl-R
 send -- ""
 expect "(reverse-i-search)"
 
