@@ -651,12 +651,6 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     ColumnsWithTypeAndName arguments = args;
-    for (auto & arg : arguments)
-        arg.column = arg.column->convertToFullIfNeeded();
-
-    for (const auto & arg : args) {
-        fmt::print(stderr, "{} - {} \n", arg.name, arg.type->getName());
-    }
 
     /// Special implementation for short-circuit arguments.
     if (checkShortCircuitArguments(arguments) != -1)
