@@ -68,12 +68,11 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
 
     if (file_segments.empty() || file_segments.back()->isDownloaded())
     {
-        current_file_segment_it = allocateFileSegment(expected_write_offset, segment_kind);
+        allocateFileSegment(expected_write_offset, segment_kind);
     }
     else
     {
-        auto file_segment = *current_file_segment_it;
-        assert(file_segment->getCurrentWriteOffset() == expected_write_offset);
+        chassert(file_segments.back()->getCurrentWriteOffset() == expected_write_offset);
 
         if (expected_write_offset != offset)
         {
@@ -86,17 +85,19 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
         if (file_segment->range().size() == file_segment->getDownloadedSize())
         {
             completeFileSegment(*file_segment);
-            current_file_segment_it = allocateFileSegment(expected_write_offset, segment_kind);
+            allocateFileSegment(expected_write_offset, segment_kind);
         }
     }
+        chassert(!file_segments.empty());
 
-    auto & file_segment = file_segments.back();
+
 
     SCOPE_EXIT({
         if (file_segments.back()->isDownloader())
             file_segments.back()->completePartAndResetDownloader();
     });
 
+    auto & file_segment = file_segments.back();
     while (size > 0)
     {
         size_t available_size = file_segment->range().size() - file_segment->getDownloadedSize();
