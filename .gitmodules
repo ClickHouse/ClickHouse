@@ -269,9 +269,6 @@
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
 	url = https://github.com/VectorCamp/vectorscan.git
-[submodule "contrib/liburing"]
-	path = contrib/liburing
-	url = https://github.com/axboe/liburing.git
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/ClickHouse/c-ares
@@ -294,3 +291,6 @@
 [submodule "contrib/google-benchmark"]
 	path = contrib/google-benchmark
 	url = https://github.com/google/benchmark.git
+[submodule "contrib/libdivide"]
+	path = contrib/libdivide
+	url = https://github.com/ridiculousfish/libdivide.git
