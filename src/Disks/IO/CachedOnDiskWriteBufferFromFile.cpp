@@ -70,32 +70,14 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
     {
         allocateFileSegment(expected_write_offset, segment_kind);
     }
-    else
-    {
-        chassert(file_segments.back()->getCurrentWriteOffset() == expected_write_offset);
 
-        if (expected_write_offset != offset)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot write file segment at offset {}, because current write offset is: {}",
-                offset, expected_write_offset);
-        }
-
-        if (file_segments.back()->range().size() == file_segments.back()->getDownloadedSize())
-        {
-            completeFileSegment(*file_segments.back());
-            allocateFileSegment(expected_write_offset, segment_kind);
-        }
-    }
-    chassert(!file_segments.empty());
+    auto & file_segment = file_segments.back();
 
     SCOPE_EXIT({
         if (file_segments.back()->isDownloader())
             file_segments.back()->completePartAndResetDownloader();
     });
 
-    auto & file_segment = file_segments.back();
     while (size > 0)
     {
         size_t available_size = file_segment->range().size() - file_segment->getDownloadedSize();
