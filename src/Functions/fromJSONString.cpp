@@ -67,15 +67,19 @@ public:
         auto col_res = result_type->createColumn();
         col_res->reserve(input_rows_count);
 
+        ondemand::parser parser;
+        Field field;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto str_ref = col->getDataAt(i);
             padded_string json(str_ref.data, str_ref.size);
 
-            ondemand::parser parser;
             auto doc = parser.iterate(json);
             if (!doc.error())
-                col_res->insert(deserializeValue(doc, result_type));
+            {
+                field = deserializeValue(doc.value_unsafe(), result_type);
+                col_res->insert(field);
+            }
             else
                 col_res->insertDefault();
         }
@@ -103,16 +107,14 @@ private:
                 if (!tuple_named)
                     return tuple_type->getDefault();
 
-                auto jmap(val.get_object().value_unsafe());
                 Tuple res;
                 res.reserve(elem_types.size());
+                auto jmap(val.get_object().value_unsafe());
                 for (size_t i = 0; i < elem_names.size(); ++i)
                 {
                     auto field = jmap.find_field(elem_names[i]);
                     if (field.error())
-                    {
                         res.emplace_back(elem_types[i]->getDefault());
-                    }
                     else
                     {
                         auto elem_val(field.value_unsafe());
@@ -182,20 +184,25 @@ private:
         switch (jtype)
         {
             case ondemand::json_type::object: {
-                Map res;
                 auto jmap(val.get_object().value_unsafe());
+                // Map res(jmap.count_fields());
+                // size_t index = 0;
+                Map res;
                 res.reserve(jmap.count_fields());
                 for (auto field: jmap)
                 {
-                    Tuple kv;
+                    Tuple kv(2);
 
                     auto k(field.unescaped_key().value_unsafe());
-                    kv.emplace_back(deserializeKey(k, key_type));
+                    // kv.emplace_back(deserializeKey(k, key_type));
+                    kv[0] = deserializeKey(k, key_type);
 
                     auto v(field.value().value_unsafe());
-                    kv.emplace_back(deserializeValue(v, val_type));
+                    // kv.emplace_back(deserializeValue(v, val_type));
+                    kv[1] = deserializeValue(v, val_type);
 
                     res.emplace_back(std::move(kv));
+                    // res[index++] = std::move(kv);
                 }
                 return std::move(res);
             }
@@ -223,16 +230,24 @@ private:
                 const auto & num_type = val.get_number_type().value_unsafe();
                 switch (num_type)
                 {
-                    case ondemand::number_type::floating_point_number:
-                        return std::to_string(val.get_double().value_unsafe());
-                    case ondemand::number_type::unsigned_integer:
-                        return std::to_string(val.get_uint64().value_unsafe());
                     case ondemand::number_type::signed_integer:
                         return std::to_string(val.get_int64().value_unsafe());
+                    case ondemand::number_type::unsigned_integer:
+                        return std::to_string(val.get_uint64().value_unsafe());
+                    case ondemand::number_type::floating_point_number:
+                        return std::to_string(val.get_double().value_unsafe());
                 }
             }
             case ondemand::json_type::boolean: {
                 return val.get_bool().value_unsafe() ? "true" : "false";
+            }
+            case ondemand::json_type::object: {
+                auto jmap(val.get_object().value_unsafe());
+                return jmap.raw_json().value_unsafe();
+            }
+            case ondemand::json_type::array: {
+                auto jarray(val.get_array().value_unsafe());
+                return jarray.raw_json().value_unsafe();
             }
             default:
                 break;
@@ -306,9 +321,6 @@ private:
     static Field deserializeKey(const std::string_view & key, const DataTypePtr & type)
     {
         WhichDataType which(type);
-        if (!(which.isInt() || which.isUInt() || which.isStringOrFixedString()))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize key as {} not supported yet", type->getName());
-
         if (which.isStringOrFixedString())
             return key;
 
@@ -331,7 +343,8 @@ private:
     M(Int256)
 
         ENUMERATE_INTEGER_TYPES(IMPLEMENT_DESERIALIZE_AS_INTEGER)
-        return {};
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize key as {} not supported yet", type->getName());
     }
 
     template <typename DocOrVal>
@@ -361,11 +374,11 @@ private:
 
         ENUMERATE_NUMBER_TYPES(IMPLEMENT_DESERIALIZE_AS_NUMBER)
 
-        if (which.isDecimal() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deseralize json as decimal not supported yet");
-
         if (which.isStringOrFixedString())
             return deserializeValueAsString(val, type);
+
+        if (which.isMap())
+            return deserializeValueAsMap(val, type);
 
         if (which.isArray())
             return deserializeValueAsArray(val, type);
@@ -373,10 +386,7 @@ private:
         if (which.isTuple())
             return deserializeValueAsTuple(val, type);
 
-        if (which.isMap())
-            return deserializeValueAsMap(val, type);
-
-        return {};
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize value as {} not supported yet", type->getName());
     }
 };
 
