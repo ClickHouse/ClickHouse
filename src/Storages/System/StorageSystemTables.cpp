@@ -102,31 +102,6 @@ static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filte
     return block.getByPosition(0).column;
 }
 
-/// Avoid heavy operation on tables if we only queried columns that we can get without table object.
-static bool needLockStructure(const Block & header)
-{
-    static const std::set<std::string> columns_without_lock
-        = {"database",
-           "name",
-           "uuid",
-           "is_temporary",
-           "metadata_path",
-           "metadata_modification_time",
-           "dependencies_database",
-           "dependencies_table",
-           "create_table_query",
-           "engine_full",
-           "loading_dependencies_database",
-           "loading_dependencies_table",
-           "loading_dependent_database",
-           "loading_dependent_table"};
-    for (const auto & column : header.getColumnsWithTypeAndName())
-    {
-        if (columns_without_lock.find(column.name) == columns_without_lock.end())
-            return true;
-    }
-    return false;
-}
 
 class TablesBlockSource : public ISource
 {
@@ -285,8 +260,6 @@ protected:
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesIterator(context);
 
-            const bool need_lock_structure = needLockStructure(getPort().getHeader());
-
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
@@ -296,25 +269,21 @@ protected:
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                StoragePtr table = nullptr;
+                StoragePtr table = tables_it->table();
+                if (!table)
+                    // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
+                    continue;
+
                 TableLockHolder lock;
-
-                if (need_lock_structure)
+                /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
+                /// and it's not protected internally by other mutexes
+                static const size_t DATA_PATHS_INDEX = 5;
+                if (columns_mask[DATA_PATHS_INDEX])
                 {
-                    table = tables_it->table();
-                    if (table == nullptr)
-                    {
-                        // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
-                        continue;
-                    }
-
                     lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
-
-                    if (lock == nullptr)
-                    {
+                    if (!lock)
                         // Table was dropped while acquiring the lock, skipping table
                         continue;
-                    }
                 }
 
                 ++rows_count;
@@ -333,7 +302,6 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
                     res_columns[res_index++]->insert(table->getName());
                 }
 
@@ -342,13 +310,15 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
+                    chassert(lock != nullptr);
                     Array table_paths_array;
                     auto paths = table->getDataPaths();
                     table_paths_array.reserve(paths.size());
                     for (const String & path : paths)
                         table_paths_array.push_back(path);
                     res_columns[res_index++]->insert(table_paths_array);
+                    /// We don't need the lock anymore
+                    lock = nullptr;
                 }
 
                 if (columns_mask[src_index++])
@@ -421,9 +391,7 @@ protected:
                 else
                     src_index += 3;
 
-                StorageMetadataPtr metadata_snapshot;
-                if (table)
-                    metadata_snapshot = table->getInMemoryMetadataPtr();
+                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
@@ -460,7 +428,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto policy = table ? table->getStoragePolicy() : nullptr;
+                    auto policy = table->getStoragePolicy();
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
@@ -471,7 +439,7 @@ protected:
                 settings.select_sequential_consistency = 0;
                 if (columns_mask[src_index++])
                 {
-                    auto total_rows = table ? table->totalRows(settings) : std::nullopt;
+                    auto total_rows = table->totalRows(settings);
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -480,7 +448,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto total_bytes = table ? table->totalBytes(settings) : std::nullopt;
+                    auto total_bytes = table->totalBytes(settings);
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
@@ -489,7 +457,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
+                    auto lifetime_rows = table->lifetimeRows();
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -498,7 +466,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
+                    auto lifetime_bytes = table->lifetimeBytes();
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
