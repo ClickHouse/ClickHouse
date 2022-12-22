@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <Poco/Logger.h>
 #include "Core/ColumnWithTypeAndName.h"
 #include "DataTypes/DataTypeArray.h"
 
@@ -32,7 +33,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/iostream_debug_helpers.h>
 
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
@@ -41,7 +41,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/filesystemHelpers.h>
@@ -51,20 +50,21 @@ namespace DB
 {
 
 inline const String kYAMLRegExpTreeDictionarySource = "YAMLRegExpTreeDictionarySource";
-inline const String kYAMLRegExpTree = "YAMLRegExpTree";
+inline const String kYAMLRegExpTree = "yamlregexptree";
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_DICTIONARY_DEFINITION;
 }
 
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const String & config_prefix,
-                                   [[maybe_unused]] Block & sample_block,
+                                   Block & ,
                                    [[maybe_unused]] ContextPtr global_context,
                                    const String &,
                                    [[maybe_unused]] bool created_from_ddl) -> DictionarySourcePtr
@@ -76,11 +76,16 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
                 ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `{}` does not support attribute expressions", kYAMLRegExpTree);
         }
 
-        const auto filepath = config.getString(config_prefix + ".YAMLRegExpTree.path");
+        if (!dict_struct.key.has_value() || dict_struct.key.value().size() != 1 || (*dict_struct.key)[0].type->getName() != "String")
+        {
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "dictionary source `{}` should have one primary key with string value to represent regular expressions", kYAMLRegExpTree);
+        }
 
-        const auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        const auto & filepath = config.getString(config_prefix + "." + kYAMLRegExpTree + ".path");
 
-        return std::make_unique<YAMLRegExpTreeDictionarySource>(filepath, sample_block, context, created_from_ddl);
+        const auto & context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+
+        return std::make_unique<YAMLRegExpTreeDictionarySource>(filepath, dict_struct, context, created_from_ddl);
 #else
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
@@ -105,22 +110,19 @@ namespace DB
 *
 *   Example:
 *   ```
-*   - match:
-*       regexp: "MSIE (\\d+)"
-*       set:
-*           attr1: "Vecna"
-*           attr2: 22.8
-*       -match:  # nested match for subpattern
-*           regexp: "Windows"
-*       -match:  # nested match for subpattern
-*           regexp: "Linux"
+*   - regexp: "MSIE (\\d+)"
+*     attr1: "Vecna"
+*     attr2: 22.8
+*     match: # nested match for subpattern
+*           - regexp: "Windows"
+*             attr2: 22.9
+*           - regexp: "Linux"
 *           ...
 *   ```
 */
 
 static const std::string kMatch = "match";
 static const std::string kRegExp = "regexp";
-static const std::string kSet = "set";
 
 /**
 *   The data can be loaded from table (using any available dictionary source) with the following structure:
@@ -146,7 +148,8 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-struct MatchNode {
+struct MatchNode
+{
     UInt64 id;
     UInt64 parent_id;
     String reg_exp;
@@ -154,7 +157,8 @@ struct MatchNode {
     std::vector<Field> values;
 };
 
-struct ResultColumns {
+struct ResultColumns
+{
     MutableColumnPtr ids;
     MutableColumnPtr parent_ids;
     MutableColumnPtr reg_exps;
@@ -188,7 +192,7 @@ YAML::Node loadYAML(const String & filepath)
     }
 }
 
-StringToNode parseYAMLMap(const YAML::Node & node)
+static StringToNode parseYAMLMap(const YAML::Node & node)
 {
     StringToNode result;
 
@@ -201,30 +205,6 @@ StringToNode parseYAMLMap(const YAML::Node & node)
     return result;
 }
 
-
-/// this function extracts attributes.
-/// TODO: we should support nested columns.
-void getValuesFromSet(const YAML::Node & node, MatchNode & attributes_to_insert)
-{
-    if (!node.IsMap())
-    {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` must be map", kSet);
-    }
-
-    const auto attributes = parseYAMLMap(node);
-
-    for (const auto & [key, value] : attributes)
-    {
-        if (!value.IsScalar())
-        {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Value of attribute {} must be scalar", key);
-        }
-
-        attributes_to_insert.keys.push_back(key);
-        attributes_to_insert.values.push_back(value.as<String>());
-    }
-}
-
 void insertValues(const MatchNode & node, ResultColumns & result_columns)
 {
     result_columns.ids->insert(node.id);
@@ -234,9 +214,13 @@ void insertValues(const MatchNode & node, ResultColumns & result_columns)
     result_columns.values->insert(Array(node.values.begin(), node.values.end()));
 }
 
-void parseMatchList(const bool is_root, UInt64 & id, const YAML::Node & node, ResultColumns & names_to_attributes);
+void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, ResultColumns & names_to_attributes, const String & key_name, const DictionaryStructure & structure);
 
-void parseMatchNode(const bool is_root, UInt64 & id, const YAML::Node & node, ResultColumns & result)
+/// MatchNode has to be a map with structure:
+/// 1. regex, indicating a regular expression
+/// 2. attribute_name, indicating the attributes to set
+/// 3. match (optional), indicating the nested match logic under this node
+void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, ResultColumns & result, const String & key_name, const DictionaryStructure & structure)
 {
     if (!node.IsMap())
     {
@@ -247,69 +231,54 @@ void parseMatchNode(const bool is_root, UInt64 & id, const YAML::Node & node, Re
 
     MatchNode attributes_to_insert;
 
-    if (is_root)
+    attributes_to_insert.id = ++id;
+    attributes_to_insert.parent_id = parent_id;
+
+    if (!match.contains(key_name))
     {
-        attributes_to_insert.id = ++id;
-        attributes_to_insert.parent_id = id;
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Yaml match rule must contain key {}", key_name);
     }
-    else
+    for (const auto & [key, node] : match)
     {
-        attributes_to_insert.parent_id = id;
-        attributes_to_insert.id = ++id;
+        if (key == key_name)
+        {
+            if (!node.IsScalar())
+                throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` should be a String", key_name);
+
+            attributes_to_insert.reg_exp = node.as<String>();
+        }
+        else if (structure.hasAttribute(key))
+        {
+            attributes_to_insert.keys.push_back(key);
+            attributes_to_insert.values.push_back(node.as<String>());
+        }
+        else if (node.IsSequence())
+        {
+            parseMatchList(attributes_to_insert.id, id, node, result, key_name, structure);
+        }
+        /// unknown attributes.
     }
-
-    if (!match.contains(kRegExp))
-    {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Single `{}` node must contain key {}", kMatch, kRegExp);
-    }
-    const auto & regexp_node = match[kRegExp];
-
-    if (!regexp_node.IsScalar())
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` should be a String", kRegExp);
-
-    attributes_to_insert.reg_exp = regexp_node.as<String>();
-
-    if (match.contains(kSet))
-        getValuesFromSet(match[kSet], attributes_to_insert);
-
     insertValues(attributes_to_insert, result);
-
-    if (match.contains(kMatch))
-        parseMatchList(false, id, match[kMatch], result);
 }
 
-void parseMatchList(const bool is_root, UInt64 & id, const YAML::Node & node, ResultColumns & names_to_attributes)
+void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, ResultColumns & names_to_attributes, const String & key_name, const DictionaryStructure & structure)
 {
     if (!node.IsSequence())
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Configuration must be a yaml list of match rules");
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Configuration {} must be a yaml list of match rules", node.as<String>());
     }
 
     for (const auto & child_node : node)
     {
-        if (!child_node.IsMap())
-        {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Element of {} configuration list must be yaml map type", kMatch);
-        }
-
-        auto match = parseYAMLMap(child_node);
-
-        if (!match.contains(kMatch))
-        {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Match rule must contain key {}", kMatch);
-        }
-
-        parseMatchNode(is_root, id, match[kMatch], names_to_attributes);
+        parseMatchNode(parent_id, id, child_node, names_to_attributes, key_name, structure);
     }
 }
 
-Block parseYAMLAsRegExpTree(const YAML::Node & node)
+Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, const DictionaryStructure & structure)
 {
     ResultColumns result_cols;
     UInt64 id = 0;
-    parseMatchList(true, id, node, result_cols);
-
-    Block result_block;
+    parseMatchList(0, id, node, result_cols, key_name, structure);
 
     ColumnsWithTypeAndName columns;
 
@@ -323,9 +292,11 @@ Block parseYAMLAsRegExpTree(const YAML::Node & node)
 }
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
-    const String & filepath_, Block & sample_block_, ContextPtr context_, bool created_from_ddl)
-    : filepath(filepath_), sample_block(sample_block_), context(context_), logger(&Poco::Logger::get(kYAMLRegExpTreeDictionarySource))
+    const String & filepath_, const DictionaryStructure & dict_struct, ContextPtr context_, bool created_from_ddl)
+    : filepath(filepath_), structure(dict_struct), context(context_), logger(&Poco::Logger::get(kYAMLRegExpTreeDictionarySource))
 {
+    key_name = (*structure.key)[0].name;
+
     const auto user_files_path = context->getUserFilesPath();
 
     if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath_, user_files_path))
@@ -336,7 +307,8 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpTreeDictionarySource & other)
     : filepath(other.filepath)
-    , sample_block(other.sample_block)
+    , key_name(other.key_name)
+    , structure(other.structure)
     , context(Context::createCopy(other.context))
     , logger(other.logger)
     , last_modification(other.last_modification)
@@ -350,7 +322,7 @@ QueryPipeline YAMLRegExpTreeDictionarySource::loadAll()
 
     const auto node = loadYAML(filepath);
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(parseYAMLAsRegExpTree(node)));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(parseYAMLAsRegExpTree(node, key_name, structure)));
 }
 
 bool YAMLRegExpTreeDictionarySource::isModified() const
@@ -365,7 +337,7 @@ bool YAMLRegExpTreeDictionarySource::isModified() const
 
 String YAMLRegExpTreeDictionarySource::toString() const
 {
-    return fmt::format("File: {}", filepath);
+    return fmt::format("{} with path: {}", kYAMLRegExpTree, filepath);
 }
 
 Poco::Timestamp YAMLRegExpTreeDictionarySource::getLastModification() const
