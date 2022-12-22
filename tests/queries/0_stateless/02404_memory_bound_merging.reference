@@ -86,7 +86,6 @@ ExpressionTransform
                                   (ReadFromMergeTree)
                                   MergeTreeInOrder × 4 0 → 1
                       (ReadFromRemote)
-set query_plan_remove_redundant_order_by=0; -- disable it temporary
 select a, count() from dist_t_different_dbs group by a order by a limit 5 offset 500;
 500	2000
 501	2000
@@ -99,7 +98,6 @@ select a, count() from dist_t_different_dbs group by a, b order by a limit 5 off
 502	2000
 503	2000
 504	2000
-set query_plan_remove_redundant_order_by=1; -- enable back
 -- { echoOn } --
 explain pipeline select a from dist_pr_t group by a order by a limit 5 offset 500;
 (Expression)
