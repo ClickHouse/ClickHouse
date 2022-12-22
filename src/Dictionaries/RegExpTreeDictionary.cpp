@@ -48,12 +48,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DICTIONARY_DEFINITION;
 }
 
-//const std::string_view kId;
-//const std::string_view kParentId;
-//const std::string_view kRegExp;
-//const std::string_view kKeys;
-//const std::string_view kValues;
-
 const std::string kRegExp = "regexp";
 const std::string kId = "id";
 const std::string kParentId = "parent_id";
@@ -359,10 +353,10 @@ namespace
 }
 
 std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndices(
-    const ColumnString::Chars & keys_data,
-    const ColumnString::Offsets & key_offsets,
-    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    const std::unordered_map<String, ColumnPtr> & defaults) const
+    [[maybe_unused]] const ColumnString::Chars & keys_data,
+    [[maybe_unused]] const ColumnString::Offsets & key_offsets,
+    [[maybe_unused]] const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> & defaults) const
 {
 #if USE_VECTORSCAN
     std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
@@ -473,8 +467,6 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
 
     return result;
 #else
-    (void)keys_data;
-    (void)keys_offsets;
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Multi search all indices is not implemented when USE_VECTORSCAN is off");
 #endif // USE_VECTORSCAN
 }
