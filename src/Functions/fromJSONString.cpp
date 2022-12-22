@@ -77,7 +77,7 @@ public:
             auto doc = parser.iterate(json);
             if (!doc.error())
             {
-                field = deserializeValue(doc.value_unsafe(), result_type);
+                deserializeValue(doc.value_unsafe(), result_type, field);
                 col_res->insert(field);
             }
             else
@@ -88,14 +88,18 @@ public:
 
 private:
     template <typename DocOrVal>
-    static Field deserializeValueAsTuple(DocOrVal & val, const DataTypePtr & type)
+    static void deserializeValueAsTuple(DocOrVal & val, const DataTypePtr & type, Field & res)
     {
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
         if (!tuple_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong type {}", type->getName());
 
         if (!tuple_type->haveSubtypes())
-            return tuple_type->getDefault();
+        {
+            res = Tuple();
+            return;
+        }
+
         const auto & elem_types = tuple_type->getElements();
         const auto & elem_names = tuple_type->getElementNames();
 
@@ -105,46 +109,58 @@ private:
         {
             case ondemand::json_type::object: {
                 if (!tuple_named)
-                    return tuple_type->getDefault();
+                {
+                    res = tuple_type->getDefault();
+                    return;
+                }
 
-                Tuple res;
-                res.reserve(elem_types.size());
+                Tuple tuple;
+                tuple.reserve(elem_types.size());
                 auto jmap(val.get_object().value_unsafe());
+                Field field;
                 for (size_t i = 0; i < elem_names.size(); ++i)
                 {
-                    auto field = jmap.find_field(elem_names[i]);
-                    if (field.error())
-                        res.emplace_back(elem_types[i]->getDefault());
+                    auto elem_jval = jmap.find_field(elem_names[i]);
+                    if (elem_jval.error())
+                        tuple.emplace_back(elem_types[i]->getDefault());
                     else
                     {
-                        auto elem_val(field.value_unsafe());
-                        res.emplace_back(deserializeValue(elem_val, elem_types[i]));
+                        auto elem_val(elem_jval.value_unsafe());
+                        deserializeValue(elem_val, elem_types[i], field);
+                        tuple.emplace_back(std::move(field));
                     }
                 }
-                return std::move(res);
+                res = std::move(tuple);
+                return;
             }
             case ondemand::json_type::array: {
                 auto jarray(val.get_array().value_unsafe());
                 if (jarray.count_elements() != elem_types.size())
-                    return tuple_type->getDefault();
+                {
+                    res = tuple_type->getDefault();
+                    return;
+                }
 
-                Tuple res;
-                res.reserve(elem_types.size());
+                Tuple tuple;
+                tuple.reserve(elem_types.size());
+                Field field;
                 for (size_t i = 0; i < elem_types.size(); ++i)
                 {
                     auto elem_val(jarray.at(i).value_unsafe());
-                    res.emplace_back(deserializeValue(elem_val, elem_types[i]));
+                    deserializeValue(elem_val, elem_types[i], field);
+                    tuple.emplace_back(std::move(field));
                 }
-                return std::move(res);
+                res = std::move(tuple);
+                return;
             }
             default:
                 break;
         }
-        return tuple_type->getDefault();
+        res = tuple_type->getDefault();
     }
 
     template <typename DocOrVal>
-    static Field deserializeValueAsArray(DocOrVal & val, const DataTypePtr & type)
+    static void deserializeValueAsArray(DocOrVal & val, const DataTypePtr & type, Field & res)
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
         if (!array_type)
@@ -155,24 +171,23 @@ private:
         switch (jtype)
         {
             case ondemand::json_type::array: {
-                Array res;
                 auto jarray(val.get_array().value_unsafe());
-                res.reserve(jarray.count_elements());
+                Array array(jarray.count_elements());
+                size_t index = 0;
                 for (auto jelem : jarray)
-                {
-                    auto field = deserializeValue(jelem.value_unsafe(), nested_type);
-                    res.emplace_back(std::move(field));
-                }
-                return std::move(res);
+                    deserializeValue(jelem.value_unsafe(), nested_type, array[index++]);
+
+                res = std::move(array);
+                return;
             }
             default:
                 break;
         }
-        return array_type->getDefault();
+        res = array_type->getDefault();
     }
 
     template <typename DocOrVal>
-    static Field deserializeValueAsMap(DocOrVal & val, const DataTypePtr & type)
+    static void deserializeValueAsMap(DocOrVal & val, const DataTypePtr & type, Field & res)
     {
         const auto * map_type = typeid_cast<const DataTypeMap *>(type.get());
         if (!map_type)
@@ -185,35 +200,37 @@ private:
         {
             case ondemand::json_type::object: {
                 auto jmap(val.get_object().value_unsafe());
-                // Map res(jmap.count_fields());
-                // size_t index = 0;
-                Map res;
-                res.reserve(jmap.count_fields());
+                Map map(jmap.count_fields());
+                size_t index = 0;
+                // Map map;
+                // map.reserve(jmap.count_fields());
+                // Tuple kv(2);
                 for (auto field: jmap)
                 {
                     Tuple kv(2);
 
                     auto k(field.unescaped_key().value_unsafe());
                     // kv.emplace_back(deserializeKey(k, key_type));
-                    kv[0] = deserializeKey(k, key_type);
+                    deserializeKey(k, key_type, kv[0]);
 
                     auto v(field.value().value_unsafe());
                     // kv.emplace_back(deserializeValue(v, val_type));
-                    kv[1] = deserializeValue(v, val_type);
+                    deserializeValue(v, val_type, kv[1]);
 
-                    res.emplace_back(std::move(kv));
-                    // res[index++] = std::move(kv);
+                    // map.emplace_back(std::move(kv));
+                    map[index++] = std::move(kv);
                 }
-                return std::move(res);
+                res = std::move(map);
+                return;
             }
             default:
                 break;
         }
-        return map_type->getDefault();
+        res = map_type->getDefault();
     }
 
     template <typename DocOrVal>
-    static Field deserializeValueAsString(DocOrVal & val, const DataTypePtr & type)
+    static void deserializeValueAsString(DocOrVal & val, const DataTypePtr & type, Field & res)
     {
         const auto * string_type = typeid_cast<const DataTypeString *>(type.get());
         const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type.get());
@@ -224,39 +241,50 @@ private:
         switch (jtype)
         {
             case ondemand::json_type::string: {
-                return val.get_string().value_unsafe();
+                res = val.get_string().value_unsafe();
+                return;
             }
             case ondemand::json_type::number: {
-                const auto & num_type = val.get_number_type().value_unsafe();
+                const auto num_type(val.get_number_type().value_unsafe());
                 switch (num_type)
                 {
                     case ondemand::number_type::signed_integer:
-                        return std::to_string(val.get_int64().value_unsafe());
+                        res = std::to_string(val.get_int64().value_unsafe());
+                        return;
                     case ondemand::number_type::unsigned_integer:
-                        return std::to_string(val.get_uint64().value_unsafe());
+                        res = std::to_string(val.get_uint64().value_unsafe());
+                        return;
                     case ondemand::number_type::floating_point_number:
-                        return std::to_string(val.get_double().value_unsafe());
+                        res = std::to_string(val.get_double().value_unsafe());
+                        return;
                 }
             }
             case ondemand::json_type::boolean: {
-                return val.get_bool().value_unsafe() ? "true" : "false";
+                res = val.get_bool().value_unsafe() ? "true" : "false";
+                return;
             }
             case ondemand::json_type::object: {
                 auto jmap(val.get_object().value_unsafe());
-                return jmap.raw_json().value_unsafe();
+                res = jmap.raw_json().value_unsafe();
+                return;
             }
             case ondemand::json_type::array: {
                 auto jarray(val.get_array().value_unsafe());
-                return jarray.raw_json().value_unsafe();
+                res = jarray.raw_json().value_unsafe();
+                return;
             }
             default:
                 break;
         }
-        return string_type ? string_type->getDefault() : fixed_string_type->getDefault();
+
+        if (string_type)
+            res = "";
+        else
+            res = fixed_string_type->getDefault();
     }
 
     template <typename DocOrVal, typename T>
-    static Field deserializeValueAsNumber(DocOrVal & val, const DataTypePtr & type)
+    static void deserializeValueAsNumber(DocOrVal & val, const DataTypePtr & type, Field & res)
     {
         const auto * number_type = typeid_cast<const DataTypeNumber<T> *>(type.get());
         if (!number_type)
@@ -266,20 +294,24 @@ private:
         switch (jtype)
         {
             case ondemand::json_type::number: {
-                const auto & num_type = val.get_number_type().value_unsafe();
+                const auto num_type(val.get_number_type().value_unsafe());
                 switch (num_type)
                 {
                     case ondemand::number_type::floating_point_number:
-                        return T(val.get_double().value_unsafe());
+                        res = T(val.get_double().value_unsafe());
+                        return;
                     case ondemand::number_type::unsigned_integer:
-                        return T(val.get_uint64().value_unsafe());
+                        res = T(val.get_uint64().value_unsafe());
+                        return;
                     case ondemand::number_type::signed_integer:
-                        return T(val.get_int64().value_unsafe());
+                        res = T(val.get_int64().value_unsafe());
+                        return;
                 }
                 break;
             }
             case ondemand::json_type::boolean: {
-                return val.get_bool().value_unsafe() ? T(1) : T(0);
+                res = val.get_bool().value_unsafe() ? T(1) : T(0);
+                return;
             }
             case ondemand::json_type::string: {
                 if constexpr (is_integer_v<T>)
@@ -288,23 +320,29 @@ private:
                     NearestIntType int_val;
                     ReadBufferFromString rb(val.get_string().value_unsafe());
                     if (tryReadIntText(int_val, rb))
-                        return int_val;
+                    {
+                        res = std::move(int_val);
+                        return;
+                    }
                 }
 
                 Float64 float_val;
                 ReadBufferFromString rb(val.get_string().value_unsafe());
                 if (tryReadFloatText(float_val, rb))
-                    return T(float_val);
+                {
+                    res = T(float_val);
+                    return;
+                }
                 break;
             }
             default:
                 break;
         }
-        return T(0);
+        res = T(0);
     }
 
     template <typename T>
-    static Field deserializeKeyAsInteger(const std::string_view & key, const DataTypePtr & type)
+    static void deserializeKeyAsInteger(const std::string_view & key, const DataTypePtr & type, Field & res)
     {
         const auto * int_type = typeid_cast<const DataTypeNumber<T> *>(type.get());
         if (!int_type)
@@ -313,20 +351,24 @@ private:
         using NearestIntType = NearestFieldType<T>;
         NearestIntType int_val;
         ReadBufferFromString rb(key);
-        if (tryReadIntText(int_val, rb))
-            return int_val;
-        return NearestIntType(0);
+        res = tryReadIntText(int_val, rb) ? int_val : NearestIntType(0);
     }
 
-    static Field deserializeKey(const std::string_view & key, const DataTypePtr & type)
+    static void deserializeKey(const std::string_view & key, const DataTypePtr & type, Field & res)
     {
         WhichDataType which(type);
         if (which.isStringOrFixedString())
-            return key;
+        {
+            res = key;
+            return;
+        }
 
 #define IMPLEMENT_DESERIALIZE_AS_INTEGER(TYPE) \
     if (which.is##TYPE()) \
-        return deserializeKeyAsInteger<TYPE>(key, type);
+    { \
+        deserializeKeyAsInteger<TYPE>(key, type, res); \
+        return; \
+    }
 
 #define ENUMERATE_INTEGER_TYPES(M) \
     M(UInt8) \
@@ -348,13 +390,16 @@ private:
     }
 
     template <typename DocOrVal>
-    static Field deserializeValue(DocOrVal & val, const DataTypePtr & type)
+    static void deserializeValue(DocOrVal & val, const DataTypePtr & type, Field & res)
     {
         const WhichDataType which(type);
 
 #define IMPLEMENT_DESERIALIZE_AS_NUMBER(TYPE) \
     if (which.is##TYPE()) \
-        return deserializeValueAsNumber<DocOrVal, TYPE>(val, type);
+    { \
+        deserializeValueAsNumber<DocOrVal, TYPE>(val, type, res); \
+        return; \
+    }
 
 #define ENUMERATE_NUMBER_TYPES(M) \
     M(UInt8) \
@@ -375,16 +420,28 @@ private:
         ENUMERATE_NUMBER_TYPES(IMPLEMENT_DESERIALIZE_AS_NUMBER)
 
         if (which.isStringOrFixedString())
-            return deserializeValueAsString(val, type);
+        {
+            deserializeValueAsString(val, type, res);
+            return;
+        }
 
         if (which.isMap())
-            return deserializeValueAsMap(val, type);
+        {
+            deserializeValueAsMap(val, type, res);
+            return;
+        }
 
         if (which.isArray())
-            return deserializeValueAsArray(val, type);
+        {
+            deserializeValueAsArray(val, type, res);
+            return;
+        }
 
         if (which.isTuple())
-            return deserializeValueAsTuple(val, type);
+        {
+            deserializeValueAsTuple(val, type, res);
+            return;
+        }
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize value as {} not supported yet", type->getName());
     }
