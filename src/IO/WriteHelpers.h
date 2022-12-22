@@ -1099,23 +1099,20 @@ inline String toString(const T & x)
 }
 
 template <typename T>
-inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & finalSep)
+inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & final_sep)
 {
     WriteBufferFromOwnString buf;
-    auto size = std::ssize(x);
-    for (ssize_t i = 0; i < size - 2; ++i)
+    for (auto it = x.begin(); it != x.end(); ++it)
     {
-        writeQuoted(x[i], buf);
-        writeChar(',', buf);
-        writeChar(' ', buf);
+        if (it != x.begin())
+        {
+            if (std::next(it) == x.end())
+                writeString(final_sep, buf);
+            else
+                writeString(", ", buf);
+        }
+        writeQuoted(*it, buf);
     }
-    if (size >= 2)
-    {
-        writeQuoted(x[size - 2], buf);
-        writeText(finalSep, buf);
-    }
-    if (size >= 1)
-        writeQuoted(x[size - 1], buf);
 
     return buf.str();
 }
