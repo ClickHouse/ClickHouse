@@ -103,39 +103,32 @@ private:
     static UInt32 digits(T value)
     {
         static_assert(!is_decimal<T>);
-        using DivT = std::conditional_t<is_signed_v<T>, Int32, UInt32>;
-
         UInt32 res = 0;
-        T tmp;
-
+        
         if constexpr (sizeof(T) > sizeof(Int32))
         {
-            static constexpr const DivT e9 = 1000000000;
+            res = (value >= 10000000000L)
+		    + (value >= 100000000000L)
+		    + (value >= 1000000000000L)
+		    + (value >= 10000000000000L)
+		    + (value >= 100000000000000L)
+		    + (value >= 1000000000000000L)
+		    + (value >= 10000000000000000L)
+		    + (value >= 100000000000000000L)
+		    + (value >= 1000000000000000000L);
+	}	
 
-            tmp = value / e9;
-            while (tmp != 0)
-            {
-                value = tmp;
-                tmp /= e9;
-                res += 9;
-            }
-        }
+        res += 1
+		+ (value >= 10L) 
+		+ (value >= 100L)
+		+ (value >= 1000L)
+		+ (value >= 10000L)
+		+ (value >= 100000L)
+		+ (value >= 1000000L)
+		+ (value >= 10000000L)
+		+ (value >= 100000000L)
+		+ (value >= 1000000000L);
 
-        static constexpr const DivT e3 = 1000;
-
-        tmp = value / e3;
-        while (tmp != 0)
-        {
-            value = tmp;
-            tmp /= e3;
-            res += 3;
-        }
-
-        while (value != 0)
-        {
-            value /= 10;
-            ++res;
-        }
         return res;
     }
 };
