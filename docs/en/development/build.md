@@ -33,6 +33,13 @@ On Ubuntu/Debian you can use the automatic installation script (check [official 
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
+Note: in case of troubles, you can also use this:
+
+```bash
+sudo apt-get install software-properties-common
+sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+```
+
 For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
 
 #### Use the latest clang for Builds
