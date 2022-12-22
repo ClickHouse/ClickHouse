@@ -477,7 +477,7 @@ randFisherF(d1, d2)
 
 - Pseudo-random number.
 
-Type: [Float64](../../sql-reference/data-types/float/).
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
