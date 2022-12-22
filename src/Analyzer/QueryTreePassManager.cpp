@@ -14,6 +14,7 @@
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
+#include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -77,7 +78,6 @@ public:
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
   * TODO: Support setting optimize_redundant_functions_in_order_by.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
-  * TODO: Support setting optimize_if_transform_strings_to_enum.
   * TODO: Support settings.optimize_or_like_chain.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
@@ -193,6 +193,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     if (settings.optimize_syntax_fuse_functions)
         manager.addPass(std::make_unique<FuseFunctionsPass>());
+
+    if (settings.optimize_if_transform_strings_to_enum)
+        manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
 }
 
 }
