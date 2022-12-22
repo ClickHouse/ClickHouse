@@ -4,7 +4,7 @@ drop table if exists rmt;
 drop table if exists rmt2;
 
 -- Disable compact parts, because we need hardlinks in mutations.
-create table rmt (n int, m int, k int) engine=ReplicatedMergeTree('/test/02432/' || currentDatabase(), '1') order by tuple()
+create table rmt (n int, m int, k int) engine=ReplicatedMergeTree('/test/02432/{database}', '1') order by tuple()
     settings storage_policy = 's3_cache', allow_remote_fs_zero_copy_replication=1,
         max_part_removal_threads=10, concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1,
         max_replicated_merges_in_queue=0, max_replicated_mutations_in_queue=0, min_bytes_for_compact_part=0, min_rows_for_compact_part=0;
@@ -27,14 +27,14 @@ set replication_alter_partitions_sync=0;
 alter table rmt update n = n * 10 where 1;
 alter table rmt modify column k UInt128;
 alter table rmt update n = n + 1 where 1;
---system sync replica rmt;
+system sync replica rmt;
 alter table rmt modify column k String;
 alter table rmt update n = n * 10 where 1;
 
 select count(), sum(n), sum(m) from rmt;
 
 -- New table can assign merges/mutations and can remove old parts
-create table rmt2 (n int, m int, k String) engine=ReplicatedMergeTree('/test/02432/' || currentDatabase(), '2') order by tuple()
+create table rmt2 (n int, m int, k String) engine=ReplicatedMergeTree('/test/02432/{database}', '2') order by tuple()
     settings storage_policy = 's3_cache', allow_remote_fs_zero_copy_replication=1,
         max_part_removal_threads=10, concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1,
         min_bytes_for_compact_part=0, min_rows_for_compact_part=0, max_replicated_merges_in_queue=1,

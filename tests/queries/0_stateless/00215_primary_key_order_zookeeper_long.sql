@@ -3,6 +3,7 @@
 
 DROP TABLE IF EXISTS primary_key;
 set allow_deprecated_syntax_for_merge_tree=1;
+set send_logs_level='error';
 CREATE TABLE primary_key (d Date DEFAULT today(), x Int8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_00215/primary_key', 'r1', d, -x, 1);
 
 INSERT INTO primary_key (x) VALUES (1), (2), (3);
