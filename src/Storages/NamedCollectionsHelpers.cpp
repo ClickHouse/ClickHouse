@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
     NamedCollectionPtr tryGetNamedCollectionFromASTs(ASTs asts)
@@ -62,11 +67,11 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
 
     auto collection_copy = collection->duplicate();
 
-    for (const auto & ast : asts)
+    for (auto it = std::next(asts.begin()); it != asts.end(); ++it)
     {
-        auto value_override = getKeyValueFromAST(ast);
-        if (!value_override)
-            continue;
+        auto value_override = getKeyValueFromAST(*it);
+        if (!value_override && !(*it)->as<ASTFunction>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
 
         const auto & [key, value] = *value_override;
         collection_copy->setOrUpdate<String>(key, toString(value));
