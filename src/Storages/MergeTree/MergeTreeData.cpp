@@ -84,6 +84,7 @@
 #include <base/sort.h>
 
 #include <algorithm>
+#include <atomic>
 #include <iomanip>
 #include <optional>
 #include <set>
@@ -1762,9 +1763,12 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         {
             const DataPartPtr & part = *it;
 
+            part->last_removal_attemp_time.store(time_now, std::memory_order_relaxed);
+
             /// Do not remove outdated part if it may be visible for some transaction
             if (!part->version.canBeRemoved())
             {
+                part->removal_state.store(DataPartRemovalState::VISIBLE_TO_TRANSACTIONS, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
@@ -1772,20 +1776,27 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             /// Grab only parts that are not used by anyone (SELECTs for example).
             if (!part.unique())
             {
+                part->removal_state.store(DataPartRemovalState::NON_UNIQUE_OWNERSHIP, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
-            if ((part_remove_time < time_now && time_now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds() && !has_skipped_mutation_parent(part))
+            bool reached_removal_time = part_remove_time < time_now && time_now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds();
+            if ((reached_removal_time && !has_skipped_mutation_parent(part))
                 || force
                 || isInMemoryPart(part)     /// Remove in-memory parts immediately to not store excessive data in RAM
                 || (part->version.creation_csn == Tx::RolledBackCSN && getSettings()->remove_rolled_back_parts_immediately))
             {
+                part->removal_state.store(DataPartRemovalState::REMOVED, std::memory_order_relaxed);
                 parts_to_delete.emplace_back(it);
             }
             else
             {
+                if (!reached_removal_time)
+                    part->removal_state.store(DataPartRemovalState::NOT_REACHED_REMOVAL_TIME, std::memory_order_relaxed);
+                else
+                    part->removal_state.store(DataPartRemovalState::HAS_SKIPPED_MUTATION_PARENT, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
@@ -2156,6 +2167,8 @@ size_t MergeTreeData::clearEmptyParts()
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
 {
+    LOG_INFO(log, "Renaming table to path {} with ID {}", new_table_path, new_table_id.getFullTableName());
+
     auto disks = getStoragePolicy()->getDisks();
 
     for (const auto & disk : disks)
@@ -7352,6 +7365,12 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     auto lock = lockParts();
     snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+}
+
+StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutParts(const StorageMetadataPtr & metadata_snapshot) const
+{
+    auto lock = lockParts();
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)
