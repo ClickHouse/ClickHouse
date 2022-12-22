@@ -139,7 +139,6 @@ std::unique_ptr<WriteBufferFromFileBase> NFSObjectStorage::writeObject( /// NOLI
             ErrorCodes::UNSUPPORTED_METHOD,
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
-    const String & nfs_file = object.absolute_path.substr(object.absolute_path.find_last_of('/') + 1, object.absolute_path.size() - object.absolute_path.find_last_of('/'));
     const String & nfs_path = object.absolute_path.substr(0, object.absolute_path.find_last_of('/') + 1);
     if (!fs::is_directory(nfs_path))
     {
