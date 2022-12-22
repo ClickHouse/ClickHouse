@@ -48,48 +48,12 @@ using QueryTreeNodePtrWithHashMap = std::unordered_map<QueryTreeNodePtrWithHash,
 template <typename Value>
 using QueryTreeNodeConstRawPtrWithHashMap = std::unordered_map<QueryTreeNodeConstRawPtrWithHash, Value>;
 
-
-template <typename QueryTreeNodePtrType>
-struct QueryTreeNodeWithHashIgnoreConstant
-{
-    QueryTreeNodeWithHashIgnoreConstant(QueryTreeNodePtrType node_) /// NOLINT
-        : node(std::move(node_))
-        , hash(node->getTreeHash().first)
-    {}
-
-    QueryTreeNodePtrType node = nullptr;
-    size_t hash = 0;
-};
-
-template <typename T>
-inline bool operator==(const QueryTreeNodeWithHashIgnoreConstant<T> & lhs, const QueryTreeNodeWithHashIgnoreConstant<T> & rhs)
-{
-    return lhs.hash == rhs.hash && lhs.node->isEqual(*rhs.node, /* ignore_constant */true);
-}
-
-template <typename T>
-inline bool operator!=(const QueryTreeNodeWithHashIgnoreConstant<T> & lhs, const QueryTreeNodeWithHashIgnoreConstant<T> & rhs)
-{
-    return !(lhs == rhs);
-}
-
-using QueryTreeNodeConstRawPtrWithHashIgnoreConstant = QueryTreeNodeWithHashIgnoreConstant<const IQueryTreeNode *>;
-
 }
 
 template <typename T>
 struct std::hash<DB::QueryTreeNodeWithHash<T>>
 {
     size_t operator()(const DB::QueryTreeNodeWithHash<T> & node_with_hash) const
-    {
-        return node_with_hash.hash;
-    }
-};
-
-template <typename T>
-struct std::hash<DB::QueryTreeNodeWithHashIgnoreConstant<T>>
-{
-    size_t operator()(const DB::QueryTreeNodeWithHashIgnoreConstant<T> & node_with_hash) const
     {
         return node_with_hash.hash;
     }
