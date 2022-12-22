@@ -181,7 +181,7 @@ randBinomial(experiments, probability)
 
 - Pseudo-random number.
 
-Type: [UInt64](../../sql-reference/data-types/int-uint.md/).
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
