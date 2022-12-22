@@ -1,9 +1,9 @@
 ---
 toc_priority: 62
-toc_title: Window Functions
+toc_title: 窗口函数
 ---
 
-# Window Functions
+# 窗口函数
 
 ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 
@@ -22,15 +22,15 @@ ClickHouse supports the standard grammar for defining windows and window functio
 |  | 1) replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`|
 |  | 2) use `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following` |
 
-## References
+## 参考文献
 
-### GitHub Issues
+### GitHub问题
 
 The roadmap for the initial support of window functions is [in this issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
 All GitHub issues related to window funtions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
 
-### Tests
+### 测试
 
 These tests contain the examples of the currently supported grammar:
 
@@ -38,7 +38,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_fu
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
 
-### Postgres Docs
+### Postgres文档
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -48,7 +48,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-### MySQL Docs
+### MySQL文档
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
