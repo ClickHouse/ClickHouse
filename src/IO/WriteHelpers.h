@@ -1098,6 +1098,28 @@ inline String toString(const T & x)
     return buf.str();
 }
 
+template <typename T>
+inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & finalSep)
+{
+    WriteBufferFromOwnString buf;
+    auto size = std::ssize(x);
+    for (ssize_t i = 0; i < size - 2; ++i)
+    {
+        writeQuoted(x[i], buf);
+        writeChar(',', buf);
+        writeChar(' ', buf);
+    }
+    if (size >= 2)
+    {
+        writeQuoted(x[size - 2], buf);
+        writeText(finalSep, buf);
+    }
+    if (size >= 1)
+        writeQuoted(x[size - 1], buf);
+
+    return buf.str();
+}
+
 inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 {
     /// c_str is guaranteed to return zero-terminated string
