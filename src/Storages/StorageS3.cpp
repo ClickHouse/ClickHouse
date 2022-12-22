@@ -691,7 +691,7 @@ Chunk StorageS3Source::generate()
     auto add_virtual_column = [&](Chunk & chunk, UInt64 num_rows)
     {
         const auto & file_path = reader.getPath();
-        
+
         for (const auto & virtual_column : requested_virtual_columns)
         {
             if (virtual_column.name == "_path")
