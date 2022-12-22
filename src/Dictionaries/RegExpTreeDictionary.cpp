@@ -319,6 +319,7 @@ bool RegExpTreeDictionary::setAttributes(
     return attributes_to_set.size() == attributes.size();
 }
 
+#if USE_VECTORSCAN
 namespace
 {
     struct MatchContext
@@ -351,6 +352,7 @@ namespace
         }
     };
 }
+#endif // USE_VECTORSCAN
 
 std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndices(
     [[maybe_unused]] const ColumnString::Chars & keys_data,
