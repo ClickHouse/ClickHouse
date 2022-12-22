@@ -95,7 +95,7 @@ public:
       * Aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, bool ignore_constants = false) const;
+    bool isEqual(const IQueryTreeNode & rhs) const;
 
     using Hash = std::pair<UInt64, UInt64>;
     using HashState = SipHash;
