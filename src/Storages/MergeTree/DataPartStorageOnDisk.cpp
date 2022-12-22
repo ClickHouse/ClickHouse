@@ -59,7 +59,7 @@ std::string DataPartStorageOnDisk::getFullRootPath() const
     return fs::path(volume->getDisk()->getPath()) / root_path / "";
 }
 
-MutableDataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name, bool use_parent_transaction)
+MutableDataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
     return std::shared_ptr<DataPartStorageOnDisk>(new DataPartStorageOnDisk(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
 }
