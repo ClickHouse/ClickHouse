@@ -38,7 +38,6 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
 void WriteBufferToFileSegment::nextImpl()
 {
     size_t bytes_to_write = offset();
-    LOG_WARNING(&Poco::Logger::get("WriteBufferToFileSegment"), "Writing {} bytes", bytes_to_write);
 
     /// In case of an error, we don't need to finalize the file segment
     /// because it will be deleted soon and completed in the holder's destructor.
@@ -57,7 +56,6 @@ void WriteBufferToFileSegment::nextImpl()
         LOG_WARNING(&Poco::Logger::get("WriteBufferToFileSegment"), "Failed to write to the underlying buffer ({})", file_segment->getInfoForLog());
         throw;
     }
-    LOG_WARNING(&Poco::Logger::get("WriteBufferToFileSegment"), "Written {} bytes", bytes_to_write);
 
     file_segment->setDownloadedSize(bytes_to_write);
 }

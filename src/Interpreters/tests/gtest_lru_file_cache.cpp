@@ -656,7 +656,7 @@ TEST_F(FileCacheTest, temporaryData)
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
             ASSERT_TRUE(segment->reserve(segment->range().size()));
             download(cache_base_path, segment);
-            segment->completeWithState(DB::FileSegment::State::DOWNLOADED);
+            segment->completeWithoutState();
         }
     }
 
