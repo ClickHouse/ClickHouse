@@ -173,12 +173,11 @@ Chunk RabbitMQSource::generateImpl()
             }
 
             total_rows += new_rows;
+            buffer->allowNext();
         }
 
         if (total_rows >= max_block_size || buffer->isConsumerStopped() || isTimeLimitExceeded())
             break;
-
-        buffer->allowNext();
     }
 
     LOG_TEST(

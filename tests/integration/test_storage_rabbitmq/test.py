@@ -172,6 +172,7 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_exchange_name = 'json',
                      rabbitmq_format = 'JSONEachRow'
         """.format(
@@ -225,6 +226,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'CSV',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_row_delimiter = '\\n';
         """
     )
@@ -267,6 +269,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
                      rabbitmq_format = 'TSV',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_queue_base = 'tsv',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -309,6 +312,7 @@ def test_rabbitmq_macros(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = '{rabbitmq_host}:{rabbitmq_port}',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_exchange_name = '{rabbitmq_exchange_name}',
                      rabbitmq_format = '{rabbitmq_format}'
         """
@@ -349,6 +353,7 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'mv',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
@@ -406,6 +411,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mvsq',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -450,6 +456,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mmv',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view1 (key UInt64, value UInt64)
@@ -508,6 +515,7 @@ def test_rabbitmq_protobuf(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'pb',
                      rabbitmq_format = 'Protobuf',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_schema = 'rabbitmq.proto:KeyValueProto';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
@@ -583,6 +591,7 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'big',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value String)
             ENGINE = MergeTree
@@ -800,6 +809,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'insert',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'insert1',
                      rabbitmq_format = 'TSV',
@@ -858,6 +868,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'insert_headers',
                      rabbitmq_exchange_type = 'headers',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_routing_key_list = 'test=insert,topic=headers',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -925,6 +936,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'insert2',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.rabbitmq_consume (key UInt64, value UInt64)
@@ -934,6 +946,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'insert2',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
     """
@@ -1115,6 +1128,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
                          rabbitmq_flush_interval_ms=1000,
+                        rabbitmq_max_block_size=100,
                          rabbitmq_exchange_name = 'direct_exchange_testing',
                          rabbitmq_exchange_type = 'direct',
                          rabbitmq_routing_key_list = 'direct_{0}',
@@ -1207,6 +1221,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
                          rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_routing_key_list = 'key_{0}',
                          rabbitmq_exchange_name = 'fanout_exchange_testing',
                          rabbitmq_exchange_type = 'fanout',
@@ -1294,6 +1309,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
                          rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_exchange_name = 'topic_exchange_testing',
                          rabbitmq_exchange_type = 'topic',
                          rabbitmq_routing_key_list = '*.{0}',
@@ -1318,6 +1334,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
                          rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_exchange_name = 'topic_exchange_testing',
                          rabbitmq_exchange_type = 'topic',
                          rabbitmq_routing_key_list = '*.logs',
@@ -1518,6 +1535,7 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'key1,key2,key3,key4,key5',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE MATERIALIZED VIEW test.bindings_mv TO test.destination AS
@@ -1608,6 +1626,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
                          rabbitmq_exchange_name = 'headers_exchange_testing',
                          rabbitmq_exchange_type = 'headers',
                          rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_routing_key_list = 'x-match=all,format=logs,type=report,year=2020',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
@@ -1633,6 +1652,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
                          rabbitmq_routing_key_list = 'x-match=all,format=logs,type=report,year=2019',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_row_delimiter = '\\n';
             CREATE MATERIALIZED VIEW test.headers_exchange_{0}_mv TO test.destination AS
             SELECT key, value FROM test.headers_exchange_{0};
@@ -1706,6 +1726,7 @@ def test_rabbitmq_virtual_columns(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'virtuals',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow';
         CREATE MATERIALIZED VIEW test.view Engine=Log AS
         SELECT value, key, _exchange_name, _channel_id, _delivery_tag, _redelivered FROM test.rabbitmq_virtuals;
@@ -1775,6 +1796,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'virtuals_mv',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value UInt64,
             exchange_name String, channel_id String, delivery_tag UInt64, redelivered UInt8) ENGINE = MergeTree()
