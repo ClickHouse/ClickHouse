@@ -101,9 +101,13 @@ create_keytabs() {
   kadmin.local -q "addprinc -randkey HTTP/instance2@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse2.keytab HTTP/instance2@${REALM}"
 
+  kadmin.local -q "addprinc -randkey HTTP/instance3@${REALM}"
+  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse3.keytab HTTP/instance3@${REALM}"
+
   chmod g+r /tmp/keytab/kuser.keytab
   chmod g+r /tmp/keytab/clickhouse1.keytab
   chmod g+r /tmp/keytab/clickhouse2.keytab
+  chmod g+r /tmp/keytab/clickhouse3.keytab
 }
 
 main() {

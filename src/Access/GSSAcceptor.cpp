@@ -268,7 +268,7 @@ void GSSAcceptorContext::initHandles()
             throw Exception("Keytab file not found", ErrorCodes::BAD_ARGUMENTS);
 
         if (krb5_gss_register_acceptor_identity(params.keytab.c_str()))
-            throw Exception("Invalid keytab file is specified", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Failed to register keytab file", ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (!params.principal.empty())
