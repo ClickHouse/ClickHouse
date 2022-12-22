@@ -15,18 +15,11 @@ DeleteBitmapPtr DeleteBitmapCache::getOrCreate(const MergeTreeDataPartPtr & part
     if (auto it = get({part->info, version}))
         return it;
 
-    auto disk = part->data_part_storage->getDisk();
-    String full_path = part->data_part_storage->getRelativePath() + StorageUniqueMergeTree::DELETE_DIR_NAME + toString(version) + ".bitmap";
-    if (!disk->exists(full_path))
-    {
-        throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST,
-            "The delete bitmap file of version {} for data part {} does not exist",
-            version,
-            part->info.getPartName());
-    }
-    auto new_delete_bitmap = std::make_shared<DeleteBitmap>();
-    new_delete_bitmap->deserialize(full_path, disk);
+    MutableDataPartStoragePtr data_part_storage = const_cast<IMergeTreeDataPart *>(part.get())->getDataPartStoragePtr();
+
+    auto new_delete_bitmap = std::make_shared<DeleteBitmap>(version);
+    new_delete_bitmap->deserialize(data_part_storage);
+
     set({part->info, version}, new_delete_bitmap);
     return new_delete_bitmap;
 }

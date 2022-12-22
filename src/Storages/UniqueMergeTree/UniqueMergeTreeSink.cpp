@@ -23,7 +23,6 @@ TableVersionPtr UniqueMergeTreeSink::updateDeleteBitmapAndTableVersion(
 {
     /// Note: delete bitmap located in the directory of data part(in same disk),
     /// but table version always located in the first disk
-    auto new_part_data_path = part->data_part_storage->getRelativePath();
     auto current_version = storage.currentVersion();
     auto new_table_version = std::make_unique<TableVersion>(*current_version);
     new_table_version->version++;
@@ -37,20 +36,19 @@ TableVersionPtr UniqueMergeTreeSink::updateDeleteBitmapAndTableVersion(
     }
 
     /// Generate delete bitmap for new part
-    auto new_delete_bitmap = std::make_shared<DeleteBitmap>();
-    new_delete_bitmap->setVersion(new_table_version->version);
+    auto new_delete_bitmap = std::make_shared<DeleteBitmap>(new_table_version->version);
     if (auto it = deletes_map.find(part_info.min_block); it != deletes_map.end())
     {
         LOG_INFO(storage.log, "{} rows deleted for new inserted part {}", it->second.size(), part_info.getPartName());
         new_delete_bitmap->addDels(it->second);
         deletes_map.erase(it);
     }
-    new_delete_bitmap->serialize(new_part_data_path + StorageUniqueMergeTree::DELETE_DIR_NAME, part->data_part_storage->getDisk());
+    new_delete_bitmap->serialize(part->getDataPartStoragePtr());
     auto & delete_bitmap_cache = storage.deleteBitmapCache();
     delete_bitmap_cache.set({part_info, new_table_version->version}, new_delete_bitmap);
 
     /// Update delete bitmap
-    /// leefeng, here find part info by min_block
+    /// Here find part info by min_block
     for (const auto & [min_block, row_numbers] : deletes_map)
     {
         auto info = storage.findPartInfoByMinBlock(min_block);
@@ -82,10 +80,11 @@ TableVersionPtr UniqueMergeTreeSink::updateDeleteBitmapAndTableVersion(
             info.getPartName(),
             part_info.getPartName());
 
+        IMergeTreeDataPart * mutable_part = const_cast<IMergeTreeDataPart *>(update_part.get());
+
         auto bitmap = delete_bitmap_cache.getOrCreate(update_part, part_version->second);
         auto new_bitmap = bitmap->addDelsAsNewVersion(new_table_version->version, row_numbers);
-        auto bitmap_path = update_part->data_part_storage->getRelativePath() + StorageUniqueMergeTree::DELETE_DIR_NAME;
-        new_bitmap->serialize(bitmap_path, update_part->data_part_storage->getDisk());
+        new_bitmap->serialize(mutable_part->getDataPartStoragePtr());
 
         if (auto it = new_table_version->part_versions.find(info); it != new_table_version->part_versions.end())
         {
@@ -176,7 +175,7 @@ void UniqueMergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part && !write_state.delete_key_column)
             continue;
 
-        if (!support_parallel_write && temp_part.part->data_part_storage->supportParallelWrite())
+        if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
         if (storage.getDeduplicationLog())
@@ -319,7 +318,7 @@ void UniqueMergeTreeSink::finishDelayedChunk()
                     }
                 }
 
-                added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock, std::move(new_table_version));
+                added = storage.renameTempPartAndAdd(part, transaction, lock, std::move(new_table_version));
                 transaction.commit(&lock);
                 primary_index->setState(PrimaryIndex::State::VALID);
             }

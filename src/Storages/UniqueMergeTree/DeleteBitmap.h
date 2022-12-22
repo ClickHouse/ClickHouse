@@ -2,10 +2,7 @@
 
 #include <base/types.h>
 
-#include <Disks/IDisk.h>
-
-#include <memory>
-#include <vector>
+#include <Storages/MergeTree/IDataPartStorage.h>
 
 #include <roaring.hh>
 
@@ -17,6 +14,7 @@ public:
     using RoaringBitmap = roaring::Roaring;
 
     DeleteBitmap();
+    explicit DeleteBitmap(UInt64 version_);
     DeleteBitmap(const DeleteBitmap & rhs);
     DeleteBitmap(UInt64 version_, const std::vector<UInt32> & dels);
 
@@ -31,8 +29,8 @@ public:
 
     size_t cardinality() const;
 
-    void serialize(const String & dir_path, DiskPtr disk) const; /// dir_path = deletes/
-    void deserialize(const String & full_path, DiskPtr disk); /// full_path = deletes/version.bitmap
+    void serialize(MutableDataPartStoragePtr data_part_storage) const;
+    void deserialize(MutableDataPartStoragePtr data_part_storage);
 
     DeleteBitmap & operator=(const DeleteBitmap & rhs);
 
