@@ -145,6 +145,7 @@ public:
         {
             if (tryRemoveSorting(current_node, parent_node))
             {
+                logStep("step affect sorting", nodes_affect_order.back());
                 logStep("removed from plan", current_node);
 
                 auto & frame = stack.back();
@@ -189,12 +190,10 @@ private:
         if (!canRemoveCurrentSorting())
             return false;
 
-        chassert(typeid_cast<ExpressionStep *>(sorting_node->children.front()->step.get()));
         chassert(!sorting_node->children.front()->children.empty());
 
         /// need to remove sorting
         parent_node->children.front() = sorting_node->children.front();
-
         return true;
     }
 
