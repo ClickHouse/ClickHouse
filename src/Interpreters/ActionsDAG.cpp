@@ -9,6 +9,7 @@
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ArrayJoinAction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
@@ -141,7 +142,7 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string al
 
 const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::string result_name)
 {
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(child.result_type.get());
+    const auto & array_type = getArrayJoinDataType(child.result_type);
     if (!array_type)
         throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 
@@ -463,11 +464,10 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
             auto key = arguments.at(0);
             key.column = key.column->convertToFullColumnIfConst();
 
-            const ColumnArray * array = typeid_cast<const ColumnArray *>(key.column.get());
+            const auto * array = getArrayJoinColumnRawPtr(key.column);
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
-                                "ARRAY JOIN of not array: {}", node->result_name);
-
+                                "ARRAY JOIN of not array nor map: {}", node->result_name);
             res_column.column = array->getDataPtr()->cloneEmpty();
             break;
         }
@@ -1537,12 +1537,39 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     return res;
 }
 
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getParents(const Node * target) const
+{
+    NodeRawConstPtrs parents;
+    for (const auto & node : getNodes())
+    {
+        for (const auto & child : node.children)
+        {
+            if (child == target)
+            {
+                parents.push_back(&node);
+                break;
+            }
+        }
+    }
+    return parents;
+}
+
 ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameSet & sort_columns) const
 {
     std::unordered_set<const Node *> split_nodes;
     for (const auto & sort_column : sort_columns)
         if (const auto * node = tryFindInOutputs(sort_column))
+        {
             split_nodes.insert(node);
+            /// Sorting can materialize const columns, so if we have const expression used in sorting,
+            /// we should also add all it's parents, otherwise, we can break the header
+            /// (function can expect const column, but will get materialized).
+            if (node->column && isColumnConst(*node->column))
+            {
+                auto parents = getParents(node);
+                split_nodes.insert(parents.begin(), parents.end());
+            }
+        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Sorting column {} wasn't found in the ActionsDAG's outputs. DAG:\n{}",
