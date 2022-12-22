@@ -72,7 +72,7 @@ private:
     ZSTD_CCtx * cctx;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
-    bool first_write;
+    bool first_write{true};
 };
 
 }

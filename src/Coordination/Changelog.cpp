@@ -105,37 +105,47 @@ public:
 
     void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode)
     {
-        if (mode == WriteMode::Append && file_description->expectedEntriesCountInLog() != rotate_interval)
-            LOG_TRACE(&Poco::Logger::get("Changelog"), "Looks like rotate_logs_interval was changed, current {}, expected entries in last log {}", rotate_interval, file_description->expectedEntriesCountInLog());
-
-        if (file_buf)
+        try
         {
-            finalizeCurrentFile(/* final */ false);
+            if (mode == WriteMode::Append && file_description->expectedEntriesCountInLog() != rotate_interval)
+                LOG_TRACE(
+                    &Poco::Logger::get("Changelog"),
+                    "Looks like rotate_logs_interval was changed, current {}, expected entries in last log {}",
+                    rotate_interval,
+                    file_description->expectedEntriesCountInLog());
 
-            assert(current_file_description);
-            if (last_index != current_file_description->to_log_index)
+            if (file_buf)
             {
-                auto new_path = formatChangelogPath(
-                    changelogs_dir,
-                    current_file_description->prefix,
-                    current_file_description->from_log_index,
-                    last_index,
-                    current_file_description->extension);
-                std::filesystem::rename(current_file_description->path, new_path);
-                current_file_description->path = std::move(new_path);
+                finalizeCurrentFile(/* final */ false);
+
+                assert(current_file_description);
+                if (last_index && *last_index != current_file_description->to_log_index)
+                {
+                    auto new_path = formatChangelogPath(
+                        changelogs_dir,
+                        current_file_description->prefix,
+                        current_file_description->from_log_index,
+                        *last_index,
+                        current_file_description->extension);
+                    std::filesystem::rename(current_file_description->path, new_path);
+                    current_file_description->path = std::move(new_path);
+                }
             }
-        }
 
-        file_buf = std::make_unique<WriteBufferFromFile>(
-            file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY));
-        start_index = file_description->from_log_index;
-        last_index = start_index;
-        current_file_description = std::move(file_description);
+            file_buf = std::make_unique<WriteBufferFromFile>(
+                file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY));
+            start_index = file_description->from_log_index;
+            last_index.reset();
+            current_file_description = std::move(file_description);
 
-        if (compress_logs && mode == WriteMode::Append && ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock(current_file_description->path))
-        {
-            ZstdDeflatingAppendableWriteBuffer::addEmptyBlock(*file_buf);
-            file_buf->sync();
+            if (compress_logs && mode == WriteMode::Append && ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock(current_file_description->path))
+            {
+                ZstdDeflatingAppendableWriteBuffer::addEmptyBlock(*file_buf);
+                flush();
+            }
+        } catch (...) {
+            tryLogCurrentException(&Poco::Logger::get("Changelog"));
+            throw;
         }
 
         prealloc_done = false;
@@ -259,7 +269,7 @@ private:
             file_buf->write(memory.raw_data(), memory.size());
             flush();
 
-            assert(max_log_file_size == 0 || memory.size() < total_bytes_available - written);
+            assert(max_log_file_size == 0 || !prealloc_done || memory.size() < total_bytes_available - written);
             written += memory.size();
 
             if (final)
@@ -296,18 +306,25 @@ private:
             return;
         }
 
-        int res = fallocate(file_buf->getFD(), FALLOC_FL_KEEP_SIZE, 0, max_log_file_size);
-        if (res == ENOSPC)
+        bool fallocate_ok = false;
+#ifdef OS_LINUX
         {
-            LOG_FATAL(&Poco::Logger::get("Changelog"), "Failed to allocate enough space on disk for logs");
-            return;
-        }
+            int res = fallocate(file_buf->getFD(), FALLOC_FL_KEEP_SIZE, 0, max_log_file_size);
+            if (res == ENOSPC)
+            {
+                LOG_FATAL(&Poco::Logger::get("Changelog"), "Failed to allocate enough space on disk for logs");
+                return;
+            }
 
-        bool fallocate_ok = res == 0;
+            fallocate_ok = res == 0;
+        }
+#endif
 
         struct stat buf;
-        res = fstat(file_buf->getFD(), &buf);
-        assert(res == 0);
+        {
+            int res = fstat(file_buf->getFD(), &buf);
+            assert(res == 0);
+        }
 
         written = buf.st_size;
         total_bytes_available = fallocate_ok ? buf.st_blocks * 512 : max_log_file_size;
@@ -346,7 +363,7 @@ private:
     const std::filesystem::path changelogs_dir;
 
     uint64_t start_index;
-    uint64_t last_index;
+    std::optional<uint64_t> last_index;
 };
 
 struct ChangelogReadResult
