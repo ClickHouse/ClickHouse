@@ -113,6 +113,7 @@ public:
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
+        bool need_prefix = true,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
@@ -126,7 +127,8 @@ public:
         ContextPtr context,
         const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
-        TableLockHolder & table_lock_holder);
+        TableLockHolder & table_lock_holder,
+        bool need_prefix = true);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,

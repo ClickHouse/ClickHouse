@@ -678,7 +678,6 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadProjections(false, false);
-
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
@@ -755,6 +754,8 @@ struct MutationContext
     MergeTreeTransactionPtr txn;
 
     MergeTreeData::HardlinkedFiles hardlinked_files;
+
+    bool need_prefix = true;
 
     scope_guard temporary_directory_lock;
 };
@@ -862,6 +863,7 @@ public:
                 {},
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
+                /* need_prefix */ true,
                 ctx->new_data_part.get(),
                 ".tmp_proj");
 
@@ -1024,6 +1026,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
                     *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
                 tmp_part.finalize();
+                tmp_part.part->getDataPartStorage().commitTransaction();
                 projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
             }
         }
@@ -1046,6 +1049,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
             temp_part.finalize();
+            temp_part.part->getDataPartStorage().commitTransaction();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));
         }
     }
@@ -1442,7 +1446,8 @@ MutateTask::MutateTask(
     const MergeTreeTransactionPtr & txn,
     MergeTreeData & data_,
     MergeTreeDataMergerMutator & mutator_,
-    ActionBlocker & merges_blocker_)
+    ActionBlocker & merges_blocker_,
+    bool need_prefix_)
     : ctx(std::make_shared<MutationContext>())
 {
     ctx->data = &data_;
@@ -1460,6 +1465,7 @@ MutateTask::MutateTask(
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
     ctx->storage_from_source_part = std::make_shared<StorageFromMergeTreeDataPart>(ctx->source_part);
+    ctx->need_prefix = need_prefix_;
 
     auto storage_snapshot = ctx->storage_from_source_part->getStorageSnapshot(ctx->metadata_snapshot, context_);
     extendObjectColumns(ctx->storage_columns, storage_snapshot->object_columns, /*with_subcolumns=*/ false);
@@ -1547,7 +1553,14 @@ bool MutateTask::prepare()
             files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
 
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
+        std::string prefix;
+        if (ctx->need_prefix)
+            prefix = "tmp_clone_";
+
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
+
+        part->getDataPartStorage().beginTransaction();
+
         ctx->temporary_directory_lock = std::move(lock);
         promise.set_value(std::move(part));
         return false;
@@ -1580,7 +1593,10 @@ bool MutateTask::prepare()
     /// FIXME new_data_part is not used in the case when we clone part with cloneAndLoadDataPartOnSameDisk and return false
     /// Is it possible to handle this case earlier?
 
-    String tmp_part_dir_name = "tmp_mut_" + ctx->future_part->name;
+    std::string prefix;
+    if (ctx->need_prefix)
+        prefix = "tmp_mut_";
+    String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
 
     auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
@@ -1674,7 +1690,9 @@ bool MutateTask::prepare()
             if (copy_checksumns)
                 files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
 
-            auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
+            auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
+
+            part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
             promise.set_value(std::move(part));
             return false;
