@@ -40,12 +40,6 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
         return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 
     return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
-
-    // Link list implementation doesn't show noticeable performance improvement
-    // if (which.idx == TypeIndex::String)
-    //     return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeString, Trait>>(argument_type, std::forward<TArgs>(args)...);
-
-    // return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeGeneral, Trait>>(argument_type, std::forward<TArgs>(args)...);
 }
 
 
