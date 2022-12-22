@@ -35,6 +35,8 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+class DeferredConstructedRegexpsPtr;
+
 class RegExpTreeDictionary : public IDictionary
 {
 public:
@@ -115,7 +117,7 @@ public:
 
 private:
     const DictionaryStructure structure;
-    const DictionarySourcePtr source_ptr;
+    DictionarySourcePtr source_ptr;
     const Configuration configuration;
 
     size_t bytes_allocated = 0;
@@ -129,6 +131,8 @@ private:
     std::vector<std::string> regexps;
     std::vector<UInt64>      regexp_ids;
 
+    Poco::Logger * logger;
+
     void calculateBytesAllocated();
 
     void loadData();
@@ -137,7 +141,7 @@ private:
     void initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id);
     void initGraph();
 
-    std::unordered_map<String, MutableColumnPtr> matchSearchAllIndices(
+    std::unordered_map<String, ColumnPtr> matchSearchAllIndices(
         const ColumnString::Chars & keys_data,
         const ColumnString::Offsets & keys_offsets,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
@@ -153,8 +157,9 @@ private:
     struct RegexTreeNode;
     using RegexTreeNodePtr = std::unique_ptr<RegexTreeNode>;
 
-    std::unordered_map<UInt64, RegexTreeNodePtr> regex_nodes;
+    std::map<UInt64, RegexTreeNodePtr> regex_nodes;
     std::unordered_map<UInt64, UInt64> topology_order;
+
 };
 
 }

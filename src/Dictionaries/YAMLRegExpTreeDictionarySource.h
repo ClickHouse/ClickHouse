@@ -14,6 +14,7 @@
 #include <Poco/Timestamp.h>
 
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 namespace DB
 {
@@ -26,7 +27,7 @@ namespace ErrorCodes
 class YAMLRegExpTreeDictionarySource : public IDictionarySource
 {
 public:
-    YAMLRegExpTreeDictionarySource(const String & filepath_, Block & sample_block_, ContextPtr context_, bool created_from_ddl);
+    YAMLRegExpTreeDictionarySource(const String & filepath_, const DictionaryStructure & dict_struct_, ContextPtr context_, bool created_from_ddl);
 
     YAMLRegExpTreeDictionarySource(const YAMLRegExpTreeDictionarySource & other);
 
@@ -59,8 +60,9 @@ public:
 
 private:
     const String filepath;
+    String key_name;
+    const DictionaryStructure structure;
 
-    Block sample_block;
     ContextPtr context;
 
     Poco::Logger * logger;

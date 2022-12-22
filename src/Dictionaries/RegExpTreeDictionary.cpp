@@ -5,11 +5,11 @@
 #include <unordered_map>
 #include <base/defines.h>
 
+#include <Poco/Logger.h>
 #include <Poco/RegularExpression.h>
 
-#include "Common/Exception.h"
-#include "Common/StringUtils/StringUtils.h"
 #include <Common/ArenaUtils.h>
+#include <Common/logger_useful.h>
 
 #include <Functions/Regexps.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -20,7 +20,12 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <re2_st/stringpiece.h>
 
+#include "Columns/ColumnsNumber.h"
+#include "Core/ColumnWithTypeAndName.h"
+#include "DataTypes/DataTypeString.h"
+#include "DataTypes/DataTypesNumber.h"
 #include "DataTypes/Serializations/ISerialization.h"
+#include "Dictionaries/ClickHouseDictionarySource.h"
 #include "Formats/FormatSettings.h"
 #include "Functions/FunctionHelpers.h"
 #include "IO/ReadBufferFromString.h"
@@ -40,6 +45,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int HYPERSCAN_CANNOT_SCAN_TEXT;
     extern const int UNSUPPORTED_METHOD;
+    extern const int INCORRECT_DICTIONARY_DEFINITION;
 }
 
 //const std::string_view kId;
@@ -54,7 +60,8 @@ const std::string kParentId = "parent_id";
 const std::string kKeys = "keys";
 const std::string kValues = "values";
 
-namespace {
+namespace
+{
     /// StringPiece represents a back-reference or a string lateral
     struct StringPiece
     {
@@ -65,6 +72,7 @@ namespace {
         explicit StringPiece(int ref_) : ref_num(ref_) {}
     };
 
+    /// TODO: We should consider what kind of types we should support.
     Field parseStringToField(const String & raw, DataTypePtr data_type)
     {
         ReadBufferFromString buffer(raw);
@@ -84,7 +92,8 @@ struct RegExpTreeDictionary::RegexTreeNode
     re2_st::RE2 searcher;
     RegexTreeNode(UInt64 id_, UInt64 parent_id_, const String & regex_, const re2_st::RE2::Options & regexp_options):
         id(id_), parent_id(parent_id_), regex(regex_), searcher(regex_, regexp_options) {}
-    struct AttributeValue {
+    struct AttributeValue
+    {
         Field field;
         std::vector<StringPiece> pieces;
 
@@ -94,26 +103,26 @@ struct RegExpTreeDictionary::RegexTreeNode
     std::unordered_map<String, AttributeValue> attributes;
 };
 
-std::vector<StringPiece> createStringPieces(const String & value, int num_captures)
+std::vector<StringPiece> createStringPieces(const String & value, int num_captures, const String & regex, Poco::Logger * logger)
 {
     std::vector<StringPiece> result;
     String literal;
     for (size_t i = 0; i < value.size(); ++i)
     {
-        if (value[i] == '\\' && i + 1 < value.size())
+        if ((value[i] == '\\' || value[i] == '$') && i + 1 < value.size())
         {
             if (isNumericASCII(value[i+1]))
             {
-                if (!literal.empty()) {
+                if (!literal.empty())
+                {
                     result.push_back(StringPiece(literal));
                     literal = "";
                 }
-                int ref_num = value[i]-'0';
+                int ref_num = value[i+1]-'0';
                 if (ref_num >= num_captures)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Reference Id {} in set string is invalid, the regexp only has {} capturing groups",
-                        ref_num, num_captures-1);
+                    LOG_DEBUG(logger,
+                        "Reference Id {} in set string is invalid, the regexp {} only has {} capturing groups",
+                        ref_num, regex, num_captures-1);
                 result.push_back(StringPiece(ref_num));
                 ++i;
                 continue;
@@ -130,50 +139,11 @@ std::vector<StringPiece> createStringPieces(const String & value, int num_captur
 
 void RegExpTreeDictionary::calculateBytesAllocated()
 {
-    //for (auto & pair : names_to_attributes)
-    //{
-    //    const auto & name = pair.first;
-    //    auto & attribute = pair.second;
-
-    //    bytes_allocated += name.size() + sizeof(attribute);
-
-    //    auto type_call = [&](const auto & dictionary_attribute_type)
-    //    {
-    //        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-    //        using AttributeType = typename Type::AttributeType;
-    //        using ValueType = DictionaryValueType<AttributeType>;
-
-    //        const auto & container = std::get<ContainerType<ValueType>>(attribute.container);
-    //        bytes_allocated += sizeof(ContainerType<ValueType>);
-
-    //        if constexpr (std::is_same_v<ValueType, Array>)
-    //        {
-    //            /// It is not accurate calculations
-    //            bytes_allocated += sizeof(Array) * container.size();
-    //        }
-    //        else
-    //        {
-    //            bytes_allocated += container.allocated_bytes();
-    //        }
-
-    //        bucket_count = container.capacity();
-    //    };
-
-    //    callOnDictionaryAttributeType(attribute.type, type_call);
-
-    //    if (!attribute.nullable_set.empty())
-    //    {
-    //        bytes_allocated += sizeof(*attribute.nullable_set.begin()) * attribute.nullable_set.size();
-    //    }
-    //}
-
-    //for (const auto & regexp : regexps)
-    //{
-    //    bytes_allocated += regexp.size();
-    //}
-
-    //bytes_allocated += 2 * keys_to_ids.size() * sizeof(UInt64);
-
+    for (const String & regex : regexps)
+        bytes_allocated += regex.size();
+    bytes_allocated += sizeof(UInt64) * regexp_ids.size();
+    bytes_allocated += (sizeof(RegexTreeNode) + sizeof(UInt64)) * regex_nodes.size();
+    bytes_allocated += 2 * sizeof(UInt64) * topology_order.size();
 }
 
 void RegExpTreeDictionary::initRegexNodes(Block & block)
@@ -189,10 +159,13 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
     {
         UInt64 id = id_column->getUInt(i);
         UInt64 parent_id = pid_column->getUInt(i);
-        const String & regex = (*regex_column)[i].safeGet<String>();
+        String regex = (*regex_column)[i].safeGet<String>();
 
-        if (!regex_nodes.contains(id))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "There are duplicate id {}", id);
+        if (regex_nodes.contains(id))
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are duplicate id {}", id);
+
+        if (id == 0)
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are invalid id {}", id);
 
         regexps.push_back(regex);
         regexp_ids.push_back(id);
@@ -213,12 +186,13 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
             if (structure.hasAttribute(name))
             {
                 const auto & attr = structure.getAttribute(name);
-                auto string_pieces = createStringPieces(value, num_captures);
+                auto string_pieces = createStringPieces(value, num_captures, regex, logger);
                 if (!string_pieces.empty())
                 {
                     node->attributes[name] = RegexTreeNode::AttributeValue{.field = values[i], .pieces = std::move(string_pieces)};
                 }
-                else {
+                else
+                {
                     Field field = parseStringToField(values[i].safeGet<String>(), attr.type);
                     node->attributes[name] = RegexTreeNode::AttributeValue{.field = std::move(field)};
                 }
@@ -232,21 +206,21 @@ void RegExpTreeDictionary::initGraph()
 {
     for (const auto & [id, value]: regex_nodes)
     {
-        UInt64 pid = value->id;
-        if (pid == id)
+        UInt64 pid = value->parent_id;
+        if (pid == 0) // this is root
             continue;
         if (regex_nodes.contains(pid))
             regex_nodes[pid]->children.push_back(id);
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown parent id {}", pid);
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown parent id {}", pid);
     }
     std::set<UInt64> visited;
     UInt64 topology_id = 0;
     for (const auto & [id, value]: regex_nodes)
-        if (value->parent_id == id) // this is root node.
+        if (value->parent_id == 0) // this is root node.
             initTopologyOrder(id, visited, topology_id);
     if (topology_order.size() != regex_nodes.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Regex tree");
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Invalid Regex tree");
 }
 
 void RegExpTreeDictionary::initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id)
@@ -254,7 +228,7 @@ void RegExpTreeDictionary::initTopologyOrder(UInt64 node_idx, std::set<UInt64> &
     visited.insert(node_idx);
     for (UInt64 child_idx : regex_nodes[node_idx]->children)
         if (visited.contains(child_idx))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Regex tree");
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Invalid Regex tree");
         else
             initTopologyOrder(child_idx, visited, topology_id);
     topology_order[node_idx] = topology_id++;
@@ -282,8 +256,20 @@ void RegExpTreeDictionary::loadData()
 
 RegExpTreeDictionary::RegExpTreeDictionary(
     const StorageID & id_, const DictionaryStructure & structure_, DictionarySourcePtr source_ptr_, Configuration configuration_)
-    : IDictionary(id_), structure(structure_), source_ptr(source_ptr_), configuration(configuration_)
+    : IDictionary(id_), structure(structure_), source_ptr(source_ptr_), configuration(configuration_), logger(&Poco::Logger::get("RegExpTreeDictionary"))
 {
+    if (auto * ch_source = typeid_cast<ClickHouseDictionarySource *>(source_ptr.get()))
+    {
+        Block sample_block;
+        /// id, parent_id, regex, keys, values
+        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeUInt64()), kId));
+        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeUInt64()), kParentId));
+        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeString()), kRegExp));
+        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeArray(DataTypePtr(new DataTypeString()))), kKeys));
+        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeArray(DataTypePtr(new DataTypeString()))), kValues));
+        ch_source->sample_block = std::move(sample_block);
+    }
+
     loadData();
     calculateBytesAllocated();
 }
@@ -294,7 +280,8 @@ String processBackRefs(const String & data, const re2_st::RE2 & searcher, const 
     re2_st::StringPiece matches[10];
     String result;
     searcher.Match(haystack, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
-    for (const auto & item : pieces) {
+    for (const auto & item : pieces)
+    {
         if (item.ref_num >= 0)
             result += matches[item.ref_num].ToString();
         else
@@ -331,27 +318,29 @@ bool RegExpTreeDictionary::setAttributes(
     }
 
     auto parent_id = regex_nodes.at(id)->parent_id;
-    if (parent_id != id)
+    if (parent_id > 0)
         setAttributes(parent_id, attributes_to_set, data, visited_nodes, attributes);
 
     // if all the attributes have set, the walking through can be stopped.
     return attributes_to_set.size() == attributes.size();
 }
 
-namespace {
-    struct MatchResult {
+namespace
+{
+    struct MatchContext
+    {
         std::unordered_set<UInt64> matched_idx_set;
         std::vector<std::pair<UInt64, UInt64>> matched_idx_sorted_list;
 
         const std::vector<UInt64> & regexp_ids ;
         const std::unordered_map<UInt64, UInt64> & topology_order;
 
-        MatchResult(const std::vector<UInt64> & regexp_ids_, const std::unordered_map<UInt64, UInt64> & topology_order_)
+        MatchContext(const std::vector<UInt64> & regexp_ids_, const std::unordered_map<UInt64, UInt64> & topology_order_)
             : regexp_ids(regexp_ids_), topology_order(topology_order_) {}
 
         void insert(unsigned int id)
         {
-            UInt64 idx = regexp_ids[id];
+            UInt64 idx = regexp_ids[id-1];
             UInt64 topological_order = topology_order.at(idx);
             matched_idx_set.emplace(idx);
             matched_idx_sorted_list.push_back(std::make_pair(topological_order, idx));
@@ -369,11 +358,11 @@ namespace {
     };
 }
 
-std::unordered_map<String, MutableColumnPtr> RegExpTreeDictionary::matchSearchAllIndices(
+std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndices(
     const ColumnString::Chars & keys_data,
     const ColumnString::Offsets & key_offsets,
     const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> & defaults) const
+    const std::unordered_map<String, ColumnPtr> & defaults) const
 {
 #if USE_VECTORSCAN
     std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
@@ -393,26 +382,20 @@ std::unordered_map<String, MutableColumnPtr> RegExpTreeDictionary::matchSearchAl
     std::unordered_map<String, MutableColumnPtr> columns;
 
     /// initialize columns
-    for (auto it = attributes.begin(); it != attributes.end(); ++it)
+    for (const auto & [name, attr] : attributes)
     {
-        const auto & name = it->first;
-        const auto & attr = it->second;
-        auto type_call = [&](const auto & dictionary_attribute_type)
-        {
-            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-            using AttributeType = typename Type::AttributeType;
-
-            columns[name] = DictionaryAttributeColumnProvider<AttributeType>::getColumn(attr, key_offsets.size());
-        };
-        callOnDictionaryAttributeType(attr.underlying_type, std::move(type_call));
+        auto col_ptr = attr.type->createColumn();
+        col_ptr->reserve(key_offsets.size());
+        columns[name] = std::move(col_ptr);
     }
+
     auto on_match = [](unsigned int id,
                     unsigned long long /* from */, // NOLINT
                     unsigned long long /* to */, // NOLINT
                     unsigned int /* flags */,
                     void * context) -> int
     {
-        static_cast<MatchResult *>(context)->insert(id);
+        static_cast<MatchContext *>(context)->insert(id);
         return 0;
     };
 
@@ -422,7 +405,7 @@ std::unordered_map<String, MutableColumnPtr> RegExpTreeDictionary::matchSearchAl
         auto key_offset = key_offsets[key_idx];
         UInt64 length = key_offset - offset - 1;
 
-        MatchResult match_result(regexp_ids, topology_order);
+        MatchContext match_result(regexp_ids, topology_order);
 
         err = hs_scan(
             hyperscan_regex->get()->getDB(),
@@ -437,22 +420,24 @@ std::unordered_map<String, MutableColumnPtr> RegExpTreeDictionary::matchSearchAl
             throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
 
         match_result.sort();
-        offset = key_offset;
 
         // Walk through the regex tree util all attributes are set;
         std::unordered_map<String, Field> attributes_to_set;
         std::unordered_set<UInt64> visited_nodes;
 
         // check if it is a valid id
-        auto is_invalid = [&](UInt64 id) {
-            while(id != regex_nodes.at(id)->parent_id)
+        auto is_invalid = [&](UInt64 id)
+        {
+            while (id)
             {
-                id = regex_nodes.at(id)->parent_id;
                 if (!match_result.contains(id))
                     return false;
+                id = regex_nodes.at(id)->parent_id;
             }
             return true;
         };
+
+        String str = String(reinterpret_cast<const char *>(keys_data.data()) + offset, length);
 
         for (auto item : match_result.matched_idx_sorted_list)
         {
@@ -461,36 +446,32 @@ std::unordered_map<String, MutableColumnPtr> RegExpTreeDictionary::matchSearchAl
                 continue;
             if (visited_nodes.contains(id))
                 continue;
-            if(setAttributes(id, attributes_to_set, String(keys_data[key_idx], length), visited_nodes, attributes))
+            if (setAttributes(id, attributes_to_set, str, visited_nodes, attributes))
                 break;
         }
-        // TODO: fill in default values;
 
-        //for (auto it = attributes.begin(); it != attributes.end(); it++)
-        //{
-        //    const auto & name = it->first;
-        //    if (attributes_to_set.contains(name))
-        //        continue;
+        for (const auto & [name, attr] : attributes)
+        {
+            if (attributes_to_set.contains(name))
+                continue;
 
-        //    /// If this attribute is yet to set, we should set it to default value.
-        //    const auto & attr = it->second;
-        //    auto type_call = [&](const auto & dictionary_attribute_type)
-        //    {
-        //        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        //        using AttributeType = typename Type::AttributeType;
-
-        //        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(attr.null_value, defaults.at(name));
-        //        columns[name]->insert(default_value_extractor[key_idx]);
-        //    };
-        //    callOnDictionaryAttributeType(attr.underlying_type, std::move(type_call));
-        //}
+            /// TODO: default value might be a back-reference.
+            DefaultValueProvider default_value(attr.null_value, defaults.at(name));
+            columns[name]->insert(default_value.getDefaultValue(key_idx));
+        }
 
         // insert to columns
         for (const auto & [name, value] : attributes_to_set)
             columns[name]->insert(value);
+
+        offset = key_offset;
     }
 
-    return columns;
+    std::unordered_map<String, ColumnPtr> result;
+    for (auto & [name, mutable_ptr] : columns)
+        result.emplace(name, std::move(mutable_ptr));
+
+    return result;
 #else
     (void)keys_data;
     (void)keys_offsets;
@@ -524,23 +505,22 @@ Columns RegExpTreeDictionary::getColumns(
 
     /// calculate matches
     const ColumnString * key_column = typeid_cast<const ColumnString *>(key_columns[0].get());
-    auto columns_map = matchSearchAllIndices(
+    const auto & columns_map = matchSearchAllIndices(
         key_column->getChars(),
         key_column->getOffsets(),
         attributes,
         defaults);
 
     Columns result;
-    /// TODO: some attribute_names might be repeated.
     for (const String & name : attribute_names)
-        result.push_back(std::move(columns_map[name]));
+        result.push_back(columns_map.at(name));
 
     return result;
 }
 
 void registerDictionaryRegExpTree(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string & full_name,
+    auto create_layout = [=](const std::string &,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -548,9 +528,10 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
                              ContextPtr,
                              bool) -> DictionaryPtr
     {
-        if (dict_struct.id)
+
+        if (!dict_struct.key.has_value() || dict_struct.key.value().size() != 1 || (*dict_struct.key)[0].type->getName() != "String")
         {
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout `{}`", full_name);
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "dictionary regexp_tree should have one primary key with string value to represent regular expressions");
         }
 
         String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
@@ -564,7 +545,7 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
         return std::make_unique<RegExpTreeDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    factory.registerLayout("regexp_tree", create_layout, false);
+    factory.registerLayout("regexp_tree", create_layout, true);
 }
 
 }
