@@ -443,7 +443,7 @@ FileSegmentsHolder FileCache::set(const Key & key, size_t offset, size_t size, c
 
     auto it = files.find(key);
     if (it != files.end())
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "File {} already exists", key.toString());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} already exists", key.toString());
 
     if (settings.unbounded)
     {
@@ -452,7 +452,7 @@ FileSegmentsHolder FileCache::set(const Key & key, size_t offset, size_t size, c
         if (auto * cell = addCell(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock))
             file_segments.push_back(cell->file_segment);
         else
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cannot add cell for file {}", key.toString());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add cell for file {}", key.toString());
         return FileSegmentsHolder(std::move(file_segments));
     }
     return FileSegmentsHolder(splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock));
