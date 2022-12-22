@@ -315,6 +315,12 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (field == format_settings.bool_false_representation || field == format_settings.bool_true_representation)
                 return DataTypeFactory::instance().get("Bool");
 
+            /// Special case when we have number that starts with 0. In TSV we don't parse such numbers,
+            /// see readIntTextUnsafe in ReadHelpers.h. If we see data started with 0, we can determine it
+            /// as a String, so parsing won't fail.
+            if (field[0] == '0')
+                return std::make_shared<DataTypeString>();
+
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
