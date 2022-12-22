@@ -2271,6 +2271,57 @@ TEST_P(CoordinationTest, TestSystemNodeModify)
     assert_create("/keeper1/test", Error::ZOK);
 }
 
+TEST_P(CoordinationTest, ChangelogTestMaxLogSize)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+
+    uint64_t last_entry_index{0};
+    size_t i{0};
+    {
+        SCOPED_TRACE("Small rotation interval, big size limit");
+        DB::KeeperLogStore changelog("./logs", 20, true, params.enable_compression, 50 * 1024 * 1024);
+        changelog.init(1, 0);
+
+        for (; i < 100; ++i)
+        {
+            auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
+            last_entry_index = changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+
+        waitDurableLogs(changelog);
+
+        ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
+    }
+    {
+        SCOPED_TRACE("Large rotation interval, small size limit");
+        DB::KeeperLogStore changelog("./logs", 100'000, true, params.enable_compression, 4000);
+        changelog.init(1, 0);
+
+        ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
+
+        for (; i < 500; ++i)
+        {
+            auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
+            last_entry_index = changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+
+        waitDurableLogs(changelog);
+
+        ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
+    }
+    {
+        SCOPED_TRACE("Final verify all logs");
+        DB::KeeperLogStore changelog("./logs", 100'000, true, params.enable_compression, 4000);
+        changelog.init(1, 0);
+        ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
+    }
+
+}
+
+
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,
     ::testing::ValuesIn(std::initializer_list<CompressionParam>{
