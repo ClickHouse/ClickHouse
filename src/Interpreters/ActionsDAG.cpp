@@ -9,6 +9,7 @@
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ArrayJoinAction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
@@ -141,7 +142,7 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string al
 
 const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::string result_name)
 {
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(child.result_type.get());
+    const auto & array_type = getArrayJoinDataType(child.result_type);
     if (!array_type)
         throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 
@@ -463,11 +464,10 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
             auto key = arguments.at(0);
             key.column = key.column->convertToFullColumnIfConst();
 
-            const ColumnArray * array = typeid_cast<const ColumnArray *>(key.column.get());
+            const auto * array = getArrayJoinColumnRawPtr(key.column);
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
-                                "ARRAY JOIN of not array: {}", node->result_name);
-
+                                "ARRAY JOIN of not array nor map: {}", node->result_name);
             res_column.column = array->getDataPtr()->cloneEmpty();
             break;
         }
