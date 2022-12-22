@@ -14,18 +14,12 @@ if (OS_FREEBSD)
     return()
 endif()
 
-corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
+clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
 
-set(CXX_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx/include")
 # -Wno-dollar-in-identifier-extension: cxx bridge complies names with '$'
 # -Wno-unused-macros: unused CXXBRIDGE1_RUST_STRING
 set(CXXBRIDGE_CXXFLAGS "-Wno-dollar-in-identifier-extension -Wno-unused-macros")
-set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} -isystem ${CXX_INCLUDE_DIR} ${CXXBRIDGE_CXXFLAGS}")
-if (CMAKE_OSX_SYSROOT)
-    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -isysroot ${CMAKE_OSX_SYSROOT}")
-elseif(CMAKE_SYSROOT)
-    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} --sysroot ${CMAKE_SYSROOT}")
-endif()
+set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXXBRIDGE_CXXFLAGS}")
 message(STATUS "RUST_CXXFLAGS (for skim): ${RUST_CXXFLAGS}")
 # NOTE: requires RW access for the source dir
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/build.rs.in" "${CMAKE_CURRENT_SOURCE_DIR}/build.rs" @ONLY)

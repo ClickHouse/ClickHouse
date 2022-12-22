@@ -504,6 +504,8 @@ CREATE TABLE system.parts
     `creation_csn` UInt64,
     `removal_csn` UInt64,
     `has_lightweight_delete` UInt8,
+    `last_removal_attemp_time` DateTime,
+    `removal_state` String,
     `bytes` UInt64,
     `marks_size` UInt64
 )
