@@ -1086,7 +1086,7 @@ Pipe StorageS3::read(
             columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
             block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         }
-        else 
+        else
         {
             columns_description = storage_snapshot->metadata->getColumns();
             block_for_format = storage_snapshot->metadata->getSampleBlock();
