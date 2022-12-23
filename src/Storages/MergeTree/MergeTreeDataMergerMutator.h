@@ -114,7 +114,7 @@ public:
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
-        const IMergeTreeDataPart * parent_part = nullptr,
+        IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "",
         StorageUniqueMergeTree * storage = nullptr);
 

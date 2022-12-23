@@ -555,7 +555,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const MergeTreeTransactionPtr & txn,
-    const IMergeTreeDataPart * parent_part,
+    IMergeTreeDataPart * parent_part,
     const String & suffix,
     StorageUniqueMergeTree * storage)
 {
