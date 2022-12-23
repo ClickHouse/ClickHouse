@@ -117,10 +117,11 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names,const
     Block res;
 
     const auto & columns = getMetadataForQuery()->getColumns();
-    for (const auto & name : column_names)
+    for (const auto & column_name : column_names)
     {
-        const std::string & column_name  = name;
-        std::string substituted_column_name = name;
+        /// substituted_column_name is used for parameterized view (which are created using query parameters
+        /// and SELECT is used with substitution of these query parameters )
+        std::string substituted_column_name = column_name;
         std::string::size_type pos = 0u;
         for (const auto & parameter : parameter_values)
         {
@@ -141,17 +142,17 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names,const
         {
             res.insert({object_column->type->createColumn(), object_column->type, column_name});
         }
-        else if (auto it = virtual_columns.find(name); it != virtual_columns.end())
+        else if (auto it = virtual_columns.find(column_name); it != virtual_columns.end())
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
             const auto & type = it->second;
-            res.insert({type->createColumn(), type, name});
+            res.insert({type->createColumn(), type, column_name});
         }
         else
         {
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                "Column {} not found in table {}", backQuote(name), storage.getStorageID().getNameForLogs());
+                "Column {} not found in table {}", backQuote(substituted_column_name), storage.getStorageID().getNameForLogs());
         }
     }
     return res;

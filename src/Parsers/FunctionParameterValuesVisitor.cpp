@@ -27,8 +27,8 @@ public:
 
     void visit(const ASTPtr & ast)
     {
-        if (const auto * expression = ast->as<ASTExpressionList>())
-            visitExpressionList(*expression);
+        if (const auto * function = ast->as<ASTFunction>())
+            visitFunction(*function);
         for (const auto & child : ast->children)
             visit(child);
     }
@@ -36,18 +36,23 @@ public:
 private:
     NameToNameMap & parameter_values;
 
-    void visitExpressionList(const ASTExpressionList & expression_list)
+    void visitFunction(const ASTFunction & parameter_function)
     {
-        if (expression_list.children.size() != 2)
+        if (parameter_function.name != "equals" && parameter_function.children.size() != 1)
             return;
 
-        if (const auto * identifier = expression_list.children[0]->as<ASTIdentifier>())
+        const auto * expression_list = parameter_function.children[0]->as<ASTExpressionList>();
+
+        if (expression_list && expression_list->children.size() != 2)
+            return;
+
+        if (const auto * identifier = expression_list->children[0]->as<ASTIdentifier>())
         {
-            if (const auto * literal = expression_list.children[1]->as<ASTLiteral>())
+            if (const auto * literal = expression_list->children[1]->as<ASTLiteral>())
             {
                 parameter_values[identifier->name()] = convertFieldToString(literal->value);
             }
-            else if (const auto * function = expression_list.children[1]->as<ASTFunction>())
+            else if (const auto * function = expression_list->children[1]->as<ASTFunction>())
             {
                 if (isFunctionCast(function))
                 {
