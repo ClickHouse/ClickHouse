@@ -46,8 +46,6 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <fmt/format.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>

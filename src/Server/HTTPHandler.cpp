@@ -27,8 +27,6 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
