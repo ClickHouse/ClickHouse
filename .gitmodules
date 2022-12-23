@@ -296,7 +296,7 @@
 	url = https://github.com/ridiculousfish/libdivide.git
 [submodule "contrib/aws-crt-cpp"]
 	path = contrib/aws-crt-cpp
-	url = https://github.com/awslabs/aws-crt-cpp.git
+	url = https://github.com/ClickHouse/aws-crt-cpp.git
 [submodule "contrib/aws-c-io"]
 	path = contrib/aws-c-io
 	url = https://github.com/awslabs/aws-c-io.git
