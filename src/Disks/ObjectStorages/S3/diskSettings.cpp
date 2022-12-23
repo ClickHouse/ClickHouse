@@ -22,6 +22,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
+#include <Common/Macros.h>
 
 namespace DB
 {
@@ -122,7 +123,9 @@ std::unique_ptr<Aws::S3::S3Client> getClient(
         settings.request_settings.get_request_throttler,
         settings.request_settings.put_request_throttler);
 
-    S3::URI uri(config.getString(config_prefix + ".endpoint"));
+    String endpoint = config.getString(config_prefix + ".endpoint");
+    endpoint = context->getMacros()->expand(endpoint);
+    S3::URI uri(endpoint);
     if (uri.key.back() != '/')
         throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
