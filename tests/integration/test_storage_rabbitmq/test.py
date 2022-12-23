@@ -627,7 +627,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'test_sharding',
-                     rabbitmq_num_queues = 10,
+                     rabbitmq_num_queues = 5,
                      rabbitmq_num_consumers = 10,
                      rabbitmq_max_block_size = 100,
                      rabbitmq_flush_interval_ms=10000,
@@ -671,7 +671,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         connection.close()
 
     threads = []
-    threads_num = 20
+    threads_num = 10
 
     for _ in range(threads_num):
         threads.append(threading.Thread(target=produce))
@@ -696,7 +696,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     assert (
         int(result1) == messages_num * threads_num
     ), "ClickHouse lost some messages: {}".format(result)
-    assert int(result2) == 10
+    assert int(result2) == 5
 
 
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
@@ -1025,10 +1025,10 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'over',
                      rabbitmq_queue_base = 'over',
                      rabbitmq_exchange_type = 'direct',
-                     rabbitmq_num_consumers = 5,
+                     rabbitmq_num_consumers = 3,
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size = 100,
-                     rabbitmq_num_queues = 10,
+                     rabbitmq_num_queues = 2,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
