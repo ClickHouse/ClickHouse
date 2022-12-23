@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 
 namespace DB
@@ -47,15 +48,15 @@ public:
             if (function_node_arguments_nodes.size() != 2)
                 return;
 
-            auto constant_value = function_node_arguments_nodes[0]->getConstantValueOrNull();
-            if (!constant_value)
+            const auto * constant_node = function_node_arguments_nodes[0]->as<ConstantNode>();
+            if (!constant_node)
                 return;
 
-            const auto & constant_value_literal = constant_value->getValue();
+            const auto & constant_value_literal = constant_node->getValue();
             if (!isInt64OrUInt64FieldType(constant_value_literal.getType()))
                 return;
 
-            if (constant_value_literal.get<UInt64>() != 1)
+            if (constant_value_literal.get<UInt64>() != 1 || context->getSettingsRef().aggregate_functions_null_for_empty)
                 return;
 
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
@@ -80,14 +81,14 @@ public:
         if (nested_if_function_arguments_nodes.size() != 3)
             return;
 
-        auto if_true_condition_constant_value = nested_if_function_arguments_nodes[1]->getConstantValueOrNull();
-        auto if_false_condition_constant_value = nested_if_function_arguments_nodes[2]->getConstantValueOrNull();
+        const auto * if_true_condition_constant_node = nested_if_function_arguments_nodes[1]->as<ConstantNode>();
+        const auto * if_false_condition_constant_node = nested_if_function_arguments_nodes[2]->as<ConstantNode>();
 
-        if (!if_true_condition_constant_value || !if_false_condition_constant_value)
+        if (!if_true_condition_constant_node || !if_false_condition_constant_node)
             return;
 
-        const auto & if_true_condition_constant_value_literal = if_true_condition_constant_value->getValue();
-        const auto & if_false_condition_constant_value_literal = if_false_condition_constant_value->getValue();
+        const auto & if_true_condition_constant_value_literal = if_true_condition_constant_node->getValue();
+        const auto & if_false_condition_constant_value_literal = if_false_condition_constant_node->getValue();
 
         if (!isInt64OrUInt64FieldType(if_true_condition_constant_value_literal.getType()) ||
             !isInt64OrUInt64FieldType(if_false_condition_constant_value_literal.getType()))
@@ -116,10 +117,11 @@ public:
                 not_function_result_type = makeNullable(not_function_result_type);
 
             auto not_function = std::make_shared<FunctionNode>("not");
-            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context), std::move(not_function_result_type));
 
             auto & not_function_arguments = not_function->getArguments().getNodes();
             not_function_arguments.push_back(std::move(nested_if_function_arguments_nodes[0]));
+
+            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context)->build(not_function->getArgumentTypes()));
 
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
@@ -138,8 +140,7 @@ private:
             function_node.getAggregateFunction()->getParameters(),
             properties);
 
-        auto function_result_type = function_node.getResultType();
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 
     ContextPtr & context;
