@@ -65,9 +65,9 @@ class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunctio
 {
 public:
     IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
-        : result_type(result_type_)
-        , argument_types(argument_types_)
+        : argument_types(argument_types_)
         , parameters(parameters_)
+        , result_type(result_type_)
     {}
 
     /// Get main function name.
@@ -401,9 +401,9 @@ public:
 #endif
 
 protected:
-    DataTypePtr result_type;
     DataTypes argument_types;
     Array parameters;
+    DataTypePtr result_type;
 };
 
 

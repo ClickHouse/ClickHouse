@@ -428,10 +428,7 @@ public:
     }
 
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
-    String getName() const override { return getNameImpl(); }
-
-private:
-    static String getNameImpl() { return Derived::getNameImpl(); }
+    String getName() const override { return Derived::getNameImpl(); }
 };
 
 template <typename T, bool overflow, bool tuple_argument>

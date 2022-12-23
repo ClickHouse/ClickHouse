@@ -121,7 +121,7 @@ public:
             auto & not_function_arguments = not_function->getArguments().getNodes();
             not_function_arguments.push_back(std::move(nested_if_function_arguments_nodes[0]));
 
-            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context)->build(not_function->getArgumentTypes()));
+            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context)->build(not_function->getArgumentColumns()));
 
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);

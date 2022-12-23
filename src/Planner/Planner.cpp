@@ -350,7 +350,7 @@ void Planner::buildQueryPlanIfNeeded()
             auto function_node = std::make_shared<FunctionNode>("and");
             auto and_function = FunctionFactory::instance().get("and", query_context);
             function_node->getArguments().getNodes() = {query_node.getPrewhere(), query_node.getWhere()};
-            function_node->resolveAsFunction(and_function->build(function_node->getArgumentTypes()));
+            function_node->resolveAsFunction(and_function->build(function_node->getArgumentColumns()));
             query_node.getWhere() = std::move(function_node);
             query_node.getPrewhere() = {};
         }
