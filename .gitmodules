@@ -308,7 +308,7 @@
 	url = https://github.com/awslabs/aws-c-auth.git
 [submodule "contrib/aws-c-cal"]
 	path = contrib/aws-c-cal
-	url = https://github.com/awslabs/aws-c-cal.git
+	url = https://github.com/ClickHouse/aws-c-cal.git
 [submodule "contrib/aws-c-sdkutils"]
 	path = contrib/aws-c-sdkutils
 	url = https://github.com/awslabs/aws-c-sdkutils.git
