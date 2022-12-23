@@ -701,8 +701,6 @@ struct MutationContext
 
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
-
-    StoragePtr storage_from_source_part;
     StorageMetadataPtr metadata_snapshot;
 
     MutationCommandsConstPtr commands;
@@ -1464,10 +1462,9 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
-    ctx->storage_from_source_part = std::make_shared<StorageFromMergeTreeDataPart>(ctx->source_part);
     ctx->need_prefix = need_prefix_;
 
-    auto storage_snapshot = ctx->storage_from_source_part->getStorageSnapshot(ctx->metadata_snapshot, context_);
+    auto storage_snapshot = ctx->data->getStorageSnapshot(ctx->metadata_snapshot, context_);
     extendObjectColumns(ctx->storage_columns, storage_snapshot->object_columns, /*with_subcolumns=*/ false);
 }
 
@@ -1540,7 +1537,7 @@ bool MutateTask::prepare()
     }
 
     if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
+        *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -1583,7 +1580,7 @@ bool MutateTask::prepare()
     if (!ctx->for_interpreter.empty())
     {
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
-            ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
+            *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();

@@ -19,7 +19,8 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
-    const StoragePtr & storage,
+    MergeTreeData & storage,
+    MergeTreeData::DataPartPtr source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextMutablePtr context_copy
@@ -39,7 +40,8 @@ public:
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
     /// use can_execute = true, in other cases (validation, amount of commands) it can be false
     MutationsInterpreter(
-        StoragePtr storage_,
+        MergeTreeData & storage_,
+        MergeTreeData::DataPartPtr source_part_,
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
@@ -48,8 +50,6 @@ public:
         bool return_deleted_rows_ = false);
 
     void validate();
-
-    size_t evaluateCommandsSize();
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
@@ -83,18 +83,20 @@ public:
     void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
 private:
-    ASTPtr prepare(bool dry_run);
+    void prepare(bool dry_run);
 
     struct Stage;
 
-    ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
+    void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
+    void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
 
     ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 
-    StoragePtr storage;
+    MergeTreeData & storage;
+    MergeTreeData::DataPartPtr source_part;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
     ContextPtr context;
@@ -102,12 +104,6 @@ private:
     SelectQueryOptions select_limits;
 
     bool apply_deleted_mask = true;
-
-    ASTPtr mutation_ast;
-
-    /// We have to store interpreter because it use own copy of context
-    /// and some streams from execute method may use it.
-    std::unique_ptr<InterpreterSelectQuery> select_interpreter;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
