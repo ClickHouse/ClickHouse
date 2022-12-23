@@ -41,6 +41,7 @@ public:
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
+    bool supportsSparseSerialization() const override { return true; }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 private:

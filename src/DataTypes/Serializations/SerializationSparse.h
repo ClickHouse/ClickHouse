@@ -1,10 +1,12 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
 
+class ColumnSparse;
 
 /** Serialization for sparse representation.
  *  Only '{serialize,deserialize}BinaryBulk' makes sense.
@@ -27,7 +29,7 @@ public:
 
     Kind getKind() const override { return Kind::SPARSE; }
 
-    virtual void enumerateStreams(
+    void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
@@ -85,6 +87,38 @@ public:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
 private:
+    const SerializationPtr & getSerializationForMultipleStreams() const
+    {
+        return nested_non_nullable ? nested_non_nullable : nested;
+    }
+
+    void deserializeValuesWithMultipleStreams(
+        ColumnPtr & values,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state) const;
+
+    void serializeWithMultipleStreamsSparse(
+        const ColumnSparse & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
+
+    void serializeWithMultipleStreamsGeneric(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
+
+    void serializeValuesWithMultipleStreams(
+        const IColumn & values,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
+
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const ColumnPtr offsets;
@@ -93,12 +127,68 @@ private:
         SubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
             : offsets(offsets_), size(size_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        DataTypePtr create(const DataTypePtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev) const override;
+        ColumnPtr create(const ColumnPtr & prev) const override;
+    };
+
+    struct NullMapSubcolumnCreator : public ISubcolumnCreator
+    {
+        const ColumnPtr offsets;
+        const size_t size;
+
+        NullMapSubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
+            : offsets(offsets_), size(size_) {}
+
+        DataTypePtr create(const DataTypePtr & prev) const override;
         SerializationPtr create(const SerializationPtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     SerializationPtr nested;
+    SerializationPtr nested_non_nullable;
+};
+
+
+class SerializationSparseNullMap final : public SerializationNumber<UInt8>
+{
+public:
+    using Base = SerializationNumber<UInt8>;
+
+    void serializeBinaryBulkStatePrefix(
+        const IColumn & column,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkStateSuffix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void enumerateStreams(
+        EnumerateStreamsSettings & settings,
+        const StreamCallback & callback,
+        const SubstreamData & data) const override;
+
+    void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
+
+private:
+    void assertSettings(const SerializeBinaryBulkSettings & settings) const;
 };
 
 }
