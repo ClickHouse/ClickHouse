@@ -11,10 +11,13 @@
 namespace DB
 {
 
+using ColumnIdentifierSet = std::unordered_set<ColumnIdentifier>;
+
 /// Build query plan for query JOIN TREE node
 QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
     SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
+    const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context);
 
 }
