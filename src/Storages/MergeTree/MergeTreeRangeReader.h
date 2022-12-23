@@ -137,8 +137,6 @@ private:
         bool continue_reading = false;
         bool is_finished = true;
 
-//        size_t last_read_end;
-
         /// Current position from the begging of file in rows
         size_t position() const;
         size_t readRows(Columns & columns, size_t num_rows);
@@ -283,20 +281,18 @@ public:
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
-        Names extra_columns_filled;
-
         Poco::Logger * log;
     };
 
     ReadResult read(size_t max_rows, MarkRanges & ranges);
 
-    const Block & getSampleBlock() const { return sample_block; }
+    const Block & getSampleBlock() const { return result_sample_block; }
 
 private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
-//    void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -305,7 +301,8 @@ private:
 
     Stream stream;
 
-    Block sample_block;
+    Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
+    Block result_sample_block;  /// Block with columns that are returned by this step.
 
     bool last_reader_in_chain = false;
     bool is_initialized = false;
