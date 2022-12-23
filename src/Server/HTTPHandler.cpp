@@ -474,17 +474,11 @@ bool HTTPHandler::authenticateUser(
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    Strings forwarded_addresses;
-    if (!client_info.forwarded_for.empty())
-        boost::split(forwarded_addresses, client_info.forwarded_for, boost::is_any_of(","));
-
+    String forwarded_address = client_info.getLastForwardedFor();
     try
     {
-        if (!forwarded_addresses.empty() && server.config().getBool("auth_use_forwarded_address", false))
-        {
-            boost::trim(forwarded_addresses.back());
-            session->authenticate(*request_credentials, Poco::Net::SocketAddress(forwarded_addresses.back(), request.clientAddress().port()));
-        }
+        if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
+            session->authenticate(*request_credentials, Poco::Net::SocketAddress(forwarded_address, request.clientAddress().port()));
         else
             session->authenticate(*request_credentials, request.clientAddress());
     }
