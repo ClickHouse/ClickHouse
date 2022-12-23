@@ -190,8 +190,6 @@ private:
         if (!canRemoveCurrentSorting())
             return false;
 
-        chassert(!sorting_node->children.front()->children.empty());
-
         /// need to remove sorting
         parent_node->children.front() = sorting_node->children.front();
         return true;
