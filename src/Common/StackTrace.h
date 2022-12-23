@@ -72,6 +72,8 @@ public:
     /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
     static void setShowAddresses(bool show);
 
+    friend bool operator==(const StackTrace &, const StackTrace &) = default;
+
 protected:
     void tryCapture();
 
