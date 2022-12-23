@@ -231,7 +231,7 @@ Pipe ReadFromMergeTree::readFromPool(
             };
         }
 
-        auto algorithm = std::make_shared<MergeTreeThreadSelectAlgorithm>(
+        auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(
             i,
             pool,
             min_marks_for_concurrent_read,

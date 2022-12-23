@@ -1359,7 +1359,7 @@ struct FutureNewEmptyPart
 
 using FutureNewEmptyParts = std::vector<FutureNewEmptyPart>;
 
-Strings getPartsNames(const FutureNewEmptyParts & parts)
+static Strings getPartsNames(const FutureNewEmptyParts & parts)
 {
     Strings part_names;
     for (const auto & p : parts)
@@ -1367,7 +1367,7 @@ Strings getPartsNames(const FutureNewEmptyParts & parts)
     return part_names;
 }
 
-FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
+static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
 {
     FutureNewEmptyParts future_parts;
 
@@ -1385,7 +1385,8 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
     return future_parts;
 }
 
-StorageMergeTree::MutableDataPartsVector createEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
+static StorageMergeTree::MutableDataPartsVector
+createEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
 {
     StorageMergeTree::MutableDataPartsVector data_parts;
     for (auto & part: future_parts)
@@ -1393,7 +1394,7 @@ StorageMergeTree::MutableDataPartsVector createEmptyDataParts(MergeTreeData & da
     return data_parts;
 }
 
-void captureTmpDirectoryHolders(MergeTreeData & data, FutureNewEmptyParts & future_parts)
+static void captureTmpDirectoryHolders(MergeTreeData & data, FutureNewEmptyParts & future_parts)
 {
     for (auto & part : future_parts)
         part.tmp_dir_guard = data.getTemporaryPartDirectoryHolder(part.getDirName());

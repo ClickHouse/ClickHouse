@@ -21,6 +21,7 @@ DeleteBitmap::DeleteBitmap() = default;
 
 DeleteBitmap::DeleteBitmap(UInt64 version_) : version(version_)
 {
+    data = std::make_shared<RoaringBitmap>();
 }
 
 DeleteBitmap::DeleteBitmap(UInt64 version_, const std::vector<UInt32> & dels)

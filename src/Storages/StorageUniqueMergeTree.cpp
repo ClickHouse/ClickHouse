@@ -1400,7 +1400,7 @@ struct FutureNewEmptyPart
 
 using FutureNewEmptyParts = std::vector<FutureNewEmptyPart>;
 
-Strings getPartsNames(const FutureNewEmptyParts & parts)
+static Strings getPartsNames(const FutureNewEmptyParts & parts)
 {
     Strings part_names;
     for (const auto & p : parts)
@@ -1408,7 +1408,7 @@ Strings getPartsNames(const FutureNewEmptyParts & parts)
     return part_names;
 }
 
-FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
+static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
 {
     FutureNewEmptyParts future_parts;
 
@@ -1426,7 +1426,8 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
     return future_parts;
 }
 
-StorageUniqueMergeTree::MutableDataPartsVector createEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
+static StorageUniqueMergeTree::MutableDataPartsVector
+createEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
 {
     StorageUniqueMergeTree::MutableDataPartsVector data_parts;
     for (auto & part: future_parts)
@@ -1434,7 +1435,7 @@ StorageUniqueMergeTree::MutableDataPartsVector createEmptyDataParts(MergeTreeDat
     return data_parts;
 }
 
-void captureTmpDirectoryHolders(MergeTreeData & data, FutureNewEmptyParts & future_parts)
+static void captureTmpDirectoryHolders(MergeTreeData & data, FutureNewEmptyParts & future_parts)
 {
     for (auto & part : future_parts)
         part.tmp_dir_guard = data.getTemporaryPartDirectoryHolder(part.getDirName());
@@ -1444,9 +1445,12 @@ void StorageUniqueMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & 
 {
     DataPartsVector covered_parts;
 
-    for (auto & part: new_parts)
+    auto new_table_version = std::make_unique<TableVersion>();
+    new_table_version->version++;
+
+    for (auto & part : new_parts)
     {
-        DataPartsVector covered_parts_by_one_part = renameTempPartAndReplace(part, transaction);
+        DataPartsVector covered_parts_by_one_part = renameTempPartAndReplace(part, transaction, std::move(new_table_version));
 
         if (covered_parts_by_one_part.size() > 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} expected to cover not more then 1 part. {} covered parts have been found. This is a bug.",
@@ -1469,7 +1473,6 @@ void StorageUniqueMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & 
             deduplication_log->dropPart(part->info);
 }
 
-/// TODO leefeng how to implement truncate
 void StorageUniqueMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
     /// Asks to complete merges and does not allow them to start.
@@ -1504,6 +1507,8 @@ void StorageUniqueMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &
                  transaction.getTID());
     }
 
+    delete_bitmap_cache.reset();
+    primary_index_cache.reset();
     /// Old parts are needed to be destroyed before clearing them from filesystem.
     clearOldMutations(true);
     clearOldPartsFromFilesystem();

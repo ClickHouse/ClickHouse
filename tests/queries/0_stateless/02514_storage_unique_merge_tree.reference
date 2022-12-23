@@ -1,0 +1,70 @@
+0	1	hello
+1	1	hello
+2	1	hello
+3	1	hello
+4	1	hello
+5	1	hello
+6	1	hello
+7	1	hello
+8	1	hello
+9	1	hello
+0	2	world
+1	2	world
+2	2	world
+3	2	world
+4	2	world
+5	2	world
+6	2	world
+7	2	world
+8	2	world
+9	2	world
+0	2	world
+1	2	world
+2	2	world
+3	2	world
+4	2	world
+5	3	hello, world
+6	3	hello, world
+7	3	hello, world
+8	3	hello, world
+9	3	hello, world
+0	1	a	0
+1	2	a	1
+2	3	a	0
+3	4	a	1
+4	5	a	0
+5	6	a	1
+6	7	a	0
+7	8	a	1
+8	9	a	0
+9	10	a	1
+0	1	a	0
+1	2	a	1
+2	3	b	2
+3	4	b	3
+4	5	b	4
+5	6	b	5
+6	7	b	6
+7	8	b	7
+8	9	b	8
+9	10	b	9
+0	1	a	0
+1	2	a	1
+2	3	a	0
+3	4	a	1
+4	5	a	0
+5	6	a	1
+6	7	a	0
+7	8	a	1
+8	9	a	0
+9	10	a	1
+0	1	a	0
+1	2	a	1
+2	3	b	2
+3	4	b	3
+4	5	b	4
+5	6	b	5
+6	7	b	6
+7	8	b	7
+8	9	b	8
+9	10	b	9
