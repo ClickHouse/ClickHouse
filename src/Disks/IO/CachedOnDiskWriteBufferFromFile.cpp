@@ -51,7 +51,7 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
 {
 }
 
-bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, bool is_persistent)
+bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
 {
     if (finalized)
         return false;
@@ -68,7 +68,7 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
 
     if (file_segments.empty() || file_segments.back()->isDownloaded())
     {
-        allocateFileSegment(expected_write_offset, is_persistent);
+        allocateFileSegment(expected_write_offset, segment_kind);
     }
 
     auto & file_segment = file_segments.back();
@@ -84,7 +84,7 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
         if (available_size == 0)
         {
             completeFileSegment(*file_segment);
-            file_segment = allocateFileSegment(expected_write_offset, is_persistent);
+            file_segment = allocateFileSegment(expected_write_offset, segment_kind);
             continue;
         }
 
@@ -148,7 +148,7 @@ FileSegmentRangeWriter::~FileSegmentRangeWriter()
     }
 }
 
-FileSegmentPtr & FileSegmentRangeWriter::allocateFileSegment(size_t offset, bool is_persistent)
+FileSegmentPtr & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSegmentKind segment_kind)
 {
     /**
     * Allocate a new file segment starting `offset`.
@@ -157,10 +157,7 @@ FileSegmentPtr & FileSegmentRangeWriter::allocateFileSegment(size_t offset, bool
 
     std::lock_guard cache_lock(cache->mutex);
 
-    CreateFileSegmentSettings create_settings
-    {
-        .is_persistent = is_persistent,
-    };
+    CreateFileSegmentSettings create_settings(segment_kind);
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
@@ -271,7 +268,8 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
 
     try
     {
-        if (!cache_writer->write(data, size, current_download_offset, is_persistent_cache_file))
+        auto segment_kind = is_persistent_cache_file ? FileSegmentKind::Persistent : FileSegmentKind::Regular;
+        if (!cache_writer->write(data, size, current_download_offset, segment_kind))
         {
             LOG_INFO(log, "Write-through cache is stopped as cache limit is reached and nothing can be evicted");
             return;
