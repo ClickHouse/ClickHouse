@@ -37,7 +37,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-#include <Storages/NamedCollectionUtils.h>
+#include <Storages/NamedCollections/NamedCollectionUtils.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
@@ -207,7 +207,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(path);
 
-    global_context->setTemporaryStorage(path + "tmp", "", 0);
+    global_context->setTemporaryStoragePath(path + "tmp/", 0);
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
