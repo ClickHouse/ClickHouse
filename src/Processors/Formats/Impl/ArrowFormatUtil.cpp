@@ -1,6 +1,8 @@
 #include "ArrowFormatUtil.h"
+#if USE_PARQUET || USE_ORC
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
+#include <arrow/type.h>
 #include <arrow/type_fwd.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Logger.h>
@@ -133,3 +135,5 @@ std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
     return required_indices;
 }
 }
+#endif
+

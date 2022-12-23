@@ -1,9 +1,15 @@
 #pragma once
+#include "config.h"
+#if USE_PARQUET || USE_ORC
 #include <map>
 #include <Core/Block.h>
-#include <arrow/api.h>
-#include <arrow/type.h>
 #include "DataTypes/Serializations/ISerialization.h"
+namespace arrow
+{
+class Schema;
+class DataType;
+class Field;
+}
 namespace DB
 {
 class ArrowFormatUtil
@@ -31,3 +37,5 @@ private:
         std::map<std::string, std::pair<int, int>> & result, const std::string & name_prefix = "");
 };
 }
+#endif
+
