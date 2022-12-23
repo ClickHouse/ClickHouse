@@ -200,9 +200,8 @@ clickhouse_client = ClickHouseHelper()
 
 
 def send_event_workflow_job(workflow_job: WorkflowJob) -> None:
-    # SHOW CREATE TABLE default.workflow_jobs
-    # CREATE TABLE default.workflow_jobs
-    # UUID 'c035192a-8ccd-47a6-9db0-f28a9eee2fde'
+    # # SHOW CREATE TABLE default.workflow_jobs
+    # CREATE TABLE default.workflow_jobs UUID 'c0351924-8ccd-47a6-9db0-e28a9eee2fdf'
     # (
     #     `id` UInt64,
     #     `run_id` UInt64,
@@ -226,13 +225,12 @@ def send_event_workflow_job(workflow_job: WorkflowJob) -> None:
     #     `runner_name` String,
     #     `runner_group_id` UInt64,
     #     `runner_group_name` LowCardinality(String),
-    #     `repository` LowCardinality(String)
+    #     `repository` LowCardinality(String),
+    #     `updated_at` DateTime DEFAULT now()
     # )
-    # ENGINE = ReplicatedMergeTree(
-    #     '/clickhouse/tables/c035192a-8ccd-47a6-9db0-f28a9eee2fde/{shard}', '{replica}'
-    # )
+    # ENGINE = ReplicatedMergeTree('/clickhouse/tables/c0351924-8ccd-47a6-9db0-e28a9eee2fdf/{shard}', '{replica}')
     # PARTITION BY toStartOfMonth(started_at)
-    # ORDER BY (id, started_at)
+    # ORDER BY (id, updated_at)
     # SETTINGS index_granularity = 8192
     global clickhouse_client
     kwargs = {
