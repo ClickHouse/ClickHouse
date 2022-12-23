@@ -1030,12 +1030,11 @@ void MergeTreeRangeReader::setBitmapFilter(const PaddedPODArray<UInt64> & rows_i
     if (!storage || !table_version || rows_id.empty())
         return;
 
-    auto part_info = merge_tree_reader->data_part->info;
-    auto part_version = table_version->getPartVersion(merge_tree_reader->data_part->info);
+    auto part_version = table_version->getPartVersion(merge_tree_reader->data_part_info_for_read->getDataPartInfo());
 
     /// Get delete bitmap of the part
     auto & bitmap_cache = storage->deleteBitmapCache();
-    auto part_bitmap = bitmap_cache.getOrCreate(merge_tree_reader->data_part, part_version);
+    auto part_bitmap = bitmap_cache.getOrCreate(merge_tree_reader->data_part_info_for_read->getDataPartPtr(), part_version);
 
     size_t start_row = rows_id[0];
     size_t end_row = rows_id[rows_id.size() - 1];
@@ -1057,7 +1056,7 @@ void MergeTreeRangeReader::setBitmapFilter(const PaddedPODArray<UInt64> & rows_i
     const UInt64 * rows_end = rows_id.end();
 
     while (pos < end && rows_pos < rows_end)
-        *pos++ = !part_bitmap->deleted(*rows_pos++);
+        *pos++ = !part_bitmap->deleted(static_cast<UInt32>(*rows_pos++));
 
     bitmap_filter = std::move(col_vec);
 }

@@ -146,7 +146,7 @@ void UniqueMergeTreeSink::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, context);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, true);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, nullptr, true);
 
     using DelayedPartitions = std::vector<UniqueMergeTreeSink::DelayedChunk::Partition>;
     DelayedPartitions partitions;

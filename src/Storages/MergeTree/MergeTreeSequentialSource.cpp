@@ -191,7 +191,7 @@ try
                 UInt8 * pos = data.data();
 
                 for (size_t row = current_row; row < current_row + rows_read; ++row)
-                    *pos++ = !delete_bitmap->deleted(row);
+                    *pos++ = !delete_bitmap->deleted(static_cast<UInt32>(row));
 
                 filterColumns(columns, col_vec->getData());
             }

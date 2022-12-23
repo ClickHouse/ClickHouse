@@ -75,13 +75,13 @@ void PrimaryIndex::update(
                 deletes_map[it->min_block].push_back(it->row_id);
                 deletes_keys[it->min_block].push_back(key);
                 it->min_block = min_block;
-                it->row_id = row_id;
+                it->row_id = static_cast<UInt32>(row_id);
                 it->version = version;
             }
             /// The data insert failed
             else
             {
-                deletes_map[min_block].push_back(row_id);
+                deletes_map[min_block].push_back(static_cast<UInt32>(row_id));
                 deletes_keys[it->min_block].push_back(key);
             }
         }
@@ -167,7 +167,7 @@ void PrimaryIndex::update(
             deletes_map[it->min_block].push_back(it->row_id);
             deletes_keys[it->min_block].push_back(key);
             it->min_block = min_block;
-            it->row_id = row_id;
+            it->row_id = static_cast<UInt32>(row_id);
         }
         else
         {
@@ -227,13 +227,13 @@ bool PrimaryIndex::update(Int64 min_block, const ColumnPtr & key_column, const s
     bool has_update = false;
     for (size_t i = 0; i < key_column->size(); ++i)
     {
-        if (deleted_rows_set.contains(i))
+        if (deleted_rows_set.contains(static_cast<UInt32>(i)))
             continue;
         auto key = key_column->getDataAt(i).toString();
         if (auto it = get(key))
         {
             it->min_block = min_block;
-            it->row_id = i;
+            it->row_id = static_cast<UInt32>(i);
             has_update = true;
         }
     }
@@ -357,14 +357,14 @@ void PrimaryIndex::processWithoutVersion(
         /// Its new key not found in cache
         if (auto it = not_found_record_in_cache.find(key); it != not_found_record_in_cache.end())
         {
-            deletes_map[min_block].push_back(row_id);
+            deletes_map[min_block].push_back(static_cast<UInt32>(row_id));
             deletes_keys[min_block].push_back(key);
             set(key, it->second);
         }
         /// Its delete
-        else if (not_found_deleted_keys_in_cache.count(key))
+        else if (not_found_deleted_keys_in_cache.contains(key))
         {
-            deletes_map[min_block].push_back(row_id);
+            deletes_map[min_block].push_back(static_cast<UInt32>(row_id));
             deletes_keys[min_block].push_back(key);
         }
         /// Put into cache
@@ -401,7 +401,7 @@ void PrimaryIndex::processWithVersion(
         {
             if (it->second->version > version)
             {
-                deletes_map[min_block].push_back(row_id);
+                deletes_map[min_block].push_back(static_cast<UInt32>(row_id));
                 deletes_keys[min_block].push_back(key);
             }
             else
@@ -413,7 +413,7 @@ void PrimaryIndex::processWithVersion(
         /// Its delete
         else if (not_found_deleted_keys_in_cache.contains(key))
         {
-            deletes_map[min_block].push_back(row_id);
+            deletes_map[min_block].push_back(static_cast<UInt32>(row_id));
             deletes_keys[min_block].push_back(key);
         }
         /// Put into cache

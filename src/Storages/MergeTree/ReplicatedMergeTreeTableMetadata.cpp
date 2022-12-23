@@ -1,11 +1,12 @@
-#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <IO/Operators.h>
-#include <Interpreters/FunctionNameNormalizer.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 
 
 namespace DB

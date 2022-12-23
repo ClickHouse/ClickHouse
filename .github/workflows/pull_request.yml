@@ -16,12 +16,15 @@ on:  # yamllint disable-line rule:truthy
       - 'docker/docs/**'
       - 'docs/**'
       - 'website/**'
+      - 'utils/check-style/aspell-ignore/**'
 ##########################################################################################
 ##################################### SMALL CHECKS #######################################
 ##########################################################################################
 jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
+    # Run the first check always, even if the CI is cancelled
+    if: ${{ always() }}
     steps:
       - name: Clear repository
         run: |
@@ -112,7 +115,8 @@ jobs:
   StyleCheck:
     needs: DockerHubPush
     runs-on: [self-hosted, style-checker]
-    if: ${{ success() || failure() || always() }}
+    # We need additional `&& ! cancelled()` to have the job being able to cancel
+    if: ${{ success() || failure() || ( always() && ! cancelled() ) }}
     steps:
       - name: Set envs
         run: |
@@ -897,7 +901,7 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  BuilderBinAmd64SSE2:
+  BuilderBinAmd64Compat:
     needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
@@ -908,7 +912,7 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_amd64sse2
+          BUILD_NAME=binary_amd64_compat
           EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
@@ -1067,7 +1071,7 @@ jobs:
       - BuilderBinFreeBSD
       # - BuilderBinGCC
       - BuilderBinPPC64
-      - BuilderBinAmd64SSE2
+      - BuilderBinAmd64Compat
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy
       - BuilderDebShared

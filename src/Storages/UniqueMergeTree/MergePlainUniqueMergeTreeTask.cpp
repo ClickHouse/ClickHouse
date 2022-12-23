@@ -111,7 +111,6 @@ void MergePlainUniqueMergeTreeTask::prepare()
         storage.merging_params,
         txn,
         nullptr,
-        nullptr,
         "",
         &storage);
 }
@@ -120,7 +119,6 @@ void MergePlainUniqueMergeTreeTask::prepare()
 void MergePlainUniqueMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
-    auto builder = merge_task->getBuilder();
 
     auto write_state = merge_task->getWriteState();
 
@@ -156,14 +154,13 @@ void MergePlainUniqueMergeTreeTask::finish()
                 deleted_rows.emplace_back(row_id);
         }
 
-        auto part_data_path = new_part->data_part_storage->getRelativePath();
         auto new_delete_bitmap = std::make_shared<DeleteBitmap>();
 
         auto new_version = storage.currentVersion()->version + 1;
         new_delete_bitmap->setVersion(new_version);
         new_delete_bitmap->addDels(deleted_rows);
 
-        new_delete_bitmap->serialize(part_data_path + StorageUniqueMergeTree::DELETE_DIR_NAME, new_part->data_part_storage->getDisk());
+        new_delete_bitmap->serialize(new_part->getDataPartStoragePtr());
         auto & delete_bitmap_cache = storage.deleteBitmapCache();
         delete_bitmap_cache.set({part_info, new_version}, new_delete_bitmap);
         deleted_rows_set.insert(deleted_rows.begin(), deleted_rows.end());
@@ -198,7 +195,7 @@ void MergePlainUniqueMergeTreeTask::finish()
     }
 
     MergeTreeData::Transaction transaction(storage, txn.get());
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction, builder, std::move(new_table_version));
+    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction, std::move(new_table_version));
     transaction.commit();
 
     if (has_update)

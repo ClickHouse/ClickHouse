@@ -112,14 +112,14 @@ protected:
     void initializeRangeReadersImpl(
         MergeTreeRangeReader & range_reader,
         std::deque<MergeTreeRangeReader> & pre_range_readers,
-        PrewhereInfoPtr prewhere_info,
-        const PrewhereExprInfo * prewhere_actions,
-        IMergeTreeReader * reader,
+        PrewhereInfoPtr prewhere_info_,
+        const PrewhereExprInfo * prewhere_actions_,
+        IMergeTreeReader * reader_,
         bool has_lightweight_delete,
-        const MergeTreeReaderSettings & reader_settings,
-        const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step,
-        const PrewhereExprStep & lightweight_delete_filter_step,
-        const Names & non_const_virtual_column_names);
+        const MergeTreeReaderSettings & reader_settings_,
+        const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step_,
+        const PrewhereExprStep & lightweight_delete_filter_step_,
+        const Names & non_const_virtual_column_names_);
 
     /// Sets up data readers for each step of prewhere and where
     void initializeMergeTreeReadersForPart(
@@ -172,6 +172,18 @@ protected:
     bool no_more_tasks{false};
     std::deque<MergeTreeReadTaskPtr> delayed_tasks;
     std::deque<MarkRanges> buffered_ranges;
+
+    /// This setting is used in base algorithm only to additionally limit the number of granules to read.
+    /// It is changed in ctor of MergeTreeThreadSelectAlgorithm.
+    ///
+    /// The reason why we have it here is because MergeTreeReadPool takes the full task
+    /// ignoring min_marks_to_read setting in case of remote disk (see MergeTreeReadPool::getTask).
+    /// In this case, we won't limit the number of rows to read based on adaptive granularity settings.
+    ///
+    /// Big reading tasks are better for remote disk and prefetches.
+    /// So, for now it's easier to limit max_rows_to_read.
+    /// Somebody need to refactor this later.
+    size_t min_marks_to_read = 0;
 
     StorageUniqueMergeTree * unique_mergetree;
     std::shared_ptr<const TableVersion> table_version = nullptr;

@@ -9,6 +9,8 @@
 
 #include <Interpreters/sortBlock.h>
 
+#include <Processors/Chunk.h>
+
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
@@ -22,9 +24,15 @@ struct BlockWithPartition
 {
     Block block;
     Row partition;
+    ChunkOffsetsPtr offsets;
 
     BlockWithPartition(Block && block_, Row && partition_)
         : block(block_), partition(std::move(partition_))
+    {
+    }
+
+    BlockWithPartition(Block && block_, Row && partition_, ChunkOffsetsPtr chunk_offsets_)
+        : block(block_), partition(std::move(partition_)), offsets(chunk_offsets_)
     {
     }
 };
@@ -50,6 +58,7 @@ public:
         size_t max_parts,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
+        ChunkOffsetsPtr chunk_offsets = nullptr,
         bool has_delete_op = false);
 
     /// This structure contains not completely written temporary part.

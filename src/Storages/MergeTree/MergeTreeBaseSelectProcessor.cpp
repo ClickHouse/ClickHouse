@@ -296,25 +296,30 @@ void IMergeTreeSelectAlgorithm::initializeRangeReaders(MergeTreeReadTask & curre
 }
 
 void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
-    MergeTreeRangeReader & range_reader, std::deque<MergeTreeRangeReader> & pre_range_readers,
-    PrewhereInfoPtr prewhere_info, const PrewhereExprInfo * prewhere_actions,
-    IMergeTreeReader * reader, bool has_lightweight_delete, const MergeTreeReaderSettings & reader_settings,
-    const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step,
-    const PrewhereExprStep & lightweight_delete_filter_step, const Names & non_const_virtual_column_names)
+    MergeTreeRangeReader & range_reader,
+    std::deque<MergeTreeRangeReader> & pre_range_readers,
+    PrewhereInfoPtr prewhere_info_,
+    const PrewhereExprInfo * prewhere_actions_,
+    IMergeTreeReader * reader_,
+    bool has_lightweight_delete,
+    const MergeTreeReaderSettings & reader_settings_,
+    const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step_,
+    const PrewhereExprStep & lightweight_delete_filter_step_,
+    const Names & non_const_virtual_column_names_)
 {
     MergeTreeRangeReader * prev_reader = nullptr;
     bool last_reader = false;
     size_t pre_readers_shift = 0;
 
     /// Add filtering step with lightweight delete mask
-    if (reader_settings.apply_deleted_mask && has_lightweight_delete)
+    if (reader_settings_.apply_deleted_mask && has_lightweight_delete)
     {
         MergeTreeRangeReader pre_range_reader(
-            pre_reader_for_step[0].get(),
+            pre_reader_for_step_[0].get(),
             prev_reader,
-            &lightweight_delete_filter_step,
+            &lightweight_delete_filter_step_,
             last_reader,
-            non_const_virtual_column_names,
+            non_const_virtual_column_names_,
             unique_mergetree,
             table_version);
         pre_range_readers.push_back(std::move(pre_range_reader));
@@ -322,9 +327,9 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
         pre_readers_shift++;
     }
 
-    if (prewhere_info)
+    if (prewhere_info_)
     {
-        if (prewhere_actions->steps.size() + pre_readers_shift != pre_reader_for_step.size())
+        if (prewhere_actions_->steps.size() + pre_readers_shift != pre_reader_for_step.size())
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -334,14 +339,14 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
 
         for (size_t i = 0; i < prewhere_actions->steps.size(); ++i)
         {
-            last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
+            last_reader = reader_->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
 
             MergeTreeRangeReader current_reader(
-                pre_reader_for_step[i + pre_readers_shift].get(),
+                pre_reader_for_step_[i + pre_readers_shift].get(),
                 prev_reader,
-                &prewhere_actions->steps[i],
+                &prewhere_actions_->steps[i],
                 last_reader,
-                non_const_virtual_column_names,
+                non_const_virtual_column_names_,
                 unique_mergetree,
                 table_version);
 
@@ -353,7 +358,7 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
     if (!last_reader)
     {
         range_reader
-            = MergeTreeRangeReader(reader, prev_reader, nullptr, true, non_const_virtual_column_names, unique_mergetree, table_version);
+            = MergeTreeRangeReader(reader_, prev_reader, nullptr, true, non_const_virtual_column_names_, unique_mergetree, table_version);
     }
     else
     {
@@ -364,7 +369,7 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
 }
 
 static UInt64 estimateNumRows(const MergeTreeReadTask & current_task, UInt64 current_preferred_block_size_bytes,
-    UInt64 current_max_block_size_rows, UInt64 current_preferred_max_column_in_block_size_bytes, double min_filtration_ratio)
+    UInt64 current_max_block_size_rows, UInt64 current_preferred_max_column_in_block_size_bytes, double min_filtration_ratio, size_t min_marks_to_read)
 {
     const MergeTreeRangeReader & current_reader = current_task.range_reader;
 
@@ -398,7 +403,7 @@ static UInt64 estimateNumRows(const MergeTreeReadTask & current_task, UInt64 cur
 
     const MergeTreeIndexGranularity & index_granularity = current_task.data_part->index_granularity;
 
-    return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
+    return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule(), min_marks_to_read);
 }
 
 
@@ -413,7 +418,7 @@ IMergeTreeSelectAlgorithm::BlockAndProgress IMergeTreeSelectAlgorithm::readFromP
     const double min_filtration_ratio = 0.00001;
 
     UInt64 recommended_rows = estimateNumRows(*task, current_preferred_block_size_bytes,
-        current_max_block_size_rows, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio);
+        current_max_block_size_rows, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio, min_marks_to_read);
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(current_max_block_size_rows, recommended_rows));
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);

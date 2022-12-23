@@ -28,12 +28,12 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/UniqueMergeTree/MergePlainUniqueMergeTreeTask.h>
 #include <Storages/UniqueMergeTree/UniqueMergeTreeSink.h>
 #include <base/sort.h>
 #include <Common/ThreadPool.h>
@@ -108,7 +108,7 @@ StorageUniqueMergeTree::StorageUniqueMergeTree(
     , primary_index_cache(*this, getSettings()->unique_merge_tree_max_keeped_primary_index)
 {
     loadTableVersion(attach);
-    loadDataParts(has_force_restore_data_flag);
+    loadDataParts(has_force_restore_data_flag, currentVersion());
 
     if (!attach && !getDataPartsForInternalUsage().empty())
         throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
@@ -908,7 +908,7 @@ bool StorageUniqueMergeTree::merge(
 
     /// Copying a vector of columns `deduplicate by columns.
     IExecutableTask::TaskResultCallback f = [](bool) {};
-    auto task = std::make_shared<MergePlainMergeTreeTask>(
+    auto task = std::make_shared<MergePlainUniqueMergeTreeTask>(
         *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder, f);
 
     task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
@@ -1097,7 +1097,8 @@ bool StorageUniqueMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & 
 
     if (merge_entry)
     {
-        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
+        auto task = std::make_shared<MergePlainUniqueMergeTreeTask>(
+            *this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
@@ -1487,7 +1488,7 @@ void StorageUniqueMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &
 
         LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
                  future_parts.size(), parts.size(),
-                 fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNamesWithStates(parts), ", "),
+                 fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
                  transaction.getTID());
 
         captureTmpDirectoryHolders(*this, future_parts);

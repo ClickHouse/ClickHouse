@@ -668,7 +668,7 @@ log_query_views=1
 
 ## log_formatted_queries {#settings-log-formatted-queries}
 
-Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)). 
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)).
 
 Possible values:
 
@@ -1806,6 +1806,41 @@ Default value: 1000000000 nanoseconds.
 See also:
 
 -   System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
+
+## memory_profiler_step {#memory_profiler_step}
+
+Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+
+Possible values:
+
+-   A positive integer number of bytes.
+
+-   0 for turning off the memory profiler.
+
+Default value: 4,194,304 bytes (4 MiB).
+
+## memory_profiler_sample_probability {#memory_profiler_sample_probability}
+
+Sets the probability of collecting stacktraces at random allocations and deallocations and writing them into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+
+Possible values:
+
+-   A positive floating-point number in the range [0..1].
+
+-   0.0 for turning off the memory sampling.
+
+Default value: 0.0.
+
+## trace_profile_events {#trace_profile_events}
+
+Enables or disables collecting stacktraces on each update of profile events along with the name of profile event and the value of increment and sending them into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+
+Possible values:
+
+-   1 — Tracing of profile events enabled.
+-   0 — Tracing of profile events disabled.
+
+Default value: 0.
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
@@ -3412,12 +3447,44 @@ Default value: 2.
 
 ## compatibility {#compatibility}
 
-This setting changes other settings according to provided ClickHouse version.
-If a behaviour in ClickHouse was changed by using a different default value for some setting, this compatibility setting allows you to use default values from previous versions for all the settings that were not set by the user.
+The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
 
-This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. Empty value means that this setting is disabled.
+If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
+
+This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
 
 Disabled by default.
+
+:::note
+In ClickHouse Cloud the compatibility setting must be set by ClickHouse Cloud support.  Please [open a case](https://clickhouse.cloud/support) to have it set.
+:::
+
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
+
+Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
+
+Example:
+
+```sql
+INSERT INTO FUNCTION null('foo String') SETTINGS max_threads=1 VALUES ('bar');
+```
+
+But the following query will work only with `allow_settings_after_format_in_insert`:
+
+```sql
+SET allow_settings_after_format_in_insert=1;
+INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
+```
+
+Possible values:
+
+-   0 — Disallow.
+-   1 — Allow.
+
+Default value: `0`.
+
+!!! note "Warning"
+    Use this setting only for backward compatibility if your use cases depend on old syntax.
 
 # Format settings {#format-settings}
 
@@ -3552,6 +3619,31 @@ x	UInt8
 y	Nullable(String)
 z	IPv4
 ```
+
+## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
+
+Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
+If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+
+Default value: `false`.
+
+## input_format_try_infer_integers {#input_format_try_infer_integers}
+
+If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
+
+Enabled by default.
+
+## input_format_try_infer_dates {#input_format_try_infer_dates}
+
+If enabled, ClickHouse will try to infer type `Date` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as dates, the result type will be `Date`, if at least one field was not parsed as date, the result type will be `String`.
+
+Enabled by default.
+
+## input_format_try_infer_datetimes {#input_format_try_infer_datetimes}
+
+If enabled, ClickHouse will try to infer type `DateTime64` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as datetimes, the result type will be `DateTime64`, if at least one field was not parsed as datetime, the result type will be `String`.
+
+Enabled by default.
 
 ## date_time_input_format {#date_time_input_format}
 
@@ -3715,6 +3807,29 @@ Enabled by default.
 ### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.
+
+Disabled by default.
+
+### input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
+
+Allow parsing JSON objects as strings in JSON input formats.
+
+Example:
+
+```sql
+SET input_format_json_read_objects_as_strings = 1;
+CREATE TABLE test (id UInt64, obj String, date Date) ENGINE=Memory();
+INSERT INTO test FORMAT JSONEachRow {"id" : 1, "obj" : {"a" : 1, "b" : "Hello"}, "date" : "2020-01-01"};
+SELECT * FROM test;
+```
+
+Result:
+
+```
+┌─id─┬─obj──────────────────────┬───────date─┐
+│  1 │ {"a" : 1, "b" : "Hello"} │ 2020-01-01 │
+└────┴──────────────────────────┴────────────┘
+```
 
 Disabled by default.
 
@@ -4829,3 +4944,11 @@ Disabled by default.
 Allow skipping columns with unsupported types while schema inference for format BSONEachRow.
 
 Disabled by default.
+
+## RowBinary format settings {#row-binary-format-settings}
+
+### format_binary_max_string_size {#format_binary_max_string_size}
+
+The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit.
+
+Default value: `1GiB`

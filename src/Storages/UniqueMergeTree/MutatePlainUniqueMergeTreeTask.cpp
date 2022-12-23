@@ -83,10 +83,6 @@ bool MutatePlainUniqueMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
 
-                auto builder = mutate_task->getBuilder();
-                if (!builder)
-                    builder = new_part->data_part_storage->getBuilder();
-
                 {
                     std::lock_guard<std::mutex> lock(storage.write_merge_lock);
                     /// Here we should not increment the version of table version, because we do not modify delete bitmap
@@ -95,14 +91,12 @@ bool MutatePlainUniqueMergeTreeTask::executeStep()
                     auto new_part_version = new_table_version->part_versions.at(old_part_info);
 
                     if (storage.delete_buffer.contains(merge_mutate_entry->future_part->parts[0]->info)
-                        || !new_part->data_part_storage->exists(
+                        || !new_part->getDataPartStoragePtr()->exists(
                             StorageUniqueMergeTree::DELETE_DIR_NAME + toString(new_part_version) + ".bitmap"))
                     {
                         auto bitmap = storage.delete_bitmap_cache.getOrCreate(merge_mutate_entry->future_part->parts[0], new_part_version);
-                        auto disk = new_part->data_part_storage->getDisk();
-                        bitmap->serialize(
-                            new_part->data_part_storage->getRelativePath() + StorageUniqueMergeTree::DELETE_DIR_NAME,
-                            new_part->data_part_storage->getDisk());
+                        bitmap->serialize(new_part->getDataPartStoragePtr());
+
                         if (storage.delete_buffer.contains(merge_mutate_entry->future_part->parts[0]->info))
                             storage.delete_buffer.erase(merge_mutate_entry->future_part->parts[0]->info);
                     }
@@ -117,7 +111,7 @@ bool MutatePlainUniqueMergeTreeTask::executeStep()
 
                     MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                     /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                    storage.renameTempPartAndReplace(new_part, transaction, builder, std::move(new_table_version));
+                    storage.renameTempPartAndReplace(new_part, transaction, std::move(new_table_version));
                     transaction.commit();
                 }
 
