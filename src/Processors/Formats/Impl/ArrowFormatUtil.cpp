@@ -111,10 +111,13 @@ std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
             boost::to_lower(col_name);
         if (!import_nested)
         {
-            col_name = Nested::splitName(col_name).first;
-            if (added_nested_table.count(col_name))
-                continue;
-            added_nested_table.insert(col_name);
+            if (!schema.GetFieldByName(col_name))
+            {
+                col_name = Nested::splitName(col_name).first;
+                if (added_nested_table.count(col_name))
+                    continue;
+                added_nested_table.insert(col_name);
+            }
         }
         auto it = fields_indices.find(col_name);
         if (it == fields_indices.end())
