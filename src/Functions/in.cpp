@@ -161,7 +161,7 @@ public:
 
         if (lc_indexes)
             res = res->index(*lc_indexes, 0);
-        
+
         if (is_const)
             res = ColumnUInt8::create(input_rows_count, res->getUInt(0));
 
