@@ -575,10 +575,10 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
 
     if (only_need_virtual_columns)
         return ReaderHolder{
-            fs::path(bucket) / current_key, 
-            nullptr, 
-            nullptr, 
-            nullptr, 
+            fs::path(bucket) / current_key,
+            nullptr,
+            nullptr,
+            nullptr,
             StorageS3Source::ReaderHolder::ONLY_VIRTUAL_COLUMNS};
 
     size_t object_size = info
