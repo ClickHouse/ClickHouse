@@ -1,6 +1,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from pyhdfs import HdfsClient
 
 disk_types = {
     "default": "local",
@@ -21,6 +22,9 @@ def cluster():
             with_hdfs=True,
         )
         cluster.start()
+
+        fs = HdfsClient(hosts=cluster.hdfs_ip)
+        fs.mkdirs("/clickhouse")
 
         yield cluster
     finally:
