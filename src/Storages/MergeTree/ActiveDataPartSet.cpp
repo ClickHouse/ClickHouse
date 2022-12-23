@@ -24,10 +24,10 @@ ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_,
 bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
 {
     auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
-    return addImpl(part_info, name, out_replaced_parts);
+    return add(part_info, name, out_replaced_parts);
 }
 
-bool ActiveDataPartSet::addImpl(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts)
+bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts)
 {
     /// TODO make it exception safe (out_replaced_parts->push_back(...) may throw)
 
@@ -47,7 +47,7 @@ bool ActiveDataPartSet::addImpl(const MergeTreePartInfo & part_info, const Strin
         if (!part_info.contains(it->first))
         {
             if (!part_info.isDisjoint(it->first))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", name, it->first.getPartName());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", part_info.getPartName(), it->first.getPartName());
             ++it;
             break;
         }
@@ -74,6 +74,12 @@ bool ActiveDataPartSet::addImpl(const MergeTreePartInfo & part_info, const Strin
 
     part_info_to_name.emplace(part_info, name);
     return true;
+
+}
+
+bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, Strings * out_replaced_parts)
+{
+    return add(part_info, part_info.getPartName(), out_replaced_parts);
 }
 
 
@@ -173,7 +179,6 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfos() const
         res.push_back(kv.first);
 
     return res;
-
 }
 
 size_t ActiveDataPartSet::size() const
