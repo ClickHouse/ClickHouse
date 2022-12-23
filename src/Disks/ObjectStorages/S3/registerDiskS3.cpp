@@ -13,6 +13,7 @@
 
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>

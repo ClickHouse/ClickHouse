@@ -21,7 +21,7 @@ MetadataStorageFromStaticFilesWebServer::MetadataStorageFromStaticFilesWebServer
 {
 }
 
-MetadataTransactionPtr MetadataStorageFromStaticFilesWebServer::createTransaction() const
+MetadataTransactionPtr MetadataStorageFromStaticFilesWebServer::createTransaction()
 {
     return std::make_shared<MetadataStorageFromStaticFilesWebServerTransaction>(*this);
 }
