@@ -85,7 +85,8 @@ protected:
 
 public:
     AggregateFunctionNullBase(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<Derived>(arguments, params), nested_function{nested_function_}
+        : IAggregateFunctionHelper<Derived>(arguments, params, createResultType(nested_function_))
+        , nested_function{nested_function_}
     {
         if constexpr (result_is_nullable)
             prefix_size = nested_function->alignOfData();
@@ -99,12 +100,12 @@ public:
         return nested_function->getName();
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
     {
         if constexpr (result_is_nullable)
-            return makeNullable(nested_function->getReturnType());
+            return makeNullable(nested_function_->getResultType());
         else
-            return nested_function->getReturnType();
+            return nested_function_->getResultType();
     }
 
     void create(AggregateDataPtr __restrict place) const override
@@ -275,7 +276,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
 
         llvm::Value * result = nullptr;
 
