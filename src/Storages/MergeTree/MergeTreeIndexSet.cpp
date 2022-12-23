@@ -429,7 +429,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return nullptr;
     }
 
-    return &result_dag->addFunction(node.function_builder, children, {});
+    return &result_dag->addFunction(node.function_base, children, {});
 }
 
 const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const ActionsDAG::Node & node,
@@ -523,7 +523,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
         if (key_columns.contains(column_name))
             return false;
 
-        auto function_name = node.function_builder->getName();
+        auto function_name = node.function_base->getName();
         const auto & arguments = node.children;
 
         if (function_name == "and" || function_name == "indexHint")

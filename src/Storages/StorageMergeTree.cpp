@@ -101,7 +101,7 @@ StorageMergeTree::StorageMergeTree(
         attach)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, getContext()->getMergeMutateExecutor()->getMaxTasksCount())
+    , merger_mutator(*this)
 {
     loadDataParts(has_force_restore_data_flag);
 
