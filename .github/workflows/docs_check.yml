@@ -22,7 +22,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Labels check
@@ -34,7 +34,7 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Images check
@@ -51,7 +51,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Images check
@@ -68,7 +68,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Download changed aarch64 images
@@ -111,7 +111,7 @@ jobs:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Style Check
@@ -140,7 +140,7 @@ jobs:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Docs Check
@@ -162,7 +162,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Finish label

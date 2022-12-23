@@ -22,7 +22,7 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           EOF
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: 'true'
