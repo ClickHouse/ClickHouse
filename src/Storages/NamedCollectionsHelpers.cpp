@@ -25,7 +25,7 @@ namespace
             return nullptr;
 
         const auto & collection_name = identifier->name();
-        return NamedCollectionFactory::instance().tryGet(collection_name);
+        return NamedCollectionFactory::instance().get(collection_name);
     }
 
     std::optional<std::pair<std::string, Field>> getKeyValueFromAST(ASTPtr ast)
