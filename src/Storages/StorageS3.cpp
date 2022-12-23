@@ -553,7 +553,7 @@ StorageS3Source::StorageS3Source(
 {
     reader = createReader();
     if (reader || 
-        (reader.getReadMode() == StorageS3Source::ReaderHolder::ONLY_VIRTUAL_COLUMNS && 
+        (reader.getReadMode() == StorageS3Source::ReaderHolder::ONLY_VIRTUAL_COLUMNS &&
         !reader.isFinishedForOnlyVirtualColumns()))
         reader_future = createReaderAsync();
 }
@@ -758,7 +758,7 @@ Chunk StorageS3Source::generate()
 
             if ((!reader && 
                 reader.getReadMode() == ReaderHolder::ALL) ||
-                (reader.getReadMode() == ReaderHolder::ONLY_VIRTUAL_COLUMNS && 
+                (reader.getReadMode() == ReaderHolder::ONLY_VIRTUAL_COLUMNS &&
                 reader.isFinishedForOnlyVirtualColumns()))
                 break;
 
