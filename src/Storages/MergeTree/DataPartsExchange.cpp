@@ -651,7 +651,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
             }
 #endif
 
-            LOG_WARNING(log, fmt::runtime(e.message() + " Will retry fetching part without zero-copy."));
+            LOG_WARNING(log, "Will retry fetching part without zero-copy: {}", e.message());
 
             /// It's important to release session from HTTP pool. Otherwise it's possible to get deadlock
             /// on http pool.

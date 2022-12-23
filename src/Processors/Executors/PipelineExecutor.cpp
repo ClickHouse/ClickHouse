@@ -196,7 +196,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num)
 
 #ifndef NDEBUG
     auto & context = tasks.getThreadContext(thread_num);
-    LOG_TRACE(log,
+    LOG_TEST(log,
               "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.",
               context.total_time_ns / 1e9,
               context.execution_time_ns / 1e9,
