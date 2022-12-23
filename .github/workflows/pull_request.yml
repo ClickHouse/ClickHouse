@@ -27,7 +27,7 @@ jobs:
     if: ${{ always() }}
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Labels check
@@ -39,7 +39,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Python unit tests
@@ -51,7 +51,7 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Images check
@@ -68,7 +68,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Images check
@@ -85,7 +85,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Download changed aarch64 images
@@ -129,7 +129,7 @@ jobs:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Style Check
@@ -154,7 +154,7 @@ jobs:
           CACHES_PATH=${{runner.temp}}/../ccaches
           EOF
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Download changed images
@@ -184,7 +184,7 @@ jobs:
           REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Download json reports
@@ -215,7 +215,7 @@ jobs:
           REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Download json reports
@@ -256,7 +256,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           fetch-depth: 0  # for performance artifact
@@ -298,7 +298,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -339,7 +339,7 @@ jobs:
           name: changed_images
           path: ${{ runner.temp }}/images_path
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -381,7 +381,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -422,7 +422,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -463,7 +463,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -504,7 +504,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -545,7 +545,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -589,7 +589,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -630,7 +630,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -671,7 +671,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -712,7 +712,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -753,7 +753,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -794,7 +794,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -835,7 +835,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -876,7 +876,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -917,7 +917,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -949,7 +949,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
@@ -994,7 +994,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Report Builder
@@ -1040,7 +1040,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Report Builder
@@ -1079,7 +1079,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1115,7 +1115,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1151,7 +1151,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1187,7 +1187,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1223,7 +1223,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1257,7 +1257,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1293,7 +1293,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1329,7 +1329,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1365,7 +1365,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1401,7 +1401,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1437,7 +1437,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1473,7 +1473,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1509,7 +1509,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1545,7 +1545,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1581,7 +1581,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1617,7 +1617,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1653,7 +1653,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1689,7 +1689,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1725,7 +1725,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1759,7 +1759,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1795,7 +1795,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1831,7 +1831,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1867,7 +1867,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1903,7 +1903,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1939,7 +1939,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -1975,7 +1975,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2011,7 +2011,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2047,7 +2047,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2083,7 +2083,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2119,7 +2119,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2155,7 +2155,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2191,7 +2191,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2227,7 +2227,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2263,7 +2263,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2299,7 +2299,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2335,7 +2335,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2371,7 +2371,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2407,7 +2407,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2443,7 +2443,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2479,7 +2479,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2515,7 +2515,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2551,7 +2551,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2585,7 +2585,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2619,7 +2619,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Bugfix test
@@ -2667,7 +2667,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2701,7 +2701,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2735,7 +2735,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2769,7 +2769,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2803,7 +2803,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2837,7 +2837,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2871,7 +2871,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -2907,7 +2907,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Stress test
@@ -2944,7 +2944,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Stress test
@@ -2977,7 +2977,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Stress test
@@ -3010,7 +3010,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Stress test
@@ -3043,7 +3043,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Stress test
@@ -3079,7 +3079,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Fuzzer
@@ -3112,7 +3112,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Fuzzer
@@ -3145,7 +3145,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Fuzzer
@@ -3178,7 +3178,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Fuzzer
@@ -3211,7 +3211,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Fuzzer
@@ -3249,7 +3249,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3284,7 +3284,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3319,7 +3319,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3354,7 +3354,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3389,7 +3389,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3424,7 +3424,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3459,7 +3459,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3494,7 +3494,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3529,7 +3529,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3564,7 +3564,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3599,7 +3599,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3634,7 +3634,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3669,7 +3669,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3704,7 +3704,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3739,7 +3739,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3774,7 +3774,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3807,7 +3807,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -3843,7 +3843,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Unit test
@@ -3876,7 +3876,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Unit test
@@ -3909,7 +3909,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Unit test
@@ -3942,7 +3942,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Unit test
@@ -3975,7 +3975,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Unit test
@@ -4013,7 +4013,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Performance Comparison
@@ -4048,7 +4048,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Performance Comparison
@@ -4083,7 +4083,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Performance Comparison
@@ -4118,7 +4118,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Performance Comparison
@@ -4153,7 +4153,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Performance Comparison
@@ -4188,7 +4188,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Performance Comparison
@@ -4223,7 +4223,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Performance Comparison
@@ -4258,7 +4258,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Performance Comparison
@@ -4294,7 +4294,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: SQLancer
@@ -4327,7 +4327,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: SQLancer
@@ -4456,7 +4456,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Finish label

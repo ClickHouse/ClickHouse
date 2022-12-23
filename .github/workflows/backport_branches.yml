@@ -13,7 +13,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Python unit tests
@@ -24,7 +24,7 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Images check
@@ -40,7 +40,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Images check
@@ -57,7 +57,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Download changed aarch64 images
@@ -91,7 +91,7 @@ jobs:
           REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Download json reports
@@ -132,7 +132,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -174,7 +174,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -216,7 +216,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -257,7 +257,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -298,7 +298,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -339,7 +339,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -381,7 +381,7 @@ jobs:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
@@ -414,7 +414,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
@@ -456,7 +456,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Report Builder
@@ -494,7 +494,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Report Builder
@@ -533,7 +533,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -570,7 +570,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Functional test
@@ -610,7 +610,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Stress test
@@ -646,7 +646,7 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Integration test
@@ -676,7 +676,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
       - name: Finish label

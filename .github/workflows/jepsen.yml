@@ -20,7 +20,7 @@ jobs:
           REPO_COPY=${{runner.temp}}/keeper_jepsen/ClickHouse
           EOF
       - name: Check out repository code
-        uses: ClickHouse/checkout@v0
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           fetch-depth: 0
@@ -49,7 +49,7 @@ jobs:
   #         REPO_COPY=${{runner.temp}}/server_jepsen/ClickHouse
   #         EOF
   #     - name: Check out repository code
-  #       uses: ClickHouse/checkout@v0
+  #       uses: ClickHouse/checkout@v1
   #       with:
   #         clear-repository: true
   #         fetch-depth: 0
