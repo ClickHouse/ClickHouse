@@ -1169,36 +1169,42 @@ class ICollection
 {
 public:
     virtual ~ICollection() = default;
-    virtual bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected) = 0;
+    virtual bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) = 0;
 };
 
 template <class Container, TokenType end_token>
 class CommonCollection : public ICollection
 {
 public:
-    bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected) override;
+    explicit CommonCollection(const IParser::Pos & pos) : begin(pos) {}
+
+    bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) override;
 
 private:
     Container container;
+    IParser::Pos begin;
 };
 
 class MapCollection : public ICollection
 {
 public:
-    bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected) override;
+    explicit MapCollection(const IParser::Pos & pos) : begin(pos) {}
+
+    bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) override;
 
 private:
     Map container;
+    IParser::Pos begin;
 };
 
-bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Expected & /*expected*/)
+bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Expected & /*expected*/, bool allow_map)
 {
-    if (pos->type == TokenType::OpeningCurlyBrace)
-        collections.push_back(std::make_unique<MapCollection>());
+    if (allow_map && pos->type == TokenType::OpeningCurlyBrace)
+        collections.push_back(std::make_unique<MapCollection>(pos));
     else if (pos->type == TokenType::OpeningRoundBracket)
-        collections.push_back(std::make_unique<CommonCollection<Tuple, TokenType::ClosingRoundBracket>>());
+        collections.push_back(std::make_unique<CommonCollection<Tuple, TokenType::ClosingRoundBracket>>(pos));
     else if (pos->type == TokenType::OpeningSquareBracket)
-        collections.push_back(std::make_unique<CommonCollection<Array, TokenType::ClosingSquareBracket>>());
+        collections.push_back(std::make_unique<CommonCollection<Array, TokenType::ClosingSquareBracket>>(pos));
     else
         return false;
 
@@ -1207,7 +1213,7 @@ bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Exp
 }
 
 template <class Container, TokenType end_token>
-bool CommonCollection<Container, end_token>::parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected)
+bool CommonCollection<Container, end_token>::parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map)
 {
     if (node)
     {
@@ -1224,23 +1230,27 @@ bool CommonCollection<Container, end_token>::parse(IParser::Pos & pos, Collectio
     {
         if (end_p.ignore(pos, expected))
         {
-            node = std::make_shared<ASTLiteral>(std::move(container));
+            auto result = std::make_shared<ASTLiteral>(std::move(container));
+            result->begin = begin;
+            result->end = pos;
+
+            node = std::move(result);
             break;
         }
 
         if (!container.empty() && !comma_p.ignore(pos, expected))
-                return false;
+            return false;
 
         if (literal_p.parse(pos, literal, expected))
             container.push_back(std::move(literal->as<ASTLiteral &>().value));
         else
-            return parseAllCollectionsStart(pos, collections, expected);
+            return parseAllCollectionsStart(pos, collections, expected, allow_map);
     }
 
     return true;
 }
 
-bool MapCollection::parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected)
+bool MapCollection::parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map)
 {
     if (node)
     {
@@ -1258,7 +1268,11 @@ bool MapCollection::parse(IParser::Pos & pos, Collections & collections, ASTPtr 
     {
         if (end_p.ignore(pos, expected))
         {
-            node = std::make_shared<ASTLiteral>(std::move(container));
+            auto result = std::make_shared<ASTLiteral>(std::move(container));
+            result->begin = begin;
+            result->end = pos;
+
+            node = std::move(result);
             break;
         }
 
@@ -1276,7 +1290,7 @@ bool MapCollection::parse(IParser::Pos & pos, Collections & collections, ASTPtr 
         if (literal_p.parse(pos, literal, expected))
             container.push_back(std::move(literal->as<ASTLiteral &>().value));
         else
-            return parseAllCollectionsStart(pos, collections, expected);
+            return parseAllCollectionsStart(pos, collections, expected, allow_map);
     }
 
     return true;
@@ -1289,12 +1303,12 @@ bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expecte
 {
     Collections collections;
 
-    if (!parseAllCollectionsStart(pos, collections, expected))
+    if (!parseAllCollectionsStart(pos, collections, expected, allow_map))
         return false;
 
     while (!collections.empty())
     {
-        if (!collections.back()->parse(pos, collections, node, expected))
+        if (!collections.back()->parse(pos, collections, node, expected, allow_map))
             return false;
 
         if (node)

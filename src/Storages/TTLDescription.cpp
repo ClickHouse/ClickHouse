@@ -61,7 +61,7 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
     {
         if (action.node->type == ActionsDAG::ActionType::FUNCTION)
         {
-            IFunctionBase & func = *action.node->function_base;
+            const IFunctionBase & func = *action.node->function_base;
             if (!func.isDeterministic())
                 throw Exception(
                     "TTL expression cannot contain non-deterministic functions, "

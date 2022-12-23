@@ -1025,9 +1025,6 @@ void BaseDaemon::setupWatchdog()
 #if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
                 logger().warning("Cannot do prctl to ask termination with parent.");
-
-            if (getppid() == 1)
-                throw Poco::Exception("Parent watchdog process has exited.");
 #endif
 
             {
