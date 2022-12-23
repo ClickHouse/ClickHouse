@@ -59,6 +59,7 @@ public:
         bool deduplicate_,
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
+        bool need_prefix,
         IMergeTreeDataPart * parent_part_,
         String suffix_,
         MergeTreeTransactionPtr txn,
@@ -86,6 +87,7 @@ public:
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
+            global_ctx->need_prefix = need_prefix;
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
 
@@ -171,6 +173,7 @@ private:
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
 
         MergeTreeTransactionPtr txn;
+        bool need_prefix;
 
         scope_guard temporary_directory_lock;
     };
@@ -184,6 +187,7 @@ private:
     {
         /// Dependencies
         String suffix;
+        bool need_prefix;
         MergeTreeData::MergingParams merging_params{};
 
         DiskPtr tmp_disk{nullptr};

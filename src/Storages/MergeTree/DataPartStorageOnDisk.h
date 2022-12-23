@@ -21,7 +21,7 @@ public:
     std::string getPartDirectory() const override { return part_dir; }
     std::string getFullRootPath() const override;
 
-    MutableDataPartStoragePtr getProjection(const std::string & name) override;
+    MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
     DataPartStoragePtr getProjection(const std::string & name) const override;
 
     bool exists() const override;
@@ -123,8 +123,8 @@ public:
     void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
 
     void rename(
-        const std::string & new_root_path,
-        const std::string & new_part_dir,
+        std::string new_root_path,
+        std::string new_part_dir,
         Poco::Logger * log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) override;
@@ -156,5 +156,4 @@ private:
         Poco::Logger * log,
         bool is_projection) const;
 };
-
 }

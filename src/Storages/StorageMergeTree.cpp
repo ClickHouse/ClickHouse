@@ -91,7 +91,6 @@ StorageMergeTree::StorageMergeTree(
     bool has_force_restore_data_flag)
     : MergeTreeData(
         table_id_,
-        relative_data_path_,
         metadata_,
         context_,
         date_column_name,
@@ -103,6 +102,8 @@ StorageMergeTree::StorageMergeTree(
     , writer(*this)
     , merger_mutator(*this)
 {
+    initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
+
     loadDataParts(has_force_restore_data_flag);
 
     if (!attach && !getDataPartsForInternalUsage().empty())
@@ -1371,7 +1372,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         /// Forcefully stop merges and make part outdated
         auto merge_blocker = stopMergesAndWait();
         auto parts_lock = lockParts();
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}, &parts_lock);
+        auto part = getPartIfExistsUnlocked(part_name, {MergeTreeDataPartState::Active}, parts_lock);
         if (!part)
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
@@ -1384,7 +1385,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         std::unique_lock lock(currently_processing_in_background_mutex);
         auto parts_lock = lockParts();
 
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}, &parts_lock);
+        auto part = getPartIfExistsUnlocked(part_name, {MergeTreeDataPartState::Active}, parts_lock);
         /// It's okay, part was already removed
         if (!part)
             return nullptr;
