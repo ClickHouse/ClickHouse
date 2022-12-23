@@ -121,7 +121,8 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, FunctionOverloadResolverPtr function)
+    template <typename FunctionOrOverloadResolver>
+    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, FunctionOrOverloadResolver function)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -325,6 +326,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         lambda_actions, captured_column_names, lambda_arguments_names_and_types, result_type, lambda_expression_node_name);
     actions_stack.pop_back();
 
+    // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
     actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), std::move(function_capture));
 
     size_t actions_stack_size = actions_stack.size();

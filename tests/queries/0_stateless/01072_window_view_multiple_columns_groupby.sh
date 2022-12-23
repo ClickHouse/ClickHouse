@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-random-settings, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +19,7 @@ INSERT INTO mt VALUES ('test1', 'test2');
 EOF
 
 while true; do
-	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .5 ||:
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .1 ||:
 done
 
 $CLICKHOUSE_CLIENT --query="SELECT colA, colB FROM dst"
