@@ -38,7 +38,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_METADATA_ALREADY_EXISTS;
-    extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
 }
@@ -65,7 +64,7 @@ StorageFileLog::StorageFileLog(
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(&Poco::Logger::get("StorageFileLog (" + table_id_.table_name + ")"))
-    , disk(getStoragePolicy()->getDisks()[0])
+    , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
     , milliseconds_to_wait(filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -112,8 +111,6 @@ void StorageFileLog::loadMetaFiles(bool attach)
     /// Attach table
     if (attach)
     {
-        const auto & storage = getStorageID();
-
         /// Meta file may lost, log and create directory
         if (!disk->exists(metadata_base_path))
         {
@@ -175,7 +172,7 @@ void StorageFileLog::loadFiles()
             /// data file have been renamed, need update meta file's name
             if (it->second.file_name != file)
             {
-                std::filesystem::rename(getFullMetaPath(it->second.file_name), getFullMetaPath(file));
+                disk->replaceFile(getFullMetaPath(it->second.file_name), getFullMetaPath(file));
                 it->second.file_name = file;
             }
         }
@@ -203,7 +200,7 @@ void StorageFileLog::loadFiles()
                 valid_metas.emplace(inode, meta);
             /// Delete meta file from filesystem
             else
-                std::filesystem::remove(getFullMetaPath(meta.file_name));
+                disk->removeFileIfExists(getFullMetaPath(meta.file_name));
         }
         file_infos.meta_by_inode.swap(valid_metas);
     }
@@ -254,7 +251,8 @@ void StorageFileLog::deserialize()
     /// iterated directory always has one file inside.
     for (const auto dir_iter = disk->iterateDirectory(metadata_base_path); dir_iter->isValid(); dir_iter->next())
     {
-        if (!disk->isFile(dir_iter->name()))
+        auto full_name = getFullMetaPath(dir_iter->name());
+        if (!disk->isFile(full_name))
         {
             throw Exception(
                 ErrorCodes::BAD_FILE_TYPE,
@@ -263,7 +261,7 @@ void StorageFileLog::deserialize()
                 metadata_base_path);
         }
 
-        auto in = disk->readFile(dir_iter->name());
+        auto in = disk->readFile(full_name);
         FileMeta meta;
         UInt64 inode, last_written_pos;
 
@@ -492,17 +490,17 @@ void StorageFileLog::storeMetas(size_t start, size_t end)
     }
 }
 
-void StorageFileLog::checkOffsetIsValid(const String & full_name, UInt64 offset)
+void StorageFileLog::checkOffsetIsValid(const String & full_name, UInt64 offset) const
 {
-    ReadBufferFromFile in(full_name);
+    auto in = disk->readFile(full_name);
     UInt64 _, last_written_pos;
 
-    if (!tryReadIntText(_, in))
+    if (!tryReadIntText(_, *in))
     {
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", full_name);
     }
-    assertChar('\n', in);
-    if (!tryReadIntText(last_written_pos, in))
+    assertChar('\n', *in);
+    if (!tryReadIntText(last_written_pos, *in))
     {
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", full_name);
     }
@@ -533,23 +531,23 @@ size_t StorageFileLog::getPollTimeoutMillisecond() const
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (dependencies.empty())
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
         return true;
 
-    for (const auto & storage : dependencies)
+    for (const auto & view_id : view_ids)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(storage, getContext());
-        if (!table)
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
+        if (!view)
             return false;
 
         // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(storage))
+        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -560,7 +558,7 @@ size_t StorageFileLog::getTableDependentCount() const
 {
     auto table_id = getStorageID();
     // Check if at least one direct dependency is attached
-    return DatabaseCatalog::instance().getDependencies(table_id).size();
+    return DatabaseCatalog::instance().getDependentViews(table_id).size();
 }
 
 void StorageFileLog::threadFunc()

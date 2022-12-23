@@ -5,6 +5,7 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -97,6 +98,10 @@ struct ManyAggregatedData
                     pool->trySchedule(
                         [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachQueryIfNotDetached();
+                            );
                             if (thread_group)
                                 CurrentThread::attachToIfDetached(thread_group);
 

@@ -34,9 +34,6 @@ public:
         /// Doesn't change row order.
         /// Examples: true for FilterStep, false for PartialSortingStep
         bool preserves_sorting;
-
-        /// See adjustSettingsToEnforceSortingPropertiesInDistributedQuery().
-        bool can_enforce_sorting_properties_in_distributed_query = false;
     };
 
     /// This flags are used by QueryPlan optimizers.
