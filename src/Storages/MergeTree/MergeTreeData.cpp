@@ -2058,7 +2058,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         MergeTreePartInfo range_info = part->info;
         range_info.level = static_cast<UInt32>(range_info.max_block - range_info.min_block);
         range_info.mutation = 0;
-        independent_ranges_set.addImpl(range_info, range_info.getPartName());
+        independent_ranges_set.add(range_info, range_info.getPartName());
     }
 
     auto independent_ranges_infos = independent_ranges_set.getPartInfos();
