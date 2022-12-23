@@ -17,7 +17,35 @@ namespace
 
     [[maybe_unused]] const ::Poco::Logger * getLogger(const ::Poco::Logger * logger) { return logger; };
     [[maybe_unused]] const ::Poco::Logger * getLogger(const std::atomic<::Poco::Logger *> & logger) { return logger.load(); };
+
+    template<typename T> struct is_fmt_runtime : std::false_type {};
+    template<typename T> struct is_fmt_runtime<fmt::basic_runtime<T>> : std::true_type {};
+
+    /// Usually we use LOG_*(...) macros with either string literals or fmt::runtime(whatever) as a format string.
+    /// This function is useful to get a string_view to a static format string passed to LOG_* macro.
+    template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x)
+    {
+        if constexpr (is_fmt_runtime<T>::value)
+        {
+            /// It definitely was fmt::runtime(something).
+            /// We are not sure about a lifetime of the string, so return empty view.
+            /// Also it can be arbitrary string, not a formatting pattern.
+            /// So returning empty pattern will not pollute the set of patterns.
+            return std::string_view();
+        }
+        else
+        {
+            /// Most likely it was a string literal.
+            /// Unfortunately, there's no good way to check if something is a string literal.
+            /// But fmtlib requires a format string to be compile-time constant unless fmt::runtime is used.
+            static_assert(std::is_nothrow_convertible<T, const char * const>::value);
+            static_assert(!std::is_pointer<T>::value);
+            return std::string_view(x);
+        }
+    }
 }
+
+#define FIRST_ARG(X, ...) X
 
 /// Logs a message to a specified logger with that level.
 /// If more than one argument is provided,
@@ -40,7 +68,7 @@ namespace
             file_function += "; ";                                                \
             file_function += __PRETTY_FUNCTION__;                                 \
             Poco::Message poco_message(_logger->name(), formatted_message,        \
-                                 (PRIORITY), file_function.c_str(), __LINE__);    \
+                (PRIORITY), file_function.c_str(), __LINE__, tryGetStaticFormatString(FIRST_ARG(__VA_ARGS__)));    \
             _channel->log(poco_message);                                          \
         }                                                                         \
     }                                                                             \
