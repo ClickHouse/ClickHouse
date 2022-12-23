@@ -14,6 +14,7 @@
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Common/Macros.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
@@ -47,7 +48,7 @@ KeeperSnapshotManagerS3::KeeperSnapshotManagerS3()
     , uuid(UUIDHelpers::generateV4())
 {}
 
-void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractConfiguration & config)
+void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
 {
     try
     {
@@ -64,7 +65,8 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
 
-        auto endpoint = config.getString(config_prefix + ".endpoint");
+        String endpoint = config.getString(config_prefix + ".endpoint");
+        endpoint = macros->expand(endpoint);
         auto new_uri = S3::URI{endpoint};
 
         {
@@ -261,9 +263,9 @@ void KeeperSnapshotManagerS3::uploadSnapshot(const std::string & path, bool asyn
     uploadSnapshotImpl(path);
 }
 
-void KeeperSnapshotManagerS3::startup(const Poco::Util::AbstractConfiguration & config)
+void KeeperSnapshotManagerS3::startup(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
 {
-    updateS3Configuration(config);
+    updateS3Configuration(config, macros);
     snapshot_s3_thread = ThreadFromGlobalPool([this] { snapshotS3Thread(); });
 }
 

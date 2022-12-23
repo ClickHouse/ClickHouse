@@ -1,5 +1,7 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/Context.h>
+
 
 #if USE_AWS_S3
 
@@ -31,6 +33,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
+#include <Common/Macros.h>
 
 
 namespace ProfileEvents
@@ -634,10 +637,12 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
 {
     auto new_s3_settings = getSettings(config, config_prefix, context);
     auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
+    String endpoint = config.getString(config_prefix + ".endpoint");
+    endpoint = context->getMacros()->expand(endpoint);
     return std::make_unique<S3ObjectStorage>(
         std::move(new_client), std::move(new_s3_settings),
         version_id, s3_capabilities, new_namespace,
-        config.getString(config_prefix + ".endpoint"));
+        endpoint);
 }
 
 }

@@ -2291,7 +2291,7 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
         }
 
         shared->keeper_dispatcher = std::make_shared<KeeperDispatcher>();
-        shared->keeper_dispatcher->initialize(config, is_standalone_app, start_async);
+        shared->keeper_dispatcher->initialize(config, is_standalone_app, start_async, getMacros());
     }
 #endif
 }
@@ -2333,7 +2333,7 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
     if (!shared->keeper_dispatcher)
         return;
 
-    shared->keeper_dispatcher->updateConfiguration(config);
+    shared->keeper_dispatcher->updateConfiguration(config, getMacros());
 #endif
 }
 
