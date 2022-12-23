@@ -44,7 +44,8 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
         transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types);
         for (size_t i = 0; i != types.size(); ++i)
         {
-            if (is_nullable[i])
+            /// Type could be changed so it cannot be inside Nullable anymore.
+            if (is_nullable[i] && nested_types[i]->canBeInsideNullable())
                 types[i] = makeNullable(nested_types[i]);
             else
                 types[i] = nested_types[i];
