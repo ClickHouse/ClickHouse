@@ -110,6 +110,7 @@ void MergePlainUniqueMergeTreeTask::prepare()
         deduplicate_by_columns,
         storage.merging_params,
         txn,
+        true,
         nullptr,
         "",
         &storage);

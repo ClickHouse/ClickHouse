@@ -13,7 +13,6 @@ namespace DB
 class MergePlainUniqueMergeTreeTask : public IExecutableTask
 {
 public:
-    template <class Callback>
     MergePlainUniqueMergeTreeTask(
         StorageUniqueMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
@@ -21,14 +20,14 @@ public:
         Names deduplicate_by_columns_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_,
-        Callback && task_result_callback_)
+        IExecutableTask::TaskResultCallback & task_result_callback_)
         : storage(storage_)
         , metadata_snapshot(std::move(metadata_snapshot_))
         , deduplicate(deduplicate_)
         , deduplicate_by_columns(std::move(deduplicate_by_columns_))
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
-        , task_result_callback(std::forward<Callback>(task_result_callback_))
+        , task_result_callback(task_result_callback_)
     {
         for (auto & item : merge_mutate_entry->future_part->parts)
             priority += item->getBytesOnDisk();
@@ -66,7 +65,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     bool deduplicate;
     Names deduplicate_by_columns;
-    std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry{nullptr};
+    MergeMutateSelectedEntryPtr merge_mutate_entry{nullptr};
     TableLockHolder table_lock_holder;
     FutureMergedMutatedPartPtr future_part{nullptr};
     MergeTreeData::MutableDataPartPtr new_part;

@@ -94,7 +94,6 @@ StorageUniqueMergeTree::StorageUniqueMergeTree(
     bool has_force_restore_data_flag)
     : MergeTreeData(
         table_id_,
-        relative_data_path_,
         metadata_,
         context_,
         date_column_name,
@@ -107,6 +106,8 @@ StorageUniqueMergeTree::StorageUniqueMergeTree(
     , merger_mutator(*this)
     , primary_index_cache(*this, getSettings()->unique_merge_tree_max_keeped_primary_index)
 {
+    initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
+
     loadTableVersion(attach);
     loadDataParts(has_force_restore_data_flag, currentVersion());
 
