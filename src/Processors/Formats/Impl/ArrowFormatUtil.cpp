@@ -21,7 +21,8 @@ size_t ArrowFormatUtil::countIndicesForType(std::shared_ptr<arrow::DataType> typ
     {
         auto ret = countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type());
         if (nested_type_has_index)
-            return ret + 1;
+            ret = ret + 1;
+        return ret;
     }
 
     if (type->id() == arrow::Type::STRUCT)
@@ -38,7 +39,8 @@ size_t ArrowFormatUtil::countIndicesForType(std::shared_ptr<arrow::DataType> typ
         auto * map_type = static_cast<arrow::MapType *>(type.get());
         auto ret = countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
         if (nested_type_has_index)
-            return ret + 1;
+            ret += 1;
+        return ret;
     }
 
     return 1;
@@ -109,12 +111,12 @@ std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
         std::string col_name = named_col.name;
         if (ignore_case)
             boost::to_lower(col_name);
-        if (!import_nested)
+        if (import_nested)
         {
             if (!schema.GetFieldByName(col_name))
             {
                 col_name = Nested::splitName(col_name).first;
-                if (added_nested_table.count(col_name))
+                if (added_nested_table.contains(col_name))
                     continue;
                 added_nested_table.insert(col_name);
             }
@@ -128,7 +130,7 @@ std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
         for (int j = 0; j < it->second.second; ++j)
         {
             auto index = it->second.first + j;
-            if (!added_indices.count(index))
+            if (!added_indices.contains(index))
             {
                 required_indices.emplace_back(index);
                 added_indices.insert(index);
