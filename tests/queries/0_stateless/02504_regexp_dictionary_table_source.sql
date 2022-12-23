@@ -1,3 +1,5 @@
+-- Tags: no-fasttest, use-vectorscan
+
 DROP TABLE IF EXISTS regexp_dictionary_source_table;
 DROP DICTIONARY IF EXISTS regexp_dict1;
 
