@@ -104,7 +104,7 @@ StorageUniqueMergeTree::StorageUniqueMergeTree(
         attach)
     , reader(*this, this)
     , writer(*this)
-    , merger_mutator(*this, getContext()->getMergeMutateExecutor()->getMaxTasksCount())
+    , merger_mutator(*this)
     , primary_index_cache(*this, getSettings()->unique_merge_tree_max_keeped_primary_index)
 {
     loadTableVersion(attach);
