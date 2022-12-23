@@ -99,9 +99,13 @@ static void extractMergingAndGatheringColumns(
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
-    // projection parts have different prefix and suffix compared to normal parts.
-    // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
-    const String local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
+    String local_tmp_prefix;
+    if (global_ctx->need_prefix)
+    {
+        // projection parts have different prefix and suffix compared to normal parts.
+        // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
+        local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
+    }
     const String local_tmp_suffix = global_ctx->parent_part ? ctx->suffix : "";
 
     if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
@@ -680,6 +684,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->deduplicate,
             global_ctx->deduplicate_by_columns,
             projection_merging_params,
+            global_ctx->need_prefix,
             global_ctx->new_data_part.get(),
             ".proj",
             NO_TRANSACTION_PTR,

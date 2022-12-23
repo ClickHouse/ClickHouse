@@ -93,6 +93,8 @@ public:
         ContextPtr context,
         UniqueMergeTreeWriteState & write_state);
 
+    TemporaryPart writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context);
+
     /// For insertion.
     static TemporaryPart writeProjectionPart(
         const MergeTreeData & data,
@@ -118,6 +120,14 @@ public:
         const MergeTreeData::MergingParams & merging_params);
 
 private:
+
+    TemporaryPart writeTempPartImpl(
+        BlockWithPartition & block,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        int64_t block_number,
+        bool need_tmp_prefix);
+
     static TemporaryPart writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,

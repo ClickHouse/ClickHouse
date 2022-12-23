@@ -555,6 +555,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const MergeTreeTransactionPtr & txn,
+    bool need_prefix,
     IMergeTreeDataPart * parent_part,
     const String & suffix,
     StorageUniqueMergeTree * storage)
@@ -570,6 +571,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate,
         deduplicate_by_columns,
         merging_params,
+        need_prefix,
         parent_part,
         suffix,
         txn,
@@ -590,7 +592,8 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     ContextPtr context,
     const MergeTreeTransactionPtr & txn,
     ReservationSharedPtr space_reservation,
-    TableLockHolder & holder)
+    TableLockHolder & holder,
+    bool need_prefix)
 {
     return std::make_shared<MutateTask>(
         future_part,
@@ -604,7 +607,8 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
         txn,
         data,
         *this,
-        merges_blocker
+        merges_blocker,
+        need_prefix
     );
 }
 
@@ -662,7 +666,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                     + " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
     }
 
-    LOG_TRACE(log, "Merged {} parts: from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+    LOG_TRACE(log, "Merged {} parts: [{}, {}] -> []", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
     return new_data_part;
 }
 
