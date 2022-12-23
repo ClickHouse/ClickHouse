@@ -45,7 +45,7 @@ namespace
     }
 }
 
-#define FIRST_ARG(X, ...) X
+#define LOG_IMPL_FIRST_ARG(X, ...) X
 
 /// Logs a message to a specified logger with that level.
 /// If more than one argument is provided,
@@ -68,7 +68,27 @@ namespace
             file_function += "; ";                                                \
             file_function += __PRETTY_FUNCTION__;                                 \
             Poco::Message poco_message(_logger->name(), formatted_message,        \
-                (PRIORITY), file_function.c_str(), __LINE__, tryGetStaticFormatString(FIRST_ARG(__VA_ARGS__)));    \
+                (PRIORITY), file_function.c_str(), __LINE__, tryGetStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)));    \
+            _channel->log(poco_message);                                          \
+        }                                                                         \
+    }                                                                             \
+} while (false)
+
+#define LOG_IMPL_PREFORMATTED(logger, priority, PRIORITY, FORMAT_STRING, MESSAGE) do                              \
+{                                                                                 \
+    auto _logger = ::getLogger(logger);                                           \
+    const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&    \
+        (DB::CurrentThread::getGroup()->client_logs_level >= (priority));         \
+    if (_logger->is((PRIORITY)) || _is_clients_log)                               \
+    {                                                                             \
+        if (auto _channel = _logger->getChannel())                                \
+        {                                                                         \
+            std::string file_function;                                            \
+            file_function += __FILE__;                                            \
+            file_function += "; ";                                                \
+            file_function += __PRETTY_FUNCTION__;                                 \
+            Poco::Message poco_message(_logger->name(), MESSAGE,        \
+                (PRIORITY), file_function.c_str(), __LINE__, tryGetStaticFormatString(FORMAT_STRING));    \
             _channel->log(poco_message);                                          \
         }                                                                         \
     }                                                                             \
@@ -82,3 +102,12 @@ namespace
 #define LOG_WARNING(logger, ...) LOG_IMPL(logger, DB::LogsLevel::warning, Poco::Message::PRIO_WARNING, __VA_ARGS__)
 #define LOG_ERROR(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_ERROR, __VA_ARGS__)
 #define LOG_FATAL(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_FATAL, __VA_ARGS__)
+
+
+#define LOG_TEST_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)    LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::test, Poco::Message::PRIO_TEST, FORMAT_STRING, MESSAGE)
+#define LOG_TRACE_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)   LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::trace, Poco::Message::PRIO_TRACE, FORMAT_STRING, MESSAGE)
+#define LOG_DEBUG_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)   LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG, FORMAT_STRING, MESSAGE)
+#define LOG_INFO_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)    LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION, FORMAT_STRING, MESSAGE)
+#define LOG_WARNING_PREFORMATTED(logger, FORMAT_STRING, MESSAGE) LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::warning, Poco::Message::PRIO_WARNING, FORMAT_STRING, MESSAGE)
+#define LOG_ERROR_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)   LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::error, Poco::Message::PRIO_ERROR, FORMAT_STRING, MESSAGE)
+#define LOG_FATAL_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)   LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::error, Poco::Message::PRIO_FATAL, FORMAT_STRING, MESSAGE)
