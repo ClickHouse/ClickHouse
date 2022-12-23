@@ -299,7 +299,7 @@
 	url = https://github.com/ClickHouse/aws-crt-cpp.git
 [submodule "contrib/aws-c-io"]
 	path = contrib/aws-c-io
-	url = https://github.com/awslabs/aws-c-io.git
+	url = https://github.com/ClickHouse/aws-c-io.git
 [submodule "contrib/aws-c-mqtt"]
 	path = contrib/aws-c-mqtt
 	url = https://github.com/awslabs/aws-c-mqtt.git
