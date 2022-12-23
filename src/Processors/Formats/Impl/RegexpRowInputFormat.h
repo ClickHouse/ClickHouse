@@ -5,12 +5,13 @@
 #include <string>
 #include <vector>
 #include <Core/Block.h>
+#include <IO/PeekableReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
-#include <IO/PeekableReadBuffer.h>
 #include <Formats/ParsedTemplateFormatString.h>
+#include <Formats/SchemaInferenceUtils.h>
 
 
 namespace DB
@@ -81,12 +82,13 @@ public:
 private:
     DataTypes readRowAndGetDataTypes() override;
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
 
     using EscapingRule = FormatSettings::EscapingRule;
     RegexpFieldExtractor field_extractor;
     PeekableReadBuffer buf;
+    JSONInferenceInfo json_inference_info;
 };
 
 }

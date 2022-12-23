@@ -448,7 +448,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 
     /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
-    bool return_type_is_nullable = !properties.returns_default_when_only_null && getReturnType()->canBeInsideNullable()
+    bool return_type_is_nullable = !properties.returns_default_when_only_null && getResultType()->canBeInsideNullable()
         && std::any_of(arguments.begin(), arguments.end() - 1, [](const auto & element) { return element->isNullable(); });
 
     bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;

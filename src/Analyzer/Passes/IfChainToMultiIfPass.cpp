@@ -55,8 +55,8 @@ public:
             return;
 
         auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
-        multi_if_function->resolveAsFunction(multi_if_function_ptr, std::make_shared<DataTypeUInt8>());
         multi_if_function->getArguments().getNodes() = std::move(multi_if_arguments);
+        multi_if_function->resolveAsFunction(multi_if_function_ptr->build(multi_if_function->getArgumentTypes()));
         node = std::move(multi_if_function);
     }
 

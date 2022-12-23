@@ -211,8 +211,8 @@ def test_attach_detach_partition(cluster):
 
     node.query("ALTER TABLE hdfs_test DETACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
-    wait_for_delete_inactive_parts(node, "hdfs_test")
     wait_for_delete_empty_parts(node, "hdfs_test")
+    wait_for_delete_inactive_parts(node, "hdfs_test")
 
     hdfs_objects = fs.listdir("/clickhouse")
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
@@ -225,8 +225,8 @@ def test_attach_detach_partition(cluster):
 
     node.query("ALTER TABLE hdfs_test DROP PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
-    wait_for_delete_inactive_parts(node, "hdfs_test")
     wait_for_delete_empty_parts(node, "hdfs_test")
+    wait_for_delete_inactive_parts(node, "hdfs_test")
 
     hdfs_objects = fs.listdir("/clickhouse")
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
@@ -237,8 +237,8 @@ def test_attach_detach_partition(cluster):
         settings={"allow_drop_detached": 1},
     )
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(0)"
-    wait_for_delete_inactive_parts(node, "hdfs_test")
     wait_for_delete_empty_parts(node, "hdfs_test")
+    wait_for_delete_inactive_parts(node, "hdfs_test")
 
     hdfs_objects = fs.listdir("/clickhouse")
     assert len(hdfs_objects) == FILES_OVERHEAD
@@ -305,8 +305,8 @@ def test_table_manipulations(cluster):
 
     node.query("TRUNCATE TABLE hdfs_test")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(0)"
-    wait_for_delete_inactive_parts(node, "hdfs_test")
     wait_for_delete_empty_parts(node, "hdfs_test")
+    wait_for_delete_inactive_parts(node, "hdfs_test")
 
     hdfs_objects = fs.listdir("/clickhouse")
     assert len(hdfs_objects) == FILES_OVERHEAD

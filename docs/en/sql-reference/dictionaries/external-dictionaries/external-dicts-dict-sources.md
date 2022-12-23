@@ -824,3 +824,7 @@ Setting fields:
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
+
+## Related Content
+
+- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

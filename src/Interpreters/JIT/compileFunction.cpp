@@ -403,7 +403,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     std::vector<ColumnDataPlaceholder> columns(functions.size());
     for (size_t i = 0; i < functions.size(); ++i)
     {
-        auto return_type = functions[i].function->getReturnType();
+        auto return_type = functions[i].function->getResultType();
         auto * data = b.CreateLoad(column_type, b.CreateConstInBoundsGEP1_64(column_type, columns_arg, i));
 
         auto * column_data_type = toNativeType(b, removeNullable(return_type));

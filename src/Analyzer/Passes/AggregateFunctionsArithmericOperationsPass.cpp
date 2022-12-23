@@ -147,7 +147,6 @@ public:
 private:
     static inline void resolveAggregateFunctionNode(FunctionNode & function_node, const String & aggregate_function_name)
     {
-        auto function_result_type = function_node.getResultType();
         auto function_aggregate_function = function_node.getAggregateFunction();
 
         AggregateFunctionProperties properties;
@@ -156,7 +155,7 @@ private:
             function_aggregate_function->getParameters(),
             properties);
 
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 

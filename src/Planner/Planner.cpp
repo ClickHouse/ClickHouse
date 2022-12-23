@@ -349,8 +349,8 @@ void Planner::buildQueryPlanIfNeeded()
         {
             auto function_node = std::make_shared<FunctionNode>("and");
             auto and_function = FunctionFactory::instance().get("and", query_context);
-            function_node->resolveAsFunction(std::move(and_function), std::make_shared<DataTypeUInt8>());
             function_node->getArguments().getNodes() = {query_node.getPrewhere(), query_node.getWhere()};
+            function_node->resolveAsFunction(and_function->build(function_node->getArgumentTypes()));
             query_node.getWhere() = std::move(function_node);
             query_node.getPrewhere() = {};
         }
@@ -365,9 +365,9 @@ void Planner::buildQueryPlanIfNeeded()
     select_query_info.query = select_query_info.original_query;
     select_query_info.planner_context = planner_context;
 
-    StorageLimitsList storage_limits;
-    storage_limits.push_back(buildStorageLimits(*query_context, select_query_options));
-    select_query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
+    auto current_storage_limits = storage_limits;
+    current_storage_limits.push_back(buildStorageLimits(*query_context, select_query_options));
+    select_query_info.storage_limits = std::make_shared<StorageLimitsList>(std::move(current_storage_limits));
 
     collectTableExpressionData(query_tree, *planner_context);
     checkStoragesSupportTransactions(planner_context);
@@ -845,6 +845,12 @@ void Planner::buildQueryPlanIfNeeded()
 
     addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context);
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
+}
+
+void Planner::addStorageLimits(const StorageLimitsList & limits)
+{
+    for (const auto & limit : limits)
+        storage_limits.push_back(limit);
 }
 
 }

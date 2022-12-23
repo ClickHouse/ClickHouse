@@ -197,3 +197,9 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
     else
         return {};
 }
+
+#if defined(OS_LINUX)
+/// Sends notification (e.g. "server is ready") to systemd, analogous to sd_notify from libsystemd.
+/// See https://www.freedesktop.org/software/systemd/man/sd_notify.html for more information on the supported notifications.
+void systemdNotify(const std::string_view & command);
+#endif

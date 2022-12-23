@@ -19,6 +19,7 @@ def process_result(result_folder):
         "typos",
         "whitespaces",
         "workflows",
+        "submodules",
         "docs spelling",
     )
 
