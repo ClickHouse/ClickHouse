@@ -31,18 +31,21 @@ FunctionNode::FunctionNode(String function_name_)
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
 
-ColumnsWithTypeAndName FunctionNode::getArgumentTypes() const
+ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 {
-    ColumnsWithTypeAndName argument_types;
-    for (const auto & arg : getArguments().getNodes())
+    const auto & arguments = getArguments().getNodes();
+    ColumnsWithTypeAndName argument_columns;
+    argument_columns.reserve(arguments.size());
+
+    for (const auto & arg : arguments)
     {
         ColumnWithTypeAndName argument;
         argument.type = arg->getResultType();
         if (auto * constant = arg->as<ConstantNode>())
             argument.column = argument.type->createColumnConst(1, constant->getValue());
-        argument_types.push_back(argument);
+        argument_columns.push_back(argument);
     }
-    return argument_types;
+    return argument_columns;
 }
 
 void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
