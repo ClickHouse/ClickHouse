@@ -1248,10 +1248,12 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             for (const auto & name : columns_context.requiredColumns())
             {
                 auto hints = storage->getHints(name);
-                for (auto& hint : hints)
+                for (const auto & hint : hints)
                 {
-                    auto res = helper_hint_name.insert(hint);
-                    if (res.second)
+                    // We want to preserve the ordering of the hints
+                    // (as they are ordered by Levenshtein distance)
+                    auto [_, inserted] = helper_hint_name.insert(hint);
+                    if (inserted)
                         hint_name.push_back(hint);
                 }
             }
