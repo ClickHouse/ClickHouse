@@ -424,6 +424,8 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, try_infer_objects={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
+                settings.json.read_objects_as_strings,
+                settings.json.read_numbers_as_strings,
                 settings.json.try_infer_objects);
             break;
         default:
