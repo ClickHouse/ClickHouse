@@ -1819,7 +1819,7 @@ def reportLogPatterns(args):
         FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode()
-    print(f"\nTop patterns of log messages:\n")
+    print("\nTop patterns of log messages:\n")
     print(value)
     print("\n")
 
@@ -1838,7 +1838,7 @@ def reportLogPatterns(args):
         FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode()
-    print(f"\nTop runtime messages:\n")
+    print("\nTop runtime messages:\n")
     print(value)
     print("\n")
 
