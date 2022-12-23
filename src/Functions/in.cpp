@@ -166,7 +166,7 @@ public:
             res = ColumnUInt8::create(input_rows_count, res->getUInt(0));
 
         if (res->size() != input_rows_count)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Output size is different from input size, expect {}, get {}", input_rows_count, res->size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Output size is different from input size, expect {}, get {}", input_rows_count, res->size());
 
         return res;
     }
