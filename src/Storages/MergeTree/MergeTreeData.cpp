@@ -1348,6 +1348,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         loadDataPartsFromDisk(
             broken_parts_to_detach, duplicate_parts_to_remove, pool, num_parts, parts_queue, skip_sanity_checks, settings);
 
+    bool is_static_storage = isStaticStorage();
+
     if (settings->in_memory_parts_enable_wal)
     {
         std::map<String, MutableDataPartsVector> disk_wal_part_map;
@@ -1376,13 +1378,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                                 ErrorCodes::CORRUPTED_DATA);
 
                         write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
-                        for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext(), part_lock))
+                        for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext(), part_lock, is_static_storage))
                             disk_wal_parts.push_back(std::move(part));
                     }
                     else
                     {
                         MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
-                        for (auto && part : wal.restore(metadata_snapshot, getContext(), part_lock))
+                        for (auto && part : wal.restore(metadata_snapshot, getContext(), part_lock, is_static_storage))
                             disk_wal_parts.push_back(std::move(part));
                     }
                 }
@@ -1408,11 +1410,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         return;
     }
 
-    for (auto & part : broken_parts_to_detach)
-        part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+    if (!is_static_storage)
+    {
+        for (auto & part : broken_parts_to_detach)
+        {
+            /// detached parts must not have '_' in prefixes
+            part->renameToDetached("broken-on-start");
+        }
 
-    for (auto & part : duplicate_parts_to_remove)
-        part->remove();
+        for (auto & part : duplicate_parts_to_remove)
+            part->remove();
+    }
 
     auto deactivate_part = [&] (DataPartIteratorByStateAndInfo it)
     {
@@ -5663,7 +5671,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             agg_count->set(place, value.get<UInt64>());
         else
         {
-            auto value_column = func->getReturnType()->createColumnConst(1, value)->convertToFullColumnIfConst();
+            auto value_column = func->getResultType()->createColumnConst(1, value)->convertToFullColumnIfConst();
             const auto * value_column_ptr = value_column.get();
             func->add(place, &value_column_ptr, 0, &arena);
         }

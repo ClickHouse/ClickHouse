@@ -1514,8 +1514,14 @@ bool MutateTask::prepare()
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
 
     auto context_for_reading = Context::createCopy(ctx->context);
+
+    /// We must read with one thread because it guarantees that output stream will be sorted.
+    /// Disable all settings that can enable reading with several streams.
     context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
     context_for_reading->setSetting("max_threads", 1);
+    context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
+    context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
+
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
     context_for_reading->setSetting("force_index_by_date", false);
     context_for_reading->setSetting("force_primary_key", false);
