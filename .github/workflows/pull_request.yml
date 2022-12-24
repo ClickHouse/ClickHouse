@@ -3004,6 +3004,7 @@ jobs:
           REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=Stress test (asan)
           REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
+          DISABLE_BC_CHECK=1
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
