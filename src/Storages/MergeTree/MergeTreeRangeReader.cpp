@@ -1232,6 +1232,8 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     if (result.num_rows && (result.need_filter || prewhere_info->need_filter))
     {
+        result.need_filter = false; /// We are going to apply the filter now, reset the flag before the next step
+
         FilterWithCachedCount current_step_filter_with_count(current_step_filter);
 
         /// Filter has not been applied yet, do it now
