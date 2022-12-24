@@ -7,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/PODArray.h>
-#include <Common/PODArray_fwd.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
@@ -105,7 +104,7 @@ private:
     X min_x;
     X max_x;
     bool specified_min_max_x;
-    using Chars = PaddedPODArray<char>;
+    using Chars = PODArray<char>;
 
     template <class T>
     String getBar(const T value) const
