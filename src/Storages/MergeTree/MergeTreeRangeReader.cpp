@@ -323,7 +323,7 @@ void MergeTreeRangeReader::ReadResult::clear()
     final_filter = FilterWithCachedCount();
     num_rows = 0;
     columns.clear();
-    block_before_prewhere.clear();
+    additional_columns.clear();
 }
 
 void MergeTreeRangeReader::ReadResult::clearFilter()
@@ -367,10 +367,11 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
     assert(!final_filter.present() || final_filter.size() == total_rows_per_granule);
 
     assert(!final_filter.present()
-        || final_filter.countBytesInFilter() == num_rows /// if filter has been applied
-        || total_rows_per_granule == num_rows  /// if filter has not been applied
+        || final_filter.countBytesInFilter() == num_rows /// If filter has been applied.
+        || total_rows_per_granule == num_rows  /// If filter has not been applied.
     );
-//    assert(!block_before_prewhere || block_before_prewhere.rows() == total_rows_per_granule);
+
+    assert(!additional_columns || additional_columns.rows() == num_rows);
 
     for (const auto & column : columns)
     {
@@ -405,9 +406,9 @@ std::string MergeTreeRangeReader::ReadResult::dumpInfo() const
             out << " " << columns[ci]->dumpStructure();
         }
     }
-    if (block_before_prewhere)
+    if (additional_columns)
     {
-        out << ", block_before_prewhere: " << block_before_prewhere.dumpStructure();
+        out << ", additional_columns: " << additional_columns.dumpStructure();
     }
     return out.str();
 }
@@ -483,9 +484,9 @@ void MergeTreeRangeReader::ReadResult::optimize(ColumnPtr current_filter, bool c
 /*        {
             shrink(columns, rows_per_granule_previous); /// shrink acts as filtering in such case
 
-            auto c = block_before_prewhere.getColumns();
+            auto c = additional_columns.getColumns();
             shrink(c, rows_per_granule_previous); /// shrink acts as filtering in such case
-            block_before_prewhere.setColumns(c);
+            additional_columns.setColumns(c);
         }
 */
         /// Check if const 1 after shrink
@@ -898,7 +899,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             if (should_evaluate_missing_defaults)
             {
                 Block additional_columns = prev_reader->getSampleBlock().cloneWithColumns(read_result.columns);
-                for (const auto & col : read_result.block_before_prewhere)
+                for (const auto & col : read_result.additional_columns)
                     additional_columns.insert(col);
 
                 merge_tree_reader->evaluateMissingDefaults(additional_columns, columns);
@@ -1200,18 +1201,19 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         {
             /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
-            Block block_before_prewhere = block;
+            Block additional_columns = block;
 
             if (prewhere_info->actions)
                 prewhere_info->actions->execute(block);
 
-            result.block_before_prewhere.clear();
-            for (auto & col : block_before_prewhere)
+            result.additional_columns.clear();
+            for (auto & col : additional_columns)
             {
-                /// Exclude columns that are present in the result block to avoid storing them and filtering twice
+                /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
+                /// TODO: also need to exclude the column that are not needed for the next steps.
                 if (block.has(col.name))
                     continue;
-                result.block_before_prewhere.insert(col);
+                result.additional_columns.insert(col);
             }
         }
 
@@ -1241,17 +1243,16 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         if (!last_reader_in_chain)
         {
-/// TODO: only filter block before prewhere if it contains columns needed by next readers!
-            auto columns_before_prewhere = result.block_before_prewhere.getColumns();
-            filterColumns(columns_before_prewhere, current_step_filter_with_count);
-            if (!columns_before_prewhere.empty())
-                result.block_before_prewhere.setColumns(columns_before_prewhere);
+            auto additional_columns = result.additional_columns.getColumns();
+            filterColumns(additional_columns, current_step_filter_with_count);
+            if (!additional_columns.empty())
+                result.additional_columns.setColumns(additional_columns);
             else
-                result.block_before_prewhere.clear();
+                result.additional_columns.clear();
         }
         else
         {
-            result.block_before_prewhere.clear();
+            result.additional_columns.clear();
         }
 
         {
