@@ -252,12 +252,12 @@ public:
 
         std::string dumpInfo() const;
 
-        /// If this flag is false than filtering form PREWHERE can be delayed and done in WHERE
-        /// to reduce memory copies and applying heavy filters multiple times
+        /// If this flag is set then we must apply the filter at the end of the current step.
+        /// If it is not set then the filtration can be postpone to the later steps when more rows can be filtered.
         bool need_filter = false;
 
-        Block block_before_prewhere;    /// TODO: Rename into additional_columns because it can contain columns
-                                        /// that are not included into result but are needed for default values calculation.
+        /// Contains columns that are not included into result but might needed for default values calculation.
+        Block additional_columns;
 
         RangesInfo started_ranges;
         /// The number of rows read from each granule.
@@ -272,8 +272,9 @@ public:
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
         size_t num_bytes_read = 0;
-//        /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= total_rows_per_granule.
-        /// Applying this filter to 'columns' will leave only rows that pass all filtering steps in the reading chain
+
+        /// This filter has the size of total_rows_per_granule. This means that it can be applied to newly read columns.
+        /// The result of applying this filter is that only rows that pass all previous filtering steps will remain.
         FilterWithCachedCount final_filter;
 
         /// Builds updated filter by cutting zeros in granules tails
