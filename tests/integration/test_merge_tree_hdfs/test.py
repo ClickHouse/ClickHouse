@@ -213,7 +213,9 @@ def test_attach_detach_partition(cluster):
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
     wait_for_delete_empty_parts(node, "hdfs_test")
     wait_for_delete_inactive_parts(node, "hdfs_test")
-    wait_for_delete_hdfs_objects(cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
+    wait_for_delete_hdfs_objects(
+        cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    )
 
     node.query("ALTER TABLE hdfs_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
