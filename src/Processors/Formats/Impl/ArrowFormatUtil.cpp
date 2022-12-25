@@ -111,7 +111,7 @@ std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
         std::string col_name = named_col.name;
         if (ignore_case)
             boost::to_lower(col_name);
-        if (import_nested)
+        if (import_nested && !fields_indices.contains(col_name))
         {
             if (!schema.GetFieldByName(col_name))
             {
@@ -124,8 +124,10 @@ std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
         auto it = fields_indices.find(col_name);
         if (it == fields_indices.end())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found field({}) in arrow schema:{}",
-                named_col.name, schema.ToString());
+            if (!allow_missing_columns)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found field({}) in arrow schema:{}", named_col.name, schema.ToString());
+            else
+                continue;
         }
         for (int j = 0; j < it->second.second; ++j)
         {

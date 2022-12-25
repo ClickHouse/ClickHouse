@@ -15,10 +15,13 @@ namespace DB
 class ArrowFormatUtil
 {
 public:
-    explicit ArrowFormatUtil(bool ignore_case_, bool import_nested_, bool nested_type_has_index_)
+    explicit ArrowFormatUtil(bool ignore_case_, bool import_nested_, bool nested_type_has_index_, bool allow_missing_columns_)
         : ignore_case(ignore_case_)
         , import_nested(import_nested_)
-        , nested_type_has_index(nested_type_has_index_){}
+        , nested_type_has_index(nested_type_has_index_)
+        , allow_missing_columns(allow_missing_columns_)
+    {
+    }
     ~ArrowFormatUtil() = default;
 
     std::map<std::string, std::pair<int, int>>
@@ -32,6 +35,7 @@ private:
     bool ignore_case;
     bool import_nested;
     bool nested_type_has_index;
+    bool allow_missing_columns;
     void calculateFieldIndices(const arrow::Field & field,
         int & current_start_index,
         std::map<std::string, std::pair<int, int>> & result, const std::string & name_prefix = "");
