@@ -75,6 +75,7 @@ function download
     ./clickhouse ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
+    ln -s ./clickhouse ./clickhouse-local
 
     # clickhouse-server is in the current dir
     export PATH="$PWD:$PATH"
