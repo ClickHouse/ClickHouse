@@ -134,7 +134,11 @@ void ORCBlockInputFormat::prepareReader()
         format_settings.orc.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
-    ArrowFormatUtil format_util(format_settings.orc.case_insensitive_column_matching, format_settings.orc.import_nested, true);
+    ArrowFormatUtil format_util(
+        format_settings.orc.case_insensitive_column_matching,
+        format_settings.orc.import_nested,
+        true,
+        format_settings.orc.allow_missing_columns);
     include_indices = format_util.findRequiredIndices(getPort().getHeader(), *schema);
 }
 
