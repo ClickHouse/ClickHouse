@@ -352,17 +352,25 @@ th { cursor: pointer; }
 <body>
 <div class="main">
 
-<h1>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</h1>
+<h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
 <p class="links">
-<a href="runlog.log">runlog.log</a>
-<a href="fuzzer.log">fuzzer.log</a>
-<a href="server.log.gz">server.log.gz</a>
-<a href="main.log">main.log</a>
-${CORE_LINK}
+  <a href="runlog.log">runlog.log</a>
+  <a href="fuzzer.log">fuzzer.log</a>
+  <a href="server.log.gz">server.log.gz</a>
+  <a href="main.log">main.log</a>
+  ${CORE_LINK}
 </p>
 <table>
-<tr><th>Test name</th><th>Test status</th><th>Description</th></tr>
-<tr><td>AST Fuzzer</td><td>$(cat status.txt)</td><td>$(cat description.txt)</td></tr>
+<tr>
+  <th>Test name</th>
+  <th>Test status</th>
+  <th>Description</th>
+</tr>
+<tr>
+  <td>AST Fuzzer</td>
+  <td>$(cat status.txt)</td>
+  <td style="white-space: pre;">$(cat description.txt | clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table")</td>
+</tr>
 </table>
 </body>
 </html>
