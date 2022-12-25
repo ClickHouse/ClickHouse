@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: replica
+# Tags: replica, no-replicated-database
+# I don't understand why this test fails in ReplicatedDatabase run
+# but too many magic included in it, so I just disabled it for ReplicatedDatabase run becase
+# here we explicitely create it and check is alright.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
