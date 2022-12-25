@@ -334,7 +334,7 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
 zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
     && echo -e 'Found signal in gdb.log\tFAIL' >> /test_output/test_results.tsv
 
-if [ -z "$DISABLE_BC_CHECK" ]; then
+if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
     echo -e "Backward compatibility check\n"
 
     echo "Get previous release tag"
