@@ -24,7 +24,7 @@ def run_benchmark(payload, settings):
                 [
                     "clickhouse",
                     "benchmark",
-                    "--concurrency=100",
+                    "--concurrency=10",
                     "--cumulative",
                     "--delay=0",
                     # NOTE: with current matrix even 3 seconds it huge...
