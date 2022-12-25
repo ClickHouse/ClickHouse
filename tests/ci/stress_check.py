@@ -34,6 +34,7 @@ def get_run_command(
         "docker run --cap-add=SYS_PTRACE "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
+        f"-e DISABLE_BC_CHECK={os.environ.get('DISABLE_BC_CHECK', '0')} "
         # For dmesg and sysctl
         "--privileged "
         f"--volume={build_path}:/package_folder "
