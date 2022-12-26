@@ -138,7 +138,7 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_log_path = os.path.join(temp_path, "runlog.log")
+    run_log_path = os.path.join(temp_path, "run.log")
 
     run_command = get_run_command(
         packages_path, result_path, repo_tests_path, server_log_path, docker_image

@@ -354,7 +354,7 @@ th { cursor: pointer; }
 
 <h1>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</h1>
 <p class="links">
-<a href="runlog.log">runlog.log</a>
+<a href="run.log">run.log</a>
 <a href="fuzzer.log">fuzzer.log</a>
 <a href="server.log.gz">server.log.gz</a>
 <a href="main.log">main.log</a>
