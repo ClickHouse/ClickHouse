@@ -145,10 +145,10 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
     raise StopIteration("Function did not finished successfully")
 
 
-def subprocess_check_call(args, detach=False, nothrow=False):
+def subprocess_check_call(args, detach=False, nothrow=False, timeout=300):
     # Uncomment for debugging
     # logging.info('run:' + ' '.join(args))
-    return run_and_check(args, detach=detach, nothrow=nothrow)
+    return run_and_check(args, detach=detach, nothrow=nothrow, timeout=timeout)
 
 
 def get_odbc_bridge_path():
@@ -1739,7 +1739,14 @@ class ClickHouseCluster:
         return self.docker_client.api.logs(container_id).decode()
 
     def exec_in_container(
-        self, container_id, cmd, detach=False, nothrow=False, use_cli=True, **kwargs
+        self,
+        container_id,
+        cmd,
+        detach=False,
+        nothrow=False,
+        use_cli=True,
+        timeout=300,
+        **kwargs,
     ):
         if use_cli:
             logging.debug(
@@ -1749,7 +1756,10 @@ class ClickHouseCluster:
             if "user" in kwargs:
                 exec_cmd += ["-u", kwargs["user"]]
             result = subprocess_check_call(
-                exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow
+                exec_cmd + [container_id] + cmd,
+                detach=detach,
+                nothrow=nothrow,
+                timeout=timeout,
             )
             return result
         else:
@@ -3409,10 +3419,8 @@ class ClickHouseInstance:
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 
-    def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
-        return self.cluster.exec_in_container(
-            self.docker_id, cmd, detach, nothrow, **kwargs
-        )
+    def exec_in_container(self, *args, **kwargs):
+        return self.cluster.exec_in_container(self.docker_id, *args, **kwargs)
 
     def rotate_logs(self):
         self.exec_in_container(
