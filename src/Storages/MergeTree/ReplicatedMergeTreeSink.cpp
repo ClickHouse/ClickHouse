@@ -939,7 +939,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
                 catch (const zkutil::KeeperException & e)
                 {
                     /// suppress this exception since need to rename part to temporary next
-                    LOG_DEBUG(log, "Unlocking shared data failed during error hadling: code={} message={}", e.code, e.message());
+                    LOG_DEBUG(log, "Unlocking shared data failed during error handling: code={} message={}", e.code, e.message());
                 }
 
                 /// Part was not committed to keeper
