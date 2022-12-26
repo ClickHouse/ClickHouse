@@ -870,7 +870,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     if (already_started)
         return;
 
-    LOG_INFO(log, "Finalizing session {}: finalization_started={}, queue_finished={}, reason={}",
+    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
 
     auto expire_session_if_not_expired = [&]
