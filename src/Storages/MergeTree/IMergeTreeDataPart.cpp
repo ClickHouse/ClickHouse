@@ -1643,6 +1643,12 @@ void IMergeTreeDataPart::remove()
             return CanRemoveDescription{.can_remove_anything = true, .files_not_to_remove = {} };
         }
 
+        if (getState() == MergeTreeDataPartState::Temporary)
+        {
+            LOG_TRACE(storage.log, "Part {} in temporary state can be removed without unlocking shared state", name);
+            return CanRemoveDescription{.can_remove_anything = false, .files_not_to_remove = {} };
+        }
+
         auto [can_remove, files_not_to_remove] = canRemovePart();
         if (!can_remove)
             LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
@@ -1713,7 +1719,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix)
     part_is_probably_removed_from_disk = true;
 }
 
-void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     auto storage_settings = storage.getSettings();
 
@@ -1726,9 +1732,9 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
     bool broken = !prefix.empty();
     auto maybe_path_in_detached = getRelativePathForDetachedPart(prefix, broken);
     if (!maybe_path_in_detached)
-        return;
+        return nullptr;
 
-    getDataPartStorage().freeze(
+    return getDataPartStorage().freeze(
         storage.relative_data_path,
         *maybe_path_in_detached,
         /*make_source_readonly*/ true,
