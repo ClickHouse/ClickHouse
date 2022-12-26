@@ -5602,9 +5602,11 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                             if (isInMemoryPart(covered_part))
                                 get_inited_wal()->dropPart(covered_part->name);
 
-                        data.part_info_by_min_block.erase(covered_part->info.min_block);
                         if (table_version)
+                        {
                             table_version->part_versions.erase(covered_part->info);
+                            data.part_info_by_min_block.erase(covered_part->info.min_block);
+                        }
                     }
 
                     reduce_parts += covered_parts.size();
@@ -5615,12 +5617,15 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
                     data.modifyPartState(part, DataPartState::Active);
                     data.addPartContributionToColumnAndSecondaryIndexSizes(part);
-                    if (!data.part_info_by_min_block.insert({part->info.min_block, part->info}).second)
+                    if (table_version)
                     {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Can not insert part info into part_info_by_min_block when insert new part, this is a bug, part name: {}",
-                            part->info.getPartName());
+                        if (!data.part_info_by_min_block.insert({part->info.min_block, part->info}).second)
+                        {
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Can not insert part info into part_info_by_min_block when insert new part, this is a bug, part name: {}",
+                                part->info.getPartName());
+                        }
                     }
                 }
             }
