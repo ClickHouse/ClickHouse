@@ -337,6 +337,9 @@ zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
 if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
     echo -e "Backward compatibility check\n"
 
+    # Disable ZooKeeper fault injection, because it is harmful for the backward compatibility check.
+    sudo rm /etc/clickhouse-server/config.d/zookeeper_fault_injection.xml
+
     echo "Get previous release tag"
     previous_release_tag=$(clickhouse-client --version | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | get_previous_release_tag)
     echo $previous_release_tag
