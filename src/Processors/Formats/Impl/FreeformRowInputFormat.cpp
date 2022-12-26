@@ -4,12 +4,14 @@
 #include "Common/Exception.h"
 #include "Common/StringUtils/StringUtils.h"
 #include <Common/logger_useful.h>
+#include "Core/NamesAndTypes.h"
 #include "DataTypes/DataTypeNullable.h"
 #include "DataTypes/DataTypesNumber.h"
 #include "DataTypes/IDataType.h"
 #include "DataTypes/Serializations/ISerialization.h"
 #include "Formats/EscapingRuleUtils.h"
 #include "Formats/FormatFactory.h"
+#include "Formats/JSONUtils.h"
 #include "IO/ReadHelpers.h"
 #include "Processors/Formats/IRowInputFormat.h"
 #include "Processors/Formats/ISchemaReader.h"
@@ -26,7 +28,7 @@ namespace ErrorCodes
 
 static inline void skipWhitespacesAndDelimiters(ReadBuffer & in)
 {
-    while (!in.eof() && (isWhitespaceASCII(*in.position()) || *in.position() == ':' || *in.position() == ','))
+    while (!in.eof() && (isWhitespaceASCII(*in.position()) || *in.position() == ','))
         ++in.position();
 }
 
@@ -103,7 +105,7 @@ static DataTypePtr makeFloatIfInt(const DataTypePtr & type)
 }
 
 
-std::vector<String> JSONFieldMatcher::parseFields(ReadBuffer & in) const
+std::vector<std::pair<String, String>> JSONFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
 {
     if (in.eof())
         return {};
@@ -112,22 +114,28 @@ std::vector<String> JSONFieldMatcher::parseFields(ReadBuffer & in) const
     {
         String ret;
         readJSONField(ret, in);
-        return {ret};
+        return {{fmt::format("c{}", index), ret}};
     }
 
 
     ++in.position();
     skipWhitespacesAndDelimiters(in);
 
-    std::vector<String> ret;
+    std::vector<std::pair<String, String>> ret;
     while (*in.position() != '}')
     {
-        skipJSONField(in, "json_key");
-        skipWhitespacesAndDelimiters(in);
+        String field_name = JSONUtils::readFieldName(in);
 
-        String field;
-        readJSONField(field, in);
-        ret.push_back(field);
+        auto fields = parseFields(in, index); // "index" here doesn't do anything
+
+        for (const auto & field : fields)
+        {
+            if (field.first.starts_with("c"))
+                ret.emplace_back(field_name, field.second);
+            else
+                ret.emplace_back(fmt::format("{}.{}", field_name, field.first), field.second);
+        }
+
         skipWhitespacesAndDelimiters(in);
     }
 
@@ -136,32 +144,32 @@ std::vector<String> JSONFieldMatcher::parseFields(ReadBuffer & in) const
     return ret;
 }
 
-std::vector<String> CSVFieldMatcher::parseFields(ReadBuffer & in) const
+std::vector<std::pair<String, String>> CSVFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
 {
     String ret;
     readCSVField(ret, in, settings.csv);
-    return {ret};
+    return {{fmt::format("c{}", index), ret}};
 }
 
-std::vector<String> QuotedFieldMatcher::parseFields(ReadBuffer & in) const
+std::vector<std::pair<String, String>> QuotedFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
 {
     String ret;
     readQuotedField(ret, in);
-    return {ret};
+    return {{fmt::format("c{}", index), ret}};
 }
 
-std::vector<String> EscapedFieldMatcher::parseFields(ReadBuffer & in) const
+std::vector<std::pair<String, String>> EscapedFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
 {
     String ret;
     readEscapedString(ret, in);
-    return {ret};
+    return {{fmt::format("c{}", index), ret}};
 }
 
-std::vector<String> RawByWhitespaceFieldMatcher::parseFields(ReadBuffer & in) const
+std::vector<std::pair<String, String>> RawByWhitespaceFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
 {
     String ret;
     readStringUntilWhitespaceDelimiter(ret, in);
-    return {ret};
+    return {{fmt::format("c{}", index), ret}};
 }
 
 FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSettings & settings_)
@@ -175,7 +183,7 @@ FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSetting
     matchers.emplace_back(std::make_unique<EscapedFieldMatcher>(FormatSettings::EscapingRule::Escaped, settings_));
 }
 
-std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(bool one_string)
+std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(bool one_string, size_t index)
 {
     skipWhitespacesAndDelimiters(in);
     char * start = in.position();
@@ -183,10 +191,10 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
 
     if (one_string)
     {
-        auto fields = matchers.back()->parseFields(in);
-        DataTypes types{matchers.back()->getDataTypeFromField(fields[0])};
+        auto fields = matchers.back()->parseFields(in, index);
+        NamesAndTypes columns{{fields[0].first, matchers.back()->getDataTypeFromField(fields[0].second)}};
         next_fields.emplace_back(
-            types, matchers.size() - 1, scoreForField(matchers.back()->getEscapingRule(), types[0]), in.position(), false);
+            columns, matchers.size() - 1, scoreForField(matchers.back()->getEscapingRule(), columns[0].type), in.position(), false);
         return next_fields;
     }
 
@@ -195,40 +203,40 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
     {
         try
         {
-            auto fields = matcher->parseFields(in);
-            DataTypes types; // we either add all of the fields or none of them
+            auto fields = matcher->parseFields(in, index);
+            NamesAndTypes columns; // we either add all of the fields or none of them
             type_score = 0;
             fields_score = 0;
 
             for (auto & field : fields)
             {
-                auto type = matcher->getDataTypeFromField(field);
+                auto type = matcher->getDataTypeFromField(field.second);
                 if (type)
                 {
                     // a single punctuation is not a valid field
-                    if (field.size() == 1 && isPunctuationASCII(field[0]))
+                    if (field.second.size() == 1 && isPunctuationASCII(field.second[0]))
                         continue;
 
                     type = makeFloatIfInt(type);
-                    types.push_back(type);
+                    columns.emplace_back(field.first, type);
 
                     type_score += scoreForType(type);
                     fields_score += scoreForField(matcher->getEscapingRule(), type);
 
-                    one_string = field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher";
+                    one_string = field.second.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher";
                 }
             }
 
             // add a new field only if type_score > best_type_score or if we haven't found a field other than string
-            if (types.size() == fields.size() && (type_score > best_type_score || best_type_score <= 1))
+            if (columns.size() == fields.size() && (type_score > best_type_score || best_type_score <= 1))
             {
                 best_type_score = type_score;
-                next_fields.emplace_back(types, i, fields_score, in.position(), one_string);
+                next_fields.emplace_back(columns, i, fields_score, in.position(), one_string);
             }
         }
         catch (Exception & e)
         {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse field: {}", e.message());
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "fail to parse field: {}", e.message());
         }
 
         ++i;
@@ -246,25 +254,19 @@ void FreeformFieldMatcher::recursivelyGetNextFieldInRow(
     if (*in.position() == '\n')
     {
         solutions.push_back(current_solution);
-        LOG_DEBUG(
-            &Poco::Logger::get("FreeformFieldMatcher"),
-            "got new solution with score: {}, total solutions: {}",
-            current_solution.score,
-            solutions.size());
-        // not resetting the buffer as we've already reach end of row
         return;
     }
 
-    const auto next_fields = readNextFields(one_string);
+    const auto next_fields = readNextFields(one_string, current_solution.size);
     for (const auto & fields : next_fields)
     {
         auto next = current_solution;
         next.matchers_order.push_back(fields.matcher_index);
-        for (const auto & type : fields.types)
-            next.matched_types.push_back(type);
+        for (const auto & column : fields.columns)
+            next.columns.push_back(column);
 
         next.score += fields.score;
-        next.size += fields.types.size();
+        next.size += fields.columns.size();
 
         recursivelyGetNextFieldInRow(fields.pos, next, solutions, fields.parse_the_rest_as_one_string);
     }
@@ -324,7 +326,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
                 for (const auto & i : solution.matchers_order)
                 {
                     skipWhitespacesAndDelimiters(in);
-                    matchers[i]->parseFields(in);
+                    matchers[i]->parseFields(in, 0);
                 }
 
                 if (!in.eof() && *in.position() != '\n')
@@ -339,7 +341,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         }
         catch (Exception & e)
         {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse field: {}", e.message());
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "fail to parse field: {}", e.message());
         }
     }
 
@@ -359,11 +361,11 @@ bool FreeformFieldMatcher::parseRow()
     for (size_t col = 0; const auto & i : final_solution.matchers_order)
     {
         skipWhitespacesAndDelimiters(in);
-        auto fields = matchers[i]->parseFields(in);
+        auto fields = matchers[i]->parseFields(in, col);
         for (const auto & field : fields)
         {
             rules[col] = matchers[i]->getEscapingRule();
-            matched_fields[col] = field;
+            matched_fields[col] = field.second;
             ++col;
         }
     }
@@ -380,7 +382,7 @@ FreeformRowInputFormat::FreeformRowInputFormat(
 
 bool FreeformRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
-    const auto & type = matcher.getDataTypes()[index];
+    const auto & type = matcher.getNamesAndTypes()[index].type;
     const auto rule = matcher.getRule(index);
     ReadBufferFromString field_buf(matcher.getField(index));
 
@@ -424,13 +426,12 @@ NamesAndTypesList FreeformSchemaReader::readSchema()
     if (!matcher.generateSolutionsAndPickBest())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse freeform text, no solutions found.");
 
-    DataTypes types = matcher.getDataTypes();
-    NamesAndTypesList names_and_types;
+    auto columns = matcher.getNamesAndTypes();
+    NamesAndTypesList ret;
+    for (const auto & column : columns)
+        ret.push_back(column);
 
-    for (size_t i = 0; i < types.size(); ++i)
-        names_and_types.emplace_back(fmt::format("c{}", i), types[i]);
-
-    return names_and_types;
+    return ret;
 }
 
 DataTypes FreeformSchemaReader::readRowAndGetDataTypes()

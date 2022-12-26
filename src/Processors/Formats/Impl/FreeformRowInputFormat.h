@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DataTypes/IDataType.h"
+#include "DataTypes/Serializations/SerializationInfo.h"
 #include "Formats/EscapingRuleUtils.h"
 #include "Formats/FormatSettings.h"
 #include "Processors/Formats/IRowInputFormat.h"
@@ -17,7 +18,8 @@ public:
     }
 
     virtual String getName() const = 0;
-    virtual std::vector<String> parseFields(ReadBuffer & in) const = 0;
+    // parseFields returns a vector of fields (field_name, field_value), index is used as the column name if there isn't a better option
+    virtual std::vector<std::pair<String, String>> parseFields(ReadBuffer & in, size_t index) const = 0;
     DataTypePtr getDataTypeFromField(String & s) const { return tryInferDataTypeByEscapingRule(s, settings, rule); }
     const FormatSettings::EscapingRule & getEscapingRule() const { return rule; }
 
@@ -33,7 +35,7 @@ class JSONFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "JSONFieldMatcher"; }
-    std::vector<String> parseFields(ReadBuffer & in) const override;
+    std::vector<std::pair<String, String>> parseFields(ReadBuffer & in, size_t index) const override;
 };
 
 class CSVFieldMatcher : public FieldMatcher
@@ -41,7 +43,7 @@ class CSVFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "CSVFieldMatcher"; }
-    std::vector<String> parseFields(ReadBuffer & in) const override;
+    std::vector<std::pair<String, String>> parseFields(ReadBuffer & in, size_t index) const override;
 };
 
 class QuotedFieldMatcher : public FieldMatcher
@@ -49,7 +51,7 @@ class QuotedFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "QuotedFieldMatcher"; }
-    std::vector<String> parseFields(ReadBuffer & in) const override;
+    std::vector<std::pair<String, String>> parseFields(ReadBuffer & in, size_t index) const override;
 };
 
 class EscapedFieldMatcher : public FieldMatcher
@@ -57,7 +59,7 @@ class EscapedFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "EscapedFieldMatcher"; }
-    std::vector<String> parseFields(ReadBuffer & in) const override;
+    std::vector<std::pair<String, String>> parseFields(ReadBuffer & in, size_t index) const override;
 };
 
 class RawByWhitespaceFieldMatcher : public FieldMatcher
@@ -65,7 +67,7 @@ class RawByWhitespaceFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "RawByWhitespaceFieldMatcher"; }
-    std::vector<String> parseFields(ReadBuffer & in) const override;
+    std::vector<std::pair<String, String>> parseFields(ReadBuffer & in, size_t index) const override;
 };
 
 /// Class for matching generic data row by row.
@@ -77,20 +79,20 @@ public:
 
     struct Fields
     {
-        const DataTypes types;
+        const NamesAndTypes columns;
         const uint8_t matcher_index;
         const size_t score;
         const bool parse_the_rest_as_one_string;
         char * pos;
-        Fields(const DataTypes & types_, const uint8_t & index_, const size_t & score_, char * pos_, const bool & one_string)
-            : types(types_), matcher_index(index_), score(score_), parse_the_rest_as_one_string(one_string), pos(pos_)
+        Fields(const NamesAndTypes & columns_, const uint8_t & index_, const size_t & score_, char * pos_, const bool & one_string)
+            : columns(columns_), matcher_index(index_), score(score_), parse_the_rest_as_one_string(one_string), pos(pos_)
         {
         }
     };
 
     struct Solution
     {
-        DataTypes matched_types;
+        NamesAndTypes columns;
         std::vector<uint8_t> matchers_order;
         size_t score;
         size_t size;
@@ -104,7 +106,7 @@ public:
 
     const String & getField(size_t index) { return matched_fields[index]; }
     const FormatSettings::EscapingRule & getRule(size_t index) { return rules[index]; }
-    DataTypes & getDataTypes() { return final_solution.matched_types; }
+    NamesAndTypes & getNamesAndTypes() { return final_solution.columns; }
     size_t getSolutionLength() const { return final_solution.size; }
 
 private:
@@ -119,7 +121,7 @@ private:
 
     void recursivelyGetNextFieldInRow(char * current_pos, Solution current_solution, std::vector<Solution> & solutions, bool one_string);
     void readRowAndGenerateSolutions(char * pos, std::vector<Solution> & solutions);
-    std::vector<Fields> readNextFields(bool one_string);
+    std::vector<Fields> readNextFields(bool one_string, size_t index);
 };
 
 class FreeformRowInputFormat final : public IRowInputFormat
