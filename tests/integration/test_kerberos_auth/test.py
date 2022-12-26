@@ -57,7 +57,7 @@ def make_auth(instance):
         [
             "bash",
             "-c",
-            f"echo 'select currentUser()' | curl -vvv --negotiate -u : http://{instance.hostname}:8123/ --data-binary @-",
+            f"echo 'select currentUser()' | curl --negotiate -u : http://{instance.hostname}:8123/ --data-binary @-",
         ]
     )
 
