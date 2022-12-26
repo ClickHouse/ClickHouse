@@ -20,6 +20,12 @@ instance3 = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_kerberos_kdc=True,
 )
+client = cluster.add_instance(
+    "client",
+    main_configs=["configs/kerberos_without_keytab.xml"],
+    user_configs=["configs/users.xml"],
+    with_kerberos_kdc=True,
+)
 
 
 # Fixtures
@@ -38,16 +44,20 @@ def kerberos_cluster():
 
 
 def make_auth(instance):
-    instance.exec_in_container(
+    instance_ip = cluster.get_instance_ip(instance.name)
+
+    client.exec_in_container(
+        (["bash", "-c", f"echo '{instance_ip} {instance.hostname}' >> /etc/hosts"])
+    )
+
+    client.exec_in_container(
         ["bash", "-c", "kinit -k -t /tmp/keytab/kuser.keytab kuser"]
     )
-    return instance.exec_in_container(
+    return client.exec_in_container(
         [
             "bash",
             "-c",
-            "echo 'select currentUser()' | curl -vvv --negotiate -u : http://{}:8123/ --data-binary @-".format(
-                instance.hostname
-            ),
+            f"echo 'select currentUser()' | curl -vvv --negotiate -u : http://{instance.hostname}:8123/ --data-binary @-",
         ]
     )
 
@@ -64,7 +74,6 @@ def test_kerberos_auth_without_keytab(kerberos_cluster):
 
 
 def test_bad_path_to_keytab(kerberos_cluster):
-
     assert (
         "DB::Exception: : Authentication failed: password is incorrect or there is no user with such name."
         in make_auth(instance3)
