@@ -332,7 +332,7 @@ void MergeTreeRangeReader::ReadResult::clearFilter()
     final_filter = FilterWithCachedCount();
 }
 
-#if 0
+#if 1
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns, const NumRows & rows_per_granule_previous) const
 {
     for (auto & column : old_columns)
@@ -430,6 +430,28 @@ void MergeTreeRangeReader::ReadResult::setFilterConstTrue()
     clearFilter();
 }
 
+
+// TODO: add test 'PREWHERE n%3 WHERE n%5' and 'WHERE n%3 AND n%5' it should be the same
+/// there was a bug when '&' was used instead of '&&' for 'AND' operation
+ColumnPtr andFilters(ColumnPtr c1, ColumnPtr c2)
+{
+    // TODO: use proper vectorized implementation of AND?
+    assert(c1->size() == c2->size());
+    auto res = ColumnUInt8::create(c1->size());
+    auto & res_data = res->getData();
+    const auto & c1_data = dynamic_cast<const ColumnUInt8*>(c1.get())->getData();
+    const auto & c2_data = dynamic_cast<const ColumnUInt8*>(c2.get())->getData();
+    const size_t size = c1->size();
+    const size_t step = 16;
+    size_t i = 0;
+    for (; i + step < size; i += step)
+        for (size_t j = 0; j < step; ++j)
+            res_data[i+j] = (c1_data[i+j] && c2_data[i+j]);
+    for (; i < size; ++i)
+        res_data[i] = (c1_data[i] && c2_data[i]);
+    return res;
+}
+
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second);
 
 void MergeTreeRangeReader::ReadResult::optimize(ColumnPtr current_filter, bool can_read_incomplete_granules)
@@ -439,7 +461,16 @@ void MergeTreeRangeReader::ReadResult::optimize(ColumnPtr current_filter, bool c
     /// the start of each granule.
     auto combined_filter = current_filter;
     if (final_filter.present())
-        combined_filter = combineFilters(final_filter.getColumn(), current_filter);
+    {
+        /// If current filter has the same size as the final filter, it means that the final filter has not been applied.
+        /// In this case we AND current filter with the existing final filter.
+        /// In other case, when the final filter has been applied, the size of current step filter will be equal to number of 1s
+        /// in the final filter. In this case we combine current filter with the final filter.
+        if (current_filter->size() == final_filter.size())
+            combined_filter = andFilters(final_filter.getColumn(), combined_filter);
+        else
+            combined_filter = combineFilters(final_filter.getColumn(), combined_filter);
+    }
 
     FilterWithCachedCount filter(combined_filter);
 
@@ -480,25 +511,27 @@ void MergeTreeRangeReader::ReadResult::optimize(ColumnPtr current_filter, bool c
             rows_per_granule[i] -= zero_tails[i];
         }
         num_rows_to_skip_in_last_granule += rows_per_granule_previous.back() - rows_per_granule.back();
+        total_rows_per_granule = total_rows_per_granule_previous - total_zero_rows_in_tails;
 
-/*        {
-            shrink(columns, rows_per_granule_previous); /// shrink acts as filtering in such case
-
-            auto c = additional_columns.getColumns();
-            shrink(c, rows_per_granule_previous); /// shrink acts as filtering in such case
-            additional_columns.setColumns(c);
-        }
-*/
         /// Check if const 1 after shrink
         if (
             num_rows == total_rows_per_granule_previous &&   /// We can apply shrink only if after the previous step the number of rows in the result
                                                     /// matches the rows_per_granule info. Otherwise we will not be able to match newly added zeros in granule tails.
-            filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule)  /// All zeros are in tails?
+            filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule_previous)  /// All zeros are in tails?
         {
-            total_rows_per_granule = total_rows_per_granule_previous - total_zero_rows_in_tails;
 //            num_rows = total_rows_per_granule;
             setFilterConstTrue();
 
+            /// If all zeros are in granule tails, we can use shnink to filter out rows.
+            {
+                shrink(columns, rows_per_granule_previous); /// shrink acts as filtering in such case
+
+                auto c = additional_columns.getColumns();
+                shrink(c, rows_per_granule_previous); /// shrink acts as filtering in such case
+                additional_columns.setColumns(c);
+
+                num_rows = total_rows_per_granule;
+            }
 
             LOG_TEST(log, "ReadResult::optimize() after shrink {}", dumpInfo());
         }
@@ -508,13 +541,36 @@ void MergeTreeRangeReader::ReadResult::optimize(ColumnPtr current_filter, bool c
             IColumn::Filter & new_data = new_filter->getData();
 
             collapseZeroTails(filter.getData(), rows_per_granule_previous, new_data);
-            total_rows_per_granule = new_filter->size();
-//            num_rows = total_rows_per_granule;
+            assert(total_rows_per_granule == new_filter->size());
+
+// TODO: need to apply combined filter here before replacing it if filter has not been applied yet!!
+            if (num_rows == total_rows_per_granule_previous)
+            {
+                /// Filter has not been applied yet, do it now
+                filterColumns(columns, filter);
+
+                {
+                    auto c = additional_columns.getColumns();
+                    filterColumns(c, filter);
+                    if (!c.empty())
+                        additional_columns.setColumns(c);
+                    else
+                        additional_columns.clear();
+                }
+
+                num_rows = filter.countBytesInFilter();
+            }
+            else
+            {
+                need_filter = true;
+            }
+
             final_filter = FilterWithCachedCount(new_filter->getPtr());
 
             LOG_TEST(log, "ReadResult::optimize() after colapseZeroTails {}", dumpInfo());
         }
-        need_filter = true;
+// TODO: we applied the filter in both branches above, so we don't need to set the flag here
+//        need_filter = true;
     }
     else
     {
@@ -954,7 +1010,19 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     executePrewhereActionsAndFilterColumns(read_result);
 
     read_result.checkInternalConsistency();
+////////
+    if (last_reader_in_chain && read_result.final_filter.present() && read_result.num_rows == read_result.final_filter.size())
+    {
+        /// TODO: if last reader returns prewhere column then we can AND filter to it and not apply filter
+        /// NOTE: ANDing filter to prewhere column is essential if filter has been accumulated and not applied by several steps!
 
+        filterColumns(read_result.columns, read_result.final_filter);
+        read_result.num_rows = read_result.final_filter.countBytesInFilter();
+        read_result.additional_columns.clear();
+
+        read_result.checkInternalConsistency();
+    }
+////////
     assert(read_result.num_rows == 0 || read_result.columns.size() == getSampleBlock().columns());
 
     return read_result;
@@ -1207,13 +1275,17 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                 prewhere_info->actions->execute(block);
 
             result.additional_columns.clear();
-            for (auto & col : additional_columns)
+            /// Additional columns might only be needed if there are more steps in the chain.
+            if (!last_reader_in_chain)
             {
-                /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
-                /// TODO: also need to exclude the column that are not needed for the next steps.
-                if (block.has(col.name))
-                    continue;
-                result.additional_columns.insert(col);
+                for (auto & col : additional_columns)
+                {
+                    /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
+                    /// TODO: also need to exclude the column that are not needed for the next steps.
+                    if (block.has(col.name))
+                        continue;
+                    result.additional_columns.insert(col);
+                }
             }
         }
 
@@ -1232,11 +1304,16 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     result.optimize(current_step_filter, merge_tree_reader->canReadIncompleteGranules());
 
-    if (result.num_rows && (result.need_filter || prewhere_info->need_filter))
+    if (result.num_rows && (result.need_filter
+      /*|| prewhere_info->need_filter*/))  // TODO: this was disabled just for testing
     {
         result.need_filter = false; /// We are going to apply the filter now, reset the flag before the next step
 
-        FilterWithCachedCount current_step_filter_with_count(current_step_filter);
+        /// TODO: optimize this initialization
+        FilterWithCachedCount current_step_filter_with_count =
+            current_step_filter->size() == result.total_rows_per_granule ?
+            result.final_filter :
+            FilterWithCachedCount(current_step_filter);
 
         /// Filter has not been applied yet, do it now
         filterColumns(result.columns, current_step_filter_with_count);
