@@ -286,18 +286,16 @@ private:
         }
     }
 
-    /// This ignores overflows that may arise during add, sub and mul operations and doesn't aim to provide exact results.
-    /// Since `the quantileInterpolatedWeighted` function itself relies mainly on approximation, this is fine.
-    UnderlyingType interpolate(Float64 level, Float64 xl, Float64 xr, UnderlyingType yl, UnderlyingType yr) const
+    /// This ignores overflows or NaN's that might arise during add, sub and mul operations and doesn't aim to provide exact
+    /// results since `the quantileInterpolatedWeighted` function itself relies mainly on approximation.
+    UnderlyingType NO_SANITIZE_UNDEFINED interpolate(Float64 level, Float64 xl, Float64 xr, UnderlyingType yl, UnderlyingType yr) const
     {
         UnderlyingType dy = common::subIgnoreOverflow(yr, yl);
         Float64 dx = common::subIgnoreOverflow(xr, xl);
         dx = dx == 0 ? 1 : dx; /// to handle NaN behavior that might arise during integer division below.
 
         /// yl + (dy / dx) * (level - xl)
-        UnderlyingType g = static_cast<UnderlyingType>(common::addIgnoreOverflow(yl, common::mulIgnoreOverflow((dy / dx), common::subIgnoreOverflow(level, xl))));
-
-        return g;
+        return static_cast<UnderlyingType>(yl + (dy/dx) * (level - xl));
     }
 };
 
