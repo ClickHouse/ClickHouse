@@ -1,6 +1,10 @@
 #include <Client/ReplxxLineReader.h>
 #include <base/errnoToString.h>
 
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
+
 #include <stdexcept>
 #include <chrono>
 #include <cerrno>
@@ -108,13 +112,11 @@ void writeRetry(int fd, const std::string & data)
 }
 std::string readFile(const std::string & path)
 {
-    std::ifstream t(path);
-    std::string str;
-    t.seekg(0, std::ios::end);
-    str.reserve(t.tellg());
-    t.seekg(0, std::ios::beg);
-    str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-    return str;
+    std::string out;
+    DB::WriteBufferFromString out_buffer(out);
+    DB::ReadBufferFromFile in_buffer(path);
+    DB::copyData(in_buffer, out_buffer);
+    return out;
 }
 
 /// Simple wrapper for temporary files.
