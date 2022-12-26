@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -111,7 +112,7 @@ void StorageView::read(
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
+        const size_t /*num_streams*/)
 {
     ASTPtr current_inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
 
@@ -123,9 +124,19 @@ void StorageView::read(
     }
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, options, column_names);
-    interpreter.addStorageLimits(*query_info.storage_limits);
-    interpreter.buildQueryPlan(query_plan);
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, options, context);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        query_plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, options, column_names);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        interpreter.buildQueryPlan(query_plan);
+    }
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.

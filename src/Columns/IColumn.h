@@ -85,8 +85,8 @@ public:
     [[nodiscard]] virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
 
     /// Creates column with the same type and specified size.
-    /// If size is less current size, then data is cut.
-    /// If size is greater, than default values are appended.
+    /// If size is less than current size, then data is cut.
+    /// If size is greater, then default values are appended.
     [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cloneResized() column {}", getName()); }
 
     /// Returns number of values in column.
@@ -411,11 +411,22 @@ public:
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
-    using ColumnCallback = std::function<void(WrappedPtr&)>;
-    virtual void forEachSubcolumn(ColumnCallback) {}
+
+    using ColumnCallback = std::function<void(const WrappedPtr &)>;
+    virtual void forEachSubcolumn(ColumnCallback) const {}
+
+    using MutableColumnCallback = std::function<void(WrappedPtr &)>;
+    virtual void forEachSubcolumn(MutableColumnCallback callback);
 
     /// Similar to forEachSubcolumn but it also do recursive calls.
-    virtual void forEachSubcolumnRecursively(ColumnCallback) {}
+    /// In recursive calls it's prohibited to replace pointers
+    /// to subcolumns, so we use another callback function.
+
+    using RecursiveColumnCallback = std::function<void(const IColumn &)>;
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
+
+    using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
+    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback);
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
@@ -453,6 +464,16 @@ public:
         return getPtr();
     }
 
+    /// Some columns may require finalization before using of other operations.
+    virtual void finalize() {}
+    virtual bool isFinalized() const { return true; }
+
+    MutablePtr cloneFinalized() const
+    {
+        auto finalized = IColumn::mutate(getPtr());
+        finalized->finalize();
+        return finalized;
+    }
 
     [[nodiscard]] static MutablePtr mutate(Ptr ptr)
     {

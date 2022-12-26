@@ -16,6 +16,8 @@
 
 #include <base/find_symbols.h>
 
+#include <Access/AccessControl.h>
+
 #include "config_version.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -243,6 +245,7 @@ try
     registerAggregateFunctions();
 
     processConfig();
+    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
 
     /// Includes delayed_interactive.
     if (is_interactive)
@@ -256,6 +259,10 @@ try
     /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
         showWarnings();
+
+    /// Set user password complexity rules
+    auto & access_control = global_context->getAccessControl();
+    access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
     if (is_interactive && !delayed_interactive)
     {
@@ -347,17 +354,9 @@ void Client::connect()
         }
         catch (const Exception & e)
         {
-            /// It is typical when users install ClickHouse, type some password and instantly forget it.
-            /// This problem can't be fixed with reconnection so it is not attempted
-            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
-                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
             {
-                std::cerr << std::endl
-                          << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
-                          << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
-                          << "and deleting this file will reset the password." << std::endl
-                          << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
-                          << std::endl;
+                /// This problem can't be fixed with reconnection so it is not attempted
                 throw;
             }
             else
@@ -1088,7 +1087,6 @@ void Client::processConfig()
     }
     else
     {
-        need_render_progress = config().getBool("progress", false);
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
@@ -1108,15 +1106,21 @@ void Client::processConfig()
     else
         format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
 
-    format_max_block_size = config().getInt("format_max_block_size", global_context->getSettingsRef().max_block_size);
+    format_max_block_size = config().getUInt64("format_max_block_size",
+        global_context->getSettingsRef().max_block_size);
 
     insert_format = "Values";
 
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
+    {
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+    }
     else
-        insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
+    {
+        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
+            global_context->getSettingsRef().max_insert_block_size);
+    }
 
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();

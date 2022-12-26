@@ -104,13 +104,6 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     return std::make_unique<WriteBufferFromFile>(path, buf_size, flags);
 }
 
-void LocalObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
-{
-    fs::directory_iterator end_it;
-    for (auto it = fs::directory_iterator(path); it != end_it; ++it)
-        children.emplace_back(it->path().filename(), it->file_size());
-}
-
 void LocalObjectStorage::removeObject(const StoredObject & object)
 {
     /// For local object storage files are actually removed when "metadata" is removed.

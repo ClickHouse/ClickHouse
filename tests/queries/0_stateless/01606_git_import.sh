@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-debug
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -118,7 +119,7 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO line_changes FORMAT TSV" < line_change
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM commits"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM file_changes"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM line_changes"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), round(avg(indent), 1) FROM line_changes"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery --query "
 DROP TABLE commits;

@@ -48,6 +48,9 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 #include <arm_acle.h>
 #endif
 
+/// NOTE: Intel intrinsic can be confusing.
+/// - https://code.google.com/archive/p/sse-intrinsics/wikis/PmovIntrinsicBug.wiki
+/// - https://stackoverflow.com/questions/15752770/mm-crc32-u64-poorly-defined
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 {
 #ifdef __SSE4_2__
@@ -56,16 +59,16 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
     return __crc32cd(-1U, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
+    /// NOTE: consider using intHash32()
     return intHash64(x);
 #endif
 }
-
 inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 {
 #ifdef __SSE4_2__
     return _mm_crc32_u64(updated_value, x);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-    return  __crc32cd(updated_value, x);
+    return __crc32cd(static_cast<UInt32>(updated_value), x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     return intHash64(x) ^ updated_value;
@@ -73,7 +76,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 }
 
 template <typename T>
-requires (sizeof(T) > sizeof(DB::UInt64))
+requires std::has_unique_object_representations_v<T> && (sizeof(T) % sizeof(DB::UInt64) == 0)
 inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
     const auto * begin = reinterpret_cast<const char *>(&x);
@@ -86,6 +89,25 @@ inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
     return updated_value;
 }
 
+template <std::floating_point T>
+requires(sizeof(T) <= sizeof(UInt64))
+inline DB::UInt64 intHashCRC32(T x, DB::UInt64 updated_value)
+{
+    static_assert(std::numeric_limits<T>::is_iec559);
+
+    // In IEEE 754, the only two floating point numbers that compare equal are 0.0 and -0.0.
+    // See std::hash<float>.
+    if (x == static_cast<T>(0.0))
+        return intHashCRC32(0, updated_value);
+
+    UInt64 repr;
+    if constexpr (sizeof(T) == sizeof(UInt32))
+        repr = std::bit_cast<UInt32>(x);
+    else
+        repr = std::bit_cast<UInt64>(x);
+
+    return intHashCRC32(repr, updated_value);
+}
 
 inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 updated_value)
 {
@@ -123,14 +145,14 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
         }
 
         reinterpret_cast<unsigned char *>(&value)[7] = size;
-        return intHashCRC32(value, updated_value);
+        return static_cast<UInt32>(intHashCRC32(value, updated_value));
     }
 
     const auto * end = pos + size;
     while (pos + 8 <= end)
     {
         auto word = unalignedLoad<UInt64>(pos);
-        updated_value = intHashCRC32(word, updated_value);
+        updated_value = static_cast<UInt32>(intHashCRC32(word, updated_value));
 
         pos += 8;
     }
@@ -148,7 +170,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
         /// Use least byte to store tail length.
         word |= tail_size;
         /// Now word is '\3\0\0\0\0XYZ'
-        updated_value = intHashCRC32(word, updated_value);
+        updated_value = static_cast<UInt32>(intHashCRC32(word, updated_value));
     }
 
     return updated_value;
@@ -158,14 +180,9 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t DefaultHash64(T key)
 {
-    union
-    {
-        T in;
-        DB::UInt64 out;
-    } u;
-    u.out = 0;
-    u.in = key;
-    return intHash64(u.out);
+    DB::UInt64 out {0};
+    std::memcpy(&out, &key, sizeof(T));
+    return intHash64(out);
 }
 
 
@@ -221,14 +238,9 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
-    union
-    {
-        T in;
-        DB::UInt64 out;
-    } u;
-    u.out = 0;
-    u.in = key;
-    return intHashCRC32(u.out, updated_value);
+    DB::UInt64 out {0};
+    std::memcpy(&out, &key, sizeof(T));
+    return intHashCRC32(out, updated_value);
 }
 
 template <typename T>
@@ -302,8 +314,8 @@ struct UInt128HashCRC32
     size_t operator()(UInt128 x) const
     {
         UInt64 crc = -1ULL;
-        crc = __crc32cd(crc, x.items[0]);
-        crc = __crc32cd(crc, x.items[1]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[0]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[1]);
         return crc;
     }
 };
@@ -358,10 +370,10 @@ struct UInt256HashCRC32
     size_t operator()(UInt256 x) const
     {
         UInt64 crc = -1ULL;
-        crc = __crc32cd(crc, x.items[0]);
-        crc = __crc32cd(crc, x.items[1]);
-        crc = __crc32cd(crc, x.items[2]);
-        crc = __crc32cd(crc, x.items[3]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[0]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[1]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[2]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[3]);
         return crc;
     }
 };
@@ -423,7 +435,7 @@ inline DB::UInt32 intHash32(DB::UInt64 key)
     key = key + (key << 6);
     key = key ^ ((key >> 22) | (key << 42));
 
-    return key;
+    return static_cast<UInt32>(key);
 }
 
 
@@ -443,14 +455,9 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
-            union
-            {
-                T in;
-                DB::UInt64 out;
-            } u;
-            u.out = 0;
-            u.in = key;
-            return intHash32<salt>(u.out);
+            DB::UInt64 out {0};
+            std::memcpy(&out, &key, sizeof(T));
+            return intHash32<salt>(out);
         }
 
         UNREACHABLE();

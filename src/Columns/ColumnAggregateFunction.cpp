@@ -146,22 +146,22 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     /// insertResultInto may invalidate states, so we must unshare ownership of them
     column_aggregate_func.ensureOwnership();
 
-    MutableColumnPtr res = func->getReturnType()->createColumn();
+    MutableColumnPtr res = func->getResultType()->createColumn();
     res->reserve(data.size());
 
     /// If there are references to states in final column, we must hold their ownership
     /// by holding arenas and source.
 
-    auto callback = [&](auto & subcolumn)
+    auto callback = [&](IColumn & subcolumn)
     {
-        if (auto * aggregate_subcolumn = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
+        if (auto * aggregate_subcolumn = typeid_cast<ColumnAggregateFunction *>(&subcolumn))
         {
             aggregate_subcolumn->foreign_arenas = concatArenas(column_aggregate_func.foreign_arenas, column_aggregate_func.my_arena);
             aggregate_subcolumn->src = column_aggregate_func.getPtr();
         }
     };
 
-    callback(res);
+    callback(*res);
     res->forEachSubcolumnRecursively(callback);
 
     for (auto * val : data)

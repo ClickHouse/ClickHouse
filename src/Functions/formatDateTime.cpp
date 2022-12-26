@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
@@ -45,8 +46,8 @@ template <> struct ActionValueTypeMap<DataTypeUInt32>     { using ActionValueTyp
 template <> struct ActionValueTypeMap<DataTypeInt64>      { using ActionValueType = UInt32; };
 template <> struct ActionValueTypeMap<DataTypeUInt64>     { using ActionValueType = UInt32; };
 template <> struct ActionValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
+template <> struct ActionValueTypeMap<DataTypeDate32>     { using ActionValueType = Int32; };
 template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
-// TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
 template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = Int64; };
 
 
@@ -111,16 +112,16 @@ private:
     class Action
     {
     public:
-        using Func = void (*)(char *, Time, const DateLUTImpl &);
+        using Func = void (*)(char *, Time, UInt64, UInt32, const DateLUTImpl &);
 
         Func func;
         size_t shift;
 
         explicit Action(Func func_, size_t shift_ = 0) : func(func_), shift(shift_) {}
 
-        void perform(char *& target, Time source, const DateLUTImpl & timezone)
+        void perform(char *& target, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
-            func(target, source, timezone);
+            func(target, source, fractional_second, scale, timezone);
             target += shift;
         }
 
@@ -146,30 +147,30 @@ private:
         }
 
     public:
-        static void noop(char *, Time, const DateLUTImpl &)
+        static void noop(char *, Time, UInt64 , UInt32 , const DateLUTImpl &)
         {
         }
 
-        static void century(char * target, Time source, const DateLUTImpl & timezone)
+        static void century(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             auto year = ToYearImpl::execute(source, timezone);
             auto century = year / 100;
             writeNumber2(target, century);
         }
 
-        static void dayOfMonth(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfMonth(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToDayOfMonthImpl::execute(source, timezone));
         }
 
-        static void americanDate(char * target, Time source, const DateLUTImpl & timezone)
+        static void americanDate(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToMonthImpl::execute(source, timezone));
             writeNumber2(target + 3, ToDayOfMonthImpl::execute(source, timezone));
             writeNumber2(target + 6, ToYearImpl::execute(source, timezone) % 100);
         }
 
-        static void dayOfMonthSpacePadded(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfMonthSpacePadded(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             auto day = ToDayOfMonthImpl::execute(source, timezone);
             if (day < 10)
@@ -178,101 +179,107 @@ private:
                 writeNumber2(target, day);
         }
 
-        static void ISO8601Date(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Date(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber4(target, ToYearImpl::execute(source, timezone));
             writeNumber2(target + 5, ToMonthImpl::execute(source, timezone));
             writeNumber2(target + 8, ToDayOfMonthImpl::execute(source, timezone));
         }
 
-        static void dayOfYear(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfYear(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber3(target, ToDayOfYearImpl::execute(source, timezone));
         }
 
-        static void month(char * target, Time source, const DateLUTImpl & timezone)
+        static void month(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToMonthImpl::execute(source, timezone));
         }
 
-        static void dayOfWeek(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfWeek(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             *target += ToDayOfWeekImpl::execute(source, timezone);
         }
 
-        static void dayOfWeek0To6(char * target, Time source, const DateLUTImpl & timezone)
+        static void dayOfWeek0To6(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             auto day = ToDayOfWeekImpl::execute(source, timezone);
             *target += (day == 7 ? 0 : day);
         }
 
-        static void ISO8601Week(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Week(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(target, ToISOWeekImpl::execute(source, timezone));
         }
 
-        static void ISO8601Year2(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Year2(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(target, ToISOYearImpl::execute(source, timezone) % 100);
         }
 
-        static void ISO8601Year4(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Year4(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber4(target, ToISOYearImpl::execute(source, timezone));
         }
 
-        static void year2(char * target, Time source, const DateLUTImpl & timezone)
+        static void year2(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToYearImpl::execute(source, timezone) % 100);
         }
 
-        static void year4(char * target, Time source, const DateLUTImpl & timezone)
+        static void year4(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber4(target, ToYearImpl::execute(source, timezone));
         }
 
-        static void hour24(char * target, Time source, const DateLUTImpl & timezone)
+        static void hour24(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToHourImpl::execute(source, timezone));
         }
 
-        static void hour12(char * target, Time source, const DateLUTImpl & timezone)
+        static void hour12(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             auto x = ToHourImpl::execute(source, timezone);
             writeNumber2(target, x == 0 ? 12 : (x > 12 ? x - 12 : x));
         }
 
-        static void minute(char * target, Time source, const DateLUTImpl & timezone)
+        static void minute(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToMinuteImpl::execute(source, timezone));
         }
 
-        static void AMPM(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void AMPM(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone) // NOLINT
         {
             auto hour = ToHourImpl::execute(source, timezone);
             if (hour >= 12)
                 *target = 'P';
         }
 
-        static void hhmm24(char * target, Time source, const DateLUTImpl & timezone)
+        static void hhmm24(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToHourImpl::execute(source, timezone));
             writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
         }
 
-        static void second(char * target, Time source, const DateLUTImpl & timezone)
+        static void second(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToSecondImpl::execute(source, timezone));
         }
 
-        static void ISO8601Time(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void fractionalSecond(char * target, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
+         {
+            for (Int64 i = scale, value = fractional_second; i > 0; --i, value /= 10)
+                target[i - 1] += value % 10;
+         }
+
+        static void ISO8601Time(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(target, ToHourImpl::execute(source, timezone));
             writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
             writeNumber2(target + 6, ToSecondImpl::execute(source, timezone));
         }
 
-        static void timezoneOffset(char * target, Time source, const DateLUTImpl & timezone)
+        static void timezoneOffset(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             auto offset = TimezoneOffsetImpl::execute(source, timezone);
             if (offset < 0)
@@ -285,7 +292,7 @@ private:
             writeNumber2(target + 3, offset % 3600 / 60);
         }
 
-        static void quarter(char * target, Time source, const DateLUTImpl & timezone)
+        static void quarter(char * target, Time source, UInt64 /*fractional_second*/, UInt32 /*scale*/, const DateLUTImpl & timezone)
         {
             *target += ToQuarterImpl::execute(source, timezone);
         }
@@ -315,44 +322,39 @@ public:
         if constexpr (support_integer)
         {
             if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 1, 2 or 3",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
+                    getName(), arguments.size());
             if (arguments.size() == 1 && !isInteger(arguments[0].type))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                        + " when arguments size is 1. Should be integer",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDateTime64(arguments[0].type)))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                        + " when arguments size is 2 or 3. Should be a integer or a date with time",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {} when arguments size is 1. Should be integer",
+                    arguments[0].type->getName(), getName());
+            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {} when arguments size is 2 or 3. Should be a integer or a date with time",
+                    arguments[0].type->getName(), getName());
         }
         else
         {
             if (arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 2 or 3",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                        + ". Should be a date or a date with time",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                    getName(), arguments.size());
+            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime64(arguments[0].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {}. Should be a date or a date with time",
+                    arguments[0].type->getName(), getName());
         }
 
         if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
-            throw Exception(
-                "Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}. Must be String.",
+                arguments[1].type->getName(), getName());
 
         if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-            throw Exception(
-                "Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of third argument of function {}. Must be String.",
+                arguments[2].type->getName(), getName());
 
         if (arguments.size() == 1)
             return std::make_shared<DataTypeDateTime>();
@@ -373,10 +375,9 @@ public:
                         return true;
                     }))
                 {
-                    throw Exception(
-                        "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                            + ", must be Integer or DateTime when arguments size is 1.",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64 when arguments size is 1.",
+                        arguments[0].column->getName(), getName());
                 }
             }
             else
@@ -385,32 +386,31 @@ public:
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
                         if (!(res = executeType<FromDataType>(arguments, result_type)))
-                            throw Exception(
-                                "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                                    + ", must be Integer or DateTime.",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64.",
+                                arguments[0].column->getName(), getName());
                         return true;
                     }))
                 {
                     if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                        || (res = executeType<DataTypeDate32>(arguments, result_type))
                         || (res = executeType<DataTypeDateTime>(arguments, result_type))
                         || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
-                        throw Exception(
-                            "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                                + ", must be Integer or DateTime.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Illegal column {} of function {}, must be Integer or DateTime.",
+                            arguments[0].column->getName(), getName());
                 }
             }
         }
         else
         {
             if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                || (res = executeType<DataTypeDate32>(arguments, result_type))
                 || (res = executeType<DataTypeDateTime>(arguments, result_type))
                 || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
-                throw Exception(
-                    "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                        + ", must be Date or DateTime.",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of function {}, must be Date or DateTime.",
+                    arguments[0].column->getName(), getName());
         }
 
         return res;
@@ -425,16 +425,21 @@ public:
 
         const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         if (!pattern_column)
-            throw Exception("Illegal column " + arguments[1].column->getName()
-                            + " of second ('format') argument of function " + getName()
-                            + ". Must be constant string.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
+                arguments[1].column->getName(), getName());
 
         String pattern = pattern_column->getValue<String>();
 
+        UInt32 scale [[maybe_unused]] = 0;
+        if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
+        {
+            scale = times->getScale();
+        }
+
         using T = typename ActionValueTypeMap<DataType>::ActionValueType;
         std::vector<Action<T>> instructions;
-        String pattern_to_fill = parsePattern(pattern, instructions);
+        String pattern_to_fill = parsePattern(pattern, instructions, scale);
         size_t result_size = pattern_to_fill.size();
 
         const DateLUTImpl * time_zone_tmp = nullptr;
@@ -449,12 +454,6 @@ public:
 
         const DateLUTImpl & time_zone = *time_zone_tmp;
         const auto & vec = times->getData();
-
-        UInt32 scale [[maybe_unused]] = 0;
-        if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
-        {
-            scale = times->getScale();
-        }
 
         auto col_res = ColumnString::create();
         auto & dst_data = col_res->getChars();
@@ -490,16 +489,16 @@ public:
         {
             if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             {
+                const auto c = DecimalUtils::split(vec[i], scale);
                 for (auto & instruction : instructions)
                 {
-                    const auto c = DecimalUtils::split(vec[i], scale);
-                    instruction.perform(pos, static_cast<Int64>(c.whole), time_zone);
+                    instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, time_zone);
                 }
             }
             else
             {
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, vec[i], time_zone);
+                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, time_zone);
             }
 
             dst_offsets[i] = pos - begin;
@@ -510,7 +509,7 @@ public:
     }
 
     template <typename T>
-    String parsePattern(const String & pattern, std::vector<Action<T>> & instructions) const
+    String parsePattern(const String & pattern, std::vector<Action<T>> & instructions, UInt32 scale) const
     {
         String result;
 
@@ -578,6 +577,16 @@ public:
                         instructions.emplace_back(&Action<T>::dayOfMonthSpacePadded, 2);
                         result.append(" 0");
                         break;
+
+                    // Fractional seconds
+                    case 'f':
+                    {
+                        /// If the time data type has no fractional part, then we print '0' as the fractional part.
+                        const auto actual_scale = std::max<UInt32>(1, scale);
+                        instructions.emplace_back(&Action<T>::fractionalSecond, actual_scale);
+                        result.append(actual_scale, '0');
+                        break;
+                    }
 
                     // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                     case 'F':
@@ -712,12 +721,14 @@ public:
                     // Unimplemented
                     case 'U': [[fallthrough]];
                     case 'W':
-                        throw Exception("Wrong pattern '" + pattern + "', symbol '" + *pos + " is not implemented ' for function " + getName(),
-                            ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Wrong pattern '{}', symbol '{}' is not implemented for function {}",
+                            pattern, *pos, getName());
 
                     default:
-                        throw Exception(
-                            "Wrong pattern '" + pattern + "', unexpected symbol '" + *pos + "' for function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Wrong pattern '{}', unexpected symbol '{}' for function {}",
+                            pattern, *pos, getName());
                 }
 
                 ++pos;

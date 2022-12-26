@@ -117,7 +117,7 @@ private:
         else if (which.isDate())
             f(DataTypeDate::FieldType());
         else if (which.isDate32())
-            f(DataTypeDate::FieldType());
+            f(DataTypeDate32::FieldType());
         else if (which.isDateTime())
             f(DataTypeDateTime::FieldType());
         else
@@ -147,7 +147,11 @@ public:
         return 1;
     }
 
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override
+    {
+        return false;
+    }
+
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;

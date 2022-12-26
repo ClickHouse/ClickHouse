@@ -74,7 +74,9 @@ void ReplicatedMergeTreeCleanupThread::iterate()
     if (storage.is_leader)
     {
         clearOldLogs();
-        clearOldBlocks();
+        auto storage_settings = storage.getSettings();
+        clearOldBlocks("blocks", storage_settings->replicated_deduplication_window_seconds, storage_settings->replicated_deduplication_window);
+        clearOldBlocks("async_blocks", storage_settings->replicated_deduplication_window_seconds_for_async_inserts, storage_settings->replicated_deduplication_window_for_async_inserts);
         clearOldMutations();
         storage.clearEmptyParts();
     }
@@ -321,10 +323,9 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
     }
 };
 
-void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
+void ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size)
 {
     auto zookeeper = storage.getZooKeeper();
-    auto storage_settings = storage.getSettings();
 
     std::vector<NodeWithStat> timed_blocks;
     getBlocksSortedByTime(*zookeeper, timed_blocks);
@@ -336,12 +337,12 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     Int64 current_time = timed_blocks.front().ctime;
     Int64 time_threshold = std::max(
         static_cast<Int64>(0),
-        current_time - static_cast<Int64>(1000 * storage_settings->replicated_deduplication_window_seconds));
+        current_time - static_cast<Int64>(1000 * window_seconds));
 
     /// Virtual node, all nodes that are "greater" than this one will be deleted
     NodeWithStat block_threshold{{}, time_threshold, 0};
 
-    size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), storage_settings->replicated_deduplication_window);
+    size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), window_size);
     auto first_outdated_block_fixed_threshold = timed_blocks.begin() + current_deduplication_window;
     auto first_outdated_block_time_threshold = std::upper_bound(
         timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
@@ -359,7 +360,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     zkutil::AsyncResponses<Coordination::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
-        String path = storage.zookeeper_path + "/blocks/" + it->node;
+        String path = storage.zookeeper_path + "/" + blocks_dir_name + "/" + it->node;
         try_remove_futures.emplace_back(path, zookeeper->asyncTryRemove(path, it->version));
     }
 
@@ -419,14 +420,14 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         LOG_TRACE(log, "Checking {} blocks ({} are not cached){}", stat.numChildren, not_cached_blocks, " to clear old ones from ZooKeeper.");
     }
 
-    zkutil::AsyncResponses<Coordination::ExistsResponse> exists_futures;
+    std::vector<std::string> exists_paths;
     for (const String & block : blocks)
     {
         auto it = cached_block_stats.find(block);
         if (it == cached_block_stats.end())
         {
             /// New block. Fetch its stat asynchronously.
-            exists_futures.emplace_back(block, zookeeper.asyncExists(storage.zookeeper_path + "/blocks/" + block));
+            exists_paths.emplace_back(storage.zookeeper_path + "/blocks/" + block);
         }
         else
         {
@@ -436,14 +437,18 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         }
     }
 
+    auto exists_size = exists_paths.size();
+    auto exists_results = zookeeper.exists(exists_paths);
+
     /// Put fetched stats into the cache
-    for (auto & elem : exists_futures)
+    for (size_t i = 0; i < exists_size; ++i)
     {
-        auto status = elem.second.get();
+        auto status = exists_results[i];
         if (status.error != Coordination::Error::ZNONODE)
         {
-            cached_block_stats.emplace(elem.first, std::make_pair(status.stat.ctime, status.stat.version));
-            timed_blocks.emplace_back(elem.first, status.stat.ctime, status.stat.version);
+            auto node_name = fs::path(exists_paths[i]).filename();
+            cached_block_stats.emplace(node_name, std::make_pair(status.stat.ctime, status.stat.version));
+            timed_blocks.emplace_back(node_name, status.stat.ctime, status.stat.version);
         }
     }
 

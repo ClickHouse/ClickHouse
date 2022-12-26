@@ -240,7 +240,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
                 if (checkString("merge_type: ", in))
                 {
-                    UInt64 value;
+                    UInt32 value;
                     in >> value;
                     merge_type = checkAndGetMergeType(value);
                 }

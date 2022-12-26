@@ -50,7 +50,7 @@ public:
         std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        const S3Settings::ReadWriteSettings & s3_settings_,
+        const S3Settings::RequestSettings & request_settings,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ThreadPoolCallbackRunner<void> schedule_ = {},
@@ -75,7 +75,7 @@ private:
     void finalizeImpl() override;
 
     struct UploadPartTask;
-    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, int part_number);
+    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req);
     void processUploadRequest(UploadPartTask & task);
 
     struct PutObjectTask;
@@ -88,14 +88,16 @@ private:
 
     const String bucket;
     const String key;
-    const S3Settings::ReadWriteSettings s3_settings;
+    const S3Settings::RequestSettings::PartUploadSettings settings;
+    const bool check_objects_after_upload = false;
+    const size_t max_unexpected_write_error_retries = 4;
     const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
     size_t upload_part_size = 0;
     std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
     size_t last_part_size = 0;
-    std::atomic<size_t> total_parts_uploaded = 0;
+    size_t part_number = 0;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
@@ -110,8 +112,8 @@ private:
 
     std::unique_ptr<PutObjectTask> put_object_task; /// Does not need protection by mutex because of the logic around is_finished field.
     std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) upload_object_tasks;
-    size_t num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-    size_t num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
 
     std::mutex bg_tasks_mutex;
     std::condition_variable bg_tasks_condvar;

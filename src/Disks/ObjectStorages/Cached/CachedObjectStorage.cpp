@@ -282,9 +282,9 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
+void CachedObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
 {
-    object_storage->listPrefix(path, children);
+    object_storage->findAllFiles(path, children, max_keys);
 }
 
 ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const

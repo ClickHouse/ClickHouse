@@ -134,7 +134,7 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
             if (!literal)
                 throw Exception("LZ4HC codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
 
-            level = literal->value.safeGet<UInt64>();
+            level = static_cast<int>(literal->value.safeGet<UInt64>());
         }
 
         return std::make_shared<CompressionCodecLZ4HC>(level);

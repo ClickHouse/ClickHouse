@@ -268,14 +268,14 @@ The path to the table in ZooKeeper.
 
 ## dictionaries_config {#server_configuration_parameters-dictionaries_config}
 
-The path to the config file for external dictionaries.
+The path to the config file for dictionaries.
 
 Path:
 
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
+See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
 
 **Example**
 
@@ -890,7 +890,7 @@ The maximum number of open files.
 
 By default: `maximum`.
 
-We recommend using this option in Mac OS X since the `getrlimit()` function returns an incorrect value.
+We recommend using this option in macOS since the `getrlimit()` function returns an incorrect value.
 
 **Example**
 

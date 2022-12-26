@@ -54,7 +54,7 @@ namespace DB
 
 static int syscall_pidfd_open(pid_t pid)
 {
-    return syscall(SYS_pidfd_open, pid, 0);
+    return static_cast<int>(syscall(SYS_pidfd_open, pid, 0));
 }
 
 static bool supportsPidFdOpen()
@@ -170,7 +170,8 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
     /// If timeout is positive try waitpid without block in loop until
     /// process is normally terminated or waitpid return error
 
-    int timeout_in_ms = timeout_in_seconds * 1000;
+    /// NOTE: timeout casted to int, since poll() accept int for timeout
+    int timeout_in_ms = static_cast<int>(timeout_in_seconds * 1000);
     while (timeout_in_ms > 0)
     {
         int waitpid_res = HANDLE_EINTR(waitpid(pid, &status, WNOHANG));

@@ -50,7 +50,7 @@ public:
     {
         Stream(
             const String & escaped_column_name_,
-            const DataPartStorageBuilderPtr & data_part_storage_builder,
+            const MutableDataPartStoragePtr & data_part_storage,
             const String & data_path_,
             const std::string & data_file_extension_,
             const std::string & marks_path_,
@@ -92,8 +92,7 @@ public:
     using StreamPtr = std::unique_ptr<Stream>;
 
     MergeTreeDataPartWriterOnDisk(
-        const MergeTreeData::DataPartPtr & data_part_,
-        DataPartStorageBuilderPtr data_part_storage_builder_,
+        const MergeTreeMutableDataPartPtr & data_part_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,

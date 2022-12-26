@@ -41,6 +41,7 @@ protected:
     void resetParser() override;
     bool isGarbageAfterField(size_t index, ReadBuffer::Position pos) override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void readPrefix() override;
 
     const FormatSettings format_settings;
     DataTypes data_types;
@@ -48,7 +49,6 @@ protected:
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void readPrefix() override;
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
@@ -59,7 +59,7 @@ private:
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
 
 protected:
-    std::unordered_map<String, size_t> column_indexes_by_names;
+    Block::NameMap column_indexes_by_names;
 };
 
 /// Base class for parsing data in input formats with -WithNames and -WithNamesAndTypes suffixes.
@@ -111,7 +111,7 @@ public:
 
 protected:
     ReadBuffer * in;
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
 };
 
 /// Base class for schema inference for formats with -WithNames and -WithNamesAndTypes suffixes.

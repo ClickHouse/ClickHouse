@@ -259,7 +259,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     writer.flush();
 
-    return (dest - dest_start) + (writer.count() + 7) / 8;
+    return static_cast<UInt32>((dest - dest_start) + (writer.count() + 7) / 8);
 }
 
 template <typename T>
@@ -320,7 +320,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
                         ErrorCodes::CANNOT_DECOMPRESS);
             }
 
-            xored_data = reader.readBits(curr_xored_info.data_bits);
+            xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
             xored_data <<= curr_xored_info.trailing_zero_bits;
             curr_value = prev_value ^ xored_data;
         }
@@ -344,7 +344,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
             column_type->getName());
 }
 

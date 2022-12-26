@@ -7,6 +7,7 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/safe_cast.h>
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL
@@ -480,7 +481,8 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
     if (out_len != source_size + tag_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't encrypt data, length after encryption {} is wrong, expected {}", out_len, source_size + tag_size);
 
-    return out_len + keyid_size + nonce_size;
+    size_t out_size = out_len + keyid_size + nonce_size;
+    return safe_cast<UInt32>(out_size);
 }
 
 void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const

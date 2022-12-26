@@ -152,7 +152,7 @@
             filter: contrast(125%);
         }
 
-        #add {
+        #add, #reload {
             font-weight: bold;
             user-select: none;
             cursor: pointer;
@@ -166,7 +166,7 @@
             margin-bottom: 1rem;
         }
 
-        #add:hover {
+        #add:hover, #reload:hover {
             background: var(--button-background-color);
         }
 
@@ -286,6 +286,7 @@
             <input spellcheck="false" id="password" type="password" placeholder="password" />
         </div>
         <div>
+            <input id="reload" type="button" value="Reload" style="display: none;">
             <input id="add" type="button" value="Add chart">
             <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
             <div id="chart-params"></div>
@@ -672,14 +673,38 @@ function insertChart(i) {
     chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
 
     charts.appendChild(chart);
+    return {chart: chart, textarea: query_editor_textarea};
 };
 
 document.getElementById('add').addEventListener('click', e => {
     queries.push({ title: '', query: '' });
-    insertChart(plots.length);
+
+    const {chart, textarea} = insertChart(plots.length);
+    chart.scrollIntoView();
+    textarea.focus();
+
     plots.push(null);
     resize();
 });
+
+document.getElementById('reload').addEventListener('click', e => {
+    reloadAll();
+});
+
+function showReloadIfNeeded() {
+    const is_any_field_changed = (host != document.getElementById('url').value
+                               || user != document.getElementById('user').value
+                               || password != document.getElementById('password').value);
+    if (is_any_field_changed) {
+        document.getElementById('reload').style.display = '';
+    } else {
+        document.getElementById('reload').style.display = 'none';
+    }
+}
+
+document.getElementById('password').addEventListener('input', e => { showReloadIfNeeded(); })
+document.getElementById('user').addEventListener('input', e => { showReloadIfNeeded(); })
+document.getElementById('url').addEventListener('input', e => { showReloadIfNeeded(); })
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
@@ -731,6 +756,8 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
     };
 }
 
+let add_http_cors_header = false;
+
 async function draw(idx, chart, url_params, query) {
     if (plots[idx]) {
         plots[idx].destroy();
@@ -742,6 +769,12 @@ async function draw(idx, chart, url_params, query) {
     password = document.getElementById('password').value;
 
     let url = `${host}?default_format=JSONCompactColumns`
+
+    if (add_http_cors_header) {
+        // For debug purposes, you may set add_http_cors_header from a browser console
+        url += '&add_http_cors_header=1';
+    }
+
     if (user) {
         url += `&user=${encodeURIComponent(user)}`;
     }
@@ -843,10 +876,15 @@ function resize() {
 
 new ResizeObserver(resize).observe(document.body);
 
-document.getElementById('params').onsubmit = function(event) {
+function reloadAll() {
     updateParams();
     drawAll();
     saveState();
+    document.getElementById('reload').style.display = 'none';
+}
+
+document.getElementById('params').onsubmit = function(event) {
+    reloadAll();
     event.preventDefault();
 }
 

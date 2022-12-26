@@ -3,12 +3,17 @@
 #include <IO/WithFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
 
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
+    SCOPE_EXIT_SAFE(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
     if (thread_group)
         CurrentThread::attachTo(thread_group);
 
@@ -55,6 +60,10 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
 void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
+    SCOPE_EXIT_SAFE(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
     if (thread_group)
         CurrentThread::attachToIfDetached(thread_group);
 
@@ -128,8 +137,9 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
         background_exception = std::current_exception();
         if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
         {
+            /// NOTE: it is not that safe to use line number hack here (may exceed INT_MAX)
             if (e->getLineNumber() != -1)
-                e->setLineNumber(e->getLineNumber() + offset);
+                e->setLineNumber(static_cast<int>(e->getLineNumber() + offset));
 
             auto file_name = getFileNameFromReadBuffer(getReadBuffer());
             if (!file_name.empty())

@@ -36,7 +36,7 @@ private:
 
 public:
     AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionIf>(types, params_)
+        : IAggregateFunctionHelper<AggregateFunctionIf>(types, params_, nested->getResultType())
         , nested_func(nested), num_arguments(types.size())
     {
         if (num_arguments == 0)
@@ -49,11 +49,6 @@ public:
     String getName() const override
     {
         return nested_func->getName() + "If";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return nested_func->getReturnType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -181,6 +176,11 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertResultInto(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        nested_func->insertMergeResultInto(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

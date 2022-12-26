@@ -150,7 +150,7 @@ void StorageMaterializedView::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t num_streams)
 {
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
@@ -210,7 +210,7 @@ void StorageMaterializedView::drop()
     auto table_id = getStorageID();
     const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
+        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
 
     dropInnerTableIfAny(true, getContext());
 }
@@ -266,7 +266,7 @@ void StorageMaterializedView::alter(
         const auto & new_select = new_metadata.select;
         const auto & old_select = old_metadata.getSelectQuery();
 
-        DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+        DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
 
         new_metadata.setSelectQuery(new_select);
     }
@@ -364,7 +364,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     }
     const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
-    DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
+    DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::startup()
@@ -372,7 +372,7 @@ void StorageMaterializedView::startup()
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select_query.select_table_id, getStorageID());
+        DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
@@ -381,7 +381,7 @@ void StorageMaterializedView::shutdown()
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, getStorageID());
+        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
