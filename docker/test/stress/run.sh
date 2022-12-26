@@ -123,6 +123,22 @@ EOL
     <core_path>$PWD</core_path>
 </clickhouse>
 EOL
+
+    # Analyzer is not yet ready for testing
+    cat > /etc/clickhouse-server/users.d/no_analyzer.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <constraints>
+                <allow_experimental_analyzer>
+                    <readonly/>
+                </allow_experimental_analyzer>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+
 }
 
 function stop()
