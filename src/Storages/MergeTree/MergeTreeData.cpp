@@ -1013,7 +1013,7 @@ void MergeTreeData::loadDataPartsFromDisk(
     size_t suspicious_broken_parts_bytes = 0;
     std::atomic<bool> has_adaptive_parts = false;
     std::atomic<bool> has_non_adaptive_parts = false;
-    std::atomic<bool> has_lightweight_in_parts = false;
+    std::atomic<bool> has_lightweight_deletes_in_parts = false;
 
     std::mutex mutex;
     auto load_part = [&](const String & part_name, const DiskPtr & part_disk_ptr)
@@ -1105,7 +1105,7 @@ void MergeTreeData::loadDataPartsFromDisk(
 
         /// Check if there is lightweight delete in part
         if (part->hasLightweightDelete())
-            has_lightweight_in_parts.store(true, std::memory_order_relaxed);
+            has_lightweight_deletes_in_parts.store(true, std::memory_order_relaxed);
 
         part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
         /// Assume that all parts are Active, covered parts will be detected and marked as Outdated later
@@ -1189,7 +1189,7 @@ void MergeTreeData::loadDataPartsFromDisk(
 
     has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
 
-    if (has_lightweight_in_parts)
+    if (has_lightweight_deletes_in_parts)
         has_lightweight_delete_parts.store(true);
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
