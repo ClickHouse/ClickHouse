@@ -279,6 +279,8 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
+    # DUMP()
+    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -300,7 +302,7 @@ std_cerr_cout_excludes=(
     src/Loggers/Loggers.cpp
 )
 sources_with_std_cerr_cout=( $(
-    find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \
+    find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
         grep -vP $EXCLUDE_DIRS | \
         grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
         xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u
