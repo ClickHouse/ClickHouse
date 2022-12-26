@@ -674,7 +674,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
     /// We should first split update and delete
     auto * delete_column = block.findByName("__delete_op");
-    block.erase("__delete_op");
 
     if (delete_column->type->getTypeId() != TypeIndex::UInt8)
     {

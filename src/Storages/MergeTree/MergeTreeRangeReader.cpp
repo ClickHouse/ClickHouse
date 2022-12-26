@@ -1188,6 +1188,18 @@ static ColumnPtr combineBitmapFilter(ColumnPtr first, ColumnPtr second)
     return res;
 }
 
+static ColumnPtr removeNullbleAndSparse(ColumnPtr col)
+{
+    if (col->isNullable())
+    {
+        const ColumnNullable * column_nested_nullable = checkAndGetColumn<ColumnNullable>(*col);
+        return removeNullbleAndSparse(column_nested_nullable->getNestedColumn().convertToFullIfNeeded());
+    }
+    else if (col->isSparse() || col->lowCardinality())
+        return removeNullbleAndSparse(col->convertToFullIfNeeded());
+    return col;
+}
+
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, ColumnPtr filter_by_bitmap)
 {
     if (!prewhere_info && !filter_by_bitmap)
@@ -1297,7 +1309,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     if (filter_by_bitmap)
     {
-        combined_filter = combined_filter->convertToFullIfNeeded();
+        combined_filter = removeNullbleAndSparse(combined_filter);
         checkCombinedFiltersSize(combined_filter->size(), filter_by_bitmap->size());
         combined_filter = combineBitmapFilter(combined_filter, filter_by_bitmap);
     }
