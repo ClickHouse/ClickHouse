@@ -149,10 +149,10 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
     return new_data_part_storage;
 }
 
-void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const
+DataPartStoragePtr MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const
 {
     String detached_path = *getRelativePathForDetachedPart(prefix, /* broken */ false);
-    flushToDisk(detached_path, metadata_snapshot);
+    return flushToDisk(detached_path, metadata_snapshot);
 }
 
 void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool /* remove_new_dir_if_exists */)
