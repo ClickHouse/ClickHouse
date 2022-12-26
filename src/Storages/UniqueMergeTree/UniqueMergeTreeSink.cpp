@@ -14,7 +14,7 @@ extern const Event DuplicatedInsertedBlocks;
 
 namespace ErrorCodes
 {
-extern const int LOGIC_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 namespace DB
