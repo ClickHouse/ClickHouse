@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 static inline void skipWhitespacesAndDelimiters(ReadBuffer & in)
 {
-    while (!in.eof() && (isWhitespaceASCII(*in.position()) || *in.position() == ','))
+    while (!in.eof() && (isWhitespaceASCII(*in.position()) || *in.position() == ',' || *in.position() == ':'))
         ++in.position();
 }
 

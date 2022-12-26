@@ -112,7 +112,7 @@ public:
 private:
     std::vector<FieldMatcherPtr> matchers;
     std::vector<FormatSettings::EscapingRule> rules;
-    std::vector<String> matched_fields;
+    std::vector<String> matched_fields; // TODO: use a map so JSON fields does not have to maintain order in different rows
     Solution final_solution;
 
     const FormatSettings format_settings;
