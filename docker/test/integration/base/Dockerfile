@@ -27,8 +27,13 @@ RUN apt-get update \
         tar \
         tzdata \
         unixodbc \
+        python3-pip \
+        libcurl4-openssl-dev \
+        libssl-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+RUN pip3 install pycurl
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH

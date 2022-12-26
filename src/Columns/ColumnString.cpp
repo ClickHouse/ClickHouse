@@ -124,6 +124,9 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
 
+    /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
+    offsets.reserve(offsets.size() + length);
+
     size_t old_chars_size = chars.size();
     chars.resize(old_chars_size + nested_length);
     memcpy(&chars[old_chars_size], &src_concrete.chars[nested_offset], nested_length);
@@ -168,8 +171,8 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     /// We cannot change only offsets, because each string should end with terminating zero byte.
     /// So, we will insert one zero byte when mask value is zero.
 
-    int index = mask.size() - 1;
-    int from = offsets_data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    ssize_t from = offsets_data.size() - 1;
     /// mask.size() - offsets_data.size() should be equal to the number of zeros in mask
     /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
     UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());

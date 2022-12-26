@@ -65,7 +65,7 @@ void CompressionCodecZSTD::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    return ZSTD_compressBound(uncompressed_size);
+    return static_cast<UInt32>(ZSTD_compressBound(uncompressed_size));
 }
 
 
@@ -84,7 +84,7 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
     if (ZSTD_isError(compressed_size))
         throw Exception("Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(compressed_size)), ErrorCodes::CANNOT_COMPRESS);
 
-    return compressed_size;
+    return static_cast<UInt32>(compressed_size);
 }
 
 
@@ -124,18 +124,20 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
             if (!literal)
                 throw Exception("ZSTD codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
 
-            level = literal->value.safeGet<UInt64>();
+            level = static_cast<int>(literal->value.safeGet<UInt64>());
             if (level > ZSTD_maxCLevel())
-                throw Exception(
-                    "ZSTD codec can't have level more than " + toString(ZSTD_maxCLevel()) + ", given " + toString(level),
-                    ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+            {
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                    "ZSTD codec can't have level more than {}, given {}",
+                    ZSTD_maxCLevel(), level);
+            }
             if (arguments->children.size() > 1)
             {
                 const auto * window_literal = children[1]->as<ASTLiteral>();
                 if (!window_literal)
                     throw Exception("ZSTD codec second argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
 
-                const int window_log = window_literal->value.safeGet<UInt64>();
+                const int window_log = static_cast<int>(window_literal->value.safeGet<UInt64>());
 
                 ZSTD_bounds window_log_bounds = ZSTD_cParam_getBounds(ZSTD_c_windowLog);
                 if (ZSTD_isError(window_log_bounds.error))

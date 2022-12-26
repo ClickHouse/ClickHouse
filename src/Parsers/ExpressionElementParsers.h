@@ -104,7 +104,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** COLUMNS('<regular expression>')
+/** COLUMNS(columns_names) or COLUMNS('<regular expression>')
   */
 class ParserColumnsMatcher : public IParserBase
 {
@@ -116,6 +116,23 @@ public:
 
 protected:
     const char * getName() const override { return "COLUMNS matcher"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    ColumnTransformers allowed_transformers;
+};
+
+/** Qualified columns matcher identifier.COLUMNS(columns_names) or identifier.COLUMNS('<regular expression>')
+  */
+class ParserQualifiedColumnsMatcher : public IParserBase
+{
+public:
+    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
+    explicit ParserQualifiedColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+        : allowed_transformers(allowed_transformers_)
+    {}
+
+protected:
+    const char * getName() const override { return "qualified COLUMNS matcher"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     ColumnTransformers allowed_transformers;
@@ -282,6 +299,22 @@ protected:
     {
         return array_parser.parse(pos, node, expected);
     }
+};
+
+/** Parses all collections of literals and their various combinations
+  * Used in parsing parameters for SET query
+  */
+class ParserAllCollectionsOfLiterals : public IParserBase
+{
+public:
+    explicit ParserAllCollectionsOfLiterals(bool allow_map_ = true) : allow_map(allow_map_) {}
+
+protected:
+    const char * getName() const override { return "combination of maps, arrays, tuples"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    bool allow_map;
 };
 
 

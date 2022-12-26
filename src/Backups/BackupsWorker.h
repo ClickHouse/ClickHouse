@@ -76,14 +76,28 @@ public:
 private:
     OperationID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
 
-    void doBackup(const std::shared_ptr<ASTBackupQuery> & backup_query, const OperationID & backup_id, BackupSettings backup_settings,
-                  const BackupInfo & backup_info, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context,
-                  ContextMutablePtr mutable_context, bool called_async);
+    void doBackup(
+        const std::shared_ptr<ASTBackupQuery> & backup_query,
+        const OperationID & backup_id,
+        const String & backup_name_for_logging,
+        const BackupInfo & backup_info,
+        BackupSettings backup_settings,
+        std::shared_ptr<IBackupCoordination> backup_coordination,
+        const ContextPtr & context,
+        ContextMutablePtr mutable_context,
+        bool called_async);
 
     OperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
 
-    void doRestore(const std::shared_ptr<ASTBackupQuery> & restore_query, const OperationID & restore_id, RestoreSettings restore_settings, const BackupInfo & backup_info,
-                   std::shared_ptr<IRestoreCoordination> restore_coordination, ContextMutablePtr context, bool called_async);
+    void doRestore(
+        const std::shared_ptr<ASTBackupQuery> & restore_query,
+        const OperationID & restore_id,
+        const String & backup_name_for_logging,
+        const BackupInfo & backup_info,
+        RestoreSettings restore_settings,
+        std::shared_ptr<IRestoreCoordination> restore_coordination,
+        ContextMutablePtr context,
+        bool called_async);
 
     void addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status);
     void setStatus(const OperationID & id, BackupStatus status, bool throw_if_error = true);

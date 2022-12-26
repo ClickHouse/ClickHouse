@@ -1,8 +1,5 @@
 #include <Compression/CompressionFactory.h>
 
-#include <Common/PODArray.h>
-#include <Common/Stopwatch.h>
-#include <base/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -10,6 +7,12 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
+#include <base/types.h>
+#include <Common/PODArray.h>
+#include <Common/Stopwatch.h>
+
+#include <Compression/LZ4_decompress_faster.h>
+#include <IO/BufferWithOwnMemory.h>
 
 #include <random>
 #include <bitset>
@@ -391,7 +394,7 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
 
     for (auto i = Begin; i < End; i += direction)
     {
-        const T v = gen(static_cast<T>(i));
+        const T v = static_cast<T>(gen(i));
 
         unalignedStoreLE<T>(write_pos, v);
         write_pos += sizeof(v);
@@ -464,13 +467,15 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 {
     const auto & source_data = test_sequence.serialized_data;
 
-    const UInt32 encoded_max_size = codec.getCompressedReserveSize(source_data.size());
+    const UInt32 encoded_max_size = codec.getCompressedReserveSize(
+        static_cast<UInt32>(source_data.size()));
     PODArray<char> encoded(encoded_max_size);
 
     timer.start();
 
     assert(source_data.data() != nullptr); // Codec assumes that source buffer is not null.
-    const UInt32 encoded_size = codec.compress(source_data.data(), source_data.size(), encoded.data());
+    const UInt32 encoded_size = codec.compress(
+        source_data.data(), static_cast<UInt32>(source_data.size()), encoded.data());
     timer.report("encoding");
 
     encoded.resize(encoded_size);
@@ -478,7 +483,8 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
     PODArray<char> decoded(source_data.size());
 
     timer.start();
-    const UInt32 decoded_size = codec.decompress(encoded.data(), encoded.size(), decoded.data());
+    const UInt32 decoded_size = codec.decompress(
+        encoded.data(), static_cast<UInt32>(encoded.size()), decoded.data());
     timer.report("decoding");
 
     decoded.resize(decoded_size);
@@ -542,10 +548,12 @@ TEST_P(CodecTestCompatibility, Encoding)
     const auto & source_data = data_sequence.serialized_data;
 
     // Just encode the data with codec
-    const UInt32 encoded_max_size = codec->getCompressedReserveSize(source_data.size());
+    const UInt32 encoded_max_size = codec->getCompressedReserveSize(
+        static_cast<UInt32>(source_data.size()));
     PODArray<char> encoded(encoded_max_size);
 
-    const UInt32 encoded_size = codec->compress(source_data.data(), source_data.size(), encoded.data());
+    const UInt32 encoded_size = codec->compress(
+        source_data.data(), static_cast<UInt32>(source_data.size()), encoded.data());
     encoded.resize(encoded_size);
     SCOPED_TRACE(::testing::Message("encoded:  ") << AsHexString(encoded));
 
@@ -560,7 +568,8 @@ TEST_P(CodecTestCompatibility, Decoding)
     const auto codec = makeCodec(codec_spec.codec_statement, expected.data_type);
 
     PODArray<char> decoded(expected.serialized_data.size());
-    const UInt32 decoded_size = codec->decompress(encoded_data.c_str(), encoded_data.size(), decoded.data());
+    const UInt32 decoded_size = codec->decompress(
+        encoded_data.c_str(), static_cast<UInt32>(encoded_data.size()), decoded.data());
     decoded.resize(decoded_size);
 
     ASSERT_TRUE(EqualByteContainers(expected.data_type->getSizeOfValueInMemory(), expected.serialized_data, decoded));
@@ -716,7 +725,7 @@ template <typename T>
 struct RandomGenerator
 {
     explicit RandomGenerator(T seed = 0, T value_min = std::numeric_limits<T>::min(), T value_max = std::numeric_limits<T>::max())
-        : random_engine(seed),
+        : random_engine(static_cast<uint_fast32_t>(seed)),
           distribution(value_min, value_max)
     {
     }
@@ -1043,7 +1052,7 @@ INSTANTIATE_TEST_SUITE_P(RandomInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<UInt8 >(G(RandomGenerator<UInt8>(0))),
+            generateSeq<UInt8 >(G(RandomGenerator<uint8_t>(0))),
             generateSeq<UInt16>(G(RandomGenerator<UInt16>(0))),
             generateSeq<UInt32>(G(RandomGenerator<UInt32>(0, 0, 1000'000'000))),
             generateSeq<UInt64>(G(RandomGenerator<UInt64>(0, 0, 1000'000'000)))
@@ -1206,8 +1215,7 @@ auto PrimesWithMultiplierGenerator = [](int multiplier = 1)
         };
         static const size_t count = sizeof(vals)/sizeof(vals[0]);
 
-        using T = decltype(i);
-        return static_cast<T>(vals[i % count] * static_cast<T>(multiplier));
+        return static_cast<UInt64>(vals[i % count]) * multiplier;
     };
 };
 
@@ -1313,5 +1321,35 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 //        )
 //    ),
 //);
+
+TEST(LZ4Test, DecompressMalformedInput)
+{
+    /// This malformed input was initially found by lz4_decompress_fuzzer and causes failure under UBSAN.
+    constexpr unsigned char data[]
+        = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00,
+           0x00, 0x20, 0x00, 0x00, 0x66, 0x66, 0x66, 0x66, 0xff, 0xff, 0xff, 0x17, 0xff, 0xff, 0x0f, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
+           0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+           0xfe, 0x1f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    const char * const source = reinterpret_cast<const char * const>(data);
+    const uint32_t source_size = std::size(data);
+    constexpr uint32_t uncompressed_size = 80;
+
+    DB::Memory<> memory;
+    memory.resize(ICompressionCodec::getHeaderSize() + uncompressed_size + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+    unalignedStoreLE<uint8_t>(memory.data(), static_cast<uint8_t>(CompressionMethodByte::LZ4));
+    unalignedStoreLE<uint32_t>(&memory[1], source_size);
+    unalignedStoreLE<uint32_t>(&memory[5], uncompressed_size);
+
+    auto codec = CompressionCodecFactory::instance().get("LZ4", {});
+    ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
+}
 
 }

@@ -21,7 +21,7 @@ namespace ErrorCodes
 MergeTreeDataPartWide::MergeTreeDataPartWide(
        MergeTreeData & storage_,
         const String & name_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
     : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::Wide, parent_part_)
 {
@@ -31,7 +31,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
     : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::Wide, parent_part_)
 {
@@ -56,17 +56,16 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
-    DataPartStorageBuilderPtr data_part_storage_builder,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
-    const MergeTreeIndexGranularity & computed_index_granularity) const
+    const MergeTreeIndexGranularity & computed_index_granularity)
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
-        shared_from_this(), data_part_storage_builder,
-        columns_list, metadata_snapshot, indices_to_recalc,
+        shared_from_this(), columns_list,
+        metadata_snapshot, indices_to_recalc,
         getMarksFileExtension(),
         default_codec_, writer_settings, computed_index_granularity);
 }
@@ -105,18 +104,18 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 
 void MergeTreeDataPartWide::loadIndexGranularityImpl(
     MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
-    const DataPartStoragePtr & data_part_storage_, const std::string & any_column_file_name)
+    const IDataPartStorage & data_part_storage_, const std::string & any_column_file_name)
 {
     index_granularity_info_.changeGranularityIfRequired(data_part_storage_);
 
     /// We can use any column, it doesn't matter
     std::string marks_file_path = index_granularity_info_.getMarksFilePath(any_column_file_name);
-    if (!data_part_storage_->exists(marks_file_path))
+    if (!data_part_storage_.exists(marks_file_path))
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART, "Marks file '{}' doesn't exist",
-            std::string(fs::path(data_part_storage_->getFullPath()) / marks_file_path));
+            std::string(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
 
-    size_t marks_file_size = data_part_storage_->getFileSize(marks_file_path);
+    size_t marks_file_size = data_part_storage_.getFileSize(marks_file_path);
 
     if (!index_granularity_info_.mark_type.adaptive && !index_granularity_info_.mark_type.compressed)
     {
@@ -126,7 +125,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
     }
     else
     {
-        auto marks_file = data_part_storage_->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
+        auto marks_file = data_part_storage_.readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
 
         std::unique_ptr<ReadBuffer> marks_reader;
         if (!index_granularity_info_.mark_type.compressed)
@@ -163,18 +162,18 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, data_part_storage, getFileNameForColumn(columns.front()));
+    loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), getFileNameForColumn(columns.front()));
 }
 
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 {
-    return data_part_storage->isStoredOnRemoteDisk();
+    return getDataPartStorage().isStoredOnRemoteDisk();
 }
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const
 {
-    return data_part_storage->supportZeroCopyReplication();
+    return getDataPartStorage().supportZeroCopyReplication();
 }
 
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
@@ -203,13 +202,13 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
                             "No {} file checksum for column {} in part {} ",
-                            mrk_file_name, name_type.name, data_part_storage->getFullPath());
+                            mrk_file_name, name_type.name, getDataPartStorage().getFullPath());
 
                     if (!checksums.files.contains(bin_file_name))
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
                             "No {} file checksum for column {} in part ",
-                            bin_file_name, name_type.name, data_part_storage->getFullPath());
+                            bin_file_name, name_type.name, getDataPartStorage().getFullPath());
                 });
             }
         }
@@ -225,23 +224,23 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                 auto file_path = ISerialization::getFileNameForStream(name_type, substream_path) + marks_file_extension;
 
                 /// Missing file is Ok for case when new column was added.
-                if (data_part_storage->exists(file_path))
+                if (getDataPartStorage().exists(file_path))
                 {
-                    UInt64 file_size = data_part_storage->getFileSize(file_path);
+                    UInt64 file_size = getDataPartStorage().getFileSize(file_path);
 
                     if (!file_size)
                         throw Exception(
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                             "Part {} is broken: {} is empty.",
-                            data_part_storage->getFullPath(),
-                            std::string(fs::path(data_part_storage->getFullPath()) / file_path));
+                            getDataPartStorage().getFullPath(),
+                            std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
 
                     if (!marks_size)
                         marks_size = file_size;
                     else if (file_size != *marks_size)
                         throw Exception(
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                            "Part {} is broken: marks have different sizes.", data_part_storage->getFullPath());
+                            "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
                 }
             });
         }

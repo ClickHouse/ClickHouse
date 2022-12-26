@@ -15,7 +15,7 @@ struct CRCBase
     {
         for (size_t i = 0; i < 256; ++i)
         {
-            T c = i;
+            T c = static_cast<T>(i);
             for (size_t j = 0; j < 8; ++j)
                 c = c & 1 ? polynomial ^ (c >> 1) : c >> 1;
             tab[i] = c;
@@ -58,7 +58,7 @@ struct CRC32ZLIBImpl
 
     static UInt32 makeCRC(const unsigned char *buf, size_t size)
     {
-        return crc32_z(0L, buf, size);
+        return static_cast<UInt32>(crc32_z(0L, buf, size));
     }
 };
 

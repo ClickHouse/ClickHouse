@@ -145,8 +145,8 @@ jobs:
           fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -190,8 +190,8 @@ jobs:
           fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -233,8 +233,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -276,8 +276,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -319,8 +319,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -364,8 +364,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -409,8 +409,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -466,6 +466,7 @@ jobs:
       - BuilderDebTsan
       - BuilderDebDebug
     runs-on: [self-hosted, style-checker]
+    if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
@@ -504,6 +505,7 @@ jobs:
       - BuilderBinDarwin
       - BuilderBinDarwinAarch64
     runs-on: [self-hosted, style-checker]
+    if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |

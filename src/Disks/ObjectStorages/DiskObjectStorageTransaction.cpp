@@ -599,7 +599,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
     std::function<void(size_t count)> create_metadata_callback;
 
-    if  (autocommit)
+    if (autocommit)
     {
         create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name] (size_t count)
         {
@@ -747,6 +747,12 @@ void DiskObjectStorageTransaction::commit()
 
     for (const auto & operation : operations_to_execute)
         operation->finalize();
+}
+
+void DiskObjectStorageTransaction::undo()
+{
+    for (const auto & operation : operations_to_execute | std::views::reverse)
+        operation->undo();
 }
 
 }

@@ -5,16 +5,7 @@
 
 #include <type_traits>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2
-#elif defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX512VL__)
-#    define LIBDIVIDE_AVX512
-#elif defined(__AVX2__)
-#    define LIBDIVIDE_AVX2
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-#    define LIBDIVIDE_NEON
-#endif
-
+#include <libdivide-config.h>
 #include <libdivide.h>
 
 
@@ -50,7 +41,7 @@ IColumn::Selector createBlockSelector(
         /// libdivide support only UInt32 and UInt64.
         using TUInt32Or64 = std::conditional_t<sizeof(UnsignedT) <= 4, UInt32, UInt64>;
 
-        libdivide::divider<TUInt32Or64> divider(total_weight);
+        libdivide::divider<TUInt32Or64> divider(static_cast<TUInt32Or64>(total_weight));
 
         const auto & data = typeid_cast<const ColumnVector<T> &>(column).getData();
 

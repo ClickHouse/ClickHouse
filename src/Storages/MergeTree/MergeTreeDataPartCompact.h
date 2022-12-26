@@ -25,13 +25,13 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeDataPartCompact(
         MergeTreeData & storage_,
         const String & name_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeReaderPtr getReader(
@@ -45,13 +45,12 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
     MergeTreeWriterPtr getWriter(
-        DataPartStorageBuilderPtr data_part_storage_builder,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) const override;
+        const MergeTreeIndexGranularity & computed_index_granularity) override;
 
     bool isStoredOnDisk() const override { return true; }
 
@@ -68,7 +67,7 @@ public:
 protected:
      static void loadIndexGranularityImpl(
          MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
-         size_t columns_count, const DataPartStoragePtr & data_part_storage_);
+         size_t columns_count, const IDataPartStorage & data_part_storage_);
 
 private:
     void checkConsistency(bool require_part_metadata) const override;

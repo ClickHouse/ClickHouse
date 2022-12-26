@@ -3,6 +3,8 @@
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/newLineSegmentationEngine.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -50,7 +52,11 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
     if (line_size > 0 && buf.position()[line_size - 1] == '\r')
         --line_to_match;
 
-    bool match = re2_st::RE2::FullMatchN(re2_st::StringPiece(buf.position(), line_to_match), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
+    bool match = re2_st::RE2::FullMatchN(
+        re2_st::StringPiece(buf.position(), line_to_match),
+        regexp,
+        re2_arguments_ptrs.data(),
+        static_cast<int>(re2_arguments_ptrs.size()));
 
     if (!match && !skip_unmatched)
         throw Exception("Line \"" + std::string(buf.position(), line_to_match) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
@@ -150,15 +156,15 @@ DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != field_extractor.getMatchedFieldsSize(); ++i)
     {
         String field(field_extractor.getField(i));
-        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule));
+        data_types.push_back(tryInferDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule, &json_inference_info));
     }
 
     return data_types;
 }
 
-void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredTypesIfNeeded(type, new_type, format_settings, format_settings.regexp.escaping_rule);
+    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, format_settings.regexp.escaping_rule, &json_inference_info);
 }
 
 
@@ -174,46 +180,9 @@ void registerInputFormatRegexp(FormatFactory & factory)
     });
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
-{
-    char * pos = in.position();
-    bool need_more_data = true;
-    size_t number_of_rows = 0;
-
-    while (loadAtPosition(in, memory, pos) && need_more_data)
-    {
-        pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
-        if (pos > in.buffer().end())
-            throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
-        else if (pos == in.buffer().end())
-            continue;
-
-        ++number_of_rows;
-        if ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows))
-            need_more_data = false;
-
-        if (*pos == '\n')
-        {
-            ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\r')
-                ++pos;
-        }
-        else if (*pos == '\r')
-        {
-            ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\n')
-                ++pos;
-        }
-    }
-
-    saveUpToPosition(in, memory, pos);
-
-    return {loadAtPosition(in, memory, pos), number_of_rows};
-}
-
 void registerFileSegmentationEngineRegexp(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("Regexp", &fileSegmentationEngineRegexpImpl);
+    factory.registerFileSegmentationEngine("Regexp", &newLineFileSegmentationEngine);
 }
 
 void registerRegexpSchemaReader(FormatFactory & factory)

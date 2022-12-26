@@ -64,11 +64,11 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
     return data_size <= free_space;
 }
 
-std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
+std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
-    fs::create_directories(path);
-    return std::make_unique<TemporaryFile>(path);
+    fs::create_directories(folder_path);
+    return std::make_unique<PocoTemporaryFile>(folder_path);
 }
 
 #if !defined(OS_LINUX)
@@ -258,7 +258,7 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
     return buf.st_size;
 }
 
-int getINodeNumberFromPath(const String & path)
+Int64 getINodeNumberFromPath(const String & path)
 {
     struct stat file_stat;
     if (stat(path.data(), &file_stat))

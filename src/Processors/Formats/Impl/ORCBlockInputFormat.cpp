@@ -3,7 +3,7 @@
 #if USE_ORC
 
 #include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -101,7 +101,7 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
     if (type->id() == arrow::Type::MAP)
     {
         auto * map_type = static_cast<arrow::MapType *>(type.get());
-        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
+        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type()) + 1;
     }
 
     return 1;
@@ -136,7 +136,7 @@ void ORCBlockInputFormat::prepareReader()
     if (is_stopped)
         return;
 
-    stripe_total = file_reader->NumberOfStripes();
+    stripe_total = static_cast<int>(file_reader->NumberOfStripes());
     stripe_current = 0;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
@@ -159,7 +159,7 @@ void ORCBlockInputFormat::prepareReader()
     {
         /// LIST type require 2 indices, STRUCT - the number of elements + 1,
         /// so we should recursively count the number of indices we need for this type.
-        int indexes_count = countIndicesForType(schema->field(i)->type());
+        int indexes_count = static_cast<int>(countIndicesForType(schema->field(i)->type()));
         const auto & name = schema->field(i)->name();
         if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
         {
@@ -198,6 +198,7 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
             });
+    factory.markFormatSupportsSubcolumns("ORC");
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 

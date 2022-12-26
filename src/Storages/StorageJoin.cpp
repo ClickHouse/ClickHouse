@@ -165,7 +165,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
-        throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Table '{}' has incompatible type of JOIN", getStorageID().getNameForLogs());
 
     if ((analyzed_join->forceNullableRight() && !use_nulls) ||
         (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
@@ -174,12 +174,51 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
             "Table {} needs the same join_use_nulls setting as present in LEFT or FULL JOIN",
             getStorageID().getNameForLogs());
 
-    /// TODO: check key columns
+    if (analyzed_join->getClauses().size() != 1)
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "JOIN keys should match to the Join engine keys [{}]", fmt::join(getKeyNames(), ", "));
 
-    /// Set names qualifiers: table.column -> column
-    /// It's required because storage join stores non-qualified names
-    /// Qualifies will be added by join implementation (HashJoin)
+    const auto & join_on = analyzed_join->getOnlyClause();
+    if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "ON section of JOIN with filter conditions is not implemented");
+
+    const auto & key_names_right = join_on.key_names_right;
+    const auto & key_names_left = join_on.key_names_left;
+    if (key_names.size() != key_names_right.size() || key_names.size() != key_names_left.size())
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+            "Number of keys in JOIN ON section ({}) doesn't match number of keys in Join engine ({})",
+            key_names_right.size(), key_names.size());
+
+    /* Resort left keys according to right keys order in StorageJoin
+     * We can't change the order of keys in StorageJoin
+     * because the hash table was already built with tuples serialized in the order of key_names.
+     * If we try to use the same hash table with different order of keys,
+     * then calculated hashes and the result of the comparison will be wrong.
+     *
+     * Example:
+     * ```
+     * CREATE TABLE t_right (a UInt32, b UInt32) ENGINE = Join(ALL, INNER, a, b);
+     * SELECT * FROM t_left JOIN t_right ON t_left.y = t_right.b AND t_left.x = t_right.a;
+     * ```
+     * In that case right keys should still be (a, b), need to change the order of the left keys to (x, y).
+     */
+    Names left_key_names_resorted;
+    for (const auto & key_name : key_names)
+    {
+        const auto & renamed_key = analyzed_join->renamedRightColumnName(key_name);
+        /// find position of renamed_key in key_names_right
+        auto it = std::find(key_names_right.begin(), key_names_right.end(), renamed_key);
+        if (it == key_names_right.end())
+            throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+                "Key '{}' not found in JOIN ON section. All Join engine keys '{}' have to be used", key_name, fmt::join(key_names, ", "));
+        const size_t key_position = std::distance(key_names_right.begin(), it);
+        left_key_names_resorted.push_back(key_names_left[key_position]);
+    }
+
+    /// Set qualified identifiers to original names (table.column -> column).
+    /// It's required because storage join stores non-qualified names.
+    /// Qualifies will be added by join implementation (TableJoin contains a rename mapping).
     analyzed_join->setRightKeys(key_names);
+    analyzed_join->setLeftKeys(left_key_names_resorted);
 
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getRightSampleBlock());
 
@@ -585,7 +624,7 @@ Pipe StorageJoin::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 

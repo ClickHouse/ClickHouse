@@ -57,7 +57,7 @@ public:
 
         const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
 
-        const Int32 scale_diff = typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale;
+        const Int32 scale_diff = static_cast<Int32>(typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale);
         if (scale_diff == 0)
         {
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -106,7 +106,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 1 || arguments.size() > 2)
+        if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
         if (!isInteger(arguments[0].type))
@@ -126,7 +126,7 @@ public:
         const auto & col = *src.column;
 
         if (!checkAndGetColumn<ColumnVector<T>>(col))
-            return 0;
+            return false;
 
         auto & result_data = result_column->getData();
 
@@ -135,12 +135,12 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = source_data[i];
 
-        return 1;
+        return true;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
+        auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, static_cast<UInt32>(target_scale));
 
         if (!((executeType<UInt8>(result_column, arguments, input_rows_count))
               || (executeType<UInt16>(result_column, arguments, input_rows_count))

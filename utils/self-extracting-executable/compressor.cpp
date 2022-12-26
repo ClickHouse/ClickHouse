@@ -356,7 +356,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
     return 0;
 }
 
-int copy_decompressor(int input_fd, int decompressor_size, int output_fd)
+int copy_decompressor(int input_fd, ssize_t decompressor_size, int output_fd)
 {
     const ssize_t buf_size = 1ul<<19;
     auto buf_memory = std::make_unique<char[]>(buf_size);
@@ -411,7 +411,7 @@ int copy_decompressor_self(const char *self, int output_fd)
     }
 
     char * end = nullptr;
-    int decompressor_size = strtol(size_str, &end, 10);
+    ssize_t decompressor_size = strtol(size_str, &end, 10);
     if (*end != 0)
     {
         std::cerr << "Error: unable to extract decompressor" << std::endl;
@@ -519,7 +519,7 @@ int main(int argc, char* argv[])
         if (p[0] != 0)
         {
             char * end = nullptr;
-            level = strtol(p, &end, 10);
+            level = static_cast<int>(strtol(p, &end, 10));
             if (*end != 0)
             {
                 std::cerr << "Error: level [" << p << "] is not valid" << std::endl;

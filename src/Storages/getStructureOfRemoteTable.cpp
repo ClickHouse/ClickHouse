@@ -58,7 +58,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     }
 
     ColumnsDescription res;
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
@@ -169,7 +169,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     const auto & shards_info = cluster.getShardsInfo();
     auto query = "DESC TABLE " + remote_table_id.getFullTableName();
 
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), remote_table_id);
     new_context->setSetting("describe_extend_object_types", true);
 
     /// Expect only needed columns from the result of DESC TABLE.
@@ -200,7 +200,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
                 auto type_name = type_col[i].get<const String &>();
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
-                if (storage_column && isObject(storage_column->type))
+                if (storage_column && storage_column->type->hasDynamicSubcolumns())
                     res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
             }
         }

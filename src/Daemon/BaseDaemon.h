@@ -136,11 +136,7 @@ protected:
     /// fork the main process and watch if it was killed
     void setupWatchdog();
 
-    void waitForTerminationRequest()
-#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
-    override
-#endif
-    ;
+    void waitForTerminationRequest() override;
     /// thread safe
     virtual void onInterruptSignals(int signal_id);
 
@@ -201,3 +197,9 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
     else
         return {};
 }
+
+#if defined(OS_LINUX)
+/// Sends notification (e.g. "server is ready") to systemd, analogous to sd_notify from libsystemd.
+/// See https://www.freedesktop.org/software/systemd/man/sd_notify.html for more information on the supported notifications.
+void systemdNotify(const std::string_view & command);
+#endif

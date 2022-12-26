@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
+#include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -377,8 +378,8 @@ void TCPHandler::runImpl()
             after_send_progress.restart();
 
             if (state.io.pipeline.pushing())
-            /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
             {
+                /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
                 state.io.onFinish();
@@ -390,27 +391,30 @@ void TCPHandler::runImpl()
             }
             else if (state.io.pipeline.completed())
             {
-                CompletedPipelineExecutor executor(state.io.pipeline);
-                /// Should not check for cancel in case of input.
-                if (!state.need_receive_data_for_input)
                 {
-                    auto callback = [this]()
+                    CompletedPipelineExecutor executor(state.io.pipeline);
+
+                    /// Should not check for cancel in case of input.
+                    if (!state.need_receive_data_for_input)
                     {
-                        std::lock_guard lock(fatal_error_mutex);
+                        auto callback = [this]()
+                        {
+                            std::lock_guard lock(fatal_error_mutex);
 
-                        if (isQueryCancelled())
-                            return true;
+                            if (isQueryCancelled())
+                                return true;
 
-                        sendProgress();
-                        sendSelectProfileEvents();
-                        sendLogs();
+                            sendProgress();
+                            sendSelectProfileEvents();
+                            sendLogs();
 
-                        return false;
-                    };
+                            return false;
+                        };
 
-                    executor.setCancelCallback(callback, interactive_delay / 1000);
+                        executor.setCancelCallback(callback, interactive_delay / 1000);
+                    }
+                    executor.execute();
                 }
-                executor.execute();
 
                 state.io.onFinish();
                 /// Send final progress after calling onFinish(), since it will update the progress.
@@ -733,14 +737,20 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     auto & pipeline = state.io.pipeline;
 
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+    {
+        std::lock_guard lock(task_callback_mutex);
         sendPartUUIDs();
+    }
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
         const auto & header = pipeline.getHeader();
 
         if (header)
+        {
+            std::lock_guard lock(task_callback_mutex);
             sendData(header);
+        }
     }
 
     {
@@ -841,7 +851,7 @@ void TCPHandler::processTablesStatusRequest()
         if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
         {
             status.is_replicated = true;
-            status.absolute_delay = replicated_table->getAbsoluteDelay();
+            status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
         }
         else
             status.is_replicated = false; //-V1048
@@ -1190,6 +1200,17 @@ void TCPHandler::sendHello()
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(DBMS_VERSION_PATCH, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
+    {
+        auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
+
+        writeVarUInt(rules.size(), *out);
+        for (const auto & [original_pattern, exception_message] : rules)
+        {
+            writeStringBinary(original_pattern, *out);
+            writeStringBinary(exception_message, *out);
+        }
+    }
     out->next();
 }
 
