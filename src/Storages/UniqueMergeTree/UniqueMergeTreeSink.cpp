@@ -12,6 +12,11 @@ namespace ProfileEvents
 extern const Event DuplicatedInsertedBlocks;
 }
 
+namespace ErrorCodes
+{
+extern const int LOGIC_ERROR;
+}
+
 namespace DB
 {
 

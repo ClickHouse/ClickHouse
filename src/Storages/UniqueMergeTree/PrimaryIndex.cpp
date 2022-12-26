@@ -15,9 +15,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ROCKSDB_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_EXCEPTION;
 }
 
 PrimaryIndex::PrimaryIndex(const MergeTreePartition & partition_, size_t max_size, StorageUniqueMergeTree & storage_)

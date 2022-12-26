@@ -41,7 +41,7 @@ void TableVersion::serialize(const String & version_path, DiskPtr disk) const
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Serialize table version {} faild", version_path);
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Serialize table version {} failed", version_path);
     }
 }
 
@@ -50,8 +50,8 @@ void TableVersion::deserialize(const String & version_path, DiskPtr disk)
     if (!disk->exists(version_path))
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Table version file {{}} may have lost", version_path);
     size_t size;
-	try
-	{
+    try
+    {
         auto in = disk->readFile(version_path);
 
         String version_format;
@@ -79,11 +79,11 @@ void TableVersion::deserialize(const String & version_path, DiskPtr disk)
 
             part_versions.emplace(MergeTreePartInfo{partition_id, min_block, max_block, level, mutation}, part_version);
         }
-	}
-	catch (...)
-	{
-		throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read table version {{}} failed", version_path);
-	}
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read table version {{}} failed", version_path);
+    }
 }
 
 String TableVersion::dump() const

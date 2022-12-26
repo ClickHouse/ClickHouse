@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int UNKNOWN_EXCEPTION;
 }
 
@@ -93,8 +92,8 @@ void DeleteBitmap::serialize(MutableDataPartStoragePtr data_part_storage) const
         data_part_storage->createProjection("deletes");
     }
     const String file_path = "deletes/" + toString(version) + ".bitmap";
-	try
-	{
+    try
+    {
         auto out = data_part_storage->writeFile(file_path, DBMS_DEFAULT_BUFFER_SIZE, {});
 
         writeVarUInt(version, *out);
@@ -107,11 +106,11 @@ void DeleteBitmap::serialize(MutableDataPartStoragePtr data_part_storage) const
         out->write(buf.get(), size);
     }
 
-	catch (...)
-	{
+    catch (...)
+    {
         throw Exception(
             ErrorCodes::UNKNOWN_EXCEPTION,
-            "Exception happend while serialize bitmap {}, version: {}, bitmap size: {}",
+            "Exception happened while serialize bitmap {}, version: {}, bitmap size: {}",
             data_part_storage->getFullRootPath() + file_path,
             version,
             data->getSizeInBytes());
@@ -142,7 +141,7 @@ void DeleteBitmap::deserialize(MutableDataPartStoragePtr data_part_storage)
     {
         throw Exception(
             ErrorCodes::UNKNOWN_EXCEPTION,
-            "Exception happend while deserialize bitmap {}, version: {}, bitmap size: {}",
+            "Exception happened while deserialize bitmap {}, version: {}, bitmap size: {}",
             data_part_storage->getFullRootPath() + file_path,
             version,
             size);

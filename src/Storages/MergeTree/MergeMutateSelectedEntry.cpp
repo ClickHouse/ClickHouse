@@ -6,6 +6,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_ENOUGH_SPACE;
+    extern const int LOGICAL_ERROR;
 }
 
 /// While exists, marks parts as 'currently_merging_mutating_parts' and reserves free space on filesystem.

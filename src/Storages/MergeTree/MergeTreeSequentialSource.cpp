@@ -15,13 +15,13 @@ namespace ErrorCodes
 static void filterColumns(Columns & columns, const IColumn::Filter & filter)
 {
     for (auto & column : columns)
-	{
+    {
         if (column)
-		{
+        {
             column = column->filter(filter, -1);
 
             if (column->empty())
-			{
+            {
                 columns.clear();
                 return;
             }

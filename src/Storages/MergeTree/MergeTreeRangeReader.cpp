@@ -1046,7 +1046,7 @@ void MergeTreeRangeReader::setBitmapFilter(const PaddedPODArray<UInt64> & rows_i
         return;
     }
 
-    /// Create fileter by delete bitmap and rows id
+    /// Create filter by delete bitmap and rows id
     auto col_vec = ColumnUInt8::create(rows_id.size());
     auto & data = col_vec->getData();
 
@@ -1296,7 +1296,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     }
 
     if (filter_by_bitmap)
-	{
+    {
         combined_filter = combined_filter->convertToFullIfNeeded();
         checkCombinedFiltersSize(combined_filter->size(), filter_by_bitmap->size());
         combined_filter = combineBitmapFilter(combined_filter, filter_by_bitmap);

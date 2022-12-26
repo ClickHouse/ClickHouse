@@ -60,7 +60,7 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
         order_by->formatImpl(s, state, frame);
     }
     if (unique_key)
-	{
+    {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "UNIQUE KEY " << (s.hilite ? hilite_none : "");
         unique_key->formatImpl(s, state, frame);
     }

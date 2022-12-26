@@ -397,9 +397,9 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         if (!unique_key && s_unique_key.ignore(pos, expected))
-		{
+        {
             if (expression_p.parse(pos, unique_key, expected))
-			{
+            {
                 storage_like = true;
                 continue;
             }

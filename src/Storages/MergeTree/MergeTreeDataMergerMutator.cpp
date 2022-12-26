@@ -72,7 +72,7 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
     : data(data_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
 {
     if (data.merging_params.mode == MergeTreeData::MergingParams::Unique)
-	{
+    {
         unique_mergetree = dynamic_cast<StorageUniqueMergeTree *>(&data);
     }
 }
@@ -427,7 +427,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     if (table_version)
-	{
+    {
         future_part->table_version = std::move(table_version);
     }
     future_part->assign(std::move(parts));

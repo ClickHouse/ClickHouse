@@ -383,7 +383,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 {
     if (global_ctx->unique_mergetree && !global_ctx->column_initialized)
-	{
+    {
         global_ctx->unique_keys = global_ctx->metadata_snapshot->getUniqueKey().column_names;
         global_ctx->col_encode = DataTypeString{}.createColumn();
         global_ctx->column_initialized = true;
@@ -393,11 +393,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     if (!ctx->is_cancelled() && (global_ctx->merging_executor->pull(block)))
     {
         if (global_ctx->unique_mergetree)
-		{
+        {
             ColumnRawPtrs key_columns;
             global_ctx->unique_mergetree->getUniqueKeyExpression(global_ctx->metadata_snapshot)->execute(block);
             for (const auto & name : global_ctx->unique_keys)
-			{
+            {
                 key_columns.emplace_back(block.getByName(name).column.get());
             }
 
@@ -444,7 +444,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     ctx->need_sync = needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
 
     if (global_ctx->unique_mergetree)
-	{
+    {
         global_ctx->write_state.key_column = std::move(global_ctx->col_encode);
     }
 

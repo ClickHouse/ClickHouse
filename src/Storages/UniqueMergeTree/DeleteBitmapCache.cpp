@@ -4,12 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int FILE_DOESNT_EXIST;
-    extern const int LOGICAL_ERROR;
-}
-
 DeleteBitmapPtr DeleteBitmapCache::getOrCreate(const MergeTreeDataPartPtr & part, UInt64 version)
 {
     if (auto it = get({part->info, version}))

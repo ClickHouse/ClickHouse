@@ -53,6 +53,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -624,7 +625,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     /// If we need to calculate some columns to sort.
-    /// For UniqueMergeTree, we shoud sort by UniqueKey and execute optimize_on_insert,
+    /// For UniqueMergeTree, we should sort by UniqueKey and execute optimize_on_insert,
     /// then sort by ORDER BY expression
     if (metadata_snapshot->hasUniqueKey())
         data.getUniqueKeyExpression(metadata_snapshot)->execute(block);
@@ -720,7 +721,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
         write_state.delete_key_column = PrimaryKeysEncoder::encode(delete_key_columns, block.rows(), unique_keys.size());
         return temp_part;
     }
-    /// Splite delete keys and write keys
+    /// Split delete keys and write keys
     else
     {
         LOG_INFO(log, "{} rows are upsert, {} rows are deletes.", deleted_rows, block_rows - deleted_rows);
