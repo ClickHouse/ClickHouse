@@ -50,7 +50,7 @@ function configure()
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
-    sudo rm -fr /etc/clickhouse-server/*
+    sudo rm -fr /etc/clickhouse-server/* ||:
     /usr/share/clickhouse-test/config/install.sh
 
     # we mount tests folder from repo to /usr/share
