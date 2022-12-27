@@ -257,12 +257,21 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        task_exit_code=210
-        echo "failure" > status.txt
         if ! zgrep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log.gz > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
+
+        if grep -F --text 'Sanitizer: out-of-memory' description.txt
+        then
+            # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
+            task_exit_code=0
+            echo "success" > status.txt
+        else
+            task_exit_code=210
+            echo "failure" > status.txt
+        fi
+
     elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
     then
         # Variants of a normal run:
@@ -355,7 +364,7 @@ th { cursor: pointer; }
 
 <h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
 <p class="links">
-  <a href="runlog.log">runlog.log</a>
+  <a href="run.log">run.log</a>
   <a href="fuzzer.log">fuzzer.log</a>
   <a href="server.log.gz">server.log.gz</a>
   <a href="main.log">main.log</a>
