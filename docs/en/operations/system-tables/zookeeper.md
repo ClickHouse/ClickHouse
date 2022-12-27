@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/zookeeper
----
 # zookeeper
 
 The table does not exist unless ClickHouse Keeper or ZooKeeper is configured. The `system.zookeeper` table exposes data from the Keeper cluster defined in the config.

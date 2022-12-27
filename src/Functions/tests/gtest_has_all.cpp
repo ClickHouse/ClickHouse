@@ -18,9 +18,9 @@ void arrayInit(T* elements_to_have, size_t nb_elements_to_have, T* array_element
 {
     for (size_t i = 0; i < array_size; ++i)
     {
-        array_elements[i] = static_cast<T>(i);
+        array_elements[i] = i;
     }
-    auto [dist, gen] = uni_int_dist(0, static_cast<int>(array_size - 1));
+    auto [dist, gen] = uni_int_dist(0, array_size - 1);
     for (size_t i = 0; i < nb_elements_to_have; ++i)
     {
         elements_to_have[i] = array_elements[dist(gen)];
@@ -28,14 +28,14 @@ void arrayInit(T* elements_to_have, size_t nb_elements_to_have, T* array_element
     if (!all_elements_present)
     {
         /// make one element to be searched for missing from the target array
-        elements_to_have[nb_elements_to_have - 1] = static_cast<T>(array_size + 1);
+        elements_to_have[nb_elements_to_have - 1] = array_size + 1;
     }
 }
 
 void nullMapInit(UInt8 * null_map, size_t null_map_size, size_t nb_null_elements)
 {
     /// -2 to keep the last element of the array non-null
-    auto [dist, gen] = uni_int_dist(0, static_cast<int>(null_map_size - 2));
+    auto [dist, gen] = uni_int_dist(0, null_map_size - 2);
     for (size_t i = 0; i < null_map_size; ++i)
     {
         null_map[i] = 0;

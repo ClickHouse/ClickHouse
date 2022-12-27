@@ -83,7 +83,7 @@ MergeTreeRangeReader::DelayedStream::DelayedStream(
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
         , current_task_last_mark(current_task_last_mark_)
         , merge_tree_reader(merge_tree_reader_)
-        , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
+        , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , continue_reading(false), is_finished(false)
 {
 }
@@ -181,7 +181,7 @@ MergeTreeRangeReader::Stream::Stream(
         : current_mark(from_mark), offset_after_current_mark(0)
         , last_mark(to_mark)
         , merge_tree_reader(merge_tree_reader_)
-        , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
+        , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , current_mark_index_granularity(index_granularity->getMarkRows(from_mark))
         , stream(from_mark, current_task_last_mark, merge_tree_reader)
 {
@@ -652,7 +652,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     bool last_reader_in_chain_,
     const Names & non_const_virtual_column_names_)
     : merge_tree_reader(merge_tree_reader_)
-    , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
+    , index_granularity(&(merge_tree_reader->data_part->index_granularity))
     , prev_reader(prev_reader_)
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
@@ -946,8 +946,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     result.addRows(stream.finalize(result.columns));
 
     /// Last granule may be incomplete.
-    if (!result.rowsPerGranule().empty())
-        result.adjustLastGranule();
+    result.adjustLastGranule();
 
     for (const auto & column_name : non_const_virtual_column_names)
     {

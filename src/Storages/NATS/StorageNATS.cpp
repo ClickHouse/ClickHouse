@@ -60,7 +60,7 @@ StorageNATS::StorageNATS(
     , schema_name(getContext()->getMacros()->expand(nats_settings->nats_schema))
     , num_consumers(nats_settings->nats_num_consumers.value)
     , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
-    , semaphore(0, static_cast<int>(num_consumers))
+    , semaphore(0, num_consumers)
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
     , is_attach(is_attach_)
 {
@@ -92,24 +92,10 @@ StorageNATS::StorageNATS(
 
     try
     {
-        size_t num_tries = nats_settings->nats_startup_connect_tries;
-        for (size_t i = 0; i < num_tries; ++i)
-        {
-            connection = std::make_shared<NATSConnectionManager>(configuration, log);
-
-            if (connection->connect())
-                break;
-
-            if (i == num_tries - 1)
-            {
-                throw Exception(
-                    ErrorCodes::CANNOT_CONNECT_NATS,
-                    "Cannot connect to {}. Nats last error: {}",
-                    connection->connectionInfoForLog(), nats_GetLastError(nullptr));
-            }
-
-            LOG_DEBUG(log, "Connect attempt #{} failed, error: {}. Reconnecting...", i + 1, nats_GetLastError(nullptr));
-        }
+        connection = std::make_shared<NATSConnectionManager>(configuration, log);
+        if (!connection->connect())
+            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to {}. Nats last error: {}",
+                            connection->connectionInfoForLog(), nats_GetLastError(nullptr));
     }
     catch (...)
     {
@@ -158,8 +144,6 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     modified_context->setSetting("input_format_allow_errors_num", nats_settings->nats_skip_broken_messages.value);
-    /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
-    modified_context->setSetting("max_analyze_depth", Field{0});
 
     if (!schema_name.empty())
         modified_context->setSetting("format_schema", schema_name);
@@ -289,7 +273,7 @@ void StorageNATS::read(
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t /* max_block_size */,
-        size_t /* num_streams */)
+        unsigned /* num_streams */)
 {
     if (!consumers_ready)
         throw Exception("NATS consumers setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_NATS);
@@ -535,24 +519,24 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
+    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    if (dependencies.empty())
         return true;
 
     // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
+    for (const auto & db_tab : dependencies)
     {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
+        if (!table)
             return false;
 
         // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(view_id))
+        if (!checkDependencies(db_tab))
             return false;
     }
 
@@ -568,10 +552,10 @@ void StorageNATS::streamingToViewsFunc()
         auto table_id = getStorageID();
 
         // Check if at least one direct dependency is attached
-        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
         bool nats_connected = connection->isConnected() || connection->reconnect();
 
-        if (num_views && nats_connected)
+        if (dependencies_count && nats_connected)
         {
             auto start_time = std::chrono::steady_clock::now();
 
@@ -583,7 +567,7 @@ void StorageNATS::streamingToViewsFunc()
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 if (streamToViews())
                 {

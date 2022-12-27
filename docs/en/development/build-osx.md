@@ -1,10 +1,10 @@
 ---
-slug: /en/development/build-osx
 sidebar_position: 65
-sidebar_label: Build on macOS
-title: How to Build ClickHouse on macOS
-description: How to build ClickHouse on macOS
+sidebar_label: Build on Mac OS X
+description: How to build ClickHouse on Mac OS X
 ---
+
+# How to Build ClickHouse on Mac OS X
 
 :::info You don't have to build ClickHouse yourself!
 You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start). Follow **macOS (Intel)** or **macOS (Apple silicon)** installation instructions.
@@ -37,7 +37,7 @@ sudo xcode-select --install
 
 ``` bash
 brew update
-brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils
+brew install cmake ninja libtool gettext llvm gcc binutils grep findutils
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}

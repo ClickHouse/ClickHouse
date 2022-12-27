@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/replicated_fetches
----
 # system.replicated_fetches {#system_tables-replicated_fetches}
 
 包含当前正在运行的后台提取的信息.

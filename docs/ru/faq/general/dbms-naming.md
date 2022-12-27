@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/general/dbms-naming
 title: "Что означает название ClickHouse?"
 sidebar_position: 10
 ---

@@ -87,7 +87,7 @@ public:
                 transformed_nested_function->getParameters());
         }
 
-        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
+        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getReturnType()->canBeInsideNullable();
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
         if (arguments.size() == 1)
@@ -108,14 +108,14 @@ public:
         {
             if (return_type_is_nullable)
             {
-                return std::make_shared<AggregateFunctionNullVariadic<true, true>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionNullVariadic<true, true, true>>(nested_function, arguments, params);
             }
             else
             {
                 if (serialize_flag)
-                    return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+                    return std::make_shared<AggregateFunctionNullVariadic<false, true, true>>(nested_function, arguments, params);
                 else
-                    return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+                    return std::make_shared<AggregateFunctionNullVariadic<false, true, false>>(nested_function, arguments, params);
             }
         }
     }

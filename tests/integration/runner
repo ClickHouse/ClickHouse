@@ -135,7 +135,7 @@ def check_args_and_update_paths(args):
 
 def docker_kill_handler_handler(signum, frame):
     subprocess.check_call(
-        'docker ps --all --quiet --filter name={name} --format="{{{{.ID}}}}"'.format(
+        'docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(
             name=CONTAINER_NAME
         ),
         shell=True,
@@ -350,7 +350,8 @@ if __name__ == "__main__":
         # randomizer, we should remove it after Sep 2022
         try:
             subprocess.check_call(
-                f"docker volume ls -q | grep '{VOLUME_NAME}_.*_volume' | xargs --no-run-if-empty docker volume rm",
+                "docker volume rm $(docker volume ls -q | "
+                f"grep '{VOLUME_NAME}_.*_volume')",
                 shell=True,
             )
         except Exception as ex:
@@ -404,7 +405,7 @@ if __name__ == "__main__":
     )
 
     containers = subprocess.check_output(
-        f"docker ps --all --quiet --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
+        f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
         shell=True,
         universal_newlines=True,
     ).splitlines()
@@ -413,11 +414,5 @@ if __name__ == "__main__":
         subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
         print(f"Containers {containers} killed")
 
-    # Avoid overlaps with previous runs
-    subprocess.check_call("dmesg --clear", shell=True)
-
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)
-
-    # Dump dmesg (to capture possible OOMs)
-    subprocess.check_call("dmesg -T", shell=True)

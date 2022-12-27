@@ -249,7 +249,7 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
         if (has_value)
         {
             readEscapedString(value, in);
-            names_and_types.emplace_back(std::move(name), tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
+            names_and_types.emplace_back(std::move(name), determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
         }
         else
         {

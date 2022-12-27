@@ -30,6 +30,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
+
 namespace DB
 {
 
@@ -754,10 +755,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_to)
+        if (nullable_from && nullable_to)
         {
-            /// Here we allow a conversion X -> Nullable(X) to make a metadata-only conversion.
-            from = nullable_from ? nullable_from->getNestedType().get() : from;
+            from = nullable_from->getNestedType().get();
             to = nullable_to->getNestedType().get();
             continue;
         }
@@ -1023,7 +1023,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 command.ignore = true;
         }
     }
-
     prepared = true;
 }
 
@@ -1284,7 +1283,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             throw Exception{"Table doesn't have SAMPLE BY, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
 
-        /// Collect default expressions for MODIFY and ADD commands
+        /// Collect default expressions for MODIFY and ADD comands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
         {
             if (command.default_expression)
@@ -1355,20 +1354,12 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
-    {
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context); mutation_cmd)
-        {
             result.push_back(*mutation_cmd);
-        }
-        else if (with_alters)
-        {
-            result.push_back(MutationCommand{.ast = alter_cmd.ast->clone(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
-        }
-    }
 
     if (materialize_ttl)
     {

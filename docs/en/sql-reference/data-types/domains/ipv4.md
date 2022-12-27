@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/domains/ipv4
 sidebar_position: 59
 sidebar_label: IPv4
 ---
