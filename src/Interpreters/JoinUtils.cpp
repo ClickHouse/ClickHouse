@@ -324,14 +324,14 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
-ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
+ColumnRawPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
 {
     ColumnRawPtrMap ptrs;
     ptrs.reserve(names.size());
 
     for (const auto & column_name : names)
     {
-        auto & column = block.getByName(column_name);
+        ColumnWithTypeAndName column = block.getByName(column_name);
 
         column.column = column.column->convertToFullColumnIfConst();
         column.column = recursiveRemoveLowCardinality(column.column);
