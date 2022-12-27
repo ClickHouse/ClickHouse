@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -90,16 +91,19 @@ private:
     template <typename DocOrVal>
     static void deserializeValueAsTuple(DocOrVal & val, const DataTypePtr & type, Field & res)
     {
+        std::cout << "branch0" << std::endl;
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
         if (!tuple_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong type {}", type->getName());
 
         if (!tuple_type->haveSubtypes())
         {
+            std::cout << "branch00" << std::endl;
             res = Tuple();
             return;
         }
 
+        std::cout << "branch01" << std::endl;
         const auto & elem_types = tuple_type->getElements();
         const auto & elem_names = tuple_type->getElementNames();
 
@@ -134,21 +138,19 @@ private:
                 return;
             }
             case ondemand::json_type::array: {
-                auto jarray(val.get_array().value_unsafe());
+                ondemand::array jarray(val.get_array().value_unsafe());
                 if (jarray.count_elements() != elem_types.size())
                 {
                     res = tuple_type->getDefault();
                     return;
                 }
 
-                Tuple tuple;
-                tuple.reserve(elem_types.size());
-                Field field;
-                for (size_t i = 0; i < elem_types.size(); ++i)
+                size_t index = 0;
+                Tuple tuple(elem_types.size());
+                for (auto jelem : jarray)
                 {
-                    auto elem_val(jarray.at(i).value_unsafe());
-                    deserializeValue(elem_val, elem_types[i], field);
-                    tuple.emplace_back(std::move(field));
+                    deserializeValue(jelem.value_unsafe(), elem_types[index], tuple[index]);
+                    ++index;
                 }
                 res = std::move(tuple);
                 return;
@@ -192,6 +194,7 @@ private:
         const auto * map_type = typeid_cast<const DataTypeMap *>(type.get());
         if (!map_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong type {}", type->getName());
+
         const auto & key_type = map_type->getKeyType();
         const auto & val_type = map_type->getValueType();
 
@@ -356,19 +359,28 @@ private:
 
     static void deserializeKey(const std::string_view & key, const DataTypePtr & type, Field & res)
     {
+        if (type->lowCardinality())
+            return deserializeKey(key, removeLowCardinality(type), res);
+
+        if (type->isNullable())
+            return deserializeKey(key, removeNullable(type), res);
+
         WhichDataType which(type);
         if (which.isStringOrFixedString())
         {
-            res = key;
+            if (which.isFixedString())
+            {
+                size_t n = typeid_cast<const DataTypeFixedString *>(type.get())->getN();
+                res = key.size() > n ? key.substr(0, n) : key;
+            }
+            else
+                res = key;
             return;
         }
 
 #define IMPLEMENT_DESERIALIZE_AS_INTEGER(TYPE) \
     if (which.is##TYPE()) \
-    { \
-        deserializeKeyAsInteger<TYPE>(key, type, res); \
-        return; \
-    }
+        return deserializeKeyAsInteger<TYPE>(key, type, res);
 
 #define ENUMERATE_INTEGER_TYPES(M) \
     M(UInt8) \
@@ -386,20 +398,24 @@ private:
 
         ENUMERATE_INTEGER_TYPES(IMPLEMENT_DESERIALIZE_AS_INTEGER)
 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize key as {} not supported yet", type->getName());
+        // throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize key as {} not supported yet", type->getName());
+        res = type->getDefault();
     }
 
     template <typename DocOrVal>
     static void deserializeValue(DocOrVal & val, const DataTypePtr & type, Field & res)
     {
+        if (type->lowCardinality())
+            return deserializeValue(val, removeLowCardinality(type), res);
+
+        if (type->isNullable())
+            return deserializeValue(val, removeNullable(type), res);
+
         const WhichDataType which(type);
 
 #define IMPLEMENT_DESERIALIZE_AS_NUMBER(TYPE) \
     if (which.is##TYPE()) \
-    { \
-        deserializeValueAsNumber<DocOrVal, TYPE>(val, type, res); \
-        return; \
-    }
+        return deserializeValueAsNumber<DocOrVal, TYPE>(val, type, res);
 
 #define ENUMERATE_NUMBER_TYPES(M) \
     M(UInt8) \
@@ -422,28 +438,29 @@ private:
         if (which.isStringOrFixedString())
         {
             deserializeValueAsString(val, type, res);
+
+            if (which.isFixedString())
+            {
+                /// We must truncate string when its size exceeds N
+                size_t n = typeid_cast<const DataTypeFixedString *>(type.get())->getN();
+                const auto & str = res.reinterpret<String>();
+                if (str.size() > n)
+                    res = str.substr(0, n);
+            }
             return;
         }
 
         if (which.isMap())
-        {
-            deserializeValueAsMap(val, type, res);
-            return;
-        }
+            return deserializeValueAsMap(val, type, res);
 
         if (which.isArray())
-        {
-            deserializeValueAsArray(val, type, res);
-            return;
-        }
+            return deserializeValueAsArray(val, type, res);
 
         if (which.isTuple())
-        {
-            deserializeValueAsTuple(val, type, res);
-            return;
-        }
+            return deserializeValueAsTuple(val, type, res);
 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize value as {} not supported yet", type->getName());
+        // throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize value as {} not supported yet", type->getName());
+        res = type->getDefault();
     }
 };
 
