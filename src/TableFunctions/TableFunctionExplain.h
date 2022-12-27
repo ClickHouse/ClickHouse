@@ -24,7 +24,7 @@ private:
 
     InterpreterExplainQuery getInterpreter(ContextPtr context) const;
 
-    ASTPtr query = nullptr;
+    std::shared_ptr<ASTExplainQuery> query = nullptr;
 };
 
 

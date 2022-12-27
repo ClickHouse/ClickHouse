@@ -1,6 +1,9 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ParserSetQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/ITableFunction.h>
@@ -20,21 +23,49 @@ namespace ErrorCodes
 void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
-    if (function && function->arguments && function->arguments->children.size() == 1)
-    {
-        const auto & query_arg = function->arguments->children[0];
-
-        if (!query_arg->as<ASTExplainQuery>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}' requires a explain query argument, got '{}'",
-                getName(), queryToString(query_arg));
-
-        query = query_arg;
-    }
-    else
-    {
+    if (!function || !function->arguments)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' cannot be called directly, use `SELECT * FROM (EXPLAIN ...)` syntax", getName());
+
+    size_t num_args = function->arguments->children.size();
+    if (num_args != 2 && num_args != 3)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table function '{}' requires 2 or 3 arguments, got {}", getName(), num_args);
+
+    const auto & kind_arg = function->arguments->children[0];
+    const auto * kind_literal = kind_arg->as<ASTLiteral>();
+    if (!kind_literal || kind_literal->value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
+            getName(), queryToString(kind_arg));
+
+    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromStringToKind(kind_literal->value.get<String>());
+    query = std::make_shared<ASTExplainQuery>(kind);
+
+    const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
+    if (!settings_arg || settings_arg->value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table function '{}' requires a serialized string settings argument, got '{}'",
+            getName(), queryToString(function->arguments->children[1]));
+
+    ParserSetQuery settings_parser(true);
+    const auto & settings_str = settings_arg->value.get<String>();
+    if (!settings_str.empty())
+    {
+        constexpr UInt64 max_size = 4096;
+        constexpr UInt64 max_depth = 16;
+        ASTPtr settings_ast = parseQuery(settings_parser, settings_str, max_size, max_depth);
+        query->setSettings(std::move(settings_ast));
+    }
+
+    if (function->arguments->children.size() > 2)
+    {
+        const auto & query_arg = function->arguments->children[2];
+        if (!query_arg->as<ASTSelectWithUnionQuery>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table function '{}' requires a EXPLAIN SELECT query argument, got EXPLAIN '{}'",
+                getName(), queryToString(query_arg));
+        query->setExplainedQuery(query_arg);
     }
 }
 

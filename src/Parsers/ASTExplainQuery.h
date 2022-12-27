@@ -6,6 +6,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// AST, EXPLAIN or other query with meaning of explanation query instead of execution
 class ASTExplainQuery : public ASTQueryWithOutput
@@ -104,6 +108,11 @@ private:
     ASTPtr table_function;
     ASTPtr table_override;
 
+    /// To convert `SELECT * FROM (EXPLAIN PIPELINE header = 1 SELECT 123)` to `SELECT * FROM viewExplain("EXPLAIN PIPELINE", "header = 1", SELECT 123)`
+    /// access to methods toString/fromStringToKind is required, but we don't want to expose them to the public.
+    friend class ParserSubquery;
+    friend class TableFunctionExplain;
+
     static String toString(ExplainKind kind)
     {
         switch (kind)
@@ -119,6 +128,28 @@ private:
         }
 
         UNREACHABLE();
+    }
+
+    static ExplainKind fromStringToKind(const String & str)
+    {
+        if (str == "EXPLAIN AST")
+            return ParsedAST;
+        if (str == "EXPLAIN SYNTAX")
+            return AnalyzedSyntax;
+        if (str == "EXPLAIN QUERY TREE")
+            return QueryTree;
+        if (str == "EXPLAIN" || str == "EXPLAIN PLAN")
+            return QueryPlan;
+        if (str == "EXPLAIN PIPELINE")
+            return QueryPipeline;
+        if (str == "EXPLAIN ESTIMATE")
+            return QueryEstimates;
+        if (str == "EXPLAIN TABLE OVERRIDE")
+            return TableOverride;
+        if (str == "EXPLAIN CURRENT TRANSACTION")
+            return CurrentTransaction;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown explain kind '{}'", str);
     }
 };
 
