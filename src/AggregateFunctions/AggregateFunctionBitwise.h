@@ -97,11 +97,12 @@ class AggregateFunctionBitwise final : public IAggregateFunctionDataHelper<Data,
 {
 public:
     explicit AggregateFunctionBitwise(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}) {}
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}, createResultType())
+    {}
 
     String getName() const override { return Data::name(); }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<T>>();
     }
@@ -137,7 +138,7 @@ public:
 
     bool isCompilable() const override
     {
-        auto return_type = getReturnType();
+        auto return_type = this->getResultType();
         return canBeNativeType(*return_type);
     }
 
@@ -151,7 +152,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
 
         auto * value_ptr = aggregate_data_ptr;
         auto * value = b.CreateLoad(return_type, value_ptr);
@@ -166,7 +167,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
 
         auto * value_dst_ptr = aggregate_data_dst_ptr;
         auto * value_dst = b.CreateLoad(return_type, value_dst_ptr);
@@ -183,7 +184,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
         auto * value_ptr = aggregate_data_ptr;
 
         return b.CreateLoad(return_type, value_ptr);
