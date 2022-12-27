@@ -75,6 +75,7 @@ function download
     ./clickhouse ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
+    ln -s ./clickhouse ./clickhouse-local
 
     # clickhouse-server is in the current dir
     export PATH="$PWD:$PATH"
@@ -361,17 +362,25 @@ th { cursor: pointer; }
 <body>
 <div class="main">
 
-<h1>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</h1>
+<h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
 <p class="links">
-<a href="run.log">run.log</a>
-<a href="fuzzer.log">fuzzer.log</a>
-<a href="server.log.gz">server.log.gz</a>
-<a href="main.log">main.log</a>
-${CORE_LINK}
+  <a href="run.log">run.log</a>
+  <a href="fuzzer.log">fuzzer.log</a>
+  <a href="server.log.gz">server.log.gz</a>
+  <a href="main.log">main.log</a>
+  ${CORE_LINK}
 </p>
 <table>
-<tr><th>Test name</th><th>Test status</th><th>Description</th></tr>
-<tr><td>AST Fuzzer</td><td>$(cat status.txt)</td><td>$(cat description.txt)</td></tr>
+<tr>
+  <th>Test name</th>
+  <th>Test status</th>
+  <th>Description</th>
+</tr>
+<tr>
+  <td>AST Fuzzer</td>
+  <td>$(cat status.txt)</td>
+  <td style="white-space: pre;">$(clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt)</td>
+</tr>
 </table>
 </body>
 </html>
