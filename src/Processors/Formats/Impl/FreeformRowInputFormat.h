@@ -112,8 +112,11 @@ public:
 private:
     std::vector<FieldMatcherPtr> matchers;
     std::vector<FormatSettings::EscapingRule> rules;
-    std::vector<String> matched_fields; // TODO: use a map so JSON fields does not have to maintain order in different rows
     Solution final_solution;
+
+    std::vector<String> matched_fields;
+    std::unordered_map<String, size_t> field_name_to_index;
+    bool first_row = true;
 
     const FormatSettings format_settings;
     size_t max_rows_to_check;

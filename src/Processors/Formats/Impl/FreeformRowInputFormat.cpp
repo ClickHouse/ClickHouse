@@ -364,12 +364,20 @@ bool FreeformFieldMatcher::parseRow()
         auto fields = matchers[i]->parseFields(in, col);
         for (const auto & field : fields)
         {
-            rules[col] = matchers[i]->getEscapingRule();
-            matched_fields[col] = field.second;
+            if (!first_row)
+                matched_fields[field_name_to_index[field.first]] = field.second;
+            else
+            {
+                field_name_to_index[field.first] = col;
+                rules[col] = matchers[i]->getEscapingRule();
+                matched_fields[col] = field.second;
+            }
+
             ++col;
         }
     }
 
+    first_row = false;
     skipToNextLineOrEOF(in);
     return true;
 }
