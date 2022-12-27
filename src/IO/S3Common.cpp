@@ -851,8 +851,12 @@ namespace S3
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
+    bool isNotFoundError(Aws::S3::S3Errors error)
+    {
+        return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
+    }
 
-    S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    Aws::S3::Model::HeadObjectOutcome headObject(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (for_disk_s3)
@@ -865,7 +869,12 @@ namespace S3
         if (!version_id.empty())
             req.SetVersionId(version_id);
 
-        Aws::S3::Model::HeadObjectOutcome outcome = client.HeadObject(req);
+        return client.HeadObject(req);
+    }
+
+    S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    {
+        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
 
         if (outcome.IsSuccess())
         {
@@ -874,7 +883,10 @@ namespace S3
         }
         else if (throw_on_error)
         {
-            throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            const auto & error = outcome.GetError();
+            throw DB::Exception(ErrorCodes::S3_ERROR,
+                "Failed to HEAD object: {}. HTTP response code: {}",
+                error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
         }
         return {};
     }
@@ -884,6 +896,21 @@ namespace S3
         return getObjectInfo(client, bucket, key, version_id, throw_on_error, for_disk_s3).size;
     }
 
+    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+    {
+        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
+
+        if (outcome.IsSuccess())
+            return true;
+
+        const auto & error = outcome.GetError();
+        if (isNotFoundError(error.GetErrorType()))
+            return false;
+
+        throw S3Exception(error.GetErrorType(),
+            "Failed to check existence of key {} in bucket {}: {}",
+            key, bucket, error.GetMessage());
+    }
 }
 
 }

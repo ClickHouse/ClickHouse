@@ -123,27 +123,44 @@ EOL
     <core_path>$PWD</core_path>
 </clickhouse>
 EOL
+
+    # Analyzer is not yet ready for testing
+    cat > /etc/clickhouse-server/users.d/no_analyzer.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <constraints>
+                <allow_experimental_analyzer>
+                    <readonly/>
+                </allow_experimental_analyzer>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+
 }
 
 function stop()
 {
-    local max_tries=""
-    if [ -n "$1" ]
-    then
-        max_tries="--max-tries $1"
-    fi
-
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
     clickhouse stop $max_tries --do-not-kill && return
 
+    if [ -n "$1" ]
+    then
+        # temporarily disable it in BC check
+        clickhouse stop --force
+        return
+    fi
+
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
     echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
-    gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 }
 
@@ -333,219 +350,221 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
 zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
     && echo -e 'Found signal in gdb.log\tFAIL' >> /test_output/test_results.tsv
 
-echo -e "Backward compatibility check\n"
+if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
+    echo -e "Backward compatibility check\n"
 
-echo "Get previous release tag"
-previous_release_tag=$(clickhouse-client --version | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | get_previous_release_tag)
-echo $previous_release_tag
+    echo "Get previous release tag"
+    previous_release_tag=$(clickhouse-client --version | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | get_previous_release_tag)
+    echo $previous_release_tag
 
-echo "Clone previous release repository"
-git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
+    echo "Clone previous release repository"
+    git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
-echo "Download previous release server"
-mkdir previous_release_package_folder
+    echo "Download previous release server"
+    mkdir previous_release_package_folder
 
-echo $previous_release_tag | download_release_packets && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
-    || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
+    echo $previous_release_tag | download_release_packets && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
+        || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
-mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
-for table in query_log trace_log
-do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
-done
-
-tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
-
-# Check if we cloned previous release repository successfully
-if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
-then
-    echo -e "Backward compatibility check: Failed to clone previous release tests\tFAIL" >> /test_output/test_results.tsv
-elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
-then
-    echo -e "Backward compatibility check: Failed to download previous release packets\tFAIL" >> /test_output/test_results.tsv
-else
-    echo -e "Successfully cloned previous release tests\tOK" >> /test_output/test_results.tsv
-    echo -e "Successfully downloaded previous release packets\tOK" >> /test_output/test_results.tsv
-
-    # Uninstall current packages
-    dpkg --remove clickhouse-client
-    dpkg --remove clickhouse-server
-    dpkg --remove clickhouse-common-static-dbg
-    dpkg --remove clickhouse-common-static
-
-    rm -rf /var/lib/clickhouse/*
-
-    # Make BC check more funny by forcing Ordinary engine for system database
-    mkdir /var/lib/clickhouse/metadata
-    echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
-
-    # Install previous release packages
-    install_packages previous_release_package_folder
-
-    # Start server from previous release
-    # Previous version may not be ready for fault injections
-    export ZOOKEEPER_FAULT_INJECTION=0
-    configure
-
-    # Avoid "Setting s3_check_objects_after_upload is neither a builtin setting..."
-    rm -f /etc/clickhouse-server/users.d/enable_blobs_check.xml ||:
-    rm -f /etc/clickhouse-server/users.d/marks.xml ||:
-
-    # Remove s3 related configs to avoid "there is no disk type `cache`"
-    rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
-    rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
-
-    # Turn on after 22.12
-    rm -f /etc/clickhouse-server/config.d/compressed_marks_and_index.xml ||:
-    # it uses recently introduced settings which previous versions may not have
-    rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
-
-    start
-
-    clickhouse-client --query="SELECT 'Server version: ', version()"
-
-    # Install new package before running stress test because we should use new
-    # clickhouse-client and new clickhouse-test.
-    #
-    # But we should leave old binary in /usr/bin/ and debug symbols in
-    # /usr/lib/debug/usr/bin (if any) for gdb and internal DWARF parser, so it
-    # will print sane stacktraces and also to avoid possible crashes.
-    #
-    # FIXME: those files can be extracted directly from debian package, but
-    # actually better solution will be to use different PATH instead of playing
-    # games with files from packages.
-    mv /usr/bin/clickhouse previous_release_package_folder/
-    mv /usr/lib/debug/usr/bin/clickhouse.debug previous_release_package_folder/
-    install_packages package_folder
-    mv /usr/bin/clickhouse package_folder/
-    mv /usr/lib/debug/usr/bin/clickhouse.debug package_folder/
-    mv previous_release_package_folder/clickhouse /usr/bin/
-    mv previous_release_package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
-
-    mkdir tmp_stress_output
-
-    ./stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --backward-compatibility-check --output-folder tmp_stress_output --global-time-limit=1200 \
-        && echo -e 'Backward compatibility check: Test script exit code\tOK' >> /test_output/test_results.tsv \
-        || echo -e 'Backward compatibility check: Test script failed\tFAIL' >> /test_output/test_results.tsv
-    rm -rf tmp_stress_output
-
-    clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
-
-    stop 180
-    mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
-
-    # Start new server
-    mv package_folder/clickhouse /usr/bin/
-    mv package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
-    export ZOOKEEPER_FAULT_INJECTION=1
-    configure
-    start 500
-    clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
-        || (echo -e 'Backward compatibility check: Server failed to start\tFAIL' >> /test_output/test_results.tsv \
-        && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
-
-    clickhouse-client --query="SELECT 'Server version: ', version()"
-
-    # Let the server run for a while before checking log.
-    sleep 60
-
-    stop
-    mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.clean.log
-
-    # Error messages (we should ignore some errors)
-    # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
-    # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 ("Cannot parse string 'Hello' as UInt64")
-    # FIXME Not sure if it's expected, but some tests from BC check may not be finished yet when we restarting server.
-    #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
-    # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
-    # NOTE  Incompatibility was introduced in https://github.com/ClickHouse/ClickHouse/pull/39263, it's expected
-    #       ("This engine is deprecated and is not supported in transactions", "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part")
-    # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
-    echo "Check for Error messages in server log:"
-    zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
-               -e "Code: 236. DB::Exception: Cancelled mutating parts" \
-               -e "REPLICA_IS_ALREADY_ACTIVE" \
-               -e "REPLICA_ALREADY_EXISTS" \
-               -e "ALL_REPLICAS_LOST" \
-               -e "DDLWorker: Cannot parse DDL task query" \
-               -e "RaftInstance: failed to accept a rpc connection due to error 125" \
-               -e "UNKNOWN_DATABASE" \
-               -e "NETWORK_ERROR" \
-               -e "UNKNOWN_TABLE" \
-               -e "ZooKeeperClient" \
-               -e "KEEPER_EXCEPTION" \
-               -e "DirectoryMonitor" \
-               -e "TABLE_IS_READ_ONLY" \
-               -e "Code: 1000, e.code() = 111, Connection refused" \
-               -e "UNFINISHED" \
-               -e "NETLINK_ERROR" \
-               -e "Renaming unexpected part" \
-               -e "PART_IS_TEMPORARILY_LOCKED" \
-               -e "and a merge is impossible: we didn't find" \
-               -e "found in queue and some source parts for it was lost" \
-               -e "is lost forever." \
-               -e "Unknown index: idx." \
-               -e "Cannot parse string 'Hello' as UInt64" \
-               -e "} <Error> TCPHandler: Code:" \
-               -e "} <Error> executeQuery: Code:" \
-               -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
-               -e "This engine is deprecated and is not supported in transactions" \
-               -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
-               -e "The set of parts restored in place of" \
-               -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
-               -e "Code: 269. DB::Exception: Destination table is myself" \
-               -e "Coordination::Exception: Connection loss" \
-               -e "MutateFromLogEntryTask" \
-               -e "No connection to ZooKeeper, cannot get shared table ID" \
-               -e "Session expired" \
-        /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
-        && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
-
-    # Remove file bc_check_error_messages.txt if it's empty
-    [ -s /test_output/bc_check_error_messages.txt ] || rm /test_output/bc_check_error_messages.txt
-
-    # Sanitizer asserts
-    zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-    zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-    zgrep -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
-        && echo -e 'Backward compatibility check: Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'Backward compatibility check: No sanitizer asserts\tOK' >> /test_output/test_results.tsv
-    rm -f /test_output/tmp
-
-    # OOM
-    zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
-        && echo -e 'Backward compatibility check: OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'Backward compatibility check: No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
-
-    # Logical errors
-    echo "Check for Logical errors in server log:"
-    zgrep -Fa -A20 "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_logical_errors.txt \
-        && echo -e 'Backward compatibility check: Logical error thrown (see clickhouse-server.log or bc_check_logical_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'Backward compatibility check: No logical errors\tOK' >> /test_output/test_results.tsv
-
-    # Remove file bc_check_logical_errors.txt if it's empty
-    [ -s /test_output/bc_check_logical_errors.txt ] || rm /test_output/bc_check_logical_errors.txt
-
-    # Crash
-    zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
-        && echo -e 'Backward compatibility check: Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'Backward compatibility check: Not crashed\tOK' >> /test_output/test_results.tsv
-
-    # It also checks for crash without stacktrace (printed by watchdog)
-    echo "Check for Fatal message in server log:"
-    zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_fatal_messages.txt \
-        && echo -e 'Backward compatibility check: Fatal message in clickhouse-server.log (see bc_check_fatal_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'Backward compatibility check: No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
-
-    # Remove file bc_check_fatal_messages.txt if it's empty
-    [ -s /test_output/bc_check_fatal_messages.txt ] || rm /test_output/bc_check_fatal_messages.txt
-
-    tar -chf /test_output/coordination.backward.tar /var/lib/clickhouse/coordination ||:
+    mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
     for table in query_log trace_log
     do
-        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.tsv.gz ||:
+        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
     done
+
+    tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
+
+    # Check if we cloned previous release repository successfully
+    if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
+    then
+        echo -e "Backward compatibility check: Failed to clone previous release tests\tFAIL" >> /test_output/test_results.tsv
+    elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
+    then
+        echo -e "Backward compatibility check: Failed to download previous release packets\tFAIL" >> /test_output/test_results.tsv
+    else
+        echo -e "Successfully cloned previous release tests\tOK" >> /test_output/test_results.tsv
+        echo -e "Successfully downloaded previous release packets\tOK" >> /test_output/test_results.tsv
+
+        # Uninstall current packages
+        dpkg --remove clickhouse-client
+        dpkg --remove clickhouse-server
+        dpkg --remove clickhouse-common-static-dbg
+        dpkg --remove clickhouse-common-static
+
+        rm -rf /var/lib/clickhouse/*
+
+        # Make BC check more funny by forcing Ordinary engine for system database
+        mkdir /var/lib/clickhouse/metadata
+        echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
+
+        # Install previous release packages
+        install_packages previous_release_package_folder
+
+        # Start server from previous release
+        # Previous version may not be ready for fault injections
+        export ZOOKEEPER_FAULT_INJECTION=0
+        configure
+
+        # Avoid "Setting s3_check_objects_after_upload is neither a builtin setting..."
+        rm -f /etc/clickhouse-server/users.d/enable_blobs_check.xml ||:
+        rm -f /etc/clickhouse-server/users.d/marks.xml ||:
+
+        # Remove s3 related configs to avoid "there is no disk type `cache`"
+        rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
+        rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
+
+        # Turn on after 22.12
+        rm -f /etc/clickhouse-server/config.d/compressed_marks_and_index.xml ||:
+        # it uses recently introduced settings which previous versions may not have
+        rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
+
+        start
+
+        clickhouse-client --query="SELECT 'Server version: ', version()"
+
+        # Install new package before running stress test because we should use new
+        # clickhouse-client and new clickhouse-test.
+        #
+        # But we should leave old binary in /usr/bin/ and debug symbols in
+        # /usr/lib/debug/usr/bin (if any) for gdb and internal DWARF parser, so it
+        # will print sane stacktraces and also to avoid possible crashes.
+        #
+        # FIXME: those files can be extracted directly from debian package, but
+        # actually better solution will be to use different PATH instead of playing
+        # games with files from packages.
+        mv /usr/bin/clickhouse previous_release_package_folder/
+        mv /usr/lib/debug/usr/bin/clickhouse.debug previous_release_package_folder/
+        install_packages package_folder
+        mv /usr/bin/clickhouse package_folder/
+        mv /usr/lib/debug/usr/bin/clickhouse.debug package_folder/
+        mv previous_release_package_folder/clickhouse /usr/bin/
+        mv previous_release_package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
+
+        mkdir tmp_stress_output
+
+        ./stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --backward-compatibility-check --output-folder tmp_stress_output --global-time-limit=1200 \
+            && echo -e 'Backward compatibility check: Test script exit code\tOK' >> /test_output/test_results.tsv \
+            || echo -e 'Backward compatibility check: Test script failed\tFAIL' >> /test_output/test_results.tsv
+        rm -rf tmp_stress_output
+
+        clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
+
+        stop 1
+        mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
+
+        # Start new server
+        mv package_folder/clickhouse /usr/bin/
+        mv package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
+        export ZOOKEEPER_FAULT_INJECTION=1
+        configure
+        start 500
+        clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
+            || (echo -e 'Backward compatibility check: Server failed to start\tFAIL' >> /test_output/test_results.tsv \
+            && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
+
+        clickhouse-client --query="SELECT 'Server version: ', version()"
+
+        # Let the server run for a while before checking log.
+        sleep 60
+
+        stop
+        mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.clean.log
+
+        # Error messages (we should ignore some errors)
+        # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
+        # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 ("Cannot parse string 'Hello' as UInt64")
+        # FIXME Not sure if it's expected, but some tests from BC check may not be finished yet when we restarting server.
+        #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
+        # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
+        # NOTE  Incompatibility was introduced in https://github.com/ClickHouse/ClickHouse/pull/39263, it's expected
+        #       ("This engine is deprecated and is not supported in transactions", "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part")
+        # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
+        echo "Check for Error messages in server log:"
+        zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
+                   -e "Code: 236. DB::Exception: Cancelled mutating parts" \
+                   -e "REPLICA_IS_ALREADY_ACTIVE" \
+                   -e "REPLICA_ALREADY_EXISTS" \
+                   -e "ALL_REPLICAS_LOST" \
+                   -e "DDLWorker: Cannot parse DDL task query" \
+                   -e "RaftInstance: failed to accept a rpc connection due to error 125" \
+                   -e "UNKNOWN_DATABASE" \
+                   -e "NETWORK_ERROR" \
+                   -e "UNKNOWN_TABLE" \
+                   -e "ZooKeeperClient" \
+                   -e "KEEPER_EXCEPTION" \
+                   -e "DirectoryMonitor" \
+                   -e "TABLE_IS_READ_ONLY" \
+                   -e "Code: 1000, e.code() = 111, Connection refused" \
+                   -e "UNFINISHED" \
+                   -e "NETLINK_ERROR" \
+                   -e "Renaming unexpected part" \
+                   -e "PART_IS_TEMPORARILY_LOCKED" \
+                   -e "and a merge is impossible: we didn't find" \
+                   -e "found in queue and some source parts for it was lost" \
+                   -e "is lost forever." \
+                   -e "Unknown index: idx." \
+                   -e "Cannot parse string 'Hello' as UInt64" \
+                   -e "} <Error> TCPHandler: Code:" \
+                   -e "} <Error> executeQuery: Code:" \
+                   -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
+                   -e "This engine is deprecated and is not supported in transactions" \
+                   -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
+                   -e "The set of parts restored in place of" \
+                   -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
+                   -e "Code: 269. DB::Exception: Destination table is myself" \
+                   -e "Coordination::Exception: Connection loss" \
+                   -e "MutateFromLogEntryTask" \
+                   -e "No connection to ZooKeeper, cannot get shared table ID" \
+                   -e "Session expired" \
+            /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
+            && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
+            || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
+
+        # Remove file bc_check_error_messages.txt if it's empty
+        [ -s /test_output/bc_check_error_messages.txt ] || rm /test_output/bc_check_error_messages.txt
+
+        # Sanitizer asserts
+        zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+        zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+        zgrep -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
+            && echo -e 'Backward compatibility check: Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
+            || echo -e 'Backward compatibility check: No sanitizer asserts\tOK' >> /test_output/test_results.tsv
+        rm -f /test_output/tmp
+
+        # OOM
+        zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
+            && echo -e 'Backward compatibility check: OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
+            || echo -e 'Backward compatibility check: No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
+
+        # Logical errors
+        echo "Check for Logical errors in server log:"
+        zgrep -Fa -A20 "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_logical_errors.txt \
+            && echo -e 'Backward compatibility check: Logical error thrown (see clickhouse-server.log or bc_check_logical_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
+            || echo -e 'Backward compatibility check: No logical errors\tOK' >> /test_output/test_results.tsv
+
+        # Remove file bc_check_logical_errors.txt if it's empty
+        [ -s /test_output/bc_check_logical_errors.txt ] || rm /test_output/bc_check_logical_errors.txt
+
+        # Crash
+        zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
+            && echo -e 'Backward compatibility check: Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
+            || echo -e 'Backward compatibility check: Not crashed\tOK' >> /test_output/test_results.tsv
+
+        # It also checks for crash without stacktrace (printed by watchdog)
+        echo "Check for Fatal message in server log:"
+        zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_fatal_messages.txt \
+            && echo -e 'Backward compatibility check: Fatal message in clickhouse-server.log (see bc_check_fatal_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
+            || echo -e 'Backward compatibility check: No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
+
+        # Remove file bc_check_fatal_messages.txt if it's empty
+        [ -s /test_output/bc_check_fatal_messages.txt ] || rm /test_output/bc_check_fatal_messages.txt
+
+        tar -chf /test_output/coordination.backward.tar /var/lib/clickhouse/coordination ||:
+        for table in query_log trace_log
+        do
+            clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.tsv.gz ||:
+        done
+    fi
 fi
 
 dmesg -T > /test_output/dmesg.log
