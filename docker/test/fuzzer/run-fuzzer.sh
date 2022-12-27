@@ -92,6 +92,12 @@ function configure
     cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
     cp -av --dereference "$script_dir"/allow-nullable-key.xml db/config.d
 
+    cat > db/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
+<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+EOL
+
     cat > db/config.d/core.xml <<EOL
 <clickhouse>
     <core_dump>
