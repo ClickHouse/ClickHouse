@@ -5982,20 +5982,25 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (select_query->interpolate() && !select_query->interpolate()->children.empty())
         return std::nullopt;
 
-    // Currently projections don't support GROUPING SET yet.
-    if (select_query->group_by_with_grouping_sets)
+    // Projections don't support grouping sets yet.
+    if (select_query->group_by_with_grouping_sets
+        || select_query->group_by_with_totals
+        || select_query->group_by_with_rollup
+        || select_query->group_by_with_cube)
         return std::nullopt;
 
     auto query_options = SelectQueryOptions(
         QueryProcessingStage::WithMergeableState,
         /* depth */ 1,
         /* is_subquery_= */ true
-    ).ignoreProjections().ignoreAlias();
+        ).ignoreProjections().ignoreAlias();
+
     InterpreterSelectQuery select(
         query_ptr,
         query_context,
         query_options,
         query_info.prepared_sets);
+
     const auto & analysis_result = select.getAnalysisResult();
 
     query_info.prepared_sets = select.getQueryAnalyzer()->getPreparedSets();
