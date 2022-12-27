@@ -19,7 +19,7 @@ done
 
 valid_exceptions_to_retry='Quorum for previous write has not been satisfied yet|Another quorum insert has been already started|Unexpected logical error while adding block'
 
-function thread {
+function thread1 {
     for x in {0..99}; do
         while true; do
             $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 0 --insert_keeper_fault_injection_probability=0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
@@ -28,7 +28,23 @@ function thread {
 }
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    thread $i &
+    thread1 $i &
+done
+
+wait
+
+function thread2 {
+    for x in {100..199}; do
+        while true; do
+            $CLICKHOUSE_CLIENT --query "DETACH TABLE r$1"
+            $CLICKHOUSE_CLIENT --query "ATTACH TABLE r$1"
+            $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
+        done
+    done
+}
+
+for i in $(seq 1 $NUM_REPLICAS); do
+    thread2 $i &
 done
 
 wait
