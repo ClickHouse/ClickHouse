@@ -955,7 +955,6 @@ void BaseDaemon::handleSignal(int signal_id)
         std::lock_guard lock(signal_handler_mutex);
         {
             ++terminate_signals_counter;
-            sigint_signals_counter += signal_id == SIGINT;
             signal_event.notify_all();
         }
 
@@ -970,9 +969,9 @@ void BaseDaemon::onInterruptSignals(int signal_id)
     is_cancelled = true;
     LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
-    if (sigint_signals_counter >= 2)
+    if (terminate_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
+        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
         call_default_signal_handler(signal_id);
         /// If the above did not help.
         _exit(128 + signal_id);
