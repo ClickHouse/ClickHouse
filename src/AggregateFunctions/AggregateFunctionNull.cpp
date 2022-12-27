@@ -29,7 +29,13 @@ public:
         size_t size = arguments.size();
         DataTypes res(size);
         for (size_t i = 0; i < size; ++i)
-            res[i] = removeNullable(arguments[i]);
+        {
+            /// Nullable(Nothing) is processed separately, don't convert it to Nothing.
+            if (arguments[i]->onlyNull())
+                res[i] = arguments[i];
+            else
+                res[i] = removeNullable(arguments[i]);
+        }
         return res;
     }
 
@@ -41,12 +47,16 @@ public:
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
-        for (const auto & arg_type : arguments)
+        std::unordered_set<size_t> arguments_that_can_be_only_null;
+        if (nested_function)
+            arguments_that_can_be_only_null = nested_function->getArgumentsThatCanBeOnlyNull();
+
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (arg_type->isNullable())
+            if (arguments[i]->isNullable())
             {
                 has_nullable_types = true;
-                if (arg_type->onlyNull())
+                if (arguments[i]->onlyNull() && !arguments_that_can_be_only_null.contains(i))
                 {
                     has_null_types = true;
                     break;
