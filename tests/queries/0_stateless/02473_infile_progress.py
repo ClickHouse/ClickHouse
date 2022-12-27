@@ -18,7 +18,7 @@ with client(
     name="client>",
     log=log,
     command=os.environ.get("CLICKHOUSE_BINARY", "clickhouse")
-    + " client --storage_file_read_method=pread"
+    + " client --storage_file_read_method=pread",
 ) as client1:
     filename = os.environ["CLICKHOUSE_TMP"] + "/infile_progress.tsv"
 
