@@ -910,7 +910,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
+    logger().information("Starting " + std::string{VERSION_FULL}
         + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
         + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
@@ -1026,9 +1026,6 @@ void BaseDaemon::setupWatchdog()
 #if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
                 logger().warning("Cannot do prctl to ask termination with parent.");
-
-            if (getppid() == 1)
-                throw Poco::Exception("Parent watchdog process has exited.");
 #endif
 
             {
