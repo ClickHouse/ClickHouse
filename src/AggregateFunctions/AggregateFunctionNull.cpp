@@ -87,7 +87,7 @@ public:
                 transformed_nested_function->getParameters());
         }
 
-        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getReturnType()->canBeInsideNullable();
+        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
         if (arguments.size() == 1)

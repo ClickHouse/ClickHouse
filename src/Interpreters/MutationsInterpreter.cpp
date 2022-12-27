@@ -220,8 +220,13 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
+    /// We must read with one thread because it guarantees that
+    /// output stream will be sorted after reading from MergeTree parts.
+    /// Disable all settings that can enable reading with several streams.
     context_copy->setSetting("max_streams_to_max_threads_ratio", 1);
     context_copy->setSetting("max_threads", 1);
+    context_copy->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
+    context_copy->setSetting("max_streams_for_merge_tree_reading", Field(0));
 
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
