@@ -34,7 +34,7 @@ public:
         , tmp_stream(tmp_stream_)
         , log(log_)
     {
-        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.getPath());
+        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.path());
         ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
     }
 
@@ -58,7 +58,7 @@ public:
             ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, stat.uncompressed_size);
 
             LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
-                tmp_stream.getPath(), ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
+                tmp_stream.path(), ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
         }
 
         Block block = tmp_stream.read();

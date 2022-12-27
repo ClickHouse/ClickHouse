@@ -30,7 +30,7 @@ private:
 
 public:
     AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_, createResultType(nested_))
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_)
         , nested_func(nested_), num_arguments(arguments.size())
     {
         assert(parameters == nested_func->getParameters());
@@ -44,9 +44,9 @@ public:
         return nested_func->getName() + "Array";
     }
 
-    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
+    DataTypePtr getReturnType() const override
     {
-        return nested_->getResultType();
+        return nested_func->getReturnType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override

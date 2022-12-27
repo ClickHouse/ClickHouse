@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -65,7 +64,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
     ColumnsWithTypeAndName aggregates_columns;
     aggregates_columns.reserve(aggregates_descriptions.size());
     for (auto & aggregate_description : aggregates_descriptions)
-        aggregates_columns.emplace_back(nullptr, aggregate_description.function->getResultType(), aggregate_description.column_name);
+        aggregates_columns.emplace_back(nullptr, aggregate_description.function->getReturnType(), aggregate_description.column_name);
 
     Names aggregation_keys;
 
@@ -97,7 +96,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    group_by_with_constant_keys |= (grouping_set_key_node->as<ConstantNode>() != nullptr);
+                    group_by_with_constant_keys |= grouping_set_key_node->hasConstantValue();
 
                     auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, grouping_set_key_node);
                     aggregation_keys.reserve(expression_dag_nodes.size());
@@ -148,7 +147,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
         else
         {
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
-                group_by_with_constant_keys |= (group_by_key_node->as<ConstantNode>() != nullptr);
+                group_by_with_constant_keys |= group_by_key_node->hasConstantValue();
 
             auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, query_node.getGroupByNode());
             aggregation_keys.reserve(expression_dag_nodes.size());
@@ -284,7 +283,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
 
     for (auto & window_description : window_descriptions)
         for (auto & window_function : window_description.window_functions)
-            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
+            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getReturnType(), window_function.column_name);
 
     auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
         ActionsChainStep::AvailableOutputColumnsStrategy::ALL_NODES,

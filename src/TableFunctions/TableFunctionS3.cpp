@@ -13,7 +13,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/NamedCollections/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <filesystem>
@@ -31,9 +30,11 @@ namespace ErrorCodes
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
 void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & s3_configuration)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
+    if (auto named_collection = getURLBasedDataSourceConfiguration(args, context))
     {
-        StorageS3::processNamedCollectionResult(s3_configuration, *named_collection);
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        s3_configuration.set(common_configuration);
+        StorageS3::processNamedCollectionResult(s3_configuration, storage_specific_args);
     }
     else
     {
@@ -63,7 +64,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         if (args.size() == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
-            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            if (FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
 
             else
@@ -76,7 +77,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         {
 
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
-            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            if (FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}};
             else
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
@@ -145,14 +146,10 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
-bool TableFunctionS3::supportsReadingSubsetOfColumns()
-{
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
-}
-
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    S3::URI s3_uri (configuration.url);
+    Poco::URI uri (configuration.url);
+    S3::URI s3_uri (uri);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
@@ -184,11 +181,6 @@ void registerTableFunctionS3(TableFunctionFactory & factory)
 void registerTableFunctionCOS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionCOS>();
-}
-
-void registerTableFunctionOSS(TableFunctionFactory & factory)
-{
-    factory.registerFunction<TableFunctionOSS>();
 }
 
 }

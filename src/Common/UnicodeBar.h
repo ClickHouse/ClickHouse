@@ -14,6 +14,6 @@ namespace UnicodeBar
     size_t getWidthInBytes(double width);
 
     /// In `dst` there must be a space for barWidthInBytes(width) characters and a trailing zero.
-    void render(double width, char * dst, const char * dst_end);
+    void render(double width, char * dst);
     std::string render(double width);
 }

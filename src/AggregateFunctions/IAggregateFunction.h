@@ -1,16 +1,14 @@
 #pragma once
 
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
-#include <Core/IResolvedFunction.h>
+#include <base/types.h>
 
 #include "config.h"
 
@@ -50,7 +48,6 @@ using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
 using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
-
 struct AggregateFunctionProperties;
 
 /** Aggregate functions interface.
@@ -61,17 +58,17 @@ struct AggregateFunctionProperties;
   *  (which can be created in some memory pool),
   *  and IAggregateFunction is the external interface for manipulating them.
   */
-class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunction>, public IResolvedFunction
+class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunction>
 {
 public:
-    IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
-        : result_type(result_type_)
-        , argument_types(argument_types_)
-        , parameters(parameters_)
-    {}
+    IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_)
+        : argument_types(argument_types_), parameters(parameters_) {}
 
     /// Get main function name.
     virtual String getName() const = 0;
+
+    /// Get the result type.
+    virtual DataTypePtr getReturnType() const = 0;
 
     /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
     virtual DataTypePtr getStateType() const;
@@ -104,7 +101,7 @@ public:
 
     virtual size_t getDefaultVersion() const { return 0; }
 
-    ~IAggregateFunction() override = default;
+    virtual ~IAggregateFunction() = default;
 
     /** Data manipulating functions. */
 
@@ -149,16 +146,6 @@ public:
 
     /// Merges state (on which place points to) with other state of current aggregation function.
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
-
-    /// Tells if merge() with thread pool parameter could be used.
-    virtual bool isAbleToParallelizeMerge() const { return false; }
-
-    /// Should be used only if isAbleToParallelizeMerge() returned true.
-    virtual void
-    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, Arena * /*arena*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
-    }
 
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
@@ -350,9 +337,8 @@ public:
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
 
-    const DataTypePtr & getResultType() const override { return result_type; }
-    const DataTypes & getArgumentTypes() const override { return argument_types; }
-    const Array & getParameters() const override { return parameters; }
+    const DataTypes & getArgumentTypes() const { return argument_types; }
+    const Array & getParameters() const { return parameters; }
 
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
@@ -401,7 +387,6 @@ public:
 #endif
 
 protected:
-    DataTypePtr result_type;
     DataTypes argument_types;
     Array parameters;
 };
@@ -418,8 +403,8 @@ private:
     }
 
 public:
-    IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
-        : IAggregateFunction(argument_types_, parameters_, result_type_) {}
+    IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_)
+        : IAggregateFunction(argument_types_, parameters_) {}
 
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
@@ -699,17 +684,8 @@ public:
     // Derived class can `override` this to flag that DateTime64 is not supported.
     static constexpr bool DateTime64Supported = true;
 
-    IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
-        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_, result_type_)
-    {
-        /// To prevent derived classes changing the destroy() without updating hasTrivialDestructor() to match it
-        /// Enforce that either both of them are changed or none are
-        constexpr bool declares_destroy_and_has_trivial_destructor =
-            std::is_same_v<decltype(&IAggregateFunctionDataHelper::destroy), decltype(&Derived::destroy)> ==
-            std::is_same_v<decltype(&IAggregateFunctionDataHelper::hasTrivialDestructor), decltype(&Derived::hasTrivialDestructor)>;
-        static_assert(declares_destroy_and_has_trivial_destructor,
-            "destroy() and hasTrivialDestructor() methods of an aggregate function must be either both overridden or not");
-    }
+    IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
+        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {

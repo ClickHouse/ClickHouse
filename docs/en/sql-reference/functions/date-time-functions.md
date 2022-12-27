@@ -550,7 +550,7 @@ Alias: `dateTrunc`.
 
 -   Value, truncated to the specified part of date.
 
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -881,7 +881,7 @@ now([timezone])
 
 -   Current date and time.
 
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -932,7 +932,7 @@ now64([scale], [timezone])
 
 -   Current date and time with sub-second precision.
 
-Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
+Type: [Datetime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -968,7 +968,7 @@ nowInBlock([timezone])
 
 -   Current date and time at the moment of processing of each block of data.
 
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -1068,7 +1068,7 @@ Example:
 SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
 SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
 SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
-```
+``` 
 ``` text
 ┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
 │ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
@@ -1104,7 +1104,6 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded ( 1-31)                  | &nbsp; 2   |
-| %f       | fractional second from the fractional part of DateTime64 | 1234560   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
@@ -1142,20 +1141,6 @@ Result:
 ┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
 │ 10                                         │
 └────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
-```
-
-Result:
-
-```
-┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
-│ 1234560                                                             │
-└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## dateName
@@ -1259,7 +1244,7 @@ Result:
 └──────────────────────────┘
 ```
 
-When there are two or three arguments, the first an [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md), the second a constant format string and the third an optional constant time zone string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
+When there are two arguments: first is an [Integer](../../sql-reference/data-types/int-uint.md) or [DateTime](../../sql-reference/data-types/datetime.md), second is a constant format string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
 
 For example:
 
