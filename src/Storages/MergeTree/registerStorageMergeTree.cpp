@@ -314,76 +314,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// For Replicated.
     String zookeeper_path;
     String replica_name;
-    StorageReplicatedMergeTree::RenamingRestrictions renaming_restrictions = StorageReplicatedMergeTree::RenamingRestrictions::ALLOW_ANY;
+    RenamingRestrictions renaming_restrictions = RenamingRestrictions::ALLOW_ANY;
 
     bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
         DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
-    if (replicated)
+    /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
+    bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+
+    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name)
     {
-        bool has_arguments = arg_num + 2 <= arg_cnt;
-        bool has_valid_arguments = has_arguments && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
-
-        ASTLiteral * ast_zk_path;
-        ASTLiteral * ast_replica_name;
-
-        if (has_valid_arguments)
-        {
-            /// Get path and name from engine arguments
-            ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
-            if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
-                zookeeper_path = ast_zk_path->value.safeGet<String>();
-            else
-                throw Exception(
-                    "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                    ErrorCodes::BAD_ARGUMENTS);
-            ++arg_num;
-
-            ast_replica_name = engine_args[arg_num]->as<ASTLiteral>();
-            if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
-                replica_name = ast_replica_name->value.safeGet<String>();
-            else
-                throw Exception(
-                    "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::BAD_ARGUMENTS);
-
-            if (replica_name.empty())
-                throw Exception(
-                    "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
-            ++arg_num;
-        }
-        else if (is_extended_storage_def
-            && (arg_cnt == 0
-                || !engine_args[arg_num]->as<ASTLiteral>()
-                || (arg_cnt == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
-        {
-            /// Try use default values if arguments are not specified.
-            /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
-            const auto & config = args.getContext()->getConfigRef();
-            zookeeper_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
-            /// TODO maybe use hostname if {replica} is not defined?
-            replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
-
-            /// Modify query, so default values will be written to metadata
-            assert(arg_num == 0);
-            ASTs old_args;
-            std::swap(engine_args, old_args);
-            auto path_arg = std::make_shared<ASTLiteral>(zookeeper_path);
-            auto name_arg = std::make_shared<ASTLiteral>(replica_name);
-            ast_zk_path = path_arg.get();
-            ast_replica_name = name_arg.get();
-            engine_args.emplace_back(std::move(path_arg));
-            engine_args.emplace_back(std::move(name_arg));
-            std::move(std::begin(old_args), std::end(old_args), std::back_inserter(engine_args));
-            arg_num = 2;
-            arg_cnt += 2;
-        }
-        else
-            throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
-
-        /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
-        bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
-
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
         if (!args.attach)
         {
@@ -427,9 +368,76 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// or if one of these macros is recursively expanded from some other macro.
         /// Also do not allow to move table from Atomic to Ordinary database if there's {uuid} macro
         if (info.expanded_database || info.expanded_table)
-            renaming_restrictions = StorageReplicatedMergeTree::RenamingRestrictions::DO_NOT_ALLOW;
+            renaming_restrictions = RenamingRestrictions::DO_NOT_ALLOW;
         else if (info.expanded_uuid)
-            renaming_restrictions = StorageReplicatedMergeTree::RenamingRestrictions::ALLOW_PRESERVING_UUID;
+            renaming_restrictions = RenamingRestrictions::ALLOW_PRESERVING_UUID;
+    };
+
+    if (replicated)
+    {
+        bool has_arguments = arg_num + 2 <= arg_cnt;
+        bool has_valid_arguments = has_arguments && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
+
+        ASTLiteral * ast_zk_path;
+        ASTLiteral * ast_replica_name;
+
+        if (has_valid_arguments)
+        {
+            /// Get path and name from engine arguments
+            ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
+                zookeeper_path = ast_zk_path->value.safeGet<String>();
+            else
+                throw Exception(
+                    "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+            ++arg_num;
+
+            ast_replica_name = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
+                replica_name = ast_replica_name->value.safeGet<String>();
+            else
+                throw Exception(
+                    "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::BAD_ARGUMENTS);
+
+            if (replica_name.empty())
+                throw Exception(
+                    "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
+            ++arg_num;
+
+            expand_macro(ast_zk_path, ast_replica_name);
+        }
+        else if (is_extended_storage_def
+            && (arg_cnt == 0
+                || !engine_args[arg_num]->as<ASTLiteral>()
+                || (arg_cnt == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
+        {
+            /// Try use default values if arguments are not specified.
+            /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
+            const auto & config = args.getContext()->getConfigRef();
+            zookeeper_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
+            /// TODO maybe use hostname if {replica} is not defined?
+            replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
+
+            /// Modify query, so default values will be written to metadata
+            assert(arg_num == 0);
+            ASTs old_args;
+            std::swap(engine_args, old_args);
+            auto path_arg = std::make_shared<ASTLiteral>(zookeeper_path);
+            auto name_arg = std::make_shared<ASTLiteral>(replica_name);
+            ast_zk_path = path_arg.get();
+            ast_replica_name = name_arg.get();
+
+            expand_macro(ast_zk_path, ast_replica_name);
+
+            engine_args.emplace_back(std::move(path_arg));
+            engine_args.emplace_back(std::move(name_arg));
+            std::move(std::begin(old_args), std::end(old_args), std::back_inserter(engine_args));
+            arg_num = 2;
+            arg_cnt += 2;
+        }
+        else
+            throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
     }
 
     /// This merging param maybe used as part of sorting key
@@ -468,7 +476,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         String graphite_config_name;
         String error_msg
-            = "Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options";
+            = "Last parameter of GraphiteMergeTree must be the name (in single quotes) of the element in configuration file with the Graphite options";
         error_msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
         if (const auto * ast = engine_args[arg_cnt - 1]->as<ASTLiteral>())

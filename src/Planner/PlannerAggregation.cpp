@@ -101,14 +101,14 @@ public:
             {
                 auto grouping_ordinary_function = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes, force_grouping_standard_compatibility);
                 auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
-                function_node->resolveAsFunction(std::move(grouping_ordinary_function_adaptor), std::make_shared<DataTypeUInt64>());
+                function_node->resolveAsFunction(grouping_ordinary_function_adaptor->build({}));
                 break;
             }
             case GroupByKind::ROLLUP:
             {
                 auto grouping_rollup_function = std::make_shared<FunctionGroupingForRollup>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
                 auto grouping_rollup_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_rollup_function));
-                function_node->resolveAsFunction(std::move(grouping_rollup_function_adaptor), std::make_shared<DataTypeUInt64>());
+                function_node->resolveAsFunction(grouping_rollup_function_adaptor->build({}));
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
                 break;
             }
@@ -116,7 +116,7 @@ public:
             {
                 auto grouping_cube_function = std::make_shared<FunctionGroupingForCube>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
                 auto grouping_cube_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_cube_function));
-                function_node->resolveAsFunction(std::move(grouping_cube_function_adaptor), std::make_shared<DataTypeUInt64>());
+                function_node->resolveAsFunction(grouping_cube_function_adaptor->build({}));
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
                 break;
             }
@@ -124,7 +124,7 @@ public:
             {
                 auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(arguments_indexes, grouping_sets_keys_indices, force_grouping_standard_compatibility);
                 auto grouping_grouping_sets_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_grouping_sets_function));
-                function_node->resolveAsFunction(std::move(grouping_grouping_sets_function_adaptor), std::make_shared<DataTypeUInt64>());
+                function_node->resolveAsFunction(grouping_grouping_sets_function_adaptor->build({}));
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
                 break;
             }
