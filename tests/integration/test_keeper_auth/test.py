@@ -47,78 +47,87 @@ def get_genuine_zk():
 
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_remove_acl(started_cluster, get_zk):
-    auth_connection = get_zk()
+    auth_connection = None
 
-    auth_connection.add_auth("digest", "user1:password1")
+    try:
+        auth_connection = get_zk()
 
-    # Consistent with zookeeper, accept generated digest
-    auth_connection.create(
-        "/test_remove_acl1",
-        b"dataX",
-        acl=[
-            make_acl(
-                "digest",
-                "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=",
-                read=True,
-                write=False,
-                create=False,
-                delete=False,
-                admin=False,
-            )
-        ],
-    )
-    auth_connection.create(
-        "/test_remove_acl2",
-        b"dataX",
-        acl=[
-            make_acl(
-                "digest",
-                "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=",
-                read=True,
-                write=True,
-                create=False,
-                delete=False,
-                admin=False,
-            )
-        ],
-    )
-    auth_connection.create(
-        "/test_remove_acl3",
-        b"dataX",
-        acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)],
-    )
+        auth_connection.add_auth("digest", "user1:password1")
 
-    auth_connection.delete("/test_remove_acl2")
+        # Consistent with zookeeper, accept generated digest
+        auth_connection.create(
+            "/test_remove_acl1",
+            b"dataX",
+            acl=[
+                make_acl(
+                    "digest",
+                    "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=",
+                    read=True,
+                    write=False,
+                    create=False,
+                    delete=False,
+                    admin=False,
+                )
+            ],
+        )
+        auth_connection.create(
+            "/test_remove_acl2",
+            b"dataX",
+            acl=[
+                make_acl(
+                    "digest",
+                    "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=",
+                    read=True,
+                    write=True,
+                    create=False,
+                    delete=False,
+                    admin=False,
+                )
+            ],
+        )
+        auth_connection.create(
+            "/test_remove_acl3",
+            b"dataX",
+            acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)],
+        )
 
-    auth_connection.create(
-        "/test_remove_acl4",
-        b"dataX",
-        acl=[
-            make_acl(
-                "digest",
-                "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=",
-                read=True,
-                write=True,
-                create=True,
-                delete=False,
-                admin=False,
-            )
-        ],
-    )
+        auth_connection.delete("/test_remove_acl2")
 
-    acls, stat = auth_connection.get_acls("/test_remove_acl3")
+        auth_connection.create(
+            "/test_remove_acl4",
+            b"dataX",
+            acl=[
+                make_acl(
+                    "digest",
+                    "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=",
+                    read=True,
+                    write=True,
+                    create=True,
+                    delete=False,
+                    admin=False,
+                )
+            ],
+        )
 
-    assert stat.aversion == 0
-    assert len(acls) == 1
-    for acl in acls:
-        assert acl.acl_list == ["ALL"]
-        assert acl.perms == 31
+        acls, stat = auth_connection.get_acls("/test_remove_acl3")
+
+        assert stat.aversion == 0
+        assert len(acls) == 1
+        for acl in acls:
+            assert acl.acl_list == ["ALL"]
+            assert acl.perms == 31
+    finally:
+        if auth_connection:
+            auth_connection.stop()
+            auth_connection.close()
 
 
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_digest_auth_basic(started_cluster, get_zk):
-    auth_connection = get_zk()
+    auth_connection = None
+    no_auth_connection = None
 
+    auth_connection = get_zk()
     auth_connection.add_auth("digest", "user1:password1")
 
     auth_connection.create("/test_no_acl", b"")
@@ -137,10 +146,9 @@ def test_digest_auth_basic(started_cluster, get_zk):
 
     no_auth_connection = get_zk()
     no_auth_connection.set("/test_no_acl", b"hello")
-
-    # no ACL, so cannot access these nodes
     assert no_auth_connection.get("/test_no_acl")[0] == b"hello"
 
+    # no ACL, so cannot access these nodes
     with pytest.raises(NoAuthError):
         no_auth_connection.set("/test_all_acl", b"hello")
 
@@ -154,6 +162,7 @@ def test_digest_auth_basic(started_cluster, get_zk):
     with pytest.raises(AuthFailedError):
         no_auth_connection.add_auth("world", "anyone")
 
+    no_auth_connection.stop()
     # session became broken, reconnect
     no_auth_connection = get_zk()
 
@@ -181,6 +190,14 @@ def test_digest_auth_basic(started_cluster, get_zk):
         no_auth_connection.set(path, b"auth_added")
         assert no_auth_connection.get(path)[0] == b"auth_added"
 
+    if auth_connection:
+        auth_connection.stop()
+        auth_connection.close()
+
+    if no_auth_connection:
+        no_auth_connection.stop()
+        no_auth_connection.close()
+
 
 def test_super_auth(started_cluster):
     auth_connection = get_fake_zk()
@@ -202,101 +219,154 @@ def test_super_auth(started_cluster):
 
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_digest_auth_multiple(started_cluster, get_zk):
-    auth_connection = get_zk()
-    auth_connection.add_auth("digest", "user1:password1")
-    auth_connection.add_auth("digest", "user2:password2")
-    auth_connection.add_auth("digest", "user3:password3")
+    auth_connection = None
+    one_auth_connection = None
+    other_auth_connection = None
 
-    auth_connection.create(
-        "/test_multi_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
-    )
+    try:
+        auth_connection = get_zk()
+        auth_connection.add_auth("digest", "user1:password1")
+        auth_connection.add_auth("digest", "user2:password2")
+        auth_connection.add_auth("digest", "user3:password3")
 
-    one_auth_connection = get_zk()
-    one_auth_connection.add_auth("digest", "user1:password1")
+        auth_connection.create(
+            "/test_multi_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
+        )
 
-    one_auth_connection.set("/test_multi_all_acl", b"X")
-    assert one_auth_connection.get("/test_multi_all_acl")[0] == b"X"
+        one_auth_connection = get_zk()
+        one_auth_connection.add_auth("digest", "user1:password1")
 
-    other_auth_connection = get_zk()
-    other_auth_connection.add_auth("digest", "user2:password2")
+        one_auth_connection.set("/test_multi_all_acl", b"X")
+        assert one_auth_connection.get("/test_multi_all_acl")[0] == b"X"
 
-    other_auth_connection.set("/test_multi_all_acl", b"Y")
+        other_auth_connection = get_zk()
+        other_auth_connection.add_auth("digest", "user2:password2")
 
-    assert other_auth_connection.get("/test_multi_all_acl")[0] == b"Y"
+        other_auth_connection.set("/test_multi_all_acl", b"Y")
+
+        assert other_auth_connection.get("/test_multi_all_acl")[0] == b"Y"
+    finally:
+        if auth_connection:
+            auth_connection.stop()
+            auth_connection.close()
+
+        if one_auth_connection:
+            auth_connection.stop()
+            auth_connection.close()
+
+        if other_auth_connection:
+            auth_connection.stop()
+            auth_connection.close()
 
 
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_partial_auth(started_cluster, get_zk):
-    auth_connection = get_zk()
-    auth_connection.add_auth("digest", "user1:password1")
+    auth_connection = None
+    try:
+        auth_connection = get_zk()
+        auth_connection.add_auth("digest", "user1:password1")
 
-    auth_connection.create(
-        "/test_partial_acl",
-        b"data",
-        acl=[
-            make_acl(
-                "auth", "", read=False, write=True, create=True, delete=True, admin=True
-            )
-        ],
-    )
+        auth_connection.create(
+            "/test_partial_acl",
+            b"data",
+            acl=[
+                make_acl(
+                    "auth",
+                    "",
+                    read=False,
+                    write=True,
+                    create=True,
+                    delete=True,
+                    admin=True,
+                )
+            ],
+        )
 
-    auth_connection.set("/test_partial_acl", b"X")
-    auth_connection.create(
-        "/test_partial_acl/subnode",
-        b"X",
-        acl=[
-            make_acl(
-                "auth", "", read=False, write=True, create=True, delete=True, admin=True
-            )
-        ],
-    )
+        auth_connection.set("/test_partial_acl", b"X")
+        auth_connection.create(
+            "/test_partial_acl/subnode",
+            b"X",
+            acl=[
+                make_acl(
+                    "auth",
+                    "",
+                    read=False,
+                    write=True,
+                    create=True,
+                    delete=True,
+                    admin=True,
+                )
+            ],
+        )
 
-    with pytest.raises(NoAuthError):
-        auth_connection.get("/test_partial_acl")
+        with pytest.raises(NoAuthError):
+            auth_connection.get("/test_partial_acl")
 
-    with pytest.raises(NoAuthError):
-        auth_connection.get_children("/test_partial_acl")
+        with pytest.raises(NoAuthError):
+            auth_connection.get_children("/test_partial_acl")
 
-    # exists works without read perm
-    assert auth_connection.exists("/test_partial_acl") is not None
+        # exists works without read perm
+        assert auth_connection.exists("/test_partial_acl") is not None
 
-    auth_connection.create(
-        "/test_partial_acl_create",
-        b"data",
-        acl=[
-            make_acl(
-                "auth", "", read=True, write=True, create=False, delete=True, admin=True
-            )
-        ],
-    )
-    with pytest.raises(NoAuthError):
-        auth_connection.create("/test_partial_acl_create/subnode")
+        auth_connection.create(
+            "/test_partial_acl_create",
+            b"data",
+            acl=[
+                make_acl(
+                    "auth",
+                    "",
+                    read=True,
+                    write=True,
+                    create=False,
+                    delete=True,
+                    admin=True,
+                )
+            ],
+        )
+        with pytest.raises(NoAuthError):
+            auth_connection.create("/test_partial_acl_create/subnode")
 
-    auth_connection.create(
-        "/test_partial_acl_set",
-        b"data",
-        acl=[
-            make_acl(
-                "auth", "", read=True, write=False, create=True, delete=True, admin=True
-            )
-        ],
-    )
-    with pytest.raises(NoAuthError):
-        auth_connection.set("/test_partial_acl_set", b"X")
+        auth_connection.create(
+            "/test_partial_acl_set",
+            b"data",
+            acl=[
+                make_acl(
+                    "auth",
+                    "",
+                    read=True,
+                    write=False,
+                    create=True,
+                    delete=True,
+                    admin=True,
+                )
+            ],
+        )
+        with pytest.raises(NoAuthError):
+            auth_connection.set("/test_partial_acl_set", b"X")
 
-    # not allowed to delete child node
-    auth_connection.create(
-        "/test_partial_acl_delete",
-        b"data",
-        acl=[
-            make_acl(
-                "auth", "", read=True, write=True, create=True, delete=False, admin=True
-            )
-        ],
-    )
-    auth_connection.create("/test_partial_acl_delete/subnode")
-    with pytest.raises(NoAuthError):
-        auth_connection.delete("/test_partial_acl_delete/subnode")
+        # not allowed to delete child node
+        auth_connection.create(
+            "/test_partial_acl_delete",
+            b"data",
+            acl=[
+                make_acl(
+                    "auth",
+                    "",
+                    read=True,
+                    write=True,
+                    create=True,
+                    delete=False,
+                    admin=True,
+                )
+            ],
+        )
+        auth_connection.create("/test_partial_acl_delete/subnode")
+        with pytest.raises(NoAuthError):
+            auth_connection.delete("/test_partial_acl_delete/subnode")
+    finally:
+        if auth_connection:
+            auth_connection.stop()
+            auth_connection.close()
 
 
 def test_bad_auth(started_cluster):
@@ -492,53 +562,70 @@ def test_auth_snapshot(started_cluster):
 
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_get_set_acl(started_cluster, get_zk):
-    auth_connection = get_zk()
-    auth_connection.add_auth("digest", "username1:secret1")
-    auth_connection.add_auth("digest", "username2:secret2")
+    auth_connection = None
+    other_auth_connection = None
+    try:
+        auth_connection = get_zk()
+        auth_connection.add_auth("digest", "username1:secret1")
+        auth_connection.add_auth("digest", "username2:secret2")
 
-    auth_connection.create(
-        "/test_set_get_acl", b"data", acl=[make_acl("auth", "", all=True)]
-    )
-
-    acls, stat = auth_connection.get_acls("/test_set_get_acl")
-
-    assert stat.aversion == 0
-    assert len(acls) == 2
-    for acl in acls:
-        assert acl.acl_list == ["ALL"]
-        assert acl.id.scheme == "digest"
-        assert acl.perms == 31
-        assert acl.id.id in (
-            "username1:eGncMdBgOfGS/TCojt51xWsWv/Y=",
-            "username2:qgSSumukVlhftkVycylbHNvxhFU=",
+        auth_connection.create(
+            "/test_set_get_acl", b"data", acl=[make_acl("auth", "", all=True)]
         )
 
-    other_auth_connection = get_zk()
-    other_auth_connection.add_auth("digest", "username1:secret1")
-    other_auth_connection.add_auth("digest", "username3:secret3")
-    other_auth_connection.set_acls(
-        "/test_set_get_acl",
-        acls=[
-            make_acl(
-                "auth", "", read=True, write=False, create=True, delete=True, admin=True
+        acls, stat = auth_connection.get_acls("/test_set_get_acl")
+
+        assert stat.aversion == 0
+        assert len(acls) == 2
+        for acl in acls:
+            assert acl.acl_list == ["ALL"]
+            assert acl.id.scheme == "digest"
+            assert acl.perms == 31
+            assert acl.id.id in (
+                "username1:eGncMdBgOfGS/TCojt51xWsWv/Y=",
+                "username2:qgSSumukVlhftkVycylbHNvxhFU=",
             )
-        ],
-    )
 
-    acls, stat = other_auth_connection.get_acls("/test_set_get_acl")
-
-    assert stat.aversion == 1
-    assert len(acls) == 2
-    for acl in acls:
-        assert acl.acl_list == ["READ", "CREATE", "DELETE", "ADMIN"]
-        assert acl.id.scheme == "digest"
-        assert acl.perms == 29
-        assert acl.id.id in (
-            "username1:eGncMdBgOfGS/TCojt51xWsWv/Y=",
-            "username3:CvWITOxxTwk+u6S5PoGlQ4hNoWI=",
-        )
-
-    with pytest.raises(KazooException):
+        other_auth_connection = get_zk()
+        other_auth_connection.add_auth("digest", "username1:secret1")
+        other_auth_connection.add_auth("digest", "username3:secret3")
         other_auth_connection.set_acls(
-            "/test_set_get_acl", acls=[make_acl("auth", "", all=True)], version=0
+            "/test_set_get_acl",
+            acls=[
+                make_acl(
+                    "auth",
+                    "",
+                    read=True,
+                    write=False,
+                    create=True,
+                    delete=True,
+                    admin=True,
+                )
+            ],
         )
+
+        acls, stat = other_auth_connection.get_acls("/test_set_get_acl")
+
+        assert stat.aversion == 1
+        assert len(acls) == 2
+        for acl in acls:
+            assert acl.acl_list == ["READ", "CREATE", "DELETE", "ADMIN"]
+            assert acl.id.scheme == "digest"
+            assert acl.perms == 29
+            assert acl.id.id in (
+                "username1:eGncMdBgOfGS/TCojt51xWsWv/Y=",
+                "username3:CvWITOxxTwk+u6S5PoGlQ4hNoWI=",
+            )
+
+        with pytest.raises(KazooException):
+            other_auth_connection.set_acls(
+                "/test_set_get_acl", acls=[make_acl("auth", "", all=True)], version=0
+            )
+    finally:
+        if auth_connection:
+            auth_connection.stop()
+            auth_connection.close()
+
+        if other_auth_connection:
+            other_auth_connection.stop()
+            other_auth_connection.close()
