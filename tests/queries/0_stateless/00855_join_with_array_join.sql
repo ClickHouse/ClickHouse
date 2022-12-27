@@ -43,7 +43,7 @@ JOIN system.one AS y USING dummy;
 SELECT * FROM ( SELECT [toUInt32(dummy), toUInt32(dummy)] AS dummy FROM system.one ) AS x ARRAY JOIN dummy
 JOIN (select toInt32(dummy) as dummy from system.one ) AS y USING dummy;
 
-SELECT dummy > 0, toTypeName(any(dummy)), any(toTypeName(dummy)) 
+SELECT dummy > 0, toTypeName(any(dummy)), any(toTypeName(dummy))
 FROM ( SELECT [toUInt32(dummy), toUInt32(dummy)] AS dummy FROM system.one ) AS x ARRAY JOIN dummy
 JOIN ( SELECT toInt32(dummy) AS dummy FROM system.one ) AS y USING dummy GROUP BY (dummy > 0);
 

@@ -18,6 +18,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "DataTypes/Serializations/ISerialization.h"
 #include "base/types.h"
 #include <Common/Arena.h>
 #include "AggregateFunctions/AggregateFunctionFactory.h"
@@ -104,26 +105,32 @@ public:
         return nested_func->getDefaultVersion();
     }
 
-    AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
+    AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types)
+        : Base(types, nested->getParameters(), std::make_shared<DataTypeMap>(DataTypes{getKeyType(types, nested), nested->getResultType()}))
+        , nested_func(nested)
     {
-        if (types.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function " + getName() + " requires at least one argument");
-
-        if (types.size() > 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function " + getName() + " requires only one map argument");
-
-        const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
-        if (!map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function " + getName() + " requires map as argument");
-
-        key_type = map_type->getKeyType();
+        key_type = getKeyType(types, nested_func);
     }
 
     String getName() const override { return nested_func->getName() + "Map"; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeMap>(DataTypes{key_type, nested_func->getReturnType()}); }
+    static DataTypePtr getKeyType(const DataTypes & types, const AggregateFunctionPtr & nested)
+    {
+                if (types.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Aggregate function {}Map requires at least one argument", nested->getName());
+
+        if (types.size() > 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {}Map requires only one map argument", nested->getName());
+
+        const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
+        if (!map_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Aggregate function {}Map requires map as argument", nested->getName());
+
+        return map_type->getKeyType();
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {

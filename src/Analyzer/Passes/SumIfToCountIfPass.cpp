@@ -117,10 +117,11 @@ public:
                 not_function_result_type = makeNullable(not_function_result_type);
 
             auto not_function = std::make_shared<FunctionNode>("not");
-            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context), std::move(not_function_result_type));
 
             auto & not_function_arguments = not_function->getArguments().getNodes();
             not_function_arguments.push_back(std::move(nested_if_function_arguments_nodes[0]));
+
+            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context)->build(not_function->getArgumentTypes()));
 
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
@@ -139,8 +140,7 @@ private:
             function_node.getAggregateFunction()->getParameters(),
             properties);
 
-        auto function_result_type = function_node.getResultType();
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 
     ContextPtr & context;
