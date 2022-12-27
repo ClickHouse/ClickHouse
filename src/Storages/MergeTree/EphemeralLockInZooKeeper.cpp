@@ -2,7 +2,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
-#include <Storages/MergeTree/ZooKeeperWithFaultInjection.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 
 namespace DB
