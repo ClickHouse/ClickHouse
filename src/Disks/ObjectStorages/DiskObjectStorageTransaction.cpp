@@ -749,4 +749,10 @@ void DiskObjectStorageTransaction::commit()
         operation->finalize();
 }
 
+void DiskObjectStorageTransaction::undo()
+{
+    for (const auto & operation : operations_to_execute | std::views::reverse)
+        operation->undo();
+}
+
 }

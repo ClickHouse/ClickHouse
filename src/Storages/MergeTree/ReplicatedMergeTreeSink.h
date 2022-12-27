@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
 #include <Storages/MergeTree/ZooKeeperRetries.h>
-#include <Storages/MergeTree/ZooKeeperWithFaultInjection.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 
 namespace Poco { class Logger; }

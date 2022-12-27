@@ -402,10 +402,11 @@ ReplxxLineReader::ReplxxLineReader(
                 words.push_back(hs.get().text());
         }
 
+        std::string current_query(rx.get_state().text());
         std::string new_query;
         try
         {
-            new_query = std::string(skim(words));
+            new_query = std::string(skim(current_query, words));
         }
         catch (const std::exception & e)
         {
