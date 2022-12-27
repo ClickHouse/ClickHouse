@@ -91,19 +91,16 @@ private:
     template <typename DocOrVal>
     static void deserializeValueAsTuple(DocOrVal & val, const DataTypePtr & type, Field & res)
     {
-        std::cout << "branch0" << std::endl;
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
         if (!tuple_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong type {}", type->getName());
 
         if (!tuple_type->haveSubtypes())
         {
-            std::cout << "branch00" << std::endl;
             res = Tuple();
             return;
         }
 
-        std::cout << "branch01" << std::endl;
         const auto & elem_types = tuple_type->getElements();
         const auto & elem_names = tuple_type->getElementNames();
 
@@ -248,19 +245,11 @@ private:
                 return;
             }
             case ondemand::json_type::number: {
-                const auto num_type(val.get_number_type().value_unsafe());
-                switch (num_type)
-                {
-                    case ondemand::number_type::signed_integer:
-                        res = std::to_string(val.get_int64().value_unsafe());
-                        return;
-                    case ondemand::number_type::unsigned_integer:
-                        res = std::to_string(val.get_uint64().value_unsafe());
-                        return;
-                    case ondemand::number_type::floating_point_number:
-                        res = std::to_string(val.get_double().value_unsafe());
-                        return;
-                }
+                if constexpr (std::is_same_v<DocOrVal, ondemand::value>)
+                    res = val.raw_json_token();
+                else
+                    res = val.raw_json().value_unsafe();
+                return;
             }
             case ondemand::json_type::boolean: {
                 res = val.get_bool().value_unsafe() ? "true" : "false";
