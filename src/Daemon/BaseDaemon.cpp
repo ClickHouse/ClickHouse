@@ -178,12 +178,9 @@ __attribute__((__weak__)) void collectCrashLog(
 class SignalListener : public Poco::Runnable
 {
 public:
-    enum Signals : int
-    {
-        StdTerminate = -1,
-        StopThread = -2,
-        SanitizerTrap = -3,
-    };
+    static constexpr int StdTerminate = -1;
+    static constexpr int StopThread = -2;
+    static constexpr int SanitizerTrap = -3;
 
     explicit SignalListener(BaseDaemon & daemon_)
         : log(&Poco::Logger::get("BaseDaemon"))
@@ -208,7 +205,7 @@ public:
             // Don't use strsignal here, because it's not thread-safe.
             LOG_TRACE(log, "Received signal {}", sig);
 
-            if (sig == Signals::StopThread)
+            if (sig == StopThread)
             {
                 LOG_INFO(log, "Stop SignalListener thread");
                 break;
@@ -219,7 +216,7 @@ public:
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
                 LOG_INFO(log, "Opened new log file after received signal.");
             }
-            else if (sig == Signals::StdTerminate)
+            else if (sig == StdTerminate)
             {
                 UInt32 thread_num;
                 std::string message;
