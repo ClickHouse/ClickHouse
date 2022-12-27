@@ -2,7 +2,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Interpreters/ArrayJoinAction.h>
 
 
 namespace DB
@@ -39,10 +38,7 @@ public:
     }
 
     /** It could return many different values for single argument. */
-    bool isDeterministic() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override
     {
@@ -53,11 +49,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto & arr = getArrayJoinDataType(arguments[0]);
+        const DataTypeArray * arr = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!arr)
-            throw Exception("Argument for function " + getName() + " must be Array or Map", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        return arr->getNestedType();
+            throw Exception("Argument for function " + getName() + " must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+        return arr->getNestedType();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -73,7 +69,7 @@ public:
 };
 
 
-REGISTER_FUNCTION(ArrayJoin)
+void registerFunctionArrayJoin(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayJoin>();
 }

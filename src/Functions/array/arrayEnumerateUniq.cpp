@@ -20,7 +20,7 @@ public:
     using Base::create;
 };
 
-REGISTER_FUNCTION(ArrayEnumerateUniq)
+void registerFunctionArrayEnumerateUniq(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayEnumerateUniq>();
 }

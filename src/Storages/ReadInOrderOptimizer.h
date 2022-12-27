@@ -12,6 +12,8 @@ namespace DB
  *   common prefix, which is needed for
  *   performing reading in order of PK.
  */
+class Context;
+
 class ReadInOrderOptimizer
 {
 public:
@@ -28,7 +30,6 @@ private:
         const StorageMetadataPtr & metadata_snapshot,
         const SortDescription & description,
         const ManyExpressionActions & actions,
-        const ContextPtr & context,
         UInt64 limit) const;
 
     /// Actions for every element of order expression to analyze functions for monotonicity

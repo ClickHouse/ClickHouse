@@ -1,1 +1,0 @@
-Replicated(\'some/path/default/replicated_database_test\', \'shard_1\', \'replica_1\') SETTINGS max_broken_tables_ratio = 1

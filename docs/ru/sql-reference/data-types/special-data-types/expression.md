@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/data-types/special-data-types/expression
-sidebar_position: 58
-sidebar_label: Expression
+toc_priority: 58
+toc_title: Expression
 ---
 
 # Expression {#expression}

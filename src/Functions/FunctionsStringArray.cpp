@@ -27,12 +27,10 @@ DataTypePtr FunctionArrayStringConcat::getReturnTypeImpl(const DataTypes & argum
     return std::make_shared<DataTypeString>();
 }
 
-REGISTER_FUNCTION(StringArray)
+void registerFunctionsStringArray(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionExtractAll>();
-
-    factory.registerFunction<FunctionSplitByAlpha>();
-    factory.registerAlias("splitByAlpha", FunctionSplitByAlpha::name);
+    factory.registerFunction<FunctionAlphaTokens>();
     factory.registerFunction<FunctionSplitByNonAlpha>();
     factory.registerFunction<FunctionSplitByWhitespace>();
     factory.registerFunction<FunctionSplitByChar>();

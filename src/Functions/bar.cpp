@@ -118,7 +118,7 @@ public:
 
             size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width) + 1;
             dst_chars.resize(next_size);
-            UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]), reinterpret_cast<char *>(&dst_chars[next_size]));
+            UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]));
             current_offset = next_size;
             dst_offsets[i] = current_offset;
         }
@@ -129,7 +129,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Bar)
+void registerFunctionBar(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBar>();
 }

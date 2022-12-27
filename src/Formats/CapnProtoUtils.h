@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 #if USE_CAPNP
 
 #include <Formats/FormatSchemaInfo.h>
@@ -30,8 +30,6 @@ public:
     capnp::StructSchema getMessageSchema(const FormatSchemaInfo & schema_info);
 };
 
-std::pair<String, String> splitCapnProtoFieldName(const String & name);
-
 bool compareEnumNames(const String & first, const String & second, FormatSettings::EnumComparingMode mode);
 
 std::pair<capnp::DynamicStruct::Builder, capnp::StructSchema::Field> getStructBuilderAndFieldByColumnName(capnp::DynamicStruct::Builder struct_builder, const String & name);
@@ -40,7 +38,7 @@ capnp::DynamicValue::Reader getReaderByColumnName(const capnp::DynamicStruct::Re
 
 void checkCapnProtoSchemaStructure(const capnp::StructSchema & schema, const Block & header, FormatSettings::EnumComparingMode mode);
 
-NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema, bool skip_unsupported_fields);
+NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema);
 }
 
 #endif

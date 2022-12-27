@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <thread>
@@ -53,7 +53,7 @@ private:
                           size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper);
 
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
-    void clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size);
+    void clearOldBlocks();
 
     /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
     void clearOldMutations();

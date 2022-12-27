@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Access/AccessRights.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Access/Common/RowPolicyDefs.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
 #include <base/scope_guard.h>
+#include <base/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
 #include <optional>
@@ -69,9 +70,6 @@ public:
     using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
 
-    ContextAccess() { } /// NOLINT
-    ContextAccess(const AccessControl & access_control_, const Params & params_);
-
     /// Returns the current user. Throws if user is nullptr.
     UserPtr getUser() const;
     /// Same as above, but can return nullptr.
@@ -87,7 +85,7 @@ public:
 
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.
-    RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter = {}) const;
+    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr = nullptr) const;
 
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
@@ -104,40 +102,40 @@ public:
     /// Checks if a specified access is granted, and throws an exception if not.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
     void checkAccess(const AccessRightsElement & element) const;
     void checkAccess(const AccessRightsElements & elements) const;
 
     void checkGrantOption(const AccessFlags & flags) const;
-    void checkGrantOption(const AccessFlags & flags, std::string_view database) const;
-    void checkGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    void checkGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    void checkGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    void checkGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    void checkGrantOption(const AccessFlags & flags, const std::string_view & database) const;
+    void checkGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    void checkGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    void checkGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    void checkGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
     void checkGrantOption(const AccessRightsElement & element) const;
     void checkGrantOption(const AccessRightsElements & elements) const;
 
     /// Checks if a specified access is granted, and returns false if not.
     /// Empty database means the current database.
     bool isGranted(const AccessFlags & flags) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
     bool isGranted(const AccessRightsElement & element) const;
     bool isGranted(const AccessRightsElements & elements) const;
 
     bool hasGrantOption(const AccessFlags & flags) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
     bool hasGrantOption(const AccessRightsElement & element) const;
     bool hasGrantOption(const AccessRightsElements & elements) const;
 
@@ -166,21 +164,22 @@ public:
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
-    ~ContextAccess();
-
 private:
     friend class AccessControl;
+    ContextAccess() {} /// NOLINT
+    ContextAccess(const AccessControl & access_control_, const Params & params_);
 
     void initialize();
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
+    void setSettingsAndConstraints() const;
     void calculateAccessRights() const;
 
     template <bool throw_if_denied, bool grant_option>
     bool checkAccessImpl(const AccessFlags & flags) const;
 
     template <bool throw_if_denied, bool grant_option, typename... Args>
-    bool checkAccessImpl(const AccessFlags & flags, std::string_view database, const Args &... args) const;
+    bool checkAccessImpl(const AccessFlags & flags, const std::string_view & database, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option>
     bool checkAccessImpl(const AccessRightsElement & element) const;
@@ -189,7 +188,7 @@ private:
     bool checkAccessImpl(const AccessRightsElements & elements) const;
 
     template <bool throw_if_denied, bool grant_option, typename... Args>
-    bool checkAccessImplHelper(AccessFlags flags, const Args &... args) const;
+    bool checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option>
     bool checkAccessImplHelper(const AccessRightsElement & element) const;

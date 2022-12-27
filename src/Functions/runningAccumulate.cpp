@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <Common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 
 
 namespace DB
@@ -52,10 +52,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override
     {
@@ -102,7 +99,7 @@ public:
         /// Will pass empty arena if agg_func does not allocate memory in arena
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
-        auto result_column_ptr = agg_func.getResultType()->createColumn();
+        auto result_column_ptr = agg_func.getReturnType()->createColumn();
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
 
@@ -141,7 +138,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(RunningAccumulate)
+void registerFunctionRunningAccumulate(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRunningAccumulate>();
 }
