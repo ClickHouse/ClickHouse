@@ -250,7 +250,7 @@ namespace
         {
             if (isArray(type))
                 nested_types.push_back(assert_cast<const DataTypeArray &>(*type).getNestedType());
-            else
+            else if (isTuple(type))
             {
                 const auto & elements = assert_cast<const DataTypeTuple &>(*type).getElements();
                 for (const auto & element : elements)
@@ -262,7 +262,10 @@ namespace
         if (checkIfTypesAreEqual(nested_types))
         {
             for (auto & type : data_types)
-                type = std::make_shared<DataTypeArray>(nested_types.back());
+            {
+                if (isArray(type) || isTuple(type))
+                    type = std::make_shared<DataTypeArray>(nested_types.back());
+            }
         }
     }
 
@@ -826,14 +829,40 @@ void transformInferredJSONTypesIfNeeded(
 
 void transformJSONTupleToArrayIfPossible(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info)
 {
-    if (!data_type || !isTuple(data_type))
+    if (!data_type)
         return;
 
-    const auto * tuple_type = assert_cast<const DataTypeTuple *>(data_type.get());
-    auto nested_types = tuple_type->getElements();
-    transformInferredTypesIfNeededImpl<true>(nested_types, settings, json_info);
-    if (checkIfTypesAreEqual(nested_types))
-        data_type = std::make_shared<DataTypeArray>(nested_types.back());
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get()))
+    {
+        auto nested_type = array_type->getNestedType();
+        transformJSONTupleToArrayIfPossible(nested_type, settings, json_info);
+        data_type = std::make_shared<DataTypeArray>(nested_type);
+        return;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(data_type.get()))
+    {
+        auto value_type = map_type->getValueType();
+        transformJSONTupleToArrayIfPossible(value_type, settings, json_info);
+        data_type = std::make_shared<DataTypeMap>(map_type->getKeyType(), value_type);
+        return;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get()))
+    {
+        auto nested_types = tuple_type->getElements();
+        for (auto & nested_type : nested_types)
+            transformJSONTupleToArrayIfPossible(nested_type, settings, json_info);
+
+        auto nested_types_copy = nested_types;
+        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
+        if (checkIfTypesAreEqual(nested_types_copy))
+            data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
+        else
+            data_type = std::make_shared<DataTypeTuple>(nested_types);
+
+        return;
+    }
 }
 
 DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSettings & settings)

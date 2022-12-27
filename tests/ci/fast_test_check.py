@@ -155,7 +155,7 @@ if __name__ == "__main__":
     if not os.path.exists(logs_path):
         os.makedirs(logs_path)
 
-    run_log_path = os.path.join(logs_path, "runlog.log")
+    run_log_path = os.path.join(logs_path, "run.log")
     with TeePopen(run_cmd, run_log_path, timeout=40 * 60) as process:
         retcode = process.wait()
         if retcode == 0:

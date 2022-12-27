@@ -81,6 +81,7 @@ public:
         if (nested_if_function_arguments_nodes.size() != 3)
             return;
 
+        auto & cond_argument = nested_if_function_arguments_nodes[0];
         const auto * if_true_condition_constant_node = nested_if_function_arguments_nodes[1]->as<ConstantNode>();
         const auto * if_false_condition_constant_node = nested_if_function_arguments_nodes[2]->as<ConstantNode>();
 
@@ -107,8 +108,8 @@ public:
             return;
         }
 
-        /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))`.
-        if (if_true_condition_value == 0 && if_false_condition_value == 1)
+        /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
+        if (if_true_condition_value == 0 && if_false_condition_value == 1 && !cond_argument->getResultType()->isNullable())
         {
             DataTypePtr not_function_result_type = std::make_shared<DataTypeUInt8>();
 
@@ -117,10 +118,11 @@ public:
                 not_function_result_type = makeNullable(not_function_result_type);
 
             auto not_function = std::make_shared<FunctionNode>("not");
-            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context), std::move(not_function_result_type));
 
             auto & not_function_arguments = not_function->getArguments().getNodes();
             not_function_arguments.push_back(std::move(nested_if_function_arguments_nodes[0]));
+
+            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context)->build(not_function->getArgumentTypes()));
 
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
@@ -139,8 +141,7 @@ private:
             function_node.getAggregateFunction()->getParameters(),
             properties);
 
-        auto function_result_type = function_node.getResultType();
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 
     ContextPtr & context;
