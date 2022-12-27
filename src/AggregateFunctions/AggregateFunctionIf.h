@@ -36,24 +36,19 @@ private:
 
 public:
     AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionIf>(types, params_)
+        : IAggregateFunctionHelper<AggregateFunctionIf>(types, params_, nested->getResultType())
         , nested_func(nested), num_arguments(types.size())
     {
         if (num_arguments == 0)
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!isUInt8(types.back()))
+        if (!isUInt8(types.back()) && !types.back()->onlyNull())
             throw Exception("Last argument for aggregate function " + getName() + " must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     String getName() const override
     {
         return nested_func->getName() + "If";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return nested_func->getReturnType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -204,12 +199,16 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
+    std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        return {num_arguments - 1};
+    }
 
 #if USE_EMBEDDED_COMPILER
 
     bool isCompilable() const override
     {
-        return nested_func->isCompilable();
+        return canBeNativeType(*this->argument_types.back()) && nested_func->isCompilable();
     }
 
     void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override

@@ -138,7 +138,8 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
 MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    std::unique_lock<std::mutex> & parts_lock)
+    std::unique_lock<std::mutex> & parts_lock,
+    bool readonly)
 {
     std::unique_lock lock(write_mutex);
 
@@ -207,7 +208,10 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                 /// If file is broken, do not write new parts to it.
                 /// But if it contains any part rotate and save them.
                 if (max_block_number == -1)
-                    disk->removeFile(path);
+                {
+                    if (!readonly)
+                        disk->removeFile(path);
+                }
                 else if (name == DEFAULT_WAL_FILE_NAME)
                     rotate(lock);
 
@@ -256,7 +260,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
         [&dropped_parts](const auto & part) { return dropped_parts.count(part->name) == 0; });
 
     /// All parts in WAL had been already committed into the disk -> clear the WAL
-    if (result.empty())
+    if (!readonly && result.empty())
     {
         LOG_DEBUG(log, "WAL file '{}' had been completely processed. Removing.", path);
         disk->removeFile(path);
