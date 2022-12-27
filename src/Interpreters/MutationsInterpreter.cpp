@@ -967,15 +967,15 @@ void MutationsInterpreter::Source::read(
     auto required_columns = first_stage.expressions_chain.steps.front()->getRequiredColumns().getNames();
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_);
 
-    for (const auto & name : required_columns)
-        std::cerr << "====== Required column " + name << std::endl;
+    // for (const auto & name : required_columns)
+    //     std::cerr << "====== Required column " + name << std::endl;
 
     const auto & steps = first_stage.expressions_chain.steps;
     const auto & names = first_stage.filter_column_names;
     size_t num_filters = names.size();
 
-    for (size_t i = 0; i < steps.size(); ++i)
-        std::cerr << steps[i]->actions()->dumpDAG() << std::endl;
+    // for (size_t i = 0; i < steps.size(); ++i)
+    //     std::cerr << steps[i]->actions()->dumpDAG() << std::endl;
 
     if (data)
     {
@@ -994,7 +994,7 @@ void MutationsInterpreter::Source::read(
             plan, *data, storage_snapshot, part, required_columns, apply_deleted_mask_, filter, context_,
             &Poco::Logger::get("MutationsInterpreter"));
 
-        std::cerr << "<<<<<<<<< " << plan.getCurrentDataStream().header.dumpStructure() << std::endl;
+        // std::cerr << "<<<<<<<<< " << plan.getCurrentDataStream().header.dumpStructure() << std::endl;
 
         // for (size_t i = 0; i < steps.size(); ++i)
         // {
@@ -1049,7 +1049,7 @@ void MutationsInterpreter::Source::read(
 
         if (!plan.isInitialized())
         {
-            /// It may be possilbe when there is nothing to read from storage.
+            /// It may be possible when there is nothing to read from storage.
             auto header = storage_snapshot->getSampleBlockForColumns(required_columns);
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(header)));
             plan.addStep(std::move(read_from_pipe));
@@ -1113,9 +1113,9 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             "Cannot execute mutation for {}. Mutation should be applied to every part separately.",
             source.storage->getName());
 
-        WriteBufferFromOwnString buf;
-        plan.explainPlan(buf, {.header = true, .actions = true});
-        std::cerr << "Plan 2 " + (source.storage ? source.storage->getName() : "") +  " \n" + buf.str() << std::endl;
+        // WriteBufferFromOwnString buf;
+        // plan.explainPlan(buf, {.header = true, .actions = true});
+        // std::cerr << "Plan 2 " + (source.storage ? source.storage->getName() : "") +  " \n" + buf.str() << std::endl;
     }
 
     QueryPlanOptimizationSettings do_not_optimize_plan;
@@ -1157,11 +1157,11 @@ void MutationsInterpreter::validate()
 
     QueryPlan plan;
     initQueryPlan(stages.front(), plan);
-    {
-        WriteBufferFromOwnString buf;
-        plan.explainPlan(buf, {.header = true, .actions = true});
-        std::cerr << "Plan 1\n" + buf.str() << std::endl;
-    }
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     plan.explainPlan(buf, {.header = true, .actions = true});
+    //     std::cerr << "Plan 1\n" + buf.str() << std::endl;
+    // }
     auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
