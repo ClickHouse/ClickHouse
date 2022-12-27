@@ -50,6 +50,7 @@ function configure()
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
+    sudo rm -fr /etc/clickhouse-server/*
     /usr/share/clickhouse-test/config/install.sh
 
     # we mount tests folder from repo to /usr/share
@@ -337,9 +338,6 @@ zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
 if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
     echo -e "Backward compatibility check\n"
 
-    # Disable ZooKeeper fault injection, because it is harmful for the backward compatibility check.
-    sudo rm /etc/clickhouse-server/config.d/zookeeper_fault_injection.xml
-
     echo "Get previous release tag"
     previous_release_tag=$(clickhouse-client --version | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | get_previous_release_tag)
     echo $previous_release_tag
@@ -442,7 +440,8 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         # Start new server
         mv package_folder/clickhouse /usr/bin/
         mv package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
-        export ZOOKEEPER_FAULT_INJECTION=1
+        # Disable fault injections on start (we don't test them here, and it can lead to tons of requests in case of huge number of tables).
+        export ZOOKEEPER_FAULT_INJECTION=0
         configure
         start 500
         clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
