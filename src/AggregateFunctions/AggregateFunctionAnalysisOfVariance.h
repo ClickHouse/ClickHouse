@@ -37,10 +37,10 @@ class AggregateFunctionAnalysisOfVariance final : public IAggregateFunctionDataH
 {
 public:
     explicit AggregateFunctionAnalysisOfVariance(const DataTypes & arguments, const Array & params)
-    : IAggregateFunctionDataHelper(arguments, params)
+        : IAggregateFunctionDataHelper(arguments, params, createResultType())
     {}
 
-    DataTypePtr getReturnType() const override
+    DataTypePtr createResultType() const
     {
         DataTypes types {std::make_shared<DataTypeNumber<Float64>>(), std::make_shared<DataTypeNumber<Float64>>() };
         Strings names {"f_statistic", "p_value"};

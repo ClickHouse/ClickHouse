@@ -156,8 +156,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, ssize_t priority, std::
                      propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread());
 
         ++scheduled_jobs;
-        new_job_or_shutdown.notify_one();
     }
+
+    new_job_or_shutdown.notify_one();
 
     return static_cast<ReturnType>(true);
 }

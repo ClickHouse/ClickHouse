@@ -2,12 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getCurrentProcessFDCount.h>
-#include <Common/getMaxFileDescriptorCount.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Server/ProtocolServerAdapter.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>

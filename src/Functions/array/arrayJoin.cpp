@@ -2,6 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Interpreters/ArrayJoinAction.h>
 
 
 namespace DB
@@ -52,11 +53,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeArray * arr = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+        const auto & arr = getArrayJoinDataType(arguments[0]);
         if (!arr)
-            throw Exception("Argument for function " + getName() + " must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
+            throw Exception("Argument for function " + getName() + " must be Array or Map", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return arr->getNestedType();
+
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t /*input_rows_count*/) const override

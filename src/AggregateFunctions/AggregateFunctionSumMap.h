@@ -16,6 +16,7 @@
 #include <Common/FieldVisitorSum.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <map>
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
@@ -80,7 +81,7 @@ public:
 
     AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
-        : Base(argument_types_, {} /* parameters */)
+        : Base(argument_types_, {} /* parameters */, createResultType(keys_type_, values_types_, getName()))
         , keys_type(keys_type_)
         , keys_serialization(keys_type->getDefaultSerialization())
         , values_types(values_types_)
@@ -117,19 +118,22 @@ public:
             return 0;
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(
+        const DataTypePtr & keys_type_,
+        const DataTypes & values_types_,
+        const String & name_)
     {
         DataTypes types;
-        types.emplace_back(std::make_shared<DataTypeArray>(keys_type));
+        types.emplace_back(std::make_shared<DataTypeArray>(keys_type_));
 
-        for (const auto & value_type : values_types)
+        for (const auto & value_type : values_types_)
         {
             if constexpr (std::is_same_v<Visitor, FieldVisitorSum>)
             {
                 if (!value_type->isSummable())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Values for {} cannot be summed, passed type {}",
-                        getName(), value_type->getName()};
+                        name_, value_type->getName()};
             }
 
             DataTypePtr result_type;
@@ -139,7 +143,7 @@ public:
                 if (value_type->onlyNull())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Cannot calculate {} of type {}",
-                        getName(), value_type->getName()};
+                        name_, value_type->getName()};
 
                 // Overflow, meaning that the returned type is the same as
                 // the input type. Nulls are skipped.
@@ -153,7 +157,7 @@ public:
                 if (!value_type_without_nullable->canBePromoted())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
-                        getName(), value_type->getName()};
+                        name_, value_type->getName()};
 
                 WhichDataType value_type_to_check(value_type_without_nullable);
 
@@ -424,7 +428,10 @@ public:
     }
 
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
-    String getName() const override { return static_cast<const Derived &>(*this).getName(); }
+    String getName() const override { return getNameImpl(); }
+
+private:
+    static String getNameImpl() { return Derived::getNameImpl(); }
 };
 
 template <typename T, bool overflow, bool tuple_argument>
@@ -443,10 +450,10 @@ public:
     {
         // The constructor accepts parameters to have a uniform interface with
         // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
+        assertNoParameters(getNameImpl(), params_);
     }
 
-    String getName() const override
+    static String getNameImpl()
     {
         if constexpr (overflow)
         {
@@ -487,13 +494,13 @@ public:
         if (params_.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Aggregate function '{}' requires exactly one parameter "
-                "of Array type", getName());
+                "of Array type", getNameImpl());
 
         Array keys_to_keep_values;
         if (!params_.front().tryGet<Array>(keys_to_keep_values))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function {} requires an Array as a parameter",
-                getName());
+                getNameImpl());
 
         keys_to_keep.reserve(keys_to_keep_values.size());
 
@@ -501,7 +508,7 @@ public:
             keys_to_keep.emplace(f.safeGet<T>());
     }
 
-    String getName() const override
+    static String getNameImpl()
     { return overflow ? "sumMapFilteredWithOverflow" : "sumMapFiltered"; }
 
     bool keepKey(const T & key) const { return keys_to_keep.count(key); }
@@ -606,10 +613,10 @@ public:
     {
         // The constructor accepts parameters to have a uniform interface with
         // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
+        assertNoParameters(getNameImpl(), params_);
     }
 
-    String getName() const override { return "minMap"; }
+    static String getNameImpl() { return "minMap"; }
 
     bool keepKey(const T &) const { return true; }
 };
@@ -630,10 +637,10 @@ public:
     {
         // The constructor accepts parameters to have a uniform interface with
         // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
+        assertNoParameters(getNameImpl(), params_);
     }
 
-    String getName() const override { return "maxMap"; }
+    static String getNameImpl() { return "maxMap"; }
 
     bool keepKey(const T &) const { return true; }
 };

@@ -91,7 +91,8 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs) const
 void SortNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(sort_direction);
-    hash_state.update(nulls_sort_direction);
+    /// use some determined value if `nulls_sort_direction` is `nullopt`
+    hash_state.update(nulls_sort_direction.value_or(sort_direction));
     hash_state.update(with_fill);
 
     if (collator)
