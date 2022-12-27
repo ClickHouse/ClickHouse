@@ -27,7 +27,7 @@ private:
     {
         ParserNestedTable nested_parser;
         ParserDataType data_type_parser;
-        ParserAllCollectionsOfLiterals literal_parser;
+        ParserAllCollectionsOfLiterals literal_parser(false);
 
         const char * operators[] = {"=", "equals", nullptr};
         ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());
