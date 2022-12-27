@@ -724,7 +724,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 
     size_t rows = source_block.rows();
 
-    ColumnRawPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
+    ColumnPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
 
     Block block_to_save = prepareRightBlock(source_block);
     size_t total_rows = 0;
@@ -747,7 +747,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         {
             ColumnRawPtrs key_columns;
             for (const auto & name : onexprs[onexpr_idx].key_names_right)
-                key_columns.push_back(all_key_columns[name]);
+                key_columns.push_back(all_key_columns[name].get());
 
             /// We will insert to the map only keys, where all components are not NULL.
             ConstNullMapPtr null_map{};

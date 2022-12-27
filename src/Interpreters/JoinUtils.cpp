@@ -324,21 +324,20 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
-ColumnRawPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
+ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
 {
-    ColumnRawPtrMap ptrs;
+    ColumnPtrMap ptrs;
     ptrs.reserve(names.size());
 
     for (const auto & column_name : names)
     {
-        ColumnWithTypeAndName column = block.getByName(column_name);
+        ColumnPtr column = block.getByName(column_name).column;
 
-        column.column = column.column->convertToFullColumnIfConst();
-        column.column = recursiveRemoveLowCardinality(column.column);
-        column.column = recursiveRemoveSparse(column.column);
+        column = column->convertToFullColumnIfConst();
+        column = recursiveRemoveLowCardinality(column);
+        column = recursiveRemoveSparse(column);
 
-        column.type = recursiveRemoveLowCardinality(column.type);
-        ptrs[column_name] = column.column.get();
+        ptrs[column_name] = column;
     }
 
     return ptrs;
