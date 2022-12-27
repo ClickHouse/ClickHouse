@@ -205,6 +205,7 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
         {
             auto fields = matcher->parseFields(in, index);
             NamesAndTypes columns; // we either add all of the fields or none of them
+            columns.reserve(fields.size());
             type_score = 0;
             fields_score = 0;
 
@@ -287,7 +288,8 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         // if a solution is found already, we could return immediately
         // this is useful in the case of readRow
         //
-        // temporary hack until we could reuse the solution generated in readSchema
+        // temporary solution until we could reuse the solution generated in readSchema,
+        // possibly by making use of the SchemaCache
         return true;
 
     skipBOMIfExists(in);
@@ -365,7 +367,11 @@ bool FreeformFieldMatcher::parseRow()
         for (const auto & [name, field] : fields)
         {
             if (!first_row)
-                matched_fields[field_name_to_index[name]] = field;
+            {
+                auto it = field_name_to_index.find(name);
+                if (it != field_name_to_index.end())
+                    matched_fields[it->second] = field;
+            }
             else
             {
                 field_name_to_index[name] = col;
