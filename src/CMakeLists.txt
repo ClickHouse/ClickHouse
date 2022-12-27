@@ -344,7 +344,7 @@ set_source_files_properties(
         Common/Elf.cpp
         Common/Dwarf.cpp
         Common/SymbolIndex.cpp
-        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
+        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
