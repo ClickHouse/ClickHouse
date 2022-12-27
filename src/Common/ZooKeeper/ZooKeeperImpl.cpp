@@ -676,7 +676,7 @@ void ZooKeeper::receiveThread()
                 if (earliest_operation)
                 {
                     throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response) for request {} for path: {}",
-                                    earliest_operation->request->getOpNum(), earliest_operation->request->getPath());
+                        toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
                 if (waited_us >= args.session_timeout_ms * 1000)
