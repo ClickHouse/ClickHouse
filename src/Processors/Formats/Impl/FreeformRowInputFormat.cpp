@@ -128,12 +128,12 @@ std::vector<std::pair<String, String>> JSONFieldMatcher::parseFields(ReadBuffer 
 
         auto fields = parseFields(in, index); // "index" here doesn't do anything
 
-        for (const auto & field : fields)
+        for (const auto & [name, field] : fields)
         {
-            if (field.first.starts_with("c"))
-                ret.emplace_back(field_name, field.second);
+            if (name.starts_with("c"))
+                ret.emplace_back(field_name, field);
             else
-                ret.emplace_back(fmt::format("{}.{}", field_name, field.first), field.second);
+                ret.emplace_back(fmt::format("{}.{}", field_name, name), field);
         }
 
         skipWhitespacesAndDelimiters(in);
@@ -208,22 +208,22 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
             type_score = 0;
             fields_score = 0;
 
-            for (auto & field : fields)
+            for (const auto & [name, field] : fields)
             {
-                auto type = matcher->getDataTypeFromField(field.second);
+                auto type = matcher->getDataTypeFromField(field);
                 if (type)
                 {
                     // a single punctuation is not a valid field
-                    if (field.second.size() == 1 && isPunctuationASCII(field.second[0]))
+                    if (field.size() == 1 && isPunctuationASCII(field[0]))
                         continue;
 
                     type = makeFloatIfInt(type);
-                    columns.emplace_back(field.first, type);
+                    columns.emplace_back(name, type);
 
                     type_score += scoreForType(type);
                     fields_score += scoreForField(matcher->getEscapingRule(), type);
 
-                    one_string = field.second.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher";
+                    one_string = field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher";
                 }
             }
 
@@ -362,15 +362,15 @@ bool FreeformFieldMatcher::parseRow()
     {
         skipWhitespacesAndDelimiters(in);
         auto fields = matchers[i]->parseFields(in, col);
-        for (const auto & field : fields)
+        for (const auto & [name, field] : fields)
         {
             if (!first_row)
-                matched_fields[field_name_to_index[field.first]] = field.second;
+                matched_fields[field_name_to_index[name]] = field;
             else
             {
-                field_name_to_index[field.first] = col;
+                field_name_to_index[name] = col;
                 rules[col] = matchers[i]->getEscapingRule();
-                matched_fields[col] = field.second;
+                matched_fields[col] = field;
             }
 
             ++col;

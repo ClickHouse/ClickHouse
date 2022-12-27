@@ -20,7 +20,7 @@ public:
     virtual String getName() const = 0;
     // parseFields returns a vector of fields (field_name, field_value), index is used as the column name if there isn't a better option
     virtual std::vector<std::pair<String, String>> parseFields(ReadBuffer & in, size_t index) const = 0;
-    DataTypePtr getDataTypeFromField(String & s) const { return tryInferDataTypeByEscapingRule(s, settings, rule); }
+    DataTypePtr getDataTypeFromField(const String & s) const { return tryInferDataTypeByEscapingRule(s, settings, rule); }
     const FormatSettings::EscapingRule & getEscapingRule() const { return rule; }
 
     virtual ~FieldMatcher() = default;
