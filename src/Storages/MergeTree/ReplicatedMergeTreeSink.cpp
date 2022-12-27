@@ -934,7 +934,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
             {
                 try
                 {
-                    storage.unlockSharedData(*part);
+                    storage.unlockSharedData(*part, zookeeper);
                 }
                 catch (const zkutil::KeeperException & e)
                 {
