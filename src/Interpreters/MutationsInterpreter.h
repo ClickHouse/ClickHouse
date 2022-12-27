@@ -36,9 +36,21 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 /// to this data.
 class MutationsInterpreter
 {
+    struct Stage;
+
 public:
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
     /// use can_execute = true, in other cases (validation, amount of commands) it can be false
+    MutationsInterpreter(
+        const StoragePtr & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        MutationCommands commands_,
+        ContextPtr context_,
+        bool can_execute_,
+        bool return_all_columns_ = false,
+        bool return_deleted_rows_ = false);
+
+    /// Special case for MergeTree
     MutationsInterpreter(
         MergeTreeData & storage_,
         MergeTreeData::DataPartPtr source_part_,
@@ -82,10 +94,37 @@ public:
 
     void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
-private:
-    void prepare(bool dry_run);
+    struct Source
+    {
+        StoragePtr storage;
 
-    struct Stage;
+        /// Special case for MergeTree.
+        MergeTreeData * data = nullptr;
+        MergeTreeData::DataPartPtr part;
+
+        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_) const;
+        bool supportsLightweightDelete() const;
+        StoragePtr getStorage() const;
+
+        void read(
+            Stage & first_stage,
+            QueryPlan & plan,
+            const StorageMetadataPtr & snapshot_,
+            const ContextPtr & context_,
+            bool apply_deleted_mask_) const;
+    };
+
+private:
+    MutationsInterpreter(
+        Source source_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        MutationCommands commands_,
+        ContextPtr context_,
+        bool can_execute_,
+        bool return_all_columns_,
+        bool return_deleted_rows_);
+
+    void prepare(bool dry_run);
 
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
@@ -95,8 +134,7 @@ private:
 
     ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 
-    MergeTreeData & storage;
-    MergeTreeData::DataPartPtr source_part;
+    Source source;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
     ContextPtr context;
