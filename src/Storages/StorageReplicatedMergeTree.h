@@ -4,6 +4,7 @@
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
+#include <Storages/RenamingRestrictions.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
@@ -17,6 +18,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
@@ -89,13 +91,6 @@ using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjecti
 class StorageReplicatedMergeTree final : public MergeTreeData
 {
 public:
-    enum RenamingRestrictions
-    {
-        ALLOW_ANY,
-        ALLOW_PRESERVING_UUID,
-        DO_NOT_ALLOW,
-    };
-
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
     StorageReplicatedMergeTree(
@@ -182,32 +177,8 @@ public:
     /// If timeout is exceeded returns false
     bool waitForShrinkingQueueSize(size_t queue_size = 0, UInt64 max_wait_milliseconds = 0);
 
-    /** For the system table replicas. */
-    struct Status
-    {
-        bool is_leader;
-        bool can_become_leader;
-        bool is_readonly;
-        bool is_session_expired;
-        ReplicatedMergeTreeQueue::Status queue;
-        UInt32 parts_to_check;
-        String zookeeper_path;
-        String replica_name;
-        String replica_path;
-        Int32 columns_version;
-        UInt64 log_max_index;
-        UInt64 log_pointer;
-        UInt64 absolute_delay;
-        UInt8 total_replicas;
-        UInt8 active_replicas;
-        String last_queue_update_exception;
-        /// If the error has happened fetching the info from ZooKeeper, this field will be set.
-        String zookeeper_exception;
-        std::unordered_map<std::string, bool> replica_is_active;
-    };
-
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
-    void getStatus(Status & res, bool with_zk_fields = true);
+    void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
 
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getQueue(LogEntriesData & res, String & replica_name);
@@ -878,7 +849,6 @@ private:
 
     // Create table id if needed
     void createTableSharedID() const;
-
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
 
