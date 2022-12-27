@@ -23,7 +23,7 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
 {
 }
 
-MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction() const
+MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
 {
     return std::make_shared<MetadataStorageFromPlainObjectStorageTransaction>(*this);
 }
