@@ -510,7 +510,7 @@ public:
         for (const Field & f : keys_to_keep_values)
             keys_to_keep.emplace(f.safeGet<T>());
     }
-    
+
     static String getNameImpl()
     {
         if constexpr (overflow)
