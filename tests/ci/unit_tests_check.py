@@ -140,7 +140,7 @@ if __name__ == "__main__":
 
     run_command = f"docker run --cap-add=SYS_PTRACE --volume={tests_binary_path}:/unit_tests_dbms --volume={test_output}:/test_output {docker_image}"
 
-    run_log_path = os.path.join(test_output, "runlog.log")
+    run_log_path = os.path.join(test_output, "run.log")
 
     logging.info("Going to run func tests: %s", run_command)
 
