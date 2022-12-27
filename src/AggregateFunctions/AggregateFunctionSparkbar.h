@@ -107,24 +107,11 @@ private:
     using Chars = PODArray<char>;
 
     template <class T>
-    String getBar(const T value) const
+    void updateFrame(Chars & frame, const T value) const
     {
-        if (isNaN(value) || value > 8 || value < 1)
-            return " ";
-
-        // ▁▂▃▄▅▆▇█
-        switch (static_cast<UInt8>(value))
-        {
-            case 1: return "▁";
-            case 2: return "▂";
-            case 3: return "▃";
-            case 4: return "▄";
-            case 5: return "▅";
-            case 6: return "▆";
-            case 7: return "▇";
-            case 8: return "█";
-        }
-        return " ";
+        static const String bars[9] = {" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+        const auto & bar = (isNaN(value) || value > 8 || value < 1) ? bars[0] : bars[static_cast<UInt8>(value)];
+        frame.insert(bar.begin(), bar.end());
     }
 
     /**
@@ -169,17 +156,13 @@ private:
                 {
                     auto it = data.points.find(static_cast<X>(min_x_local + i));
                     bool found = it != data.points.end();
-                    auto bar = getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
-                    value.insert(bar.begin(), bar.end());
+                    updateFrame(value, found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
                 }
             }
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                {
-                    auto bar = getBar(data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
-                    value.insert(bar.begin(), bar.end());
-                }
+                    updateFrame(value, data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
             }
         }
         else
@@ -246,21 +229,19 @@ private:
 
             Float64 diff_y = max_y.value() - min_y.value();
 
-            auto get_bars = [&] (const std::optional<Float64> & point_y)
+            auto update_frame = [&] (const std::optional<Float64> & point_y)
             {
-                auto bar = getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
-                value.insert(bar.begin(), bar.end());
+                updateFrame(value, point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
             };
-            auto get_bars_for_constant = [&] (const std::optional<Float64> & point_y)
+            auto update_frame_for_constant = [&] (const std::optional<Float64> & point_y)
             {
-                auto bar = getBar(point_y ? 1 : 0);
-                value.insert(bar.begin(), bar.end());
+                updateFrame(value, point_y ? 1 : 0);
             };
 
             if (diff_y != 0.0)
-                std::for_each(new_points.begin(), new_points.end(), get_bars);
+                std::for_each(new_points.begin(), new_points.end(), update_frame);
             else
-                std::for_each(new_points.begin(), new_points.end(), get_bars_for_constant);
+                std::for_each(new_points.begin(), new_points.end(), update_frame_for_constant);
         }
         return value;
     }
