@@ -676,6 +676,20 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     }
 }
 
+Block HashJoin::structureRightBlock(const Block & block) const
+{
+    Block structured_block;
+    for (const auto & sample_column : savedBlockSample().getColumnsWithTypeAndName())
+    {
+        ColumnWithTypeAndName column = block.getByName(sample_column.name);
+        if (sample_column.column->isNullable())
+            JoinCommon::convertColumnToNullable(column);
+        structured_block.insert(column);
+    }
+
+    return structured_block;
+}
+
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
 {
     Block structured_block;
@@ -689,6 +703,7 @@ Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block
         column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
         structured_block.insert(std::move(column));
     }
+
     return structured_block;
 }
 
@@ -702,18 +717,16 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     if (!data)
         throw Exception("Join data was released", ErrorCodes::LOGICAL_ERROR);
 
-    Block structured_block = source_block;
-    prepareRightBlock(structured_block);
-
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
-    if (unlikely(structured_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
-        throw Exception("Too many rows in right table block for HashJoin: " + toString(structured_block.rows()), ErrorCodes::NOT_IMPLEMENTED);
+    if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block.rows());
 
-    size_t rows = structured_block.rows();
+    size_t rows = source_block.rows();
 
-    ColumnRawPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(structured_block, table_join->getAllNames(JoinTableSide::Right));
+    ColumnRawPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
 
+    Block block_to_save = prepareRightBlock(source_block);
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
@@ -721,8 +734,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             throw DB::Exception("addJoinedBlock called when HashJoin locked to prevent updates",
                                 ErrorCodes::LOGICAL_ERROR);
 
-        data->blocks_allocated_size += structured_block.allocatedBytes();
-        data->blocks.emplace_back(std::move(structured_block));
+        data->blocks_allocated_size += block_to_save.allocatedBytes();
+        data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
 
         if (rows)
@@ -749,7 +762,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
                     save_nullmap |= (*null_map)[i];
             }
 
-            auto join_mask_col = JoinCommon::getColumnAsMask(structured_block, onexprs[onexpr_idx].condColumnNames().second);
+            auto join_mask_col = JoinCommon::getColumnAsMask(source_block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             if (!multiple_disjuncts && isRightOrFull(kind) && !join_mask_col.isConstant())
@@ -2040,6 +2053,8 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
 BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
 {
+    LOG_DEBUG(log, "Join data is being released, {} bytes and {} rows in hash table", getTotalByteCount(), getTotalRowCount());
+
     BlocksList right_blocks = std::move(data->blocks);
     if (!restructure)
     {

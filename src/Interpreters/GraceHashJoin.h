@@ -96,9 +96,9 @@ private:
     void addJoinedBlockImpl(Block block);
 
     /// Check that join satisifes limits on rows/bytes in table_join.
-    bool hasMemoryOverflow() const;
-    /// Check that block satisifes limits on rows/bytes in table_join.
-    bool hasMemoryOverflow(const Block & block) const;
+    bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
+    bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;
+    bool hasMemoryOverflow(const BlocksList & blocks) const;
 
     /// Create new bucket at the end of @destination.
     void addBucket(Buckets & destination);

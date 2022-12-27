@@ -331,38 +331,40 @@ bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
     return true;
 }
 
-bool GraceHashJoin::hasMemoryOverflow(const Block & block) const
+bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
 {
     /// One row can't be split, avoid loop
-    if (block.rows() < 2)
+    if (total_rows < 2)
         return false;
-
-    bool has_overflow = !table_join->sizeLimits().softCheck(block.rows(), block.allocatedBytes());
-
-    if (has_overflow)
-        LOG_TRACE(log, "GraceHashJoin has memory overflow, block {} / {} bytes, {} / {} rows",
-            ReadableSize(block.allocatedBytes()), ReadableSize(table_join->sizeLimits().max_bytes),
-            block.rows(), table_join->sizeLimits().max_rows);
-
-    return has_overflow;
-}
-
-bool GraceHashJoin::hasMemoryOverflow() const
-{
-    /// One row can't be split, avoid loop
-    if (hash_join->getTotalRowCount() < 2)
-        return false;
-
-    size_t total_rows = hash_join->getTotalRowCount();
-    size_t total_bytes = hash_join->getTotalByteCount();
 
     bool has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 
     if (has_overflow)
-        LOG_TRACE(log, "GraceHashJoin has memory overflow, hash {} / {} bytes, {} / {} rows",
+        LOG_TRACE(log, "Memory overflow, size exceeded {} / {} bytes, {} / {} rows",
             ReadableSize(total_bytes), ReadableSize(table_join->sizeLimits().max_bytes),
             total_rows, table_join->sizeLimits().max_rows);
+
     return has_overflow;
+}
+
+bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
+{
+    size_t total_rows = 0;
+    size_t total_bytes = 0;
+    for (const auto & block : blocks)
+    {
+        total_rows += block.rows();
+        total_bytes += block.allocatedBytes();
+    }
+    return hasMemoryOverflow(total_rows, total_bytes);
+}
+
+bool GraceHashJoin::hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const
+{
+    size_t total_rows = hash_join_->getTotalRowCount();
+    size_t total_bytes = hash_join_->getTotalByteCount();
+
+    return hasMemoryOverflow(total_rows, total_bytes);
 }
 
 GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
@@ -628,28 +630,25 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
 
         hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
 
-        if (!hasMemoryOverflow())
+        if (!hasMemoryOverflow(hash_join))
             return;
 
         current_block = {};
 
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
 
+        buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
+
+        Blocks current_blocks;
+        current_blocks.reserve(right_blocks.size());
         for (const auto & right_block : right_blocks)
         {
             Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
             flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
-            current_block = blocks[bucket_index];
+            current_blocks.emplace_back(std::move(blocks[bucket_index]));
         }
 
-        while (hasMemoryOverflow(current_block))
-        {
-            buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
-
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, current_block, buckets_snapshot.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
-            current_block = blocks[bucket_index];
-        }
+        current_block = concatenateBlocks(std::move(current_blocks));
 
         hash_join = makeInMemoryJoin();
 
