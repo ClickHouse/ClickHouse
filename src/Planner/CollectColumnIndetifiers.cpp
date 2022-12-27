@@ -1,4 +1,4 @@
-#include <Planner/CollectUsedIndetifiers.h>
+#include <Planner/CollectColumnIndetifiers.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
@@ -11,11 +11,11 @@ namespace DB
 namespace
 {
 
-class CollectUsedIdentifiersVisitor : public InDepthQueryTreeVisitor<CollectUsedIdentifiersVisitor, true>
+class CollectTopLevelColumnIdentifiersVisitor : public InDepthQueryTreeVisitor<CollectTopLevelColumnIdentifiersVisitor, true>
 {
 public:
 
-    explicit CollectUsedIdentifiersVisitor(const PlannerContextPtr & planner_context_, ColumnIdentifierSet & used_identifiers_)
+    explicit CollectTopLevelColumnIdentifiersVisitor(const PlannerContextPtr & planner_context_, ColumnIdentifierSet & used_identifiers_)
         : used_identifiers(used_identifiers_)
         , planner_context(planner_context_)
     {}
@@ -49,16 +49,16 @@ public:
 
 }
 
-void collectUsedIdentifiers(const QueryTreeNodePtr & node, const PlannerContextPtr & planner_context, ColumnIdentifierSet & out)
+void collectTopLevelColumnIdentifiers(const QueryTreeNodePtr & node, const PlannerContextPtr & planner_context, ColumnIdentifierSet & out)
 {
-    CollectUsedIdentifiersVisitor visitor(planner_context, out);
+    CollectTopLevelColumnIdentifiersVisitor visitor(planner_context, out);
     visitor.visit(node);
 }
 
-ColumnIdentifierSet collectUsedIdentifiers(const QueryTreeNodePtr & node, const PlannerContextPtr & planner_context)
+ColumnIdentifierSet collectTopLevelColumnIdentifiers(const QueryTreeNodePtr & node, const PlannerContextPtr & planner_context)
 {
     ColumnIdentifierSet out;
-    collectUsedIdentifiers(node, planner_context, out);
+    collectTopLevelColumnIdentifiers(node, planner_context, out);
     return out;
 }
 
