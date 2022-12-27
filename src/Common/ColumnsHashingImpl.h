@@ -293,6 +293,191 @@ protected:
     }
 };
 
+template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false>
+class HashMethodOneKeyNullableBase
+{
+public:
+    using EmplaceResult = EmplaceResultImpl<Mapped>;
+    using FindResult = FindResultImpl<Mapped, need_offset>;
+    static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
+    using Cache = LastElementCache<Value, consecutive_keys_optimization>;
+
+    static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
+
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        if (has_null_data && isNullAt(row))
+        {
+            bool has_null_key = data.hasNullKeyData();
+            data.hasNullKeyData() = true;
+
+            if constexpr (has_mapped)
+                return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+            else
+                return EmplaceResult(!has_null_key);
+        }
+        else
+        {
+            auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+            return emplaceImpl(key_holder, data);
+        }
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
+    {
+        if (has_null_data && isNullAt(row))
+        {
+            if constexpr (has_mapped)
+                return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData(), 0);
+            else
+                return FindResult(data.hasNullKeyData(), 0);
+        }
+        else
+        {
+            auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+            return findKeyImpl(keyHolderGetKey(key_holder), data);
+        }
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
+    {
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        return data.hash(keyHolderGetKey(key_holder));
+    }
+
+    ALWAYS_INLINE bool isNullAt(size_t row) const {
+        return assert_cast<const ColumnUInt8 &>(*null_map).getData()[row] != 0;
+    }
+
+
+protected:
+    Cache cache;
+    const IColumn * null_map;
+    bool has_null_data;
+
+    explicit HashMethodOneKeyNullableBase(const ColumnNullable * nullable_column)
+    {
+        if constexpr (consecutive_keys_optimization)
+        {
+            if constexpr (has_mapped)
+            {
+                /// Init PairNoInit elements.
+                cache.value.second = Mapped();
+                cache.value.first = {};
+            }
+            else
+                cache.value = Value();
+        }
+        null_map = &nullable_column->getNullMapColumn();
+        has_null_data = (null_map->getRatioOfDefaultRows() < 1.0);
+    }
+
+    template <typename Data, typename KeyHolder>
+    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
+    {
+        if constexpr (Cache::consecutive_keys_optimization)
+        {
+            if (cache.found && cache.check(keyHolderGetKey(key_holder)))
+            {
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                else
+                    return EmplaceResult(false);
+            }
+        }
+
+        typename Data::LookupResult it;
+        bool inserted = false;
+        data.emplace(key_holder, it, inserted);
+
+        [[maybe_unused]] Mapped * cached = nullptr;
+        if constexpr (has_mapped)
+            cached = &it->getMapped();
+
+        if constexpr (has_mapped)
+        {
+            if (inserted)
+            {
+                new (&it->getMapped()) Mapped();
+            }
+        }
+
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.found = true;
+            cache.empty = false;
+
+            if constexpr (has_mapped)
+            {
+                cache.value.first = it->getKey();
+                cache.value.second = it->getMapped();
+                cached = &cache.value.second;
+            }
+            else
+            {
+                cache.value = it->getKey();
+            }
+        }
+
+        if constexpr (has_mapped)
+            return EmplaceResult(it->getMapped(), *cached, inserted);
+        else
+            return EmplaceResult(inserted);
+    }
+
+    template <typename Data, typename Key>
+    ALWAYS_INLINE FindResult findKeyImpl(Key key, Data & data)
+    {
+        if constexpr (Cache::consecutive_keys_optimization)
+        {
+            /// It's possible to support such combination, but code will became more complex.
+            /// Now there's not place where we need this options enabled together
+            static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
+            if (cache.check(key))
+            {
+                if constexpr (has_mapped)
+                    return FindResult(&cache.value.second, cache.found, 0);
+                else
+                    return FindResult(cache.found, 0);
+            }
+        }
+
+        auto it = data.find(key);
+
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.found = it != nullptr;
+            cache.empty = false;
+
+            if constexpr (has_mapped)
+            {
+                cache.value.first = key;
+                if (it)
+                {
+                    cache.value.second = it->getMapped();
+                }
+            }
+            else
+            {
+                cache.value = key;
+            }
+        }
+
+        size_t offset = 0;
+        if constexpr (FindResult::has_offset)
+        {
+            offset = it ? data.offsetInternal(it) : 0;
+        }
+        if constexpr (has_mapped)
+            return FindResult(it ? &it->getMapped() : nullptr, it != nullptr, offset);
+        else
+            return FindResult(it != nullptr, offset);
+    }
+};
+
 
 template <typename T>
 struct MappedCache : public PaddedPODArray<T> {};

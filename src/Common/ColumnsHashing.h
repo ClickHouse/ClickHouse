@@ -71,6 +71,49 @@ struct HashMethodOneNumber
     const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
 };
 
+template <typename Value, typename Mapped, typename Key,typename FieldType, bool use_cache = true, bool need_offset = false>
+struct HashMethodOneNumberNullable
+    : public columns_hashing_impl::HashMethodOneKeyNullableBase<HashMethodOneNumberNullable<Value, Mapped, Key, FieldType, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+{
+    using Self = HashMethodOneNumberNullable<Value, Mapped, Key, FieldType, use_cache, need_offset>;
+    using Base = columns_hashing_impl::HashMethodOneKeyNullableBase<Self, Value, Mapped, use_cache, need_offset>;
+
+    static constexpr bool has_cheap_key_calculation = true;
+
+    const char * vec;
+
+
+    /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
+    HashMethodOneNumberNullable(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+        : Base(checkAndGetColumn<ColumnNullable>(key_columns[0]))
+    {
+        const auto * null_column = checkAndGetColumn<ColumnNullable>(key_columns[0]);
+        vec = null_column->getNestedColumnPtr()->getRawData().data();
+    }
+
+    explicit HashMethodOneNumberNullable(const IColumn * column) : Base(checkAndGetColumn<ColumnNullable>(column))
+    {
+        const auto * null_column = checkAndGetColumn<ColumnNullable>(column);
+        vec = null_column->getNestedColumnPtr()->getRawData().data();
+    }
+
+    /// Creates context. Method is called once and result context is used in all threads.
+    using Base::createContext; /// (const HashMethodContext::Settings &) -> HashMethodContextPtr
+
+    using Base::emplaceKey;
+
+    using Base::findKey;
+
+    using Base::getHash;
+
+    /// Is used for default implementation in HashMethodBase.
+    Key getKeyHolder(size_t row, Arena &) const {
+        return unalignedLoad<FieldType>(vec + row * sizeof(FieldType));
+    }
+
+    const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
+};
+
 
 /// For the case when there is one string key.
 template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false>
@@ -109,6 +152,45 @@ struct HashMethodString
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
+};
+
+template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false>
+struct HashMethodStringNullable
+    : public columns_hashing_impl::HashMethodOneKeyNullableBase<HashMethodStringNullable<Value, Mapped, place_string_to_arena, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+{
+    using Self = HashMethodStringNullable<Value, Mapped, place_string_to_arena, use_cache, need_offset>;
+    using Base = columns_hashing_impl::HashMethodOneKeyNullableBase<Self, Value, Mapped, use_cache, need_offset>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+
+    const IColumn::Offset * offsets;
+    const UInt8 * chars;
+
+    HashMethodStringNullable(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+        : Base(checkAndGetColumn<ColumnNullable>(key_columns[0]))
+    {
+        const IColumn & column = *key_columns[0];
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
+        offsets = column_string.getOffsets().data();
+        chars = column_string.getChars().data();
+    }
+
+    auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
+    {
+        StringRef key(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
+
+        if constexpr (place_string_to_arena)
+        {
+            return ArenaKeyHolder{key, pool};
+        }
+        else
+        {
+            return key;
+        }
+    }
+
+protected:
+    friend class columns_hashing_impl::HashMethodOneKeyNullableBase<Self, Value, Mapped, use_cache>;
 };
 
 
@@ -150,6 +232,46 @@ struct HashMethodFixedString
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
+};
+
+template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false>
+struct HashMethodFixedStringNullable
+    : public columns_hashing_impl::
+          HashMethodOneKeyNullableBase<HashMethodFixedStringNullable<Value, Mapped, place_string_to_arena, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+{
+    using Self = HashMethodFixedStringNullable<Value, Mapped, place_string_to_arena, use_cache, need_offset>;
+    using Base = columns_hashing_impl::HashMethodOneKeyNullableBase<Self, Value, Mapped, use_cache, need_offset>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+
+    size_t n;
+    const ColumnFixedString::Chars * chars;
+
+    HashMethodFixedStringNullable(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+        : Base(checkAndGetColumn<ColumnNullable>(key_columns[0]))
+    {
+        const IColumn & column = *key_columns[0];
+        const ColumnFixedString & column_string = assert_cast<const ColumnFixedString &>(column);
+        n = column_string.getN();
+        chars = &column_string.getChars();
+    }
+
+    auto getKeyHolder(size_t row, [[maybe_unused]] Arena & pool) const
+    {
+        StringRef key(&(*chars)[row * n], n);
+
+        if constexpr (place_string_to_arena)
+        {
+            return ArenaKeyHolder{key, pool};
+        }
+        else
+        {
+            return key;
+        }
+    }
+
+protected:
+    friend class columns_hashing_impl::HashMethodOneKeyNullableBase<Self, Value, Mapped, use_cache>;
 };
 
 
