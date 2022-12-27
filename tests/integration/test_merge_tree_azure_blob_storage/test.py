@@ -513,62 +513,6 @@ def test_apply_new_settings(cluster):
         f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096, -1)}",
     )
 
-
-# NOTE: this test takes a couple of minutes when run together with other tests
-@pytest.mark.long_run
-def test_restart_during_load(cluster):
-    node = cluster.instances[NODE_NAME]
-    create_table(node, TABLE_NAME)
-    config_path = os.path.join(
-        SCRIPT_DIR,
-        "./{}/node/configs/config.d/storage_conf.xml".format(
-            cluster.instances_dir_name
-        ),
-    )
-
-    # Force multi-part upload mode.
-    replace_config(
-        config_path, "<container_already_exists>false</container_already_exists>", ""
-    )
-
-    azure_query(
-        node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}"
-    )
-    azure_query(
-        node,
-        f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 4096, -1)}",
-    )
-
-    def read():
-        for ii in range(0, 5):
-            logging.info(f"Executing {ii} query")
-            assert (
-                azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values")
-                == "(0)"
-            )
-            logging.info(f"Query {ii} executed")
-            time.sleep(0.2)
-
-    def restart_disk():
-        for iii in range(0, 2):
-            logging.info(f"Restarting disk, attempt {iii}")
-            node.query(f"SYSTEM RESTART DISK {AZURE_BLOB_STORAGE_DISK}")
-            logging.info(f"Disk restarted, attempt {iii}")
-            time.sleep(0.5)
-
-    threads = []
-    for _ in range(0, 4):
-        threads.append(SafeThread(target=read))
-
-    threads.append(SafeThread(target=restart_disk))
-
-    for thread in threads:
-        thread.start()
-
-    for thread in threads:
-        thread.join()
-
-
 def test_big_insert(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)

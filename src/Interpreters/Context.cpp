@@ -31,7 +31,6 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/DiskDecorator.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
@@ -826,8 +825,6 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
         /// Check that underlying disk is local (can be wrapped in decorator)
         DiskPtr disk_ptr = disk;
-        if (const auto * disk_decorator = dynamic_cast<const DiskDecorator *>(disk_ptr.get()))
-            disk_ptr = disk_decorator->getNestedDisk();
 
         if (dynamic_cast<const DiskLocal *>(disk_ptr.get()) == nullptr)
         {

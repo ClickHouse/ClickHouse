@@ -11,7 +11,6 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 
-#include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
@@ -166,9 +165,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 
         s3disk->startup(context, skip_access_check);
 
-        std::shared_ptr<IDisk> disk_result = s3disk;
-
-        return std::make_shared<DiskRestartProxy>(disk_result);
+        return s3disk;
     };
     factory.registerDiskType("s3", creator);
     factory.registerDiskType("s3_plain", creator);

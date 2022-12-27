@@ -651,49 +651,6 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
-def test_s3_disk_restart_during_load(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
-
-    node.query(
-        "INSERT INTO s3_test VALUES {}".format(
-            generate_values("2020-01-04", 1024 * 1024)
-        )
-    )
-    node.query(
-        "INSERT INTO s3_test VALUES {}".format(
-            generate_values("2020-01-05", 1024 * 1024, -1)
-        )
-    )
-
-    def read():
-        for ii in range(0, 20):
-            logging.info("Executing %d query", ii)
-            assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
-            logging.info("Query %d executed", ii)
-            time.sleep(0.2)
-
-    def restart_disk():
-        for iii in range(0, 5):
-            logging.info("Restarting disk, attempt %d", iii)
-            node.query("SYSTEM RESTART DISK s3")
-            logging.info("Disk restarted, attempt %d", iii)
-            time.sleep(0.5)
-
-    threads = []
-    for i in range(0, 4):
-        threads.append(SafeThread(target=read))
-
-    threads.append(SafeThread(target=restart_disk))
-
-    for thread in threads:
-        thread.start()
-
-    for thread in threads:
-        thread.join()
-
-
-@pytest.mark.parametrize("node_name", ["node"])
 def test_s3_no_delete_objects(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(
