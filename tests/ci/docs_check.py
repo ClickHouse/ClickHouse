@@ -82,7 +82,7 @@ if __name__ == "__main__":
         f"{docker_image}"
     )
 
-    run_log_path = os.path.join(test_output, "runlog.log")
+    run_log_path = os.path.join(test_output, "run.log")
     logging.info("Running command: '%s'", cmd)
 
     with TeePopen(cmd, run_log_path) as process:
