@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031,SC2010,SC2015
+# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
 
 set -x
 
@@ -9,6 +9,11 @@ sysctl kernel.core_pattern='core.%e.%p-%P'
 set -e
 set -u
 set -o pipefail
+
+trap "exit" INT TERM
+# The watchdog is in the separate process group, so we have to kill it separately
+# if the script terminates earlier.
+trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -75,7 +80,6 @@ function download
     ./clickhouse ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
-    ln -s ./clickhouse ./clickhouse-local
 
     # clickhouse-server is in the current dir
     export PATH="$PWD:$PATH"
@@ -92,12 +96,6 @@ function configure
     cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
     cp -av --dereference "$script_dir"/allow-nullable-key.xml db/config.d
 
-    cat > db/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
-<clickhouse>
-    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
-</clickhouse>
-EOL
-
     cat > db/config.d/core.xml <<EOL
 <clickhouse>
     <core_dump>
@@ -110,6 +108,26 @@ EOL
     <core_path>$PWD</core_path>
 </clickhouse>
 EOL
+}
+
+function watchdog
+{
+    sleep 1800
+
+    echo "Fuzzing run has timed out"
+    for _ in {1..10}
+    do
+        # Only kill by pid the particular client that runs the fuzzing, or else
+        # we can kill some clickhouse-client processes this script starts later,
+        # e.g. for checking server liveness.
+        if ! kill $fuzzer_pid
+        then
+            break
+        fi
+        sleep 1
+    done
+
+    kill -9 -- $fuzzer_pid ||:
 }
 
 function filter_exists_and_template
@@ -157,6 +175,8 @@ function fuzz
 
     mkdir -p /var/run/clickhouse-server
 
+    # interferes with gdb
+    export CLICKHOUSE_WATCHDOG_ENABLE=0
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
     clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db  2>&1 | pigz > server.log.gz &
     server_pid=$!
@@ -194,7 +214,7 @@ detach
 quit
 " > script.gdb
 
-    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
+    gdb -batch -command script.gdb -p $server_pid  &
     sleep 5
     # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
@@ -216,7 +236,7 @@ quit
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    timeout -s TERM --preserve-status 30m clickhouse-client \
+    clickhouse-client \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
@@ -229,12 +249,24 @@ quit
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
 
+    # Start a watchdog that should kill the fuzzer on timeout.
+    # The shell won't kill the child sleep when we kill it, so we have to put it
+    # into a separate process group so that we can kill them all.
+    set -m
+    watchdog &
+    watchdog_pid=$!
+    set +m
+    # Check that the watchdog has started.
+    kill -0 $watchdog_pid
+
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
     # exit because of 'set -e' when 'wait' returns nonzero code.
     fuzzer_exit_code=0
     wait "$fuzzer_pid" || fuzzer_exit_code=$?
     echo "Fuzzer exit code is $fuzzer_exit_code"
+
+    kill -- -$watchdog_pid ||:
 
     # If the server dies, most often the fuzzer returns code 210: connetion
     # refused, and sometimes also code 32: attempt to read after eof. For
@@ -263,21 +295,12 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
+        task_exit_code=210
+        echo "failure" > status.txt
         if ! zgrep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log.gz > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
-
-        if grep -F --text 'Sanitizer: out-of-memory' description.txt
-        then
-            # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
-            task_exit_code=0
-            echo "success" > status.txt
-        else
-            task_exit_code=210
-            echo "failure" > status.txt
-        fi
-
     elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
     then
         # Variants of a normal run:
@@ -310,8 +333,6 @@ quit
         pigz core.*
         mv core.*.gz core.gz
     fi
-
-    dmesg -T | grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
 }
 
 case "$stage" in
@@ -368,25 +389,17 @@ th { cursor: pointer; }
 <body>
 <div class="main">
 
-<h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
+<h1>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</h1>
 <p class="links">
-  <a href="run.log">run.log</a>
-  <a href="fuzzer.log">fuzzer.log</a>
-  <a href="server.log.gz">server.log.gz</a>
-  <a href="main.log">main.log</a>
-  ${CORE_LINK}
+<a href="runlog.log">runlog.log</a>
+<a href="fuzzer.log">fuzzer.log</a>
+<a href="server.log.gz">server.log.gz</a>
+<a href="main.log">main.log</a>
+${CORE_LINK}
 </p>
 <table>
-<tr>
-  <th>Test name</th>
-  <th>Test status</th>
-  <th>Description</th>
-</tr>
-<tr>
-  <td>AST Fuzzer</td>
-  <td>$(cat status.txt)</td>
-  <td style="white-space: pre;">$(clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt)</td>
-</tr>
+<tr><th>Test name</th><th>Test status</th><th>Description</th></tr>
+<tr><td>AST Fuzzer</td><td>$(cat status.txt)</td><td>$(cat description.txt)</td></tr>
 </table>
 </body>
 </html>

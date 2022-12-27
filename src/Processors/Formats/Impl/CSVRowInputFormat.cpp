@@ -274,15 +274,15 @@ void CSVFormatReader::skipPrefixBeforeHeader()
 }
 
 
-CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_)
     : FormatWithNamesAndTypesSchemaReader(
         in_,
-        format_settings_,
+        format_setting_,
         with_names_,
         with_types_,
         &reader,
         getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV))
-    , reader(in_, format_settings_)
+    , reader(in_, format_setting_)
 {
 }
 
@@ -293,7 +293,7 @@ DataTypes CSVSchemaReader::readRowAndGetDataTypes()
         return {};
 
     auto fields = reader.readRow();
-    return tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), FormatSettings::EscapingRule::CSV);
+    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), FormatSettings::EscapingRule::CSV);
 }
 
 

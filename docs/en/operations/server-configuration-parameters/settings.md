@@ -890,7 +890,7 @@ The maximum number of open files.
 
 By default: `maximum`.
 
-We recommend using this option in macOS since the `getrlimit()` function returns an incorrect value.
+We recommend using this option in Mac OS X since the `getrlimit()` function returns an incorrect value.
 
 **Example**
 

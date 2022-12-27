@@ -219,7 +219,6 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             created_node.stat.mtime = created_node.stat.ctime;
             created_node.stat.numChildren = 0;
             created_node.stat.dataLength = static_cast<int>(data.length());
-            created_node.stat.ephemeralOwner = is_ephemeral ? 1 : 0;
             created_node.data = data;
             created_node.is_ephemeral = is_ephemeral;
             created_node.is_sequental = is_sequential;

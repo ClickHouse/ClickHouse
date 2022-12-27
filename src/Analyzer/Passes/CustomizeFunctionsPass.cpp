@@ -138,6 +138,7 @@ public:
 
     static inline void resolveAggregateOrWindowFunctionNode(FunctionNode & function_node, const String & aggregate_function_name)
     {
+        auto function_result_type = function_node.getResultType();
         auto function_aggregate_function = function_node.getAggregateFunction();
 
         AggregateFunctionProperties properties;
@@ -147,15 +148,16 @@ public:
             properties);
 
         if (function_node.isAggregateFunction())
-            function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+            function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
         else if (function_node.isWindowFunction())
-            function_node.resolveAsWindowFunction(std::move(aggregate_function));
+            function_node.resolveAsWindowFunction(std::move(aggregate_function), std::move(function_result_type));
     }
 
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
+        auto function_result_type = function_node.getResultType();
         auto function = FunctionFactory::instance().get(function_name, context);
-        function_node.resolveAsFunction(function->build(function_node.getArgumentTypes()));
+        function_node.resolveAsFunction(function, std::move(function_result_type));
     }
 
 private:

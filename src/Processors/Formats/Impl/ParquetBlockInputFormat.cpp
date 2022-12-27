@@ -4,7 +4,7 @@
 #if USE_PARQUET
 
 #include <Formats/FormatFactory.h>
-#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/copyData.h>
 #include <arrow/api.h>
@@ -201,7 +201,6 @@ void registerInputFormatParquet(FormatFactory & factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatSupportsSubcolumns("Parquet");
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
 

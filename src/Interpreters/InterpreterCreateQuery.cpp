@@ -58,7 +58,6 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
-#include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -71,9 +70,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
-
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 
 #define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
@@ -372,7 +368,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
         const char * alias_end = alias_pos + alias.size();
         ParserExpression expression_parser;
         column_declaration->default_expression = parseQuery(expression_parser, alias_pos, alias_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        column_declaration->children.push_back(column_declaration->default_expression);
 
         columns_list->children.emplace_back(column_declaration);
     }
@@ -403,8 +398,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->default_expression = column.default_desc.expression->clone();
             column_declaration->children.push_back(column_declaration->default_expression);
         }
-
-        column_declaration->ephemeral_default = column.default_desc.ephemeral_default;
 
         if (!column.comment.empty())
         {
@@ -542,7 +535,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                         final_column_name));
 
                 default_expr_list->children.emplace_back(
-                    setAlias(col_decl.default_expression->clone(), tmp_column_name));
+                    setAlias(
+                        col_decl.default_specifier == "EPHEMERAL" ? /// can be ASTLiteral::value NULL
+                            std::make_shared<ASTLiteral>(data_type_ptr->getDefault()) :
+                            col_decl.default_expression->clone(),
+                        tmp_column_name));
             }
             else
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
@@ -588,7 +585,10 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 visitor.visit(col_decl.default_expression);
             }
 
-            ASTPtr default_expr = col_decl.default_expression->clone();
+            ASTPtr default_expr =
+                col_decl.default_specifier == "EPHEMERAL" && col_decl.default_expression->as<ASTLiteral>()->value.isNull() ?
+                    std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(col_decl.type)->getDefault()) :
+                    col_decl.default_expression->clone();
 
             if (col_decl.type)
                 column.type = name_type_it->type;
@@ -602,7 +602,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
             column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);
             column.default_desc.expression = default_expr;
-            column.default_desc.ephemeral_default = col_decl.ephemeral_default;
         }
         else if (col_decl.type)
             column.type = name_type_it->type;
@@ -1157,10 +1156,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visit(*create.columns_list);
     }
 
-    // substitute possible UDFs with their definitions
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr);
-
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
@@ -1231,9 +1226,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// If table has dependencies - add them to the graph
     QualifiedTableName qualified_name{database_name, create.getTable()};
-    TableNamesSet dependencies = getLoadingDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
-    if (!dependencies.empty())
-        DatabaseCatalog::instance().addDependencies(qualified_name, dependencies);
+    TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
+    if (!loading_dependencies.empty())
+        DatabaseCatalog::instance().addLoadingDependencies(qualified_name, std::move(loading_dependencies));
 
     return fillTableIfNeeded(create);
 }

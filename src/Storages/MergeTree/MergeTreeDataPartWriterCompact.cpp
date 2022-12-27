@@ -110,7 +110,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
             .is_complete = (rows_left_in_block >= expected_rows_in_mark)
         });
         current_row += result.back().rows_to_write;
-        ++current_mark;
+        current_mark++;
     }
 
     return result;
@@ -146,7 +146,6 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
     if (compute_granularity)
     {
         size_t index_granularity_for_block = computeIndexGranularity(block);
-        assert(index_granularity_for_block >= 1);
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 

@@ -31,33 +31,15 @@ namespace
 template <bool is_weighted>
 class AggregateFunctionTopKDate : public AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>
 {
-public:
     using AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>::AggregateFunctionTopK;
-
-    AggregateFunctionTopKDate(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>(
-            threshold_,
-            load_factor,
-            argument_types_,
-            params,
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()))
-    {}
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()); }
 };
 
 template <bool is_weighted>
 class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>
 {
-public:
     using AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>::AggregateFunctionTopK;
-
-    AggregateFunctionTopKDateTime(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>(
-            threshold_,
-            load_factor,
-            argument_types_,
-            params,
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()))
-    {}
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()); }
 };
 
 

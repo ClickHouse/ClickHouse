@@ -41,8 +41,6 @@ public:
     SerializationPtr doGetDefaultSerialization() const override;
 
     bool hasNullableSubcolumns() const { return is_nullable; }
-
-    const String & getSchemaFormat() const { return schema_format; }
 };
 
 }

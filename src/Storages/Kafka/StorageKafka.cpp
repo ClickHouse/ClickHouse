@@ -584,24 +584,24 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
+    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    if (dependencies.empty())
         return true;
 
     // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
+    for (const auto & db_tab : dependencies)
     {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
+        if (!table)
             return false;
 
         // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(view_id))
+        if (!checkDependencies(db_tab))
             return false;
     }
 
@@ -616,8 +616,8 @@ void StorageKafka::threadFunc(size_t idx)
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views)
+        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+        if (dependencies_count)
         {
             auto start_time = std::chrono::steady_clock::now();
 
@@ -629,7 +629,7 @@ void StorageKafka::threadFunc(size_t idx)
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 // Exit the loop & reschedule if some stream stalled
                 auto some_stream_is_stalled = streamToViews();
