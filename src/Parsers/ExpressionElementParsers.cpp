@@ -28,6 +28,8 @@
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -116,8 +118,40 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (ASTPtr explain_node; explain.parse(pos, explain_node, expected))
     {
-        /// Replace SELECT * FROM (EXPLAIN SELECT ...) with SELECT * FROM viewExplain(EXPLAIN SELECT ...)
-        result_node = buildSelectFromTableFunction(makeASTFunction("viewExplain", explain_node));
+        const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
+
+        if (explain_query.getTableFunction() || explain_query.getTableOverride())
+            throw Exception("EXPLAIN in a subquery cannot have a table function or table override", ErrorCodes::BAD_ARGUMENTS);
+
+        /// Replace `SELECT * FROM (EXPLAIN <kind> <explain_settings> SELECT ...)`
+        /// with `SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...)`
+
+        String kind_str = ASTExplainQuery::toString(explain_query.getKind());
+
+        String settings_str;
+        if (ASTPtr settings_ast = explain_query.getSettings())
+        {
+            if (!settings_ast->as<ASTSetQuery>())
+                throw Exception("EXPLAIN settings must be a SET query", ErrorCodes::BAD_ARGUMENTS);
+            settings_str = queryToString(settings_ast);
+        }
+
+        const ASTPtr & explained_ast = explain_query.getExplainedQuery();
+        if (explained_ast)
+        {
+            auto view_explain = makeASTFunction("viewExplain",
+                std::make_shared<ASTLiteral>(kind_str),
+                std::make_shared<ASTLiteral>(settings_str),
+                explained_ast);
+            result_node = buildSelectFromTableFunction(std::move(view_explain));
+        }
+        else
+        {
+            auto view_explain = makeASTFunction("viewExplain",
+                std::make_shared<ASTLiteral>(kind_str),
+                std::make_shared<ASTLiteral>(settings_str));
+            result_node = buildSelectFromTableFunction(std::move(view_explain));
+        }
     }
     else
     {
