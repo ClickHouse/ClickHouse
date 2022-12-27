@@ -33,7 +33,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/ArrayJoinAction.h>
 
-#include <Planner/CollectUsedIndetifiers.h>
+#include <Planner/CollectColumnIndetifiers.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -214,7 +214,7 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     auto & join_node = join_tree_node->as<JoinNode &>();
 
     ColumnIdentifierSet current_scope_columns = outer_scope_columns;
-    collectUsedIdentifiers(join_tree_node, planner_context, current_scope_columns);
+    collectTopLevelColumnIdentifiers(join_tree_node, planner_context, current_scope_columns);
 
     auto left_plan = buildQueryPlanForJoinTreeNode(join_node.getLeftTableExpression(),
         select_query_info,

@@ -64,7 +64,7 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Planner/CollectUsedIndetifiers.h>
+#include <Planner/CollectColumnIndetifiers.h>
 
 namespace DB
 {
@@ -375,7 +375,7 @@ void Planner::buildQueryPlanIfNeeded()
 
     collectSets(query_tree, *planner_context);
 
-    auto top_level_identifiers = collectUsedIdentifiers(query_tree, planner_context);
+    auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
 
     query_plan = buildQueryPlanForJoinTreeNode(query_node.getJoinTree(), select_query_info, select_query_options, top_level_identifiers, planner_context);
     auto expression_analysis_result = buildExpressionAnalysisResult(query_tree, query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(), planner_context);
