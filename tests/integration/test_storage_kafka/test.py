@@ -4207,7 +4207,7 @@ def test_max_rows_per_message(kafka_cluster):
     messages = []
 
     attempt = 0
-    while attempt < 100:
+    while attempt < 500:
         messages.extend(kafka_consume(kafka_cluster, topic))
         if len(messages) == 2:
             break
@@ -4222,7 +4222,7 @@ def test_max_rows_per_message(kafka_cluster):
 
     attempt = 0
     rows = 0
-    while attempt < 100:
+    while attempt < 500:
         rows = int(instance.query("SELECT count() FROM test.view"))
         if rows == num_rows:
             break
@@ -4289,7 +4289,7 @@ def test_row_based_formats(kafka_cluster):
         messages = []
 
         attempt = 0
-        while attempt < 100:
+        while attempt < 500:
             messages.extend(kafka_consume(kafka_cluster, format_name, needDecode=False))
             if len(messages) == 2:
                 break
@@ -4299,7 +4299,7 @@ def test_row_based_formats(kafka_cluster):
 
         attempt = 0
         rows = 0
-        while attempt < 100:
+        while attempt < 500:
             rows = int(instance.query("SELECT count() FROM test.view"))
             if rows == num_rows:
                 break
@@ -4342,7 +4342,7 @@ def test_block_based_formats_1(kafka_cluster):
     messages = []
 
     attempt = 0
-    while attempt < 100:
+    while attempt < 500:
         messages.extend(kafka_consume(kafka_cluster, topic))
         if len(messages) == 3:
             break
@@ -4409,7 +4409,7 @@ def test_block_based_formats_2(kafka_cluster):
         messages = []
 
         attempt = 0
-        while attempt < 100:
+        while attempt < 500:
             messages.extend(kafka_consume(kafka_cluster, format_name, needDecode=False))
             if len(messages) == 9:
                 break
@@ -4419,7 +4419,7 @@ def test_block_based_formats_2(kafka_cluster):
 
         attempt = 0
         rows = 0
-        while attempt < 100:
+        while attempt < 500:
             rows = int(instance.query("SELECT count() FROM test.view"))
             if rows == num_rows:
                 break
