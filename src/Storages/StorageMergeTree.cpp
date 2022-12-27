@@ -978,8 +978,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         return {};
     }
 
-    size_t max_ast_elements = getContext()->getSettingsRef().max_expanded_ast_elements;
-
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
     if (storage_settings.get()->assign_part_uuids)
         future_part->uuid = UUIDHelpers::generateV4();

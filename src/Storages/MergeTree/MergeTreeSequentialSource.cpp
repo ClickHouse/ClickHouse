@@ -302,7 +302,7 @@ public:
                 mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     data_part, metadata_snapshot, key_condition, context->getSettingsRef(), log);
 
-            if (mark_ranges && !mark_ranges->empty())
+            if (mark_ranges && mark_ranges->empty())
             {
                 pipeline.init(Pipe(std::make_unique<NullSource>(output_stream->header)));
                 return;
@@ -342,19 +342,19 @@ void createMergeTreeSequentialSource(
 
     plan.addStep(std::move(reading));
 
-    if (filter)
-    {
-        if (filter->getOutputs().size() != 1)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Filter condition is exprected to have single output. Filter {}",
-                filter->dumpDAG());
+    // if (filter)
+    // {
+    //     if (filter->getOutputs().size() != 1)
+    //         throw Exception(
+    //             ErrorCodes::LOGICAL_ERROR,
+    //             "Filter condition is exprected to have single output. Filter {}",
+    //             filter->dumpDAG());
 
-        auto column_name = filter->getOutputs().front()->result_name;
+    //     auto column_name = filter->getOutputs().front()->result_name;
 
-        auto filtering = std::make_unique<FilterStep>(plan.getCurrentDataStream(), filter, column_name, true);
-        plan.addStep(std::move(filtering));
-    }
+    //     auto filtering = std::make_unique<FilterStep>(plan.getCurrentDataStream(), filter, column_name, true);
+    //     plan.addStep(std::move(filtering));
+    // }
 }
 
 }
