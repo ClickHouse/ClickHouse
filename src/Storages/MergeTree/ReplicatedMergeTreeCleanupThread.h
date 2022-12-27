@@ -63,7 +63,7 @@ private:
 
     struct NodeWithStat;
     /// Returns list of blocks (with their stat) sorted by ctime in descending order.
-    void getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks);
+    void getBlocksSortedByTime(const String & blocks_dir_name, zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks);
 
     /// TODO Removing old quorum/failed_parts
 };

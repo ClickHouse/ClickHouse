@@ -328,7 +328,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_
     auto zookeeper = storage.getZooKeeper();
 
     std::vector<NodeWithStat> timed_blocks;
-    getBlocksSortedByTime(*zookeeper, timed_blocks);
+    getBlocksSortedByTime(blocks_dir_name, *zookeeper, timed_blocks);
 
     if (timed_blocks.empty())
         return;
@@ -391,14 +391,14 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_
 }
 
 
-void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks)
+void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & blocks_dir_name, zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks)
 {
     timed_blocks.clear();
 
     Strings blocks;
     Coordination::Stat stat;
-    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
-        throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(storage.zookeeper_path + "/" + blocks_dir_name, blocks, &stat))
+        throw Exception(ErrorCodes::NOT_FOUND_NODE, "{}/{} doesn't exist", storage.zookeeper_path, blocks_dir_name);
 
     /// Seems like this code is obsolete, because we delete blocks from cache
     /// when they are deleted from zookeeper. But we don't know about all (maybe future) places in code
@@ -417,7 +417,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     auto not_cached_blocks = stat.numChildren - cached_block_stats.size();
     if (not_cached_blocks)
     {
-        LOG_TRACE(log, "Checking {} blocks ({} are not cached){}", stat.numChildren, not_cached_blocks, " to clear old ones from ZooKeeper.");
+        LOG_TRACE(log, "Checking {} {} ({} are not cached){}", stat.numChildren, blocks_dir_name, not_cached_blocks, " to clear old ones from ZooKeeper.");
     }
 
     std::vector<std::string> exists_paths;
@@ -427,7 +427,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         if (it == cached_block_stats.end())
         {
             /// New block. Fetch its stat asynchronously.
-            exists_paths.emplace_back(storage.zookeeper_path + "/blocks/" + block);
+            exists_paths.emplace_back(storage.zookeeper_path + "/" + blocks_dir_name + "/" + block);
         }
         else
         {
