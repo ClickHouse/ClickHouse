@@ -62,7 +62,6 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int EMPTY_NESTED_TABLE;
     extern const int EXPECTED_ALL_OR_ANY;
-    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -715,32 +714,34 @@ std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
     return res > 0;
 }
 
-bool tryJoinOnConst(TableJoin & analyzed_join, ASTPtr & on_expression, ContextPtr context)
+bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, ContextPtr context)
 {
-    bool join_on_value;
-    if (auto eval_const_res = tryEvaluateConstCondition(on_expression, context))
-        join_on_value = *eval_const_res;
-    else
+    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
         return false;
 
-    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "JOIN ON constant ({}) supported only with join algorithm 'hash'",
-                        queryToString(on_expression));
+    if (analyzed_join.strictness() == JoinStrictness::Asof)
+        return false;
 
-    on_expression = nullptr;
-    if (join_on_value)
-    {
-        LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as cross join");
-        analyzed_join.resetToCross();
-    }
-    else
-    {
-        LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as empty join");
-        analyzed_join.resetKeys();
-    }
+    if (analyzed_join.isSpecialStorage())
+        return false;
 
-    return true;
+    if (auto eval_const_res = tryEvaluateConstCondition(on_expression, context))
+    {
+        if (eval_const_res.value())
+        {
+            /// JOIN ON 1 == 1
+            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as cross join");
+            analyzed_join.resetToCross();
+        }
+        else
+        {
+            /// JOIN ON 1 != 1
+            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as empty join");
+            analyzed_join.resetKeys();
+        }
+        return true;
+    }
+    return false;
 }
 
 /// Find the columns that are obtained by JOIN.
@@ -759,6 +760,13 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     }
     else if (table_join.on_expression)
     {
+        bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
+        if (join_on_const_ok)
+        {
+            table_join.on_expression = nullptr;
+            return;
+        }
+
         bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
@@ -779,44 +787,22 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
         }
 
         auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };
+        bool any_keys_empty = std::any_of(analyzed_join.getClauses().begin(), analyzed_join.getClauses().end(), check_keys_empty);
 
-        /// All clauses should to have keys or be empty simultaneously
-        bool all_keys_empty = std::all_of(analyzed_join.getClauses().begin(), analyzed_join.getClauses().end(), check_keys_empty);
-        if (all_keys_empty)
+        if (any_keys_empty)
+            throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                "Cannot get JOIN keys from JOIN ON section: '{}', found keys: {}",
+                                queryToString(table_join.on_expression), TableJoin::formatClauses(analyzed_join.getClauses()));
+
+        if (is_asof)
         {
-            /// Try join on constant (cross or empty join) or fail
-            if (is_asof)
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                                "Cannot get JOIN keys from JOIN ON section: {}", queryToString(table_join.on_expression));
-
-            if (const auto storage_join = analyzed_join.getStorageJoin())
-                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
-                    "StorageJoin keys should match JOIN keys, expected JOIN ON [{}]", fmt::join(storage_join->getKeyNames(), ", "));
-
-            bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
-            if (!join_on_const_ok)
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                                "Cannot get JOIN keys from JOIN ON section: {}", queryToString(table_join.on_expression));
+            if (!analyzed_join.oneDisjunct())
+                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
+            data.asofToJoinKeys();
         }
-        else
-        {
-            bool any_keys_empty = std::any_of(analyzed_join.getClauses().begin(), analyzed_join.getClauses().end(), check_keys_empty);
 
-            if (any_keys_empty)
-                throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                                    "Cannot get JOIN keys from JOIN ON section: '{}'",
-                                    queryToString(table_join.on_expression));
-
-            if (is_asof)
-            {
-                if (!analyzed_join.oneDisjunct())
-                    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
-                data.asofToJoinKeys();
-            }
-
-            if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
-                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
-        }
+        if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
     }
 }
 

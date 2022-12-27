@@ -35,7 +35,7 @@ static Block addWindowFunctionResultColumns(const Block & block,
     {
         ColumnWithTypeAndName column_with_type;
         column_with_type.name = f.column_name;
-        column_with_type.type = f.aggregate_function->getReturnType();
+        column_with_type.type = f.aggregate_function->getResultType();
         column_with_type.column = column_with_type.type->createColumn();
 
         result.insert(column_with_type);

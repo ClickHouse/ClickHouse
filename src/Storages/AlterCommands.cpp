@@ -1352,12 +1352,20 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
+    {
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context); mutation_cmd)
+        {
             result.push_back(*mutation_cmd);
+        }
+        else if (with_alters)
+        {
+            result.push_back(MutationCommand{.ast = alter_cmd.ast->clone(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
+        }
+    }
 
     if (materialize_ttl)
     {
