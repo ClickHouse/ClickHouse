@@ -513,6 +513,7 @@ def test_apply_new_settings(cluster):
         f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096, -1)}",
     )
 
+
 def test_big_insert(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
