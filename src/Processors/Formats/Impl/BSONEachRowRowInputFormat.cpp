@@ -18,6 +18,7 @@
 #include <Columns/ColumnMap.h>
 
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -282,7 +283,7 @@ static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson
     }
     else if (bson_type == BSONType::OBJECT_ID)
     {
-        readAndInsertStringImpl<is_fixed_string>(in, column, 12);
+        readAndInsertStringImpl<is_fixed_string>(in, column, BSON_OBJECT_ID_SIZE);
     }
     else
     {
@@ -664,7 +665,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         }
         case BSONType::OBJECT_ID:
         {
-            in.ignore(12);
+            in.ignore(BSON_OBJECT_ID_SIZE);
             break;
         }
         case BSONType::REGEXP:
@@ -677,7 +678,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         {
             BSONSizeT size;
             readBinary(size, in);
-            in.ignore(size + 12);
+            in.ignore(size + BSON_DB_POINTER_SIZE);
             break;
         }
         case BSONType::JAVA_SCRIPT_CODE_W_SCOPE:
@@ -796,13 +797,17 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::SYMBOL: [[fallthrough]];
         case BSONType::JAVA_SCRIPT_CODE: [[fallthrough]];
-        case BSONType::OBJECT_ID: [[fallthrough]];
         case BSONType::STRING:
         {
             BSONSizeT size;
             readBinary(size, in);
             in.ignore(size);
             return std::make_shared<DataTypeString>();
+        }
+        case BSONType::OBJECT_ID:;
+        {
+            in.ignore(BSON_OBJECT_ID_SIZE);
+            return makeNullable(std::make_shared<DataTypeFixedString>(BSON_OBJECT_ID_SIZE));
         }
         case BSONType::DOCUMENT:
         {
@@ -954,6 +959,7 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
         { return std::make_shared<BSONEachRowRowInputFormat>(buf, sample, std::move(params), settings); });
+    factory.registerFileExtension("bson", "BSONEachRow");
 }
 
 void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory)

@@ -250,7 +250,7 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 
                 if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
-                    StorageReplicatedMergeTree::Status status;
+                    ReplicatedTableStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
 
                     calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);
