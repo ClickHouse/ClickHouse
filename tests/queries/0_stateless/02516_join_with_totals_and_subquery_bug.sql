@@ -46,7 +46,7 @@ ALL LEFT JOIN
         2147483646,
         NULL
     GROUP BY
-        base64Encode(materialize(NULL)),
+        base58Encode(materialize(NULL)),
         NULL
         WITH TOTALS
 ) AS js2 USING (a)
