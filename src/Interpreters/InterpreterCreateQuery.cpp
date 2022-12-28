@@ -558,7 +558,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         /// check if conversion is possible
         auto types = defaults_sample_block.getDataTypes();
-        for ( auto i = types.begin(); i != types.end(); )
+        for (auto i = types.begin(); i != types.end();)
         {
             const auto type_to = *(i++);
             const auto type_from = *(i++);
