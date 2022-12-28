@@ -699,6 +699,12 @@ Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block
         if (sample_column.column->isNullable())
             JoinCommon::convertColumnToNullable(column);
 
+        if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
+        {
+            column.column = column.column->convertToFullColumnIfLowCardinality();
+            column.type = removeLowCardinality(column.type);
+        }
+
         /// There's no optimization for right side const columns. Remove constness if any.
         column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
         structured_block.insert(std::move(column));
