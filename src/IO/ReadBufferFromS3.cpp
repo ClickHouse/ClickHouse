@@ -340,9 +340,7 @@ SeekableReadBufferPtr ReadBufferS3Factory::getReader()
 {
     const auto next_range = range_generator.nextRange();
     if (!next_range)
-    {
         return nullptr;
-    }
 
     auto reader = std::make_shared<ReadBufferFromS3>(
         client_ptr,
@@ -350,10 +348,11 @@ SeekableReadBufferPtr ReadBufferS3Factory::getReader()
         key,
         version_id,
         request_settings,
-        read_settings,
+        read_settings.adjustBufferSize(object_size),
         false /*use_external_buffer*/,
         next_range->first,
         next_range->second);
+
     return reader;
 }
 

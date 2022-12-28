@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace DB
 {
 
-static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
 {
     /// Better form for user: SYSTEM <ACTION> table ON CLUSTER cluster
@@ -71,7 +71,7 @@ enum class SystemQueryTargetType
     Disk
 };
 
-static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
+[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
 {
     /// Better form for user: SYSTEM <ACTION> target_name ON CLUSTER cluster
     /// Query rewritten form + form while executing on cluster: SYSTEM <ACTION> ON CLUSTER cluster target_name
@@ -136,7 +136,7 @@ static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & r
     return true;
 }
 
-static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                     Expected & expected)
 {
     String cluster_str;
@@ -150,9 +150,10 @@ static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IPars
     return true;
 }
 
-static bool parseDropReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
+[[nodiscard]] static bool parseDropReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
 {
-    parseQueryWithOnCluster(res, pos, expected);
+    if (!parseQueryWithOnCluster(res, pos, expected))
+        return false;
 
     ASTPtr ast;
     if (!ParserStringLiteral{}.parse(pos, ast, expected))
@@ -236,13 +237,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+
         case Type::DROP_REPLICA:
         {
             if (!parseDropReplica(res, pos, expected, /* database */ false))
                 return false;
             break;
         }
-
         case Type::DROP_DATABASE_REPLICA:
         {
             if (!parseDropReplica(res, pos, expected, /* database */ true))
@@ -253,7 +254,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
         {
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
             break;
@@ -261,7 +263,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::SYNC_DATABASE_REPLICA:
         {
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             if (!parseDatabaseAsAST(pos, expected, res->database))
                 return false;
             break;
@@ -324,7 +327,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             else
             {
-                parseQueryWithOnCluster(res, pos, expected);
+                if (!parseQueryWithOnCluster(res, pos, expected))
+                    return false;
                 if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
                 {
                     if (!parse_on_volume())
@@ -349,13 +353,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
 
         case Type::SUSPEND:
         {
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
 
             ASTPtr seconds;
             if (!(ParserKeyword{"FOR"}.ignore(pos, expected)
@@ -374,7 +380,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             break;
         }
         case Type::DROP_SCHEMA_CACHE:
@@ -411,7 +418,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         default:
         {
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             break;
         }
     }

@@ -112,6 +112,11 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
     return std::move(planner).extractQueryPlan();
 }
 
+void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
+{
+    planner.addStorageLimits(storage_limits);
+}
+
 void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
 {
     elem.query_kind = "Select";

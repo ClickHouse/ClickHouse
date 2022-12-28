@@ -121,15 +121,13 @@ public:
     explicit GroupArrayNumericImpl(
         const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
         : IAggregateFunctionDataHelper<GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>, GroupArrayNumericImpl<T, Trait>>(
-            {data_type_}, parameters_)
+            {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , max_elems(max_elems_)
         , seed(seed_)
     {
     }
 
     String getName() const override { return getNameByTrait<Trait>(); }
-
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(this->argument_types[0]); }
 
     void insert(Data & a, const T & v, Arena * arena) const
     {
@@ -423,7 +421,7 @@ class GroupArrayGeneralImpl final
 public:
     GroupArrayGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
         : IAggregateFunctionDataHelper<GroupArrayGeneralData<Node, Trait::sampler != Sampler::NONE>, GroupArrayGeneralImpl<Node, Trait>>(
-            {data_type_}, parameters_)
+            {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , data_type(this->argument_types[0])
         , max_elems(max_elems_)
         , seed(seed_)
@@ -431,8 +429,6 @@ public:
     }
 
     String getName() const override { return getNameByTrait<Trait>(); }
-
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(data_type); }
 
     void insert(Data & a, const Node * v, Arena * arena) const
     {
@@ -697,15 +693,13 @@ class GroupArrayGeneralListImpl final
 
 public:
     GroupArrayGeneralListImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, Trait>>({data_type_}, parameters_)
+        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, Trait>>({data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , data_type(this->argument_types[0])
         , max_elems(max_elems_)
     {
     }
 
     String getName() const override { return getNameByTrait<Trait>(); }
-
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(data_type); }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {

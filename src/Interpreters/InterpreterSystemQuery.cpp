@@ -726,7 +726,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
-                    StorageReplicatedMergeTree::Status status;
+                    ReplicatedTableStatus status;
                     storage_replicated->getStatus(status);
                     if (status.zookeeper_path == query.replica_zk_path)
                         throw Exception("There is a local table " + storage_replicated->getStorageID().getNameForLogs() +
@@ -762,7 +762,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
     if (!storage_replicated)
         return false;
 
-    StorageReplicatedMergeTree::Status status;
+    ReplicatedTableStatus status;
     auto zookeeper = getContext()->getZooKeeper();
     storage_replicated->getStatus(status);
 
