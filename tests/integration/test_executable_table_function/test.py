@@ -387,7 +387,7 @@ def test_executable_pool_storage_input_argument_python(started_cluster):
     node.query(query.format(source="(SELECT id FROM test_data_table)"))
 
     assert node.query("SELECT * FROM test_table") == "Key 1 0\nKey 1 1\nKey 1 2\n"
-    assert node.query("SELECT * FROM test_table") == "Key 1 0\nKey 1 1\nKey 1 2\n"pollfd
+    assert node.query("SELECT * FROM test_table") == "Key 1 0\nKey 1 1\nKey 1 2\n"
     assert node.query("SELECT * FROM test_table") == "Key 1 0\nKey 1 1\nKey 1 2\n"
 
     node.query("DROP TABLE test_table")
