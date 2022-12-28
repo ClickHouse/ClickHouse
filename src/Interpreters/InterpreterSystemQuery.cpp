@@ -504,6 +504,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RESTORE_REPLICA:
             restoreReplica();
             break;
+        case Type::RESTART_DISK:
+            restartDisk(query.disk);
+            break;
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -837,6 +840,13 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
+void InterpreterSystemQuery::restartDisk(String &)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
+    throw Exception("SYSTEM RESTART DISK is not supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
 AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() const
 {
     const auto & query = query_ptr->as<const ASTSystemQuery &>();
@@ -1007,6 +1017,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_LOGS:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
+            break;
+        }
+        case Type::RESTART_DISK:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
             break;
         }
         case Type::UNFREEZE:
