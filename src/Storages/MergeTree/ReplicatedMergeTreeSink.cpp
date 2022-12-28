@@ -820,7 +820,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
                     part->name);
         }
 
-        auto renamePartToTemporary = [&temporary_part_relative_path, &transaction, &part]()
+        auto rename_part_to_temporary = [&temporary_part_relative_path, &transaction, &part]()
         {
             transaction.rollbackPartsToTemporaryState();
 
@@ -836,7 +836,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         }
         catch (const Exception &)
         {
-            renamePartToTemporary();
+            rename_part_to_temporary();
             throw;
         }
 
@@ -910,7 +910,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
                 /// We will try to add this part again on the new iteration as it's just a new part.
                 /// So remove it from storage parts set immediately and transfer state to temporary.
-                renamePartToTemporary();
+                rename_part_to_temporary();
 
                 if constexpr (async_insert)
                 {
@@ -944,7 +944,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
                 /// Part was not committed to keeper
                 /// So make it temporary to avoid its resurrection on restart
-                renamePartToTemporary();
+                rename_part_to_temporary();
 
                 throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
             }
