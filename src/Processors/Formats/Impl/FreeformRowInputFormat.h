@@ -121,6 +121,8 @@ private:
     bool first_row = true;
 
     const FormatSettings format_settings;
+    // for now it's min(100, settings_.max_rows_to_read_for_schema_inference) to keep it fast
+    // we could reconsider using settings_.max_rows_to_read_for_schema_inference once we are able to store solutions
     size_t max_rows_to_check;
     ReadBuffer & in;
 

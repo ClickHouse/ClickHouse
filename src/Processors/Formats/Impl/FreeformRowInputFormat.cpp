@@ -324,11 +324,33 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
                 if (in.eof())
                     break;
 
-                for (const auto & i : solution.matchers_order)
+                std::unordered_map<String, DataTypePtr> parsed_types;
+                for (size_t col = 0; const auto & i : solution.matchers_order)
                 {
                     skipWhitespacesAndDelimiters(in);
-                    matchers[i]->parseFields(in, 0);
+                    auto fields = matchers[i]->parseFields(in, col);
+                    for (const auto & [name, field] : fields)
+                    {
+                        auto type = matchers[i]->getDataTypeFromField(field);
+                        if (type)
+                        {
+                            type = makeFloatIfInt(type);
+                            parsed_types[name] = type;
+                            ++col;
+                        }
+                    }
                 }
+
+                if (parsed_types.size() < solution.columns.size())
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unable to parse the desired number of fields");
+
+                for (const auto & [name, type] : solution.columns)
+                    if (parsed_types[name]->getName() != type->getName())
+                        throw Exception(
+                            ErrorCodes::CANNOT_READ_ALL_DATA,
+                            "Received unexpected type: expected: {}, actual: {}",
+                            type->getName(),
+                            parsed_types[name]->getName());
 
                 if (!in.eof() && *in.position() != '\n')
                     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Solution did not end at newline character.");
@@ -342,7 +364,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         }
         catch (Exception & e)
         {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "fail to parse field: {}", e.message());
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Solution fails: {}", e.message());
         }
     }
 
