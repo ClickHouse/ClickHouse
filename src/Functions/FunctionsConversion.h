@@ -1633,6 +1633,15 @@ public:
         return getter(arguments);
     }
 
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            columns[i] = {arguments[i]->createColumn(), arguments[i], ""};
+
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto getter = [&] (const auto & args) { return getReturnTypeImplRemovedNullable(args); };
