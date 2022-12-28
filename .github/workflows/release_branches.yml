@@ -220,6 +220,7 @@ jobs:
         with:
           clear-repository: true
           submodules: true
+          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -264,6 +265,7 @@ jobs:
         with:
           clear-repository: true
           submodules: true
+          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -308,6 +310,7 @@ jobs:
         with:
           clear-repository: true
           submodules: true
+          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -352,6 +355,7 @@ jobs:
         with:
           clear-repository: true
           submodules: true
+          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -396,6 +400,7 @@ jobs:
         with:
           clear-repository: true
           submodules: true
+          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
