@@ -12,8 +12,13 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnArray.h>
+#include "Columns/ColumnsNumber.h"
+#include <Common/PODArray.h>
+#include <Common/PODArray_fwd.h>
 
 
 /** This is simple, not numerically stable
@@ -276,5 +281,141 @@ template <typename T> using AggregateFunctionKurtSampSimple = AggregateFunctionV
 template <typename T1, typename T2> using AggregateFunctionCovarPopSimple = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, StatisticsFunctionKind::covarPop>>;
 template <typename T1, typename T2> using AggregateFunctionCovarSampSimple = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, StatisticsFunctionKind::covarSamp>>;
 template <typename T1, typename T2> using AggregateFunctionCorrSimple = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, StatisticsFunctionKind::corr>>;
+
+
+template <StatisticsFunctionKind _kind>
+struct StatFuncArbitraryArgData
+{
+    using DataType = std::conditional_t<_kind == StatisticsFunctionKind::corr, CorrMoments<Float64>, CovarMoments<Float64>>;
+
+    StatFuncArbitraryArgData() = default;
+
+    explicit StatFuncArbitraryArgData(const size_t _num_args)
+        : num_args(_num_args)
+    {
+        data_matrix.resize_fill(num_args * (num_args + 1) / 2, DataType());
+    }
+
+    void add(const IColumn ** column, const size_t row_num)
+    {
+        for (size_t i = 0; i < num_args; ++i)
+            for (size_t j = 0; j <= i; ++j) 
+                 data_matrix[i * (i + 1) / 2 + j].add(column[i]->getFloat64(row_num), column[j]->getFloat64(row_num));
+    }
+
+    void merge(const StatFuncArbitraryArgData & other)
+    {
+        for (size_t i = 0; i < num_args; ++i)
+            for (size_t j = 0; j <= i; ++j)
+                data_matrix[i * (i + 1) / 2 + j].merge(other.data_matrix[i * (i + 1) / 2 + j]);
+    }
+
+    void serialize(WriteBuffer & buf) const
+    {
+        for (size_t i = 0; i < num_args; ++i)
+            for (size_t j = 0; j <= i; ++j)
+                data_matrix[i * (i + 1) / 2 + j].write(buf);
+    }
+
+    void deserialize(ReadBuffer & buf)
+    {
+        for (size_t i = 0; i < num_args; ++i)
+            for (size_t j = 0; j <= i; ++j)
+                data_matrix[i * (i + 1) / 2 + j].read(buf);
+    }
+
+    void insertResultInto(IColumn & to) const
+    {
+        auto & data_to = assert_cast<ColumnFloat64 &>(assert_cast<ColumnArray &>(assert_cast<ColumnArray &>(to).getData()).getData()).getData();
+        auto & root_offsets_to = assert_cast<ColumnArray &>(to).getOffsets();
+        auto & nested_offsets_to = assert_cast<ColumnArray &>(assert_cast<ColumnArray &>(to).getData()).getOffsets();
+        for (size_t i = 0; i < num_args; ++i)
+        {
+            for (size_t j = 0; j < num_args; ++j)
+            {
+                auto & data = i < j ? data_matrix[j * (j + 1) / 2 + i] : data_matrix[i * (i + 1) / 2 + j];
+                if constexpr (kind == StatisticsFunctionKind::covarPop)
+                    data_to.push_back(data.getPopulation());
+                if constexpr (kind == StatisticsFunctionKind::covarSamp)
+                    data_to.push_back(data.getSample());
+                if constexpr (kind == StatisticsFunctionKind::corr)
+                    data_to.push_back(data.get());
+            }
+            nested_offsets_to.push_back(nested_offsets_to.back() + num_args);
+        }
+        root_offsets_to.push_back(root_offsets_to.back() + num_args);
+    }
+
+    static constexpr StatisticsFunctionKind kind = _kind;
+    PaddedPODArray<DataType> data_matrix;
+    size_t num_args;
+};
+
+template <typename StatFuncData>
+class AggregateFunctionVarianceSimpleMatrix final
+    : public IAggregateFunctionDataHelper<StatFuncData, AggregateFunctionVarianceSimpleMatrix<StatFuncData>>
+{
+public:
+
+    explicit AggregateFunctionVarianceSimpleMatrix(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<StatFuncData, AggregateFunctionVarianceSimpleMatrix<StatFuncData>>(argument_types_, {}, createResultType())
+    {}
+
+    AggregateFunctionVarianceSimpleMatrix(const IDataType &, const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<StatFuncData, AggregateFunctionVarianceSimpleMatrix<StatFuncData>>(argument_types_, {}, createResultType())
+    {}
+
+    String getName() const override
+    {
+        if constexpr (StatFuncData::kind == StatisticsFunctionKind::covarPop)
+            return "covarPopMatrix";
+        if constexpr (StatFuncData::kind == StatisticsFunctionKind::covarSamp)
+            return "covarSampMatrix";
+        if constexpr (StatFuncData::kind == StatisticsFunctionKind::corr)
+            return "corrMatrix";
+        UNREACHABLE();
+    }
+
+    void create(AggregateDataPtr __restrict place) const override
+    {
+        new (place) StatFuncData(this->argument_types.size());
+    }
+
+    static DataTypePtr createResultType()
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>()));
+    }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        this->data(place).add(columns, row_num);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        this->data(place).merge(this->data(rhs));
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        this->data(place).serialize(buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        this->data(place).deserialize(buf);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        this->data(place).insertResultInto(to);
+    }
+};
+
+using AggregateFunctionCovarPopSimpleMatrix = AggregateFunctionVarianceSimpleMatrix<StatFuncArbitraryArgData<StatisticsFunctionKind::covarPop>>;
+using AggregateFunctionCovarSampSimpleMatrix = AggregateFunctionVarianceSimpleMatrix<StatFuncArbitraryArgData<StatisticsFunctionKind::covarSamp>>;
+using AggregateFunctionCorrSimpleMatrix = AggregateFunctionVarianceSimpleMatrix<StatFuncArbitraryArgData<StatisticsFunctionKind::corr>>;
 
 }

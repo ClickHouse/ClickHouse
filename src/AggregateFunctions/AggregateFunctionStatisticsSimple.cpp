@@ -51,6 +51,18 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
     return res;
 }
 
+template <typename FunctionTemplate>
+AggregateFunctionPtr createAggregateFunctionStatisticsArbitrary(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertNoParameters(name, parameters);
+    for (const auto & argument_type : argument_types)
+        if (!isNumber(argument_type))
+            throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    return std::make_shared<FunctionTemplate>(argument_types);
+}
+
 }
 
 void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory & factory)
@@ -75,6 +87,10 @@ void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory & facto
     factory.registerAlias("STDDEV_POP", "stddevPop", AggregateFunctionFactory::CaseInsensitive);
     factory.registerAlias("COVAR_SAMP", "covarSamp", AggregateFunctionFactory::CaseInsensitive);
     factory.registerAlias("COVAR_POP", "covarPop", AggregateFunctionFactory::CaseInsensitive);
+
+    factory.registerFunction("covarSampMatrix", createAggregateFunctionStatisticsArbitrary<AggregateFunctionCovarSampSimpleMatrix>);
+    factory.registerFunction("covarPopMatrix", createAggregateFunctionStatisticsArbitrary<AggregateFunctionCovarPopSimpleMatrix>);
+    factory.registerFunction("corrMatrix", createAggregateFunctionStatisticsArbitrary<AggregateFunctionCorrSimpleMatrix>);
 }
 
 }
