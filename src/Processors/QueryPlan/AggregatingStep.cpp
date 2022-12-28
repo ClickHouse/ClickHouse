@@ -67,9 +67,9 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 }
 
 
-static Block appendGroupingColumn(Block block, const Names & keys, const GroupingSetsParamsList & params, bool use_nulls)
+Block AggregatingStep::appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls)
 {
-    if (params.empty())
+    if (!has_grouping)
         return block;
 
     return generateOutputHeader(block, keys, use_nulls);
@@ -90,7 +90,10 @@ AggregatingStep::AggregatingStep(
     SortDescription group_by_sort_description_,
     bool should_produce_results_in_order_of_bucket_number_)
     : ITransformingStep(
-        input_stream_, appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, grouping_sets_params_, group_by_use_nulls_), getTraits(should_produce_results_in_order_of_bucket_number_), false)
+        input_stream_,
+        appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
+        getTraits(should_produce_results_in_order_of_bucket_number_),
+        false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(final_)
@@ -422,7 +425,7 @@ void AggregatingStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(),
-        appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, grouping_sets_params, group_by_use_nulls),
+        appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
         getDataStreamTraits());
 }
 
