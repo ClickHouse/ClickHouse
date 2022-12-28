@@ -96,7 +96,7 @@ static std::vector<std::string> extractFromConfig(
         DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
 
         if (bootstrap_configuration->has("zookeeper") && bootstrap_configuration->has("keeper"))
-            throw DB::Exception(DB::ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both zookeeper and keeper are specified");
+            throw DB::Exception(DB::ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both ZooKeeper and Keeper are specified");
 
         zkutil::ZooKeeperPtr zookeeper;
         zookeeper = std::make_shared<zkutil::ZooKeeper>(
