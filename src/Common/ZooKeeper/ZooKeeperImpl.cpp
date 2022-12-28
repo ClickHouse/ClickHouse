@@ -676,7 +676,7 @@ void ZooKeeper::receiveThread()
                 if (earliest_operation)
                 {
                     throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response) for request {} for path: {}",
-                                    earliest_operation->request->getOpNum(), earliest_operation->request->getPath());
+                        toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
                 if (waited_us >= args.session_timeout_ms * 1000)
@@ -870,7 +870,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     if (already_started)
         return;
 
-    LOG_INFO(log, "Finalizing session {}: finalization_started={}, queue_finished={}, reason={}",
+    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
 
     auto expire_session_if_not_expired = [&]
