@@ -75,9 +75,7 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
-        clickhouse_node.query(
-            "DROP DATABASE IF EXISTS test_database"
-        )
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
         )
