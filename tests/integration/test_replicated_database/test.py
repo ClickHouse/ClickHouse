@@ -880,7 +880,8 @@ def test_recover_staled_replica_many_mvs(started_cluster):
             main_node.query_with_retry(
                 f"""CREATE MATERIALIZED VIEW recover_mvs.mv{identifier}
                     TO recover_mvs.mv_inner{identifier}
-                    AS SELECT * FROM recover_mvs.rmt{identifier}""", settings=settings
+                    AS SELECT * FROM recover_mvs.rmt{identifier}""",
+                settings=settings,
             )
 
         print("Created MVs")
@@ -895,7 +896,8 @@ def test_recover_staled_replica_many_mvs(started_cluster):
             main_node.query_with_retry(
                 f"""CREATE MATERIALIZED VIEW recover_mvs.cascade_mv{identifier}
                     TO recover_mvs.cascade_mv_inner{identifier}
-                    AS SELECT * FROM recover_mvs.mv_inner{identifier}""", settings=settings
+                    AS SELECT * FROM recover_mvs.mv_inner{identifier}""",
+                settings=settings,
             )
 
         print("Created cascade MVs")
@@ -910,7 +912,8 @@ def test_recover_staled_replica_many_mvs(started_cluster):
             main_node.query_with_retry(
                 f"""CREATE MATERIALIZED VIEW recover_mvs.double_cascade_mv{identifier}
                     TO recover_mvs.double_cascade_mv_inner{identifier}
-                    AS SELECT * FROM recover_mvs.cascade_mv_inner{identifier}""", settings=settings
+                    AS SELECT * FROM recover_mvs.cascade_mv_inner{identifier}""",
+                settings=settings,
             )
 
         print("Created double cascade MVs")
@@ -943,7 +946,8 @@ def test_recover_staled_replica_many_mvs(started_cluster):
                 ) AS new_table_2
                 INNER JOIN recover_mvs.double_cascade_mv_inner4 AS q4 ON new_table_2.n = q4.n
             )
-            """, settings=settings
+            """,
+            settings=settings,
         )
 
         print("Created final boss")
@@ -959,7 +963,10 @@ def test_recover_staled_replica_many_mvs(started_cluster):
         dummy_node.query(f"SYSTEM SYNC REPLICA recover_mvs.{table}")
 
     # This is to make anime work reliably
-    dummy_node.query("INSERT INTO recover_mvs.rmt1 SELECT * FROM numbers(1000)", settings={"max_block_size":1})
+    dummy_node.query(
+        "INSERT INTO recover_mvs.rmt1 SELECT * FROM numbers(1000)",
+        settings={"max_block_size": 1},
+    )
     assert dummy_node.query("SELECT * FROM recover_mvs.anime") == "42\n"
 
     main_node.query("DROP DATABASE IF EXISTS recover_mvs")
