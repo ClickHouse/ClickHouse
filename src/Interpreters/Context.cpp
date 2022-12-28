@@ -763,13 +763,17 @@ try
     fs::directory_iterator dir_end;
     for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
-        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
+        if (it->is_regular_file())
         {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-            fs::remove(it->path());
+            if (startsWith(it->path().filename(), "tmp"))
+            {
+                LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+                fs::remove(it->path());
+            }
+            else
+                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
         }
-        else
-            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+        /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
     }
 }
 catch (...)

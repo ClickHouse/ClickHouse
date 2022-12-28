@@ -292,7 +292,7 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_log_path = os.path.join(result_path, "runlog.log")
+    run_log_path = os.path.join(result_path, "run.log")
 
     additional_envs = get_additional_envs(
         check_name, run_by_hash_num, run_by_hash_total

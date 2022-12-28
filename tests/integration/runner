@@ -413,5 +413,11 @@ if __name__ == "__main__":
         subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
         print(f"Containers {containers} killed")
 
+    # Avoid overlaps with previous runs
+    subprocess.check_call("dmesg --clear", shell=True)
+
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)
+
+    # Dump dmesg (to capture possible OOMs)
+    subprocess.check_call("dmesg -T", shell=True)
