@@ -2647,6 +2647,7 @@ public:
         , cast_type(cast_type_)
         , cast_ipv4_ipv6_default_on_conversion_error(cast_ipv4_ipv6_default_on_conversion_error_)
     {
+        prepareUnpackDictionaries(getArgumentTypes()[0], getResultType());
     }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
