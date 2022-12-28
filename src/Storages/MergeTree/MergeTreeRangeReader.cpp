@@ -1197,7 +1197,7 @@ static ColumnPtr removeNullbleAndSparse(ColumnPtr col)
     }
     else if (col->isSparse() || col->lowCardinality())
         return removeNullbleAndSparse(col->convertToFullIfNeeded());
-    return col;
+    return col->convertToFullIfNeeded();
 }
 
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, ColumnPtr filter_by_bitmap)
