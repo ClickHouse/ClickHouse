@@ -2,16 +2,9 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Interpreters/PartLog.h>
-#include "Common/Exception.h"
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
-#include "Columns/IColumn.h"
-#include "Core/ColumnWithTypeAndName.h"
-#include "Core/ColumnsWithTypeAndName.h"
-#include "DataTypes/Serializations/ISerialization.h"
-#include "Processors/Chunk.h"
-#include "Storages/MergeTree/MergeTreeDataWriter.h"
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
