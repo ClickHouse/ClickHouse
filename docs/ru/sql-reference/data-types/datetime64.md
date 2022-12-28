@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/datetime64
 sidebar_position: 49
 sidebar_label: DateTime64
 ---
