@@ -347,9 +347,6 @@ CI_CONFIG = {
         "ClickHouse Keeper Jepsen": {
             "required_build": "binary_release",
         },
-        "ClickHouse Server Jepsen": {
-            "required_build": "binary_release",
-        },
         "Performance Comparison": {
             "required_build": "package_release",
             "test_grep_exclude_filter": "",
@@ -357,12 +354,6 @@ CI_CONFIG = {
         "Performance Comparison Aarch64": {
             "required_build": "package_aarch64",
             "test_grep_exclude_filter": "",
-        },
-        "SQLancer (release)": {
-            "required_build": "package_release",
-        },
-        "SQLancer (debug)": {
-            "required_build": "package_debug",
         },
     },
 }  # type: dict

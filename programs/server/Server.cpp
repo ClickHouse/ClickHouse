@@ -46,7 +46,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
-#include <Interpreters/ServerAsynchronousMetrics.h>
+#include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -60,7 +60,6 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Storages/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -70,8 +69,6 @@
 #include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <IO/Resource/registerSchedulerNodes.h>
-#include <IO/Resource/registerResourceManagers.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -101,10 +98,6 @@
 #include "config_version.h"
 
 #if defined(OS_LINUX)
-#    include <cstddef>
-#    include <cstdlib>
-#    include <sys/socket.h>
-#    include <sys/un.h>
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
@@ -214,7 +207,6 @@ try
 
     /// Clearing old temporary files.
     fs::directory_iterator dir_end;
-    size_t unknown_files = 0;
     for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
         if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
@@ -223,17 +215,8 @@ try
             fs::remove(it->path());
         }
         else
-        {
-            unknown_files++;
-            if (unknown_files < 100)
-                LOG_DEBUG(log, "Found unknown {} {} in temporary path",
-                    it->is_regular_file() ? "file" : (it->is_directory() ? "directory" : "element"),
-                    it->path().string());
-        }
+            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
     }
-
-    if (unknown_files)
-        LOG_DEBUG(log, "Found {} unknown files in temporary path", unknown_files);
 }
 catch (...)
 {
@@ -358,7 +341,19 @@ Poco::Net::SocketAddress Server::socketBindListen(
     [[maybe_unused]] bool secure) const
 {
     auto address = makeSocketAddress(host, port, &logger());
+#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
+    if (secure)
+        /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
+        /// https://github.com/pocoproject/poco/pull/2257
+        socket.bind(address, /* reuseAddress = */ true);
+    else
+#endif
+#if POCO_VERSION < 0x01080000
+    socket.bind(address, /* reuseAddress = */ true);
+#else
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config.getBool("listen_reuse_port", false));
+#endif
+
     /// If caller requests any available port from the OS, discover it after binding.
     if (port == 0)
     {
@@ -663,7 +658,6 @@ static void sanityChecks(Server & server)
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
-try
 {
     Poco::Logger * log = &logger();
 
@@ -691,34 +685,14 @@ try
     }
 #endif
 
-#if USE_OPENSSL_INTREE
-    /// When building openssl into clickhouse, clickhouse owns the configuration
-    /// Therefore, the clickhouse openssl configuration should be kept separate from
-    /// the OS. Default to the one in the standard config directory, unless overridden
-    /// by a key in the config.
-    if (config().has("opensslconf"))
-    {
-        std::string opensslconf_path = config().getString("opensslconf");
-        setenv("OPENSSL_CONF", opensslconf_path.c_str(), true);
-    }
-    else
-    {
-        const String config_path = config().getString("config-file", "config.xml");
-        const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
-        setenv("OPENSSL_CONF", config_dir.string(), true);
-    }
-#endif
-
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks(/* global_skip_access_check= */ false);
+    registerDisks();
     registerFormats();
     registerRemoteFileMetadatas();
-    registerSchedulerNodes();
-    registerResourceManagers();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -758,8 +732,6 @@ try
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
-    NamedCollectionUtils::loadFromConfig(config());
-
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
     {
@@ -779,7 +751,7 @@ try
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
-    ServerAsynchronousMetrics async_metrics(
+    AsynchronousMetrics async_metrics(
         global_context,
         config().getUInt("asynchronous_metrics_update_period_s", 1),
         config().getUInt("asynchronous_heavy_metrics_update_period_s", 120),
@@ -833,43 +805,41 @@ try
         /// that are interpreted (not executed) but can alter the behaviour of the program as well.
 
         /// Please keep the below log messages in-sync with the ones in daemon/BaseDaemon.cpp
+
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
+
         if (stored_binary_hash.empty())
         {
-            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read.");
+            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read."
+                " (calculated checksum: {})", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == stored_binary_hash)
+        {
+            LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
         }
         else
         {
-            String calculated_binary_hash = getHashOfLoadedBinaryHex();
-            if (calculated_binary_hash == stored_binary_hash)
+            /// If program is run under debugger, ptrace will fail.
+            if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
             {
-                LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
+                /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
+                global_context->addWarningMessage(
+                    fmt::format("Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                    calculated_binary_hash)
+                );
             }
             else
             {
-                /// If program is run under debugger, ptrace will fail.
-                if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
-                {
-                    /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                    global_context->addWarningMessage(fmt::format(
-                        "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
-                        calculated_binary_hash));
-                }
-                else
-                {
-                    throw Exception(
-                        ErrorCodes::CORRUPTED_DATA,
-                        "Calculated checksum of the executable ({0}) does not correspond"
-                        " to the reference checksum stored in the executable ({1})."
-                        " This may indicate one of the following:"
-                        " - the executable {2} was changed just after startup;"
-                        " - the executable {2} was corrupted on disk due to faulty hardware;"
-                        " - the loaded executable was corrupted in memory due to faulty hardware;"
-                        " - the file {2} was intentionally modified;"
-                        " - a logical error in the code.",
-                        calculated_binary_hash,
-                        stored_binary_hash,
-                        executable_path);
-                }
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Calculated checksum of the executable ({0}) does not correspond"
+                    " to the reference checksum stored in the executable ({1})."
+                    " This may indicate one of the following:"
+                    " - the executable {2} was changed just after startup;"
+                    " - the executable {2} was corrupted on disk due to faulty hardware;"
+                    " - the loaded executable was corrupted in memory due to faulty hardware;"
+                    " - the file {2} was intentionally modified;"
+                    " - a logical error in the code."
+                    , calculated_binary_hash, stored_binary_hash, executable_path);
             }
         }
     }
@@ -1144,8 +1114,6 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
-    NamedCollectionUtils::loadFromSQL(global_context);
-
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         include_from_path,
@@ -1186,9 +1154,6 @@ try
             total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-
-            bool allow_use_jemalloc_memory = config->getBool("allow_use_jemalloc_memory", true);
-            total_memory_tracker.setAllowUseJemallocMemory(allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
@@ -1293,11 +1258,6 @@ try
                 global_context->getDistributedSchedulePool().increaseThreadsCount(new_pool_size);
             }
 
-            if (config->has("resources"))
-            {
-                global_context->getResourceManager()->updateConfiguration(*config);
-            }
-
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
@@ -1319,8 +1279,6 @@ try
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
-            NamedCollectionUtils::reloadFromConfig(*config);
-
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -1469,7 +1427,8 @@ try
     if (settings.async_insert_threads)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
-            settings.async_insert_threads));
+            settings.async_insert_threads,
+            settings.async_insert_cleanup_timeout_ms));
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
@@ -1527,6 +1486,11 @@ try
 #endif
 
     SCOPE_EXIT({
+        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
+        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
+        main_config_reloader.reset();
+        access_control.stopPeriodicReloading();
+
         async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -1823,25 +1787,11 @@ try
             tryLogCurrentException(log, "Caught exception while starting cluster discovery");
         }
 
-#if defined(OS_LINUX)
-        /// Tell the service manager that service startup is finished.
-        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
-        /// the child process notifies 'READY=1'.
-        systemdNotify("READY=1\n");
-#endif
-
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
-
-            /// Stop reloading of the main config. This must be done before everything else because it
-            /// can try to access/modify already deleted objects.
-            /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
-            main_config_reloader.reset();
-            access_control.stopPeriodicReloading();
+            LOG_DEBUG(log, "Waiting for current connections to close.");
 
             is_cancelled = true;
-
-            LOG_DEBUG(log, "Waiting for current connections to close.");
 
             size_t current_connections = 0;
             {
@@ -1899,12 +1849,6 @@ try
 
     return Application::EXIT_OK;
 }
-catch (...)
-{
-    /// Poco does not provide stacktrace.
-    tryLogCurrentException("Application");
-    throw;
-}
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const Poco::Util::AbstractConfiguration & config,
@@ -1934,15 +1878,15 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
             );
         if (type == "prometheus")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
             );
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -1981,11 +1925,6 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     }
 
     return stack;
-}
-
-HTTPContextPtr Server::httpContext() const
-{
-    return std::make_shared<HTTPContext>(context());
 }
 
 void Server::createServers(
@@ -2070,7 +2009,7 @@ void Server::createServers(
                 port_name,
                 "http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
         });
 
         /// HTTPS
@@ -2087,7 +2026,7 @@ void Server::createServers(
                 port_name,
                 "https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 #else
             UNUSED(port);
             throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -2212,7 +2151,7 @@ void Server::createServers(
                 port_name,
                 "Prometheus: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                    context(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
 
@@ -2232,7 +2171,7 @@ void Server::createServers(
                 port_name,
                 "replica communication (interserver): http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    httpContext(),
+                    context(),
                     createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
@@ -2252,7 +2191,7 @@ void Server::createServers(
                 port_name,
                 "secure replica communication (interserver): https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    httpContext(),
+                    context(),
                     createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                     server_pool,
                     socket,

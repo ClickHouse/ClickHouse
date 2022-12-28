@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <numeric>
-#include <filesystem>
 #include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <base/types.h>
@@ -11,9 +10,6 @@
 #include <Common/UnicodeBar.h>
 #include "IO/WriteBufferFromString.h"
 #include <Databases/DatabaseMemory.h>
-
-/// http://en.wikipedia.org/wiki/ANSI_escape_code
-#define CLEAR_TO_END_OF_LINE "\033[K"
 
 
 namespace
@@ -48,6 +44,15 @@ bool ProgressIndication::updateProgress(const Progress & value)
     return progress.incrementPiecewiseAtomically(value);
 }
 
+void ProgressIndication::clearProgressOutput()
+{
+    if (written_progress_chars)
+    {
+        written_progress_chars = 0;
+        std::cerr << "\r" CLEAR_TO_END_OF_LINE;
+    }
+}
+
 void ProgressIndication::resetProgress()
 {
     watch.restart();
@@ -62,12 +67,15 @@ void ProgressIndication::resetProgress()
     }
 }
 
-void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message)
+void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
 {
+    write_progress_on_update = write_progress_on_update_;
     context->setFileProgressCallback([&](const FileProgress & file_progress)
     {
         progress.incrementPiecewiseAtomically(Progress(file_progress));
-        writeProgress(message);
+
+        if (write_progress_on_update)
+            writeProgress();
     });
 }
 
@@ -134,9 +142,12 @@ void ProgressIndication::writeFinalProgress()
         std::cout << ". ";
 }
 
-void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
+void ProgressIndication::writeProgress()
 {
     std::lock_guard lock(progress_mutex);
+
+    /// Output all progress bar commands to stderr at once to avoid flicker.
+    WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
 
     static size_t increment = 0;
     static const char * indicators[8] = {
@@ -294,16 +305,6 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
     ++increment;
 
     message.next();
-}
-
-void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message)
-{
-    if (written_progress_chars)
-    {
-        written_progress_chars = 0;
-        message << "\r" CLEAR_TO_END_OF_LINE;
-        message.next();
-    }
 }
 
 }

@@ -75,10 +75,6 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     }
 }
 
-bool SettingsProfileElement::isConstraint() const
-{
-    return this->writability || !this->min_value.isNull() || !this->max_value.isNull();
-}
 
 std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
 {
@@ -217,7 +213,7 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
 {
     SettingsConstraints res{access_control};
     for (const auto & elem : *this)
-        if (!elem.setting_name.empty() && elem.isConstraint() && elem.setting_name != ALLOW_BACKUP_SETTING_NAME)
+        if (!elem.setting_name.empty() && elem.setting_name != ALLOW_BACKUP_SETTING_NAME)
             res.set(
                 elem.setting_name,
                 elem.min_value,
@@ -250,11 +246,6 @@ bool SettingsProfileElements::isBackupAllowed() const
             return static_cast<bool>(SettingFieldBool{setting.value});
     }
     return true;
-}
-
-bool SettingsProfileElements::isAllowBackupSetting(const String & setting_name)
-{
-    return setting_name == ALLOW_BACKUP_SETTING_NAME;
 }
 
 }

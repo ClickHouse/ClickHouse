@@ -38,6 +38,24 @@ void ListNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     }
 }
 
+String ListNode::getName() const
+{
+    if (children.empty())
+        return "";
+
+    std::string result;
+    for (const auto & node : children)
+    {
+        result += node->getName();
+        result += ", ";
+    }
+
+    result.pop_back();
+    result.pop_back();
+
+    return result;
+}
+
 bool ListNode::isEqualImpl(const IQueryTreeNode &) const
 {
     /// No state

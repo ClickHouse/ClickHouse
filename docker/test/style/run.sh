@@ -4,17 +4,15 @@
 
 cd /ClickHouse/utils/check-style || echo -e "failure\tRepo not found" > /test_output/check_status.tsv
 echo "Check duplicates" | ts
-./check-duplicate-includes.sh |& tee /test_output/duplicate_includes_output.txt
+./check-duplicate-includes.sh |& tee /test_output/duplicate_output.txt
 echo "Check style" | ts
 ./check-style -n              |& tee /test_output/style_output.txt
 echo "Check python formatting with black" | ts
 ./check-black -n              |& tee /test_output/black_output.txt
-echo "Check python type hinting with mypy" | ts
-./check-mypy -n               |& tee /test_output/mypy_output.txt
 echo "Check typos" | ts
 ./check-typos                 |& tee /test_output/typos_output.txt
 echo "Check docs spelling" | ts
-./check-doc-aspell            |& tee /test_output/docs_spelling_output.txt
+./check-doc-aspell            |& tee /test_output/doc_spell_output.txt
 echo "Check whitespaces" | ts
 ./check-whitespaces -n        |& tee /test_output/whitespaces_output.txt
 echo "Check workflows" | ts
