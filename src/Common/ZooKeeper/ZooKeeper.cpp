@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 }
 
@@ -1331,6 +1332,18 @@ String getSequentialNodeName(const String & prefix, UInt64 number)
     String num_str = std::to_string(number);
     String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;
     return name;
+}
+
+String getZookeeperConfigName(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.has("zookeeper"))
+        return "zookeeper";
+    else if (config.has("keeper"))
+        return "keeper";
+    else if (config.has("keeper_server"))
+        return "keeper_server";
+    else
+        throw DB::Exception("There is no Zookeeper configuration in server config", DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 }
 
 }
