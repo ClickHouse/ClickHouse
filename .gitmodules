@@ -294,3 +294,6 @@
 [submodule "contrib/libdivide"]
 	path = contrib/libdivide
 	url = https://github.com/ridiculousfish/libdivide.git
+[submodule "contrib/ulid-c"]
+	path = contrib/ulid-c
+	url = https://github.com/evillique/ulid-c.git
