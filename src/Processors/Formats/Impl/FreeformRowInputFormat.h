@@ -4,6 +4,7 @@
 #include "DataTypes/Serializations/SerializationInfo.h"
 #include "Formats/EscapingRuleUtils.h"
 #include "Formats/FormatSettings.h"
+#include "Formats/SchemaInferenceUtils.h"
 #include "Processors/Formats/IRowInputFormat.h"
 #include "Processors/Formats/ISchemaReader.h"
 
@@ -20,7 +21,7 @@ public:
     virtual String getName() const = 0;
     // parseFields returns a vector of fields (field_name, field_value), index is used as the column name if there isn't a better option
     virtual std::vector<std::pair<String, String>> parseFields(ReadBuffer & in, size_t index) const = 0;
-    DataTypePtr getDataTypeFromField(const String & s) const { return tryInferDataTypeByEscapingRule(s, settings, rule); }
+    DataTypePtr getDataTypeFromField(const String & s) { return tryInferDataTypeByEscapingRule(s, settings, rule, &json_inference_info); }
     const FormatSettings::EscapingRule & getEscapingRule() const { return rule; }
 
     virtual ~FieldMatcher() = default;
@@ -28,6 +29,7 @@ public:
 protected:
     FormatSettings::EscapingRule rule;
     FormatSettings settings;
+    JSONInferenceInfo json_inference_info;
 };
 
 class JSONFieldMatcher : public FieldMatcher
