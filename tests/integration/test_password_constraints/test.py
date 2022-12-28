@@ -7,8 +7,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 
 n1 = cluster.add_instance("n1", main_configs=["configs/complexity_rules.xml"])
-n2 = cluster.add_instance(
-    "n2", main_configs=["configs/allow_implicit_no_password.xml"])
+n2 = cluster.add_instance("n2", main_configs=["configs/allow_implicit_no_password.xml"])
 n3 = cluster.add_instance("n3", stay_alive=True)
 
 
@@ -50,9 +49,7 @@ def test_complexity_rules():
 def test_allow_implicit_no_password():
 
     error_message = "Authentication type NO_PASSWORD must be explicitly specified, check the setting allow_implicit_no_password in the server configuration"
-    assert error_message in n2.query_and_get_error(
-        "CREATE USER u1"
-    )
+    assert error_message in n2.query_and_get_error("CREATE USER u1")
 
     n2.query("CREATE USER u2 IDENTIFIED WITH no_password")
     n2.query("CREATE USER u3 IDENTIFIED BY 'qwe123'")
@@ -66,7 +63,7 @@ def test_allow_plaintext_and_no_password():
         [
             "bash",
             "-c",
-            "find /etc/clickhouse-server/ -type f -name '*users.xml' -delete"
+            "find /etc/clickhouse-server/ -type f -name '*users.xml' -delete",
         ]
     )
 
@@ -75,18 +72,23 @@ def test_allow_plaintext_and_no_password():
         "/etc/clickhouse-server/users.xml",
     )
 
-    n3.start_clickhouse(password='pwd')
+    n3.start_clickhouse(password="pwd")
 
-    n3.query("CREATE USER u IDENTIFIED WITH double_sha1_hash BY '8DCDD69CE7D121DE8013062AEAEB2A148910D50E'", password="pwd")
+    n3.query(
+        "CREATE USER u IDENTIFIED WITH double_sha1_hash BY '8DCDD69CE7D121DE8013062AEAEB2A148910D50E'",
+        password="pwd",
+    )
     n3.query("CREATE USER u1 IDENTIFIED BY 'qwe123'", password="pwd")
 
     error_message = "is not allowed, check the setting allow_"
     assert error_message in n3.query_and_get_error(
-        "CREATE USER u2_02207 HOST IP '127.1' IDENTIFIED WITH plaintext_password BY 'qwerty'", password="pwd"
+        "CREATE USER u2_02207 HOST IP '127.1' IDENTIFIED WITH plaintext_password BY 'qwerty'",
+        password="pwd",
     )
 
     assert error_message in n3.query_and_get_error(
-        "CREATE USER u3_02207 HOST IP '127.1' IDENTIFIED WITH no_password", password="pwd"
+        "CREATE USER u3_02207 HOST IP '127.1' IDENTIFIED WITH no_password",
+        password="pwd",
     )
 
     assert error_message in n3.query_and_get_error(

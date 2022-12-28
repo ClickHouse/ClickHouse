@@ -3355,7 +3355,9 @@ class ClickHouseInstance:
             else:
                 logging.debug("Clickhouse process running.")
                 try:
-                    self.wait_start(start_wait_sec + start_time - time.time(), password=password)
+                    self.wait_start(
+                        start_wait_sec + start_time - time.time(), password=password
+                    )
                     return
                 except Exception as e:
                     logging.warning(
@@ -3378,7 +3380,9 @@ class ClickHouseInstance:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
                     raise Exception("ClickHouse server is not running. Check logs.")
-                exec_query_with_retry(self, "select 20", retry_count=10, silent=True, password=password)
+                exec_query_with_retry(
+                    self, "select 20", retry_count=10, silent=True, password=password
+                )
                 return
             except QueryRuntimeException as err:
                 last_err = err
