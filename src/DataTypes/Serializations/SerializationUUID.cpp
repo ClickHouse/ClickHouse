@@ -1,9 +1,10 @@
-#include <DataTypes/Serializations/SerializationUUID.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/Serializations/SerializationUUID.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
-#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 
 
@@ -44,10 +45,11 @@ void SerializationUUID::serializeTextQuoted(const IColumn & column, size_t row_n
 
 void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
+    std::string quoted_string;
+    readQuotedStringWithSQLStyle(quoted_string, istr);
     UUID x;
-    assertChar('\'', istr);
-    readText(x, istr);
-    assertChar('\'', istr);
+    ReadBufferFromString parsed_quoted_buffer(quoted_string);
+    readText(x, parsed_quoted_buffer);
     assert_cast<ColumnUUID &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
