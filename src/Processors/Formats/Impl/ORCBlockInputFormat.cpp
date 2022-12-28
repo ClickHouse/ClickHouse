@@ -54,14 +54,19 @@ Chunk ORCBlockInputFormat::generate()
         throw ParsingException(
             ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_result.status().ToString());
 
+    /// We should extract the number of rows directly from the stripe, because in case when
+    /// record batch contains 0 columns (for example if we requested only columns that
+    /// are not presented in data) the number of rows in record batch will be 0.
+    size_t num_rows = file_reader->GetRawORCReader()->getStripe(stripe_current)->getNumberOfRows();
+
     auto table = table_result.ValueOrDie();
-    if (!table || !table->num_rows())
+    if (!table || !num_rows)
         return {};
 
     ++stripe_current;
 
     Chunk res;
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, num_rows);
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     if (format_settings.defaults_for_omitted_fields)
