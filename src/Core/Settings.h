@@ -3,7 +3,6 @@
 #include <Common/NamePrompter.h>
 #include <Core/BaseSettings.h>
 #include <Core/SettingsEnums.h>
-#include <Core/SettingsChangesHistory.h>
 #include <Core/Defines.h>
 #include <IO/ReadSettings.h>
 
