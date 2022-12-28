@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -192,10 +193,15 @@ void registerStorageExecutable(StorageFactory & factory)
         std::vector<ASTPtr> input_queries;
         for (size_t i = 2; i < args.engine_args.size(); ++i)
         {
+            if (args.engine_args[i]->children.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "StorageExecutable argument \"{}\" is invalid query",
+                    args.engine_args[i]->formatForErrorMessage());
+
             ASTPtr query = args.engine_args[i]->children.at(0);
             if (!query->as<ASTSelectWithUnionQuery>())
                 throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument is invalid input query {}",
+                    ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument \"{}\" is invalid input query",
                     query->formatForErrorMessage());
 
             input_queries.emplace_back(std::move(query));
