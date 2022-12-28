@@ -31,6 +31,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 
 
 namespace DB
@@ -416,7 +417,7 @@ static void validateUpdateColumns(
         /// Allow to override value of lightweight delete filter virtual column
         if (!found && column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
         {
-            if (!source.data || !source.supportsLightweightDelete())
+            if (!source.supportsLightweightDelete())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             found = true;
         }
@@ -990,9 +991,42 @@ void MutationsInterpreter::Source::read(
             filter = ActionsDAG::buildFilterActionsDAG(nodes, {}, context_);
         }
 
+        size_t delete_mask_pos = required_columns.size();
+        for (size_t i = 0; i < delete_mask_pos; ++i)
+            if (required_columns[i] == LightweightDeleteDescription::FILTER_COLUMN.name)
+                delete_mask_pos = i;
+        bool add_default_delete_mask = false;
+
+        if (delete_mask_pos < required_columns.size())
+        {
+            LoadedMergeTreeDataPartInfoForReader part_info_reader(part);
+            if (!part_info_reader.getColumns().contains(LightweightDeleteDescription::FILTER_COLUMN.name))
+            {
+                required_columns.erase(required_columns.begin() + delete_mask_pos);
+                add_default_delete_mask = true;
+            }
+        }
+
         createMergeTreeSequentialSource(
             plan, *data, storage_snapshot, part, required_columns, apply_deleted_mask_, filter, context_,
             &Poco::Logger::get("MutationsInterpreter"));
+
+        if (add_default_delete_mask)
+        {
+            auto dag = std::make_unique<ActionsDAG>(plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+
+            ColumnWithTypeAndName mask_column;
+            mask_column.type = LightweightDeleteDescription::FILTER_COLUMN.type;
+            mask_column.column = mask_column.type->createColumnConst(0, 1);
+            mask_column.name = LightweightDeleteDescription::FILTER_COLUMN.name;
+
+            const auto & adding_const = dag->addColumn(std::move(mask_column));
+            auto & outputs = dag->getOutputs();
+            outputs.insert(outputs.begin() + delete_mask_pos, &adding_const);
+
+            auto step = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag));
+            plan.addStep(std::move(step));
+        }
 
         // std::cerr << "<<<<<<<<< " << plan.getCurrentDataStream().header.dumpStructure() << std::endl;
 
@@ -1061,33 +1095,31 @@ void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
 {
     source.read(first_stage, plan, metadata_snapshot, context, apply_deleted_mask);
 
-    const auto & steps = first_stage.expressions_chain.steps;
-    const auto & names = first_stage.filter_column_names;
+    // const auto & steps = first_stage.expressions_chain.steps;
+    // const auto & names = first_stage.filter_column_names;
 
-    for (size_t i = 0; i < steps.size(); ++i)
-    {
-        const auto & step = steps[i];
-        if (i < names.size())
-        {
-            /// Execute DELETEs.
-            plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), names[i], false));
-        }
-        else
-        {
-            /// Execute UPDATE or final projection.
-            plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
-        }
-    }
+    // for (size_t i = 0; i < steps.size(); ++i)
+    // {
+    //     const auto & step = steps[i];
+    //     if (i < names.size())
+    //     {
+    //         /// Execute DELETEs.
+    //         plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), names[i], false));
+    //     }
+    //     else
+    //     {
+    //         /// Execute UPDATE or final projection.
+    //         plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
+    //     }
+    // }
 
     addCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
 }
 
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
-    for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
+    for (const Stage & stage : prepared_stages)
     {
-        const Stage & stage = prepared_stages[i_stage];
-
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];
