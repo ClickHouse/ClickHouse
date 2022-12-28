@@ -273,7 +273,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
-    setDefaultPasswordTypeFromConfig(config_.getString("default_password_type"));
+    setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256"));
     setPasswordComplexityRulesFromConfig(config_);
 
     /// Optional improvements in access control system.
@@ -658,7 +658,7 @@ void AccessControl::setDefaultPasswordTypeFromConfig(const String & type_)
         default_password_type = AuthenticationType::PLAINTEXT_PASSWORD;
     else if (type_ == "double_sha1")
         default_password_type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
-    else if (type == "sha256")
+    else if (type_ == "sha256")
         default_password_type = AuthenticationType::SHA256_PASSWORD;
     else
         throw Exception("Unknown password type in 'default_password_type' in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
