@@ -703,6 +703,13 @@ try
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+    const auto memory_amount = getMemoryAmount();
+
+    LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+        formatReadableSizeWithBinarySuffix(memory_amount),
+        getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
+        std::thread::hardware_concurrency());
+
     sanityChecks(*this);
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
@@ -775,8 +782,6 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
-
-    const auto memory_amount = getMemoryAmount();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -1044,8 +1049,8 @@ try
         bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
         try
         {
-            LOG_DEBUG(
-                log, "Initializing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+            LOG_DEBUG(log, "Initializing MergeTree metadata cache, lru_cache_size: {} continue_if_corrupted: {}",
+                ReadableSize(size), continue_if_corrupted);
             global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
         }
         catch (...)
@@ -1717,13 +1722,6 @@ try
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
-
-        {
-            LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
-                formatReadableSizeWithBinarySuffix(memory_amount),
-                getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
-                std::thread::hardware_concurrency());
-        }
 
         /// try to load dictionaries immediately, throw on error and die
         try

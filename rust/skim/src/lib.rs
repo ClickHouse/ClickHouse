@@ -5,7 +5,7 @@ use cxx::{CxxString, CxxVector};
 #[cxx::bridge]
 mod ffi {
     extern "Rust" {
-        fn skim(words: &CxxVector<CxxString>) -> Result<String>;
+        fn skim(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String>;
     }
 }
 
@@ -18,7 +18,7 @@ impl SkimItem for Item {
     }
 }
 
-fn skim(words: &CxxVector<CxxString>) -> Result<String, String> {
+fn skim(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String, String> {
     // Let's check is terminal available. To avoid panic.
     if let Err(err) = TermInfo::from_env() {
         return Err(format!("{}", err));
@@ -26,6 +26,7 @@ fn skim(words: &CxxVector<CxxString>) -> Result<String, String> {
 
     let options = SkimOptionsBuilder::default()
         .height(Some("30%"))
+        .query(Some(prefix.to_str().unwrap()))
         .tac(true)
         .tiebreak(Some("-score".to_string()))
         .build()

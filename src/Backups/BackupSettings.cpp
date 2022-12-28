@@ -65,6 +65,7 @@ namespace
     M(String, password) \
     M(Bool, structure_only) \
     M(Bool, async) \
+    M(Bool, deduplicate_files) \
     M(UInt64, shard_num) \
     M(UInt64, replica_num) \
     M(Bool, internal) \
