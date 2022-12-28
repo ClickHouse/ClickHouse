@@ -139,12 +139,12 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
 
 
 def exec_query_with_retry(
-    instance, query, retry_count=40, sleep_time=0.5, silent=False, settings={}
+    instance, query, retry_count=40, sleep_time=0.5, silent=False, settings={}, password=None
 ):
     exception = None
     for cnt in range(retry_count):
         try:
-            res = instance.query(query, timeout=30, settings=settings)
+            res = instance.query(query, timeout=30, settings=settings, password=password)
             if not silent:
                 logging.debug(f"Result of {query} on {cnt} try is {res}")
             break

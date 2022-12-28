@@ -3332,7 +3332,7 @@ class ClickHouseInstance:
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
-    def start_clickhouse(self, start_wait_sec=60, retry_start=True):
+    def start_clickhouse(self, start_wait_sec=60, retry_start=True, password=None):
         if not self.stay_alive:
             raise Exception(
                 "ClickHouse can be started again only with stay_alive=True instance"
@@ -3355,7 +3355,7 @@ class ClickHouseInstance:
             else:
                 logging.debug("Clickhouse process running.")
                 try:
-                    self.wait_start(start_wait_sec + start_time - time.time())
+                    self.wait_start(start_wait_sec + start_time - time.time(), password=password)
                     return
                 except Exception as e:
                     logging.warning(
@@ -3370,7 +3370,7 @@ class ClickHouseInstance:
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 
-    def wait_start(self, start_wait_sec):
+    def wait_start(self, start_wait_sec, password=None):
         start_time = time.time()
         last_err = None
         while True:
@@ -3378,7 +3378,7 @@ class ClickHouseInstance:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
                     raise Exception("ClickHouse server is not running. Check logs.")
-                exec_query_with_retry(self, "select 20", retry_count=10, silent=True)
+                exec_query_with_retry(self, "select 20", retry_count=10, silent=True, password=password)
                 return
             except QueryRuntimeException as err:
                 last_err = err
