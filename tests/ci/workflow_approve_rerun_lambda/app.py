@@ -25,7 +25,7 @@ MAX_RETRY = 5
 
 # Number of times a check can re-run as a whole.
 # It is needed, because we are using AWS "spot" instances, that are terminated often
-MAX_WORKFLOW_RERUN = 20
+MAX_WORKFLOW_RERUN = 30
 
 WorkflowDescription = namedtuple(
     "WorkflowDescription",

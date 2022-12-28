@@ -1181,10 +1181,17 @@ static ColumnPtr combineBitmapFilter(ColumnPtr first, ColumnPtr second)
     auto res = ColumnUInt8::create(size);
     auto & data = res->getData();
 
-    const auto & first_filter = typeid_cast<const ColumnUInt8 *>(first.get())->getData();
-    const auto & second_fiter = typeid_cast<const ColumnUInt8 *>(second.get())->getData();
+    const auto & first_filter = typeid_cast<const ColumnUInt8 *>(first.get());
+    const auto & second_fiter = typeid_cast<const ColumnUInt8 *>(second.get());
+
+    if (!first_filter || !second_fiter)
+        throw Exception("Passed filter to combine is not ColumnUInt8", ErrorCodes::LOGICAL_ERROR);
+
+    const auto & first_filter_data = first_filter->getData();
+    const auto & second_fiter_data = second_fiter->getData();
+
     for (size_t i = 0; i < size; ++i)
-        data[i] = first_filter[i] && second_fiter[i];
+        data[i] = first_filter_data[i] && second_fiter_data[i];
     return res;
 }
 

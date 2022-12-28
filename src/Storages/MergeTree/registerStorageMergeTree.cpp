@@ -496,7 +496,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         String graphite_config_name;
         String error_msg
-            = "Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options";
+            = "Last parameter of GraphiteMergeTree must be the name (in single quotes) of the element in configuration file with the Graphite options";
         error_msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
         if (const auto * ast = engine_args[arg_cnt - 1]->as<ASTLiteral>())
