@@ -51,7 +51,6 @@ function clone
     )
 
     ls -lath ||:
-
 }
 
 function wget_with_retry
