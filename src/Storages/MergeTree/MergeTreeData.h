@@ -1367,7 +1367,7 @@ protected:
             }
 
             /// Store name explicitly because it cannot be easily
-            /// retrived from info in tables with old syntax.
+            /// retrieved from info in tables with old syntax.
             MergeTreePartInfo info;
             String name;
             DiskPtr disk;
