@@ -28,9 +28,9 @@ public:
         bool allow_missing_columns_,
         bool case_insensitive_matching_ = false);
 
-    void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
+    void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows);
 
-    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr);
+    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows);
 
     /// Get missing columns that exists in header but not in arrow::Schema
     std::vector<size_t> getMissingColumns(const arrow::Schema & schema) const;
