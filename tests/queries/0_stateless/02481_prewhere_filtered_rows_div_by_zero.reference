@@ -74,5 +74,3 @@ SELECT * FROM test_filter PREWHERE b != 0 WHERE intDiv(b, c) > 0;
 9	10	1
 12	13	1
 13	14	1
--- { ehcoOff }
-DROP TABLE test_filter;

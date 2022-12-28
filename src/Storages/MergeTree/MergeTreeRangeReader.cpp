@@ -557,17 +557,20 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             auto new_filter = ColumnUInt8::create(filter.size() - total_zero_rows_in_tails);
             IColumn::Filter & new_data = new_filter->getData();
 
+            /// Shorten the filter by removing zeros from granule tails
             collapseZeroTails(filter.getData(), rows_per_granule_previous, new_data);
             assert(total_rows_per_granule == new_filter->size());
 
-// TODO: need to apply combined filter here before replacing it if filter has not been applied yet!!
+            /// Need to apply combined filter here before replacing it with shortened one because otherwise
+            /// the filter size will not match the number of rows in the result columns.
             if (num_rows == total_rows_per_granule_previous)
             {
-                /// Filter has not been applied yet, do it now
+                /// Filter from the previous steps has not been applied yet, do it now.
                 applyFilter(filter);
             }
             else
             {
+                /// Filter was applied before, so apply only new filter from the current step.
                 applyFilter(current_filter);
             }
 
