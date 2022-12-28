@@ -310,7 +310,7 @@ public:
         }
 
         auto source = std::make_unique<MergeTreeSequentialSource>(
-            storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges), apply_deleted_mask, false, false);
+            storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges), apply_deleted_mask, false, true);
 
         pipeline.init(Pipe(std::move(source)));
     }
