@@ -167,17 +167,19 @@ BackupImpl::BackupImpl(
     const ContextPtr & context_,
     bool is_internal_backup_,
     const std::shared_ptr<IBackupCoordination> & coordination_,
-    const std::optional<UUID> & backup_uuid_)
+    const std::optional<UUID> & backup_uuid_,
+    bool deduplicate_files_)
     : backup_name_for_logging(backup_name_for_logging_)
     , archive_params(archive_params_)
     , use_archives(!archive_params.archive_name.empty())
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
     , is_internal_backup(is_internal_backup_)
-    , coordination(coordination_ ? coordination_ : std::make_shared<BackupCoordinationLocal>())
+    , coordination(coordination_)
     , uuid(backup_uuid_)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
+    , deduplicate_files(deduplicate_files_)
     , log(&Poco::Logger::get("BackupImpl"))
 {
     open(context_);
@@ -287,6 +289,7 @@ void BackupImpl::writeBackupMetadata()
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->setInt("version", CURRENT_BACKUP_VERSION);
+    config->setBool("deduplicate_files", deduplicate_files);
     config->setString("timestamp", toString(LocalDateTime{timestamp}));
     config->setString("uuid", toString(*uuid));
 
@@ -759,7 +762,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     };
 
     /// Empty file, nothing to backup
-    if (info.size == 0)
+    if (info.size == 0 && deduplicate_files)
     {
         coordination->addFileInfo(info);
         return;
@@ -828,7 +831,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
 
     /// Maybe we have a copy of this file in the backup already.
-    if (coordination->getFileInfo(std::pair{info.size, info.checksum}))
+    if (coordination->getFileInfo(std::pair{info.size, info.checksum}) && deduplicate_files)
     {
         LOG_TRACE(log, "File {} already exist in current backup, adding reference", adjusted_path);
         coordination->addFileInfo(info);
@@ -861,7 +864,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     bool is_data_file_required;
     coordination->addFileInfo(info, is_data_file_required);
-    if (!is_data_file_required)
+    if (!is_data_file_required && deduplicate_files)
     {
         LOG_TRACE(log, "File {} doesn't exist in current backup, but we have file with same size and checksum", adjusted_path);
         return; /// We copy data only if it's a new combination of size & checksum.
