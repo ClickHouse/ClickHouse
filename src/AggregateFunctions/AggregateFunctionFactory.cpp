@@ -72,9 +72,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 {
     auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
-    /// If one of the types is Nullable, we apply aggregate function combinator "Null".
-
-    if (std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+    /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
+    /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
+    /// they must handle the nullability themselves
+    auto properties = tryGetPropertiesImpl(name);
+    bool is_window_function = properties.has_value() && properties->is_window_function;
+    if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
