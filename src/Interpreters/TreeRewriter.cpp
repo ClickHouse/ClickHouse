@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <memory>
+#include <set>
 
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
@@ -1229,16 +1230,24 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         if (storage)
         {
             std::vector<String> hint_name{};
+            std::set<String> helper_hint_name{};
             for (const auto & name : columns_context.requiredColumns())
             {
                 auto hints = storage->getHints(name);
-                hint_name.insert(hint_name.end(), hints.begin(), hints.end());
+                for (const auto & hint : hints)
+                {
+                    // We want to preserve the ordering of the hints
+                    // (as they are ordered by Levenshtein distance)
+                    auto [_, inserted] = helper_hint_name.insert(hint);
+                    if (inserted)
+                        hint_name.push_back(hint);
+                }
             }
 
             if (!hint_name.empty())
             {
                 ss << ", maybe you meant: ";
-                ss << toString(hint_name);
+                ss << toStringWithFinalSeparator(hint_name, " or ");
             }
         }
         else
