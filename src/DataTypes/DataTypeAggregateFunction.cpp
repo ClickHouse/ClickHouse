@@ -67,7 +67,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (!parameters.empty())
     {
         stream << '(';
-        for (size_t i = 0; i < parameters.size(); ++i)
+        for (size_t i = 0, size = parameters.size(); i < size; ++i)
         {
             if (i)
                 stream << ", ";
