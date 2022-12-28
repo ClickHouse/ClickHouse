@@ -33,10 +33,11 @@ static inline void skipWhitespacesAndDelimiters(ReadBuffer & in)
 }
 
 // Returns the score of the given type. This doesn't take nullable into account.
-// Possible return values:
+// Possible return values (increasing by power of 5):
 // - 1: String
 // - 5: Decimal, Float
-// - 10: Date, DateTime, Map, Array, Tuple
+// - 25: Map, Array, Tuple
+// - 125: Date, DateTime,
 static size_t scoreForType(const DataTypePtr & type)
 {
     WhichDataType which(type);
@@ -47,13 +48,11 @@ static size_t scoreForType(const DataTypePtr & type)
         return scoreForType(nullable_type->getNestedType());
     }
 
-    if (which.isMap() || which.isArray() || which.isTuple())
-        return 100;
-
     if (which.isDateOrDate32() || which.isDateTimeOrDateTime64())
-        // the rationale here is 2022.11.28 11:30:04.474043 could be parsed into as many as 7 fields
-        // so the score for dates must be at least 7 times greater than a number
-        return 50;
+        return 125;
+
+    if (which.isMap() || which.isArray() || which.isTuple())
+        return 25;
 
     if (which.isDecimal() || which.isFloat())
         return 5;
@@ -66,7 +65,7 @@ static size_t scoreForRule(FormatSettings::EscapingRule rule)
     switch (rule)
     {
         case FormatSettings::EscapingRule::JSON:
-            return 5;
+            return 4;
         case FormatSettings::EscapingRule::CSV:
             [[fallthrough]];
         case FormatSettings::EscapingRule::Quoted:
