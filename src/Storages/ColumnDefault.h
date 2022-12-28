@@ -26,6 +26,7 @@ struct ColumnDefault
 {
     ColumnDefaultKind kind = ColumnDefaultKind::Default;
     ASTPtr expression;
+    bool ephemeral_default = false;
 };
 
 

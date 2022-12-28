@@ -62,7 +62,8 @@ private:
 
 public:
     AggregateFunctionIntersectionsMax(AggregateFunctionIntersectionsKind kind_, const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<MaxIntersectionsData<PointType>, AggregateFunctionIntersectionsMax<PointType>>(arguments, {}), kind(kind_)
+        : IAggregateFunctionDataHelper<MaxIntersectionsData<PointType>, AggregateFunctionIntersectionsMax<PointType>>(arguments, {}, createResultType(kind_))
+        , kind(kind_)
     {
         if (!isNativeNumber(arguments[0]))
             throw Exception{getName() + ": first argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -81,9 +82,9 @@ public:
             : "maxIntersectionsPosition";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(AggregateFunctionIntersectionsKind kind_)
     {
-        if (kind == AggregateFunctionIntersectionsKind::Count)
+        if (kind_ == AggregateFunctionIntersectionsKind::Count)
             return std::make_shared<DataTypeUInt64>();
         else
             return std::make_shared<DataTypeNumber<PointType>>();

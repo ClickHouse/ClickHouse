@@ -45,7 +45,7 @@ OutputBlockColumns prepareOutputBlockColumns(
         }
         else
         {
-            final_aggregate_columns[i] = aggregate_functions[i]->getReturnType()->createColumn();
+            final_aggregate_columns[i] = aggregate_functions[i]->getResultType()->createColumn();
             final_aggregate_columns[i]->reserve(rows);
 
             if (aggregate_functions[i]->isState())

@@ -523,12 +523,12 @@ class AggregateFunctionFlameGraph final : public IAggregateFunctionDataHelper<Ag
 {
 public:
     explicit AggregateFunctionFlameGraph(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<AggregateFunctionFlameGraphData, AggregateFunctionFlameGraph>(argument_types_, {})
+        : IAggregateFunctionDataHelper<AggregateFunctionFlameGraphData, AggregateFunctionFlameGraph>(argument_types_, {}, createResultType())
     {}
 
     String getName() const override { return "flameGraph"; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }

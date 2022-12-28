@@ -65,7 +65,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
     ColumnsWithTypeAndName aggregates_columns;
     aggregates_columns.reserve(aggregates_descriptions.size());
     for (auto & aggregate_description : aggregates_descriptions)
-        aggregates_columns.emplace_back(nullptr, aggregate_description.function->getReturnType(), aggregate_description.column_name);
+        aggregates_columns.emplace_back(nullptr, aggregate_description.function->getResultType(), aggregate_description.column_name);
 
     Names aggregation_keys;
 
@@ -284,7 +284,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
 
     for (auto & window_description : window_descriptions)
         for (auto & window_function : window_description.window_functions)
-            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getReturnType(), window_function.column_name);
+            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
 
     auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
         ActionsChainStep::AvailableOutputColumnsStrategy::ALL_NODES,
