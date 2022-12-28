@@ -2361,6 +2361,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (layers.back()->previousType() == OperatorType::Comparison)
     {
+        auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
 
         if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
@@ -2385,6 +2386,10 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
             layers.back()->pushOperand(std::move(function));
             return Action::OPERATOR;
+        }
+        else
+        {
+            pos = old_pos;
         }
     }
 
