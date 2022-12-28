@@ -160,8 +160,15 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_co
 {
     if (tokens && token_iterator &&
         /// Make sure the underlying memory hasn't changed because of next() calls in the buffer
-        (*token_iterator)->begin >= buf->buffer().begin() && (*token_iterator)->begin <= buf->buffer().end())
-        return;
+        ((*token_iterator)->begin >= buf->buffer().begin() && (*token_iterator)->begin <= buf->buffer().end()))
+    {
+        while ((*token_iterator)->begin < buf->position() && !(*token_iterator)->isError() && !(*token_iterator)->isEnd())
+            ++(*token_iterator);
+
+        if (!(*token_iterator)->isError() && !(*token_iterator)->isEnd())
+            return;
+    }
+
     skipToNextRow(buf.get(), 0, 1);
     buf->makeContinuousMemoryFromCheckpointToPos();
     auto * row_end = buf->position();
@@ -219,11 +226,7 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
 bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
     readUntilTheEndOfRowAndReTokenize(column_idx);
-    chassert(token_iterator.has_value());
-    chassert((*token_iterator)->begin <= buf->position());
     IParser::Pos start = *token_iterator;
-    while (token_iterator.value()->begin < buf->position())
-        ++(*token_iterator);
 
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
     const auto & settings = context->getSettingsRef();
@@ -386,22 +389,25 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     /// Advance the token iterator until the start of the column expression
     readUntilTheEndOfRowAndReTokenize(column_idx);
-    chassert(token_iterator.has_value());
-    chassert((*token_iterator)->begin <= buf->position());
-    while ((*token_iterator)->begin < buf->position())
-        ++(*token_iterator);
 
-    Expected expected;
-    /// Keep a copy to the start of the column tokens to use if later if necessary
-    IParser::Pos ti_start(*token_iterator, static_cast<unsigned>(settings.max_parser_depth));
+    bool parsed = false;
     ASTPtr ast;
-    bool parsed = parser.parse(*token_iterator, ast, expected);
+    std::optional<IParser::Pos> ti_start;
 
-    /// Consider delimiter after value (',' or ')') as part of expression
-    if (column_idx + 1 != num_columns)
-        parsed &= (*token_iterator)->type == TokenType::Comma;
-    else
-        parsed &= (*token_iterator)->type == TokenType::ClosingRoundBracket;
+    if (!(*token_iterator)->isError() && !(*token_iterator)->isEnd())
+    {
+        Expected expected;
+        /// Keep a copy to the start of the column tokens to use if later if necessary
+        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth));
+
+        parsed = parser.parse(*token_iterator, ast, expected);
+
+        /// Consider delimiter after value (',' or ')') as part of expression
+        if (column_idx + 1 != num_columns)
+            parsed &= (*token_iterator)->type == TokenType::Comma;
+        else
+            parsed &= (*token_iterator)->type == TokenType::ClosingRoundBracket;
+    }
 
     if (!parsed)
         throw Exception(
@@ -459,7 +465,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             auto structure = templates_cache.getFromCacheOrConstruct(
                 result_type,
                 !result_type->isNullable() && format_settings.null_as_default,
-                ti_start,
+                *ti_start,
                 *token_iterator,
                 ast,
                 context,
@@ -472,7 +478,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 ++attempts_to_deduce_template[column_idx];
 
             buf->rollbackToCheckpoint();
-            if (templates[column_idx]->parseExpression(*buf, ti_start, format_settings, settings))
+            if (templates[column_idx]->parseExpression(*buf, *ti_start, format_settings, settings))
             {
                 ++rows_parsed_using_template[column_idx];
                 parser_type_for_column[column_idx] = ParserType::BatchTemplate;
