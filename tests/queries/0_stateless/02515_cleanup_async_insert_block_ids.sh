@@ -17,7 +17,7 @@ $CLICKHOUSE_CLIENT -n --query "
 "
 
 for i in {1..100}; do
-    $CLICKHOUSE_CLIENT --async_insert 1 --async_insert_deduplicate 1 --query "insert into t_async_insert_cleanup values ($i), ($((i + 1))), ($((i + 2)))"
+    $CLICKHOUSE_CLIENT --async_insert 1 --async_insert_deduplicate 1 --wait_for_async_insert 0 --query "insert into t_async_insert_cleanup values ($i), ($((i + 1))), ($((i + 2)))"
 done
 
 while true; do
