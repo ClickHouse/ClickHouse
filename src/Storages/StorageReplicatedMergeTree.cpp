@@ -902,6 +902,21 @@ void StorageReplicatedMergeTree::drop()
         dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings());
     }
 
+    /// Wait for loading of all outdated parts because
+    /// in case of zero copy recursive removal of directory
+    /// is not supported and table cannot be dropped.
+    if (canUseZeroCopyReplication())
+    {
+        /// Load remaining parts synchronously because task
+        /// for loading is already cancelled in shutdown().
+        std::lock_guard lock(outdated_data_parts_mutex);
+        if (!outdated_unloaded_data_parts.empty())
+        {
+            assert(outdated_data_parts_loading_canceled);
+            loadOutdatedDataParts(/*is_async=*/ false);
+        }
+    }
+
     dropAllData();
 }
 
@@ -4318,13 +4333,6 @@ void StorageReplicatedMergeTree::shutdown()
         return;
 
     session_expired_callback_handler.reset();
-
-    /// Wait for loading of all outdated parts because
-    /// in case of zero copy recursive removal of directory
-    /// is not supported and table cannot be dropped.
-    if (canUseZeroCopyReplication())
-        waitForOutdatedPartsToBeLoaded();
-
     stopOutdatedDataPartsLoadingTask();
 
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.

@@ -1359,8 +1359,21 @@ protected:
             std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
         };
 
+        struct PartLoadingInfo
+        {
+            PartLoadingInfo(const MergeTreePartInfo & info_, const String & name_, const DiskPtr & disk_)
+                : info(info_), name(name_), disk(disk_)
+            {
+            }
+
+            /// Store name explicitly because it cannot be easily
+            /// retrived from info in tables with old syntax.
+            MergeTreePartInfo info;
+            String name;
+            DiskPtr disk;
+        };
+
         using NodePtr = std::shared_ptr<Node>;
-        using PartLoadingInfo = std::tuple<MergeTreePartInfo, String, DiskPtr>;
         using PartLoadingInfos = std::vector<PartLoadingInfo>;
 
         /// Builds a tree from the list of part infos.
@@ -1387,15 +1400,14 @@ protected:
         MutableDataPartPtr part;
     };
 
-    BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
-
     mutable std::mutex outdated_data_parts_mutex;
     mutable std::condition_variable outdated_data_parts_cv;
 
-    std::atomic_bool outdated_data_parts_loading_finished = false;
-    std::atomic_bool outdated_data_parts_loading_canceled = false;
+    BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
+    PartLoadingTreeNodes outdated_unloaded_data_parts;
+    bool outdated_data_parts_loading_canceled = false;
 
-    void loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load);
+    void loadOutdatedDataParts(bool is_async);
     void startOutdatedDataPartsLoadingTask();
     void stopOutdatedDataPartsLoadingTask();
 

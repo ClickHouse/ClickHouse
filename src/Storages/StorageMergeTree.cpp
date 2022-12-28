@@ -177,11 +177,6 @@ void StorageMergeTree::shutdown()
         mutation_wait_event.notify_all();
     }
 
-    /// We need to wait for loading of oudated data parts
-    /// for correct execution of 'clearOldPartsFromFilesystem'
-    waitForOutdatedPartsToBeLoaded();
-    stopOutdatedDataPartsLoadingTask();
-
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
