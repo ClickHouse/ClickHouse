@@ -64,7 +64,7 @@ public:
     bool alwaysTrue() const { return const_description.always_true; }
     bool alwaysFalse() const { return const_description.always_false; }
 
-    ColumnPtr getColumn() { return column; }
+    ColumnPtr getColumn() const { return column; }
 
     const IColumn::Filter & getData() const { return *data; }
 
@@ -222,29 +222,27 @@ public:
 
         static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges);
 
-        /// Filter you need to apply to newly-read columns in order to add them to block.
-//        const ColumnUInt8 * getFilterOriginal() const { assert(!filter_original); return filter_original ? filter_original : filter; }
-
         void addGranule(size_t num_rows_);
         void adjustLastGranule();
         void addRows(size_t rows) { num_read_rows += rows; }
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
 
-        /// Set filter or replace old one. Filter must have more zeroes than previous.
-//        void setFilter(const ColumnPtr & new_filter);
-        /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
-        void optimize(ColumnPtr current_filter, bool can_read_incomplete_granules);
+        /// Add current step filter to the result and then for each granule calculate the number of filtered rows at the end.
+        /// Remove them and update filter.
+        /// Apply the filter to the columns and update num_rows if required
+        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules);
         /// Remove all rows from granules.
         void clear();
-        void clearFilter();
 
         void setFilterConstTrue();
-        void setFilterConstFalse();
 
         void addNumBytesRead(size_t count) { num_bytes_read += count; }
 
         /// Shrinks columns according to the diff between current and previous rows_per_granule.
         void shrink(Columns & old_columns, const NumRows & rows_per_granule_previous) const;
+
+        /// Applies the filter to the columns and updates num_rows.
+        void applyFilter(const FilterWithCachedCount & filter);
 
         /// Verifies that columns and filter sizes match.
         /// The checks might be non-trivial so it make sense to have the only in debug builds.
@@ -252,11 +250,7 @@ public:
 
         std::string dumpInfo() const;
 
-        /// If this flag is set then we must apply the filter at the end of the current step.
-        /// If it is not set then the filtration can be postpone to the later steps when more rows can be filtered.
-        bool need_filter = false;
-
-        /// Contains columns that are not included into result but might needed for default values calculation.
+        /// Contains columns that are not included into result but might be needed for default values calculation.
         Block additional_columns;
 
         RangesInfo started_ranges;
@@ -276,6 +270,15 @@ public:
         /// This filter has the size of total_rows_per_granule. This means that it can be applied to newly read columns.
         /// The result of applying this filter is that only rows that pass all previous filtering steps will remain.
         FilterWithCachedCount final_filter;
+
+        /// This flag is true when prewhere column can be returned without filtering.
+        /// It's true when it contains 0s from all filtering steps (not just the step when it was calculated).
+        /// NOTE: If we accumulated the final_filter for several steps without applying it then prewhere column calculated at the last step
+        /// will not contain 0s from all previous steps.
+        bool can_return_prewhere_column_without_filtering = true;
+
+        /// Checks if result columns have current final_filter applied.
+        bool filterWasApplied() const { return !final_filter.present() || final_filter.countBytesInFilter() == num_rows; }
 
         /// Builds updated filter by cutting zeros in granules tails
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
