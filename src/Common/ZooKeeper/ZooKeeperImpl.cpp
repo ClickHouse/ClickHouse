@@ -342,7 +342,6 @@ ZooKeeper::ZooKeeper(
         default_acls.emplace_back(std::move(acl));
     }
 
-
     /// It makes sense (especially, for async requests) to inject a fault in two places:
     /// pushRequest (before request is sent) and receiveEvent (after request was executed).
     if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
