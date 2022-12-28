@@ -352,6 +352,16 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
         res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
     }
 
+    /// We need to change the auth_data before the query will be formatted
+    if (const auto * create_user_query = res->as<ASTCreateUserQuery>())
+    {
+        if (create_user_query->auth_data->getType() == AuthenticationType::NO_PASSWORD && create_user_query->temporary_password)
+        {
+            AuthenticationType default_password_type = global_context->getAccessControl().getDefaultPasswordType();
+            create_user_query->auth_data = AuthenticationData::makePasswordAuthenticationData(default_password_type, create_user_query->temporary_password.value());
+        }
+    }
+
     if (is_interactive)
     {
         std::cout << std::endl;
@@ -1566,10 +1576,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
-        if (!create_user_query->attach && create_user_query->temporary_password_for_checks)
+        if (!create_user_query->attach && create_user_query->temporary_password)
         {
-            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password_for_checks.value());
-            create_user_query->temporary_password_for_checks.reset();
+            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password.value());
+            create_user_query->temporary_password.reset();
         }
     }
 

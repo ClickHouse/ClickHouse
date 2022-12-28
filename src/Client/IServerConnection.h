@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Access/Common/AuthenticationData.h>
+
 #include <Common/Throttler.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -83,6 +85,7 @@ public:
     virtual const String & getDescription() const = 0;
 
     virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
+    virtual AuthenticationType getDefaultPasswordType() const = 0;
 
     /// If last flag is true, you need to call sendExternalTablesData after.
     virtual void sendQuery(

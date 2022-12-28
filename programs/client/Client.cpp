@@ -263,6 +263,7 @@ try
     /// Set user password complexity rules
     auto & access_control = global_context->getAccessControl();
     access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
+    access_control.setDefaultPasswordType(connection->getDefaultPasswordType());
 
     if (is_interactive && !delayed_interactive)
     {

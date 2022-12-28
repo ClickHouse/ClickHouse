@@ -466,6 +466,11 @@
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
 
+    <!-- Default password type when the user does not specify it.
+         Accepted values are: 'plaintext', 'sha256', 'double_sha1'
+      -->
+    <default_password_type>sha256</default_password_type>
+
     <!-- Complexity requirements for user passwords. -->
     <!-- <password_complexity>
         <rule>
