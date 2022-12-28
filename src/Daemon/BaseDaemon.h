@@ -162,7 +162,6 @@ protected:
     std::mutex signal_handler_mutex;
     std::condition_variable signal_event;
     std::atomic_size_t terminate_signals_counter{0};
-    std::atomic_size_t sigint_signals_counter{0};
 
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
