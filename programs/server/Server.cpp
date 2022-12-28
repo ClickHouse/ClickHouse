@@ -767,7 +767,7 @@ try
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
     if (config().has("zookeeper") && config().has("keeper"))
-        throw Exception("Both zookeeper and keeper are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception("Both ZooKeeper and Keeper are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     bool has_zookeeper = config().has("zookeeper") || config().has("keeper") || config().has("keeper_server");
 
