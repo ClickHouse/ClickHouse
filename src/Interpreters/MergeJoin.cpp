@@ -55,7 +55,7 @@ ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const Stri
     if (!src_column_name.empty())
     {
         auto join_mask = JoinCommon::getColumnAsMask(block, src_column_name);
-        if (!join_mask.isConstant())
+        if (join_mask.hasData())
         {
             for (size_t i = 0; i < res_size; ++i)
                 null_map->getData()[i] = join_mask.isRowFiltered(i);

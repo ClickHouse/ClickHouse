@@ -765,7 +765,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             auto join_mask_col = JoinCommon::getColumnAsMask(source_block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
-            if (!multiple_disjuncts && isRightOrFull(kind) && !join_mask_col.isConstant())
+            if (!multiple_disjuncts && isRightOrFull(kind) && join_mask_col.hasData())
             {
                 const auto & join_mask = join_mask_col.getData();
                 /// Save rows that do not hold conditions
@@ -844,7 +844,6 @@ struct JoinOnKeyColumns
     JoinCommon::JoinMask join_mask_column;
 
     Sizes key_sizes;
-
 
     explicit JoinOnKeyColumns(const Block & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
         : key_names(key_names_)

@@ -21,24 +21,26 @@ using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 namespace JoinCommon
 {
 
-/// Store boolean column handling constant value without materializing
-/// Behaves similar to std::variant<bool, ColumnPtr>, but provides more convenient specialized interface
 class JoinMask
 {
 public:
-    explicit JoinMask(bool value)
+    explicit JoinMask()
         : column(nullptr)
-        , const_value(value)
+    {}
+
+    explicit JoinMask(bool value, size_t size)
+        : column(ColumnUInt8::create(size, value))
     {}
 
     explicit JoinMask(ColumnPtr col)
         : column(col)
-        , const_value(false)
     {}
 
-    bool isConstant() { return !column; }
+    bool hasData()
+    {
+        return column != nullptr;
+    }
 
-    /// Return data if mask is not constant
     UInt8ColumnDataPtr getData()
     {
         if (column)
@@ -48,15 +50,11 @@ public:
 
     inline bool isRowFiltered(size_t row) const
     {
-        if (column)
-            return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
-        return !const_value;
+        return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
     }
 
 private:
     ColumnPtr column;
-    /// Used if column is null
-    bool const_value;
 };
 
 
