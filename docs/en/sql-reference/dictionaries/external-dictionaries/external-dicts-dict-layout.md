@@ -3,6 +3,7 @@ slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-l
 sidebar_position: 41
 sidebar_label: Storing Dictionaries in Memory
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 # Storing Dictionaries in Memory 
 
@@ -22,7 +23,9 @@ ClickHouse generates an exception for errors with dictionaries. Examples of erro
 -   The dictionary being accessed could not be loaded.
 -   Error querying a `cached` dictionary.
 
-You can view the list of external dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
+You can view the list of dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
+
+<CloudDetails /> 
 
 The configuration looks like this:
 
@@ -604,3 +607,7 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
 Data must completely fit into RAM.
+
+## Related Content
+
+- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

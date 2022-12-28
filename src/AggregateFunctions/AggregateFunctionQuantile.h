@@ -72,7 +72,7 @@ private:
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
-            argument_types_, params)
+            argument_types_, params, createResultType(argument_types_))
         , levels(params, returns_many)
         , level(levels.levels[0])
         , argument_type(this->argument_types[0])
@@ -83,14 +83,14 @@ public:
 
     String getName() const override { return Name::name; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
         DataTypePtr res;
 
         if constexpr (returns_float)
             res = std::make_shared<DataTypeNumber<FloatReturnType>>();
         else
-            res = argument_type;
+            res = argument_types_[0];
 
         if constexpr (returns_many)
             return std::make_shared<DataTypeArray>(res);
@@ -170,7 +170,7 @@ public:
             {
                 auto & data_to = assert_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
-                data_to.resize(data_to.size() + size);
+                data_to.resize(old_size + size);
 
                 data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
@@ -178,7 +178,7 @@ public:
             {
                 auto & data_to = static_cast<ColVecType &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
-                data_to.resize(data_to.size() + size);
+                data_to.resize(old_size + size);
 
                 data.getMany(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }

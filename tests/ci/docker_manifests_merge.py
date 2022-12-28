@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
 
 def load_images(path: str, suffix: str) -> Images:
     with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
-        return json.load(images)
+        return json.load(images)  # type: ignore
 
 
 def strip_suffix(suffix: str, images: Images) -> Images:
@@ -208,7 +208,6 @@ def main():
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
     print(f"::notice ::Report url: {url}")
-    print(f'::set-output name=url_output::"{url}"')
 
     if not args.reports:
         return

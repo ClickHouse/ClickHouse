@@ -29,7 +29,7 @@ slug: /zh/operations/system-tables/replication_queue
     -   `MUTATE_PART` — 对分片应用一个或多个突变.
     -   `ALTER_METADATA` — 根据全局 /metadata 和 /columns 路径应用alter修改.
 
--   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — 提交任务执行的日期和时间.
+-   `create_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 提交任务执行的日期和时间.
 
 -   `required_quorum` ([UInt32](../../sql-reference/data-types/int-uint.md)) — 等待任务完成并确认完成的副本数. 此列仅与 `GET_PARTS` 任务相关.
 
@@ -47,13 +47,13 @@ slug: /zh/operations/system-tables/replication_queue
 
 -   `last_exception` ([String](../../sql-reference/data-types/string.md)) — 发生的最后一个错误的短信（如果有）.
 
--   `last_attempt_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — 上次尝试任务的日期和时间.
+-   `last_attempt_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 上次尝试任务的日期和时间.
 
 -   `num_postponed` ([UInt32](../../sql-reference/data-types/int-uint.md)) — 延期任务数.
 
 -   `postpone_reason` ([String](../../sql-reference/data-types/string.md)) — 任务延期的原因.
 
--   `last_postpone_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — 上次推迟任务的日期和时间.
+-   `last_postpone_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 上次推迟任务的日期和时间.
 
 -   `merge_type` ([String](../../sql-reference/data-types/string.md)) — 当前合并的类型. 如果是突变则为空.
 

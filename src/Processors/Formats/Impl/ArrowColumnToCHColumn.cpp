@@ -69,7 +69,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_DATA;
 }
 
@@ -324,14 +323,31 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
     ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
     offsets_data.reserve(arrow_column->length());
 
+    uint64_t start_offset = 0u;
+
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
         auto arrow_offsets_array = list_chunk.offsets();
         auto & arrow_offsets = dynamic_cast<arrow::Int32Array &>(*arrow_offsets_array);
-        auto start = offsets_data.back();
+
+        /*
+         * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
+         * When it is shared, the offsets will be monotonically increasing. Otherwise, the offsets will be zero based.
+         * In order to account for both cases, the starting offset is updated whenever a zero-based offset is found.
+         * More info can be found in: https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm and
+         * https://github.com/ClickHouse/ClickHouse/pull/43297
+         * */
+        if (list_chunk.offset() == 0)
+        {
+            start_offset = offsets_data.back();
+        }
+
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
-            offsets_data.emplace_back(start + arrow_offsets.Value(i));
+        {
+            auto offset = arrow_offsets.Value(i);
+            offsets_data.emplace_back(start_offset + offset);
+        }
     }
     return offsets_column;
 }
@@ -467,8 +483,23 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(std::shared_ptr
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
-        std::shared_ptr<arrow::Array> chunk = list_chunk.values();
-        array_vector.emplace_back(std::move(chunk));
+
+        /*
+         * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
+         * Therefore, simply appending arrow::ListArray::values() could lead to duplicated data to be appended.
+         * To properly handle this, arrow::ListArray::values() needs to be sliced based on the chunk offsets.
+         * arrow::ListArray::Flatten does that. More info on: https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm and
+         * https://github.com/ClickHouse/ClickHouse/pull/43297
+         * */
+        auto flatten_result = list_chunk.Flatten();
+        if (flatten_result.ok())
+        {
+            array_vector.emplace_back(flatten_result.ValueOrDie());
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to flatten chunk '{}' of column of type '{}' ", chunk_i, arrow_column->type()->id());
+        }
     }
     return std::make_shared<arrow::ChunkedArray>(array_vector);
 }
@@ -778,7 +809,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
 {
 }
 
-void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
+void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows)
 {
     NameToColumnPtr name_to_column_ptr;
     for (auto column_name : table->ColumnNames())
@@ -792,16 +823,12 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
         name_to_column_ptr[std::move(column_name)] = arrow_column;
     }
 
-    arrowColumnsToCHChunk(res, name_to_column_ptr);
+    arrowColumnsToCHChunk(res, name_to_column_ptr, num_rows);
 }
 
-void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
+void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows)
 {
-    if (unlikely(name_to_column_ptr.empty()))
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Columns is empty");
-
     Columns columns_list;
-    UInt64 num_rows = name_to_column_ptr.begin()->second->length();
     columns_list.reserve(header.columns());
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
     bool skipped = false;

@@ -78,11 +78,11 @@ public:
                     column.name += ".size0";
                     column.type = std::make_shared<DataTypeUInt64>();
 
-                    resolveOrdinaryFunctionNode(*function_node, "equals");
-
                     function_arguments_nodes.clear();
                     function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
                     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
+
+                    resolveOrdinaryFunctionNode(*function_node, "equals");
                 }
                 else if (function_name == "notEmpty")
                 {
@@ -90,11 +90,11 @@ public:
                     column.name += ".size0";
                     column.type = std::make_shared<DataTypeUInt64>();
 
-                    resolveOrdinaryFunctionNode(*function_node, "notEquals");
-
                     function_arguments_nodes.clear();
                     function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
                     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
+
+                    resolveOrdinaryFunctionNode(*function_node, "notEquals");
                 }
             }
             else if (column_type.isNullable())
@@ -112,9 +112,9 @@ public:
                     column.name += ".null";
                     column.type = std::make_shared<DataTypeUInt8>();
 
-                    resolveOrdinaryFunctionNode(*function_node, "not");
-
                     function_arguments_nodes = {std::make_shared<ColumnNode>(column, column_source)};
+
+                    resolveOrdinaryFunctionNode(*function_node, "not");
                 }
             }
             else if (column_type.isMap())
@@ -139,14 +139,14 @@ public:
         }
         else
         {
-            auto second_argument_constant_value = function_arguments_nodes[1]->getConstantValueOrNull();
+            const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
 
-            if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_value)
+            if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_node)
             {
                 /** Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)`
                   * with `tuple_argument.column_name`.
                   */
-                const auto & tuple_element_constant_value = second_argument_constant_value->getValue();
+                const auto & tuple_element_constant_value = second_argument_constant_node->getValue();
                 const auto & tuple_element_constant_value_type = tuple_element_constant_value.getType();
 
                 const auto & data_type_tuple = assert_cast<const DataTypeTuple &>(*column.type);
@@ -182,9 +182,9 @@ public:
                 column.type = data_type_map.getKeyType();
 
                 auto has_function_argument = std::make_shared<ColumnNode>(column, column_source);
-                resolveOrdinaryFunctionNode(*function_node, "has");
-
                 function_arguments_nodes[0] = std::move(has_function_argument);
+
+                resolveOrdinaryFunctionNode(*function_node, "has");
             }
         }
     }
@@ -192,9 +192,8 @@ public:
 private:
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
-        auto function_result_type = function_node.getResultType();
         auto function = FunctionFactory::instance().get(function_name, context);
-        function_node.resolveAsFunction(function, std::move(function_result_type));
+        function_node.resolveAsFunction(function->build(function_node.getArgumentTypes()));
     }
 
     ContextPtr & context;

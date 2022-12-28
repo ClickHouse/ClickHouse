@@ -1,5 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/TraceSender.h>
 
 
 /// Available events. Add something here as you wish.
@@ -62,7 +63,7 @@
     M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries..") \
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
-    M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform the 'max_network_bandwidth' setting.") \
+    M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth' and other throttling settings.") \
     \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
@@ -433,6 +434,15 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
     M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
     M(KeeperSaveSnapshot, "Number of snapshot save")\
+    M(KeeperCreateRequest, "Number of create requests")\
+    M(KeeperRemoveRequest, "Number of remove requests")\
+    M(KeeperSetRequest, "Number of set requests")\
+    M(KeeperCheckRequest, "Number of check requests")\
+    M(KeeperMultiRequest, "Number of multi requests")\
+    M(KeeperMultiReadRequest, "Number of multi read requests")\
+    M(KeeperGetRequest, "Number of get requests")\
+    M(KeeperListRequest, "Number of list requests")\
+    M(KeeperExistsRequest, "Number of exists requests")\
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
@@ -514,13 +524,42 @@ const char * getDocumentation(Event event)
     return strings[event];
 }
 
-
 Event end() { return END; }
-
 
 void increment(Event event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().increment(event, amount);
+}
+
+void incrementNoTrace(Event event, Count amount)
+{
+    DB::CurrentThread::getProfileEvents().incrementNoTrace(event, amount);
+}
+
+void Counters::increment(Event event, Count amount)
+{
+    Counters * current = this;
+    bool send_to_trace_log = false;
+
+    do
+    {
+        send_to_trace_log |= current->trace_profile_events;
+        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current = current->parent;
+    } while (current != nullptr);
+
+    if (unlikely(send_to_trace_log))
+        DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
+}
+
+void Counters::incrementNoTrace(Event event, Count amount)
+{
+    Counters * current = this;
+    do
+    {
+        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current = current->parent;
+    } while (current != nullptr);
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
