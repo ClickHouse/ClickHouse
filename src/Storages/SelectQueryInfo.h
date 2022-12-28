@@ -171,7 +171,6 @@ struct ProjectionCandidate
   */
 struct SelectQueryInfo
 {
-
     SelectQueryInfo()
         : prepared_sets(std::make_shared<PreparedSets>())
     {}
@@ -206,6 +205,9 @@ struct SelectQueryInfo
 
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
+
+    /// Filter actions dag for current storage
+    ActionsDAGPtr filter_actions_dag;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage

@@ -59,9 +59,9 @@ std::string DataPartStorageOnDisk::getFullRootPath() const
     return fs::path(volume->getDisk()->getPath()) / root_path / "";
 }
 
-MutableDataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name)
+MutableDataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDisk>(new DataPartStorageOnDisk(volume, std::string(fs::path(root_path) / part_dir), name, transaction));
+    return std::shared_ptr<DataPartStorageOnDisk>(new DataPartStorageOnDisk(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
 }
 
 DataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name) const
@@ -101,6 +101,7 @@ public:
     bool isValid() const override { return it->isValid(); }
     bool isFile() const override { return isValid() && disk->isFile(it->path()); }
     std::string name() const override { return it->name(); }
+    std::string path() const override { return it->path(); }
 
 private:
     DiskPtr disk;
@@ -259,9 +260,17 @@ void DataPartStorageOnDisk::remove(
         std::string proj_dir_name = projection.name + proj_suffix;
         projection_directories.emplace(proj_dir_name);
 
+        NameSet files_not_to_remove_for_projection;
+        for (const auto & file_name : can_remove_description->files_not_to_remove)
+        {
+            if (file_name.starts_with(proj_dir_name))
+                files_not_to_remove_for_projection.emplace(fs::path(file_name).filename());
+        }
+        LOG_DEBUG(log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
+
         clearDirectory(
             fs::path(to) / proj_dir_name,
-            can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove, projection.checksums, {}, is_temp, state, log, true);
+            can_remove_description->can_remove_anything, files_not_to_remove_for_projection, projection.checksums, {}, is_temp, state, log, true);
     }
 
     /// It is possible that we are removing the part which have a written but not loaded projection.
@@ -372,7 +381,12 @@ std::optional<String> DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logg
 
     for (int try_no = 0; try_no < 10; ++try_no)
     {
-        res = (prefix.empty() ? "" : prefix + "_") + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
+        if (prefix.empty())
+            res = part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
+        else if (prefix.ends_with("_"))
+            res = prefix + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
+        else
+            res = prefix + "_" + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
 
         if (!volume->getDisk()->exists(full_relative_path / res))
             return res;
@@ -624,12 +638,17 @@ MutableDataPartStoragePtr DataPartStorageOnDisk::clonePart(
 }
 
 void DataPartStorageOnDisk::rename(
-    const std::string & new_root_path,
-    const std::string & new_part_dir,
+    std::string new_root_path,
+    std::string new_part_dir,
     Poco::Logger * log,
     bool remove_new_dir_if_exists,
     bool fsync_part_dir)
 {
+    if (new_root_path.ends_with('/'))
+        new_root_path.pop_back();
+    if (new_part_dir.ends_with('/'))
+        new_part_dir.pop_back();
+
     String to = fs::path(new_root_path) / new_part_dir / "";
 
     if (volume->getDisk()->exists(to))
@@ -654,7 +673,6 @@ void DataPartStorageOnDisk::rename(
                 fullPath(volume->getDisk(), to));
         }
     }
-
     String from = getRelativePath();
 
     /// Why?

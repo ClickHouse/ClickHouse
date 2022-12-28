@@ -32,6 +32,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Formats/MsgPackExtensionTypes.h>
+#include <Formats/EscapingRuleUtils.h>
 
 namespace DB
 {
@@ -246,6 +247,14 @@ static void insertNull(IColumn & column, DataTypePtr type)
 
 static void insertUUID(IColumn & column, DataTypePtr type, const char * value, size_t size)
 {
+    auto insert_func = [&](IColumn & column_, DataTypePtr type_)
+    {
+        insertUUID(column_, type_, value, size);
+    };
+
+    if (checkAndInsertNullable(column, type, insert_func) || checkAndInsertLowCardinality(column, type, insert_func))
+        return;
+
     if (!isUUID(type))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
@@ -469,16 +478,16 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
     {
         case msgpack::type::object_type::POSITIVE_INTEGER: [[fallthrough]];
         case msgpack::type::object_type::NEGATIVE_INTEGER:
-            return makeNullable(std::make_shared<DataTypeInt64>());
+            return std::make_shared<DataTypeInt64>();
         case msgpack::type::object_type::FLOAT32:
-            return makeNullable(std::make_shared<DataTypeFloat32>());
+            return std::make_shared<DataTypeFloat32>();
         case msgpack::type::object_type::FLOAT64:
-            return makeNullable(std::make_shared<DataTypeFloat64>());
+            return std::make_shared<DataTypeFloat64>();
         case msgpack::type::object_type::BOOLEAN:
-            return makeNullable(std::make_shared<DataTypeUInt8>());
+            return std::make_shared<DataTypeUInt8>();
         case msgpack::type::object_type::BIN: [[fallthrough]];
         case msgpack::type::object_type::STR:
-            return makeNullable(std::make_shared<DataTypeString>());
+            return std::make_shared<DataTypeString>();
         case msgpack::type::object_type::ARRAY:
         {
             msgpack::object_array object_array = object.via.array;
@@ -552,12 +561,9 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
     });
     factory.registerAdditionalInfoForSchemaCacheGetter("MsgPack", [](const FormatSettings & settings)
     {
-            return fmt::format(
-                "number_of_columns={}, schema_inference_hints={}, max_rows_to_read_for_schema_inference={}",
-                settings.msgpack.number_of_columns,
-                settings.schema_inference_hints,
-                settings.max_rows_to_read_for_schema_inference);
-        });
+            String result = getAdditionalFormatInfoForAllRowBasedFormats(settings);
+            return result + fmt::format(", number_of_columns={}", settings.msgpack.number_of_columns);
+    });
 }
 
 }

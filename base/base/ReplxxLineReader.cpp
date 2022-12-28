@@ -16,8 +16,11 @@
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/classification.hpp> /// is_any_of
+#include "config.h" // USE_SKIM
+
+#if USE_SKIM
+#include <skim.h>
+#endif
 
 namespace
 {
@@ -36,30 +39,6 @@ std::string getEditor()
         editor = "vim";
 
     return editor;
-}
-
-std::string getFuzzyFinder()
-{
-    const char * env_path = std::getenv("PATH"); // NOLINT(concurrency-mt-unsafe)
-
-    if (!env_path || !*env_path)
-        return {};
-
-    std::vector<std::string> paths;
-    boost::split(paths, env_path, boost::is_any_of(":"));
-    for (const auto & path_str : paths)
-    {
-        std::filesystem::path path(path_str);
-        std::filesystem::path sk_bin_path = path / "sk";
-        if (!access(sk_bin_path.c_str(), X_OK))
-            return sk_bin_path;
-
-        std::filesystem::path fzf_bin_path = path / "fzf";
-        if (!access(fzf_bin_path.c_str(), X_OK))
-            return fzf_bin_path;
-    }
-
-    return {};
 }
 
 /// See comments in ShellCommand::executeImpl()
@@ -305,7 +284,6 @@ ReplxxLineReader::ReplxxLineReader(
     replxx::Replxx::highlighter_callback_t highlighter_)
     : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
     , editor(getEditor())
-    , fuzzy_finder(getFuzzyFinder())
 {
     using namespace std::placeholders;
     using Replxx = replxx::Replxx;
@@ -414,16 +392,49 @@ ReplxxLineReader::ReplxxLineReader(
     };
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
-    /// interactive search in history (requires fzf/sk)
-    if (!fuzzy_finder.empty())
+#if USE_SKIM
+    auto interactive_history_search = [this](char32_t code)
     {
-        auto interactive_history_search = [this](char32_t code)
+        std::vector<std::string> words;
         {
-            openInteractiveHistorySearch();
-            return rx.invoke(Replxx::ACTION::REPAINT, code);
-        };
-        rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
-    }
+            auto hs(rx.history_scan());
+            while (hs.next())
+                words.push_back(hs.get().text());
+        }
+
+        std::string current_query(rx.get_state().text());
+        std::string new_query;
+        try
+        {
+            new_query = std::string(skim(current_query, words));
+        }
+        catch (const std::exception & e)
+        {
+            rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
+        }
+        if (!new_query.empty())
+            rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+
+        if (bracketed_paste_enabled)
+            enableBracketedPaste();
+
+        rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
+        return rx.invoke(Replxx::ACTION::REPAINT, code);
+    };
+
+    rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+
+    /// Rebind regular incremental search to C-T.
+    ///
+    /// NOTE: C-T by default this is a binding to swap adjustent chars
+    /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
+    rx.bind_key(Replxx::KEY::control('T'), [this](char32_t)
+    {
+        /// Reverse search is detected by C-R.
+        uint32_t reverse_search = Replxx::KEY::control('R');
+        return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
+    });
+#endif
 }
 
 ReplxxLineReader::~ReplxxLineReader()
@@ -480,52 +491,6 @@ void ReplxxLineReader::openEditor()
         if (executeCommand(argv) == 0)
         {
             const std::string & new_query = readFile(editor_file.getPath());
-            rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
-        }
-    }
-    catch (const std::runtime_error & e)
-    {
-        rx.print(e.what());
-    }
-
-    if (bracketed_paste_enabled)
-        enableBracketedPaste();
-}
-
-void ReplxxLineReader::openInteractiveHistorySearch()
-{
-    assert(!fuzzy_finder.empty());
-    TemporaryFile history_file("clickhouse_client_history_in_XXXXXX.bin");
-    auto hs(rx.history_scan());
-    while (hs.next())
-    {
-        history_file.write(hs.get().text());
-        history_file.write(std::string(1, '\0'));
-    }
-    history_file.close();
-
-    TemporaryFile output_file("clickhouse_client_history_out_XXXXXX.sql");
-    output_file.close();
-
-    char sh[] = "sh";
-    char sh_c[] = "-c";
-    /// NOTE: You can use one of the following to configure the behaviour additionally:
-    /// - SKIM_DEFAULT_OPTIONS
-    /// - FZF_DEFAULT_OPTS
-    ///
-    /// And also note, that fzf and skim is 95% compatible (at least option
-    /// that is used here)
-    std::string fuzzy_finder_command = fmt::format(
-        "{} --read0 --tac --no-sort --tiebreak=index --bind=ctrl-r:toggle-sort --height=30% < {} > {}",
-        fuzzy_finder, history_file.getPath(), output_file.getPath());
-    char * const argv[] = {sh, sh_c, fuzzy_finder_command.data(), nullptr};
-
-    try
-    {
-        if (executeCommand(argv) == 0)
-        {
-            std::string new_query = readFile(output_file.getPath());
-            rightTrim(new_query);
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
         }
     }
