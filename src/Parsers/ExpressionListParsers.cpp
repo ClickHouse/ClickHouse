@@ -701,7 +701,7 @@ public:
         /// 2. If there is already tuple do nothing
         if (tryGetFunctionName(elements.back()) == "tuple")
         {
-            pushOperand(elements.back());
+            pushOperand(std::move(elements.back()));
             elements.pop_back();
         }
         /// 3. Put all elements in a single tuple
@@ -711,6 +711,19 @@ public:
             elements.clear();
             pushOperand(function);
         }
+
+        /// We must check that tuple arguments are identifiers
+        auto * func_ptr = operands.back()->as<ASTFunction>();
+        auto * args_ptr = func_ptr->arguments->as<ASTExpressionList>();
+
+        for (const auto & child : args_ptr->children)
+        {
+            if (typeid_cast<ASTIdentifier *>(child.get()))
+                continue;
+
+            return false;
+        }
+
         return true;
     }
 
@@ -1064,9 +1077,7 @@ public:
                         is_tuple = true;
 
                 // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
-                auto test_pos = pos;
-                auto test_expected = expected;
-                if (parseOperator(test_pos, "->", test_expected))
+                if (pos->type == TokenType::Arrow)
                     is_tuple = true;
             }
 
@@ -1734,6 +1745,29 @@ private:
     bool parsed_interval_kind = false;
 };
 
+class TupleLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        bool result = LayerWithSeparator::parse(pos, expected, action);
+
+        /// Check that after the tuple() function there is no lambdas operator
+        if (finished && pos->type == TokenType::Arrow)
+            return false;
+
+        return result;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("tuple", std::move(elements));
+        return true;
+    }
+};
+
+
 class IntervalLayer : public Layer
 {
 public:
@@ -2036,6 +2070,9 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         else if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
     }
+
+    if (function_name == "tuple")
+        return std::make_unique<TupleLayer>();
 
     if (function_name_lowercase == "cast")
         return std::make_unique<CastLayer>();
