@@ -309,6 +309,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         pipeline.limitMaxThreads(max_threads_limit);
     }
 
+    pipeline.setCollectedProcessors(nullptr);
     return pipeline;
 }
 
