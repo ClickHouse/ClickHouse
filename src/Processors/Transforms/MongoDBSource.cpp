@@ -29,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
-    extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int UNKNOWN_TYPE;
     extern const int MONGODB_ERROR;
 }
