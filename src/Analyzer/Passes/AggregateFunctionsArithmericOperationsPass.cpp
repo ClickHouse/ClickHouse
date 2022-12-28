@@ -6,7 +6,6 @@
 #include <Functions/IFunction.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 
 namespace DB
@@ -89,8 +88,8 @@ public:
         if (!supported_function_it->second.contains(inner_function_name))
             return;
 
-        const auto * left_argument_constant_node = inner_function_arguments_nodes[0]->as<ConstantNode>();
-        const auto * right_argument_constant_node = inner_function_arguments_nodes[1]->as<ConstantNode>();
+        auto left_argument_constant_value = inner_function_arguments_nodes[0]->getConstantValueOrNull();
+        auto right_argument_constant_value = inner_function_arguments_nodes[1]->getConstantValueOrNull();
 
         /** If we extract negative constant, aggregate function name must be updated.
           *
@@ -106,14 +105,14 @@ public:
                 function_name_if_constant_is_negative = "min";
         }
 
-        if (left_argument_constant_node && !right_argument_constant_node)
+        if (left_argument_constant_value && !right_argument_constant_value)
         {
             /// Do not rewrite `sum(1/n)` with `sum(1) * div(1/n)` because of lose accuracy
             if (inner_function_name == "divide")
                 return;
 
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
-            const auto & left_argument_constant_value_literal = left_argument_constant_node->getValue();
+            const auto & left_argument_constant_value_literal = left_argument_constant_value->getValue();
             if (!function_name_if_constant_is_negative.empty() &&
                 left_argument_constant_value_literal < zeroField(left_argument_constant_value_literal))
             {
@@ -126,10 +125,10 @@ public:
             inner_function_arguments_nodes[1] = node;
             node = std::move(inner_function);
         }
-        else if (right_argument_constant_node)
+        else if (right_argument_constant_value)
         {
             /// Rewrite `aggregate_function(inner_function(argument, constant))` into `inner_function(aggregate_function(argument), constant)`
-            const auto & right_argument_constant_value_literal = right_argument_constant_node->getValue();
+            const auto & right_argument_constant_value_literal = right_argument_constant_value->getValue();
             if (!function_name_if_constant_is_negative.empty() &&
                 right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal))
             {

@@ -83,9 +83,7 @@ private:
     std::vector<String> readRowImpl();
 
     template <bool read_string>
-    String readFieldIntoString(bool is_first, bool is_last, bool is_unknown);
-
-    void updateFormatSettings(bool is_last_column);
+    String readFieldIntoString(bool is_first);
 
     PeekableReadBuffer * buf;
     bool ignore_spaces;

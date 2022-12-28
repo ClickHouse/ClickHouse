@@ -495,17 +495,17 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnTuple::forEachSubcolumnRecursively(ColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
     {
-        callback(*column);
+        callback(column);
         column->forEachSubcolumnRecursively(callback);
     }
 }

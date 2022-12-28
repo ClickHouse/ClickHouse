@@ -15,6 +15,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
 
 
 namespace DB
@@ -173,7 +174,7 @@ void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
     query_str = queryToString(*query);
-    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
+    query_for_logging = maskSensitiveInfoInQueryForLogging(query_str, query, context);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)

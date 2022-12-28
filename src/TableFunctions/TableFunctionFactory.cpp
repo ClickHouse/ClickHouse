@@ -3,7 +3,6 @@
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/KnownObjectNames.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 
@@ -28,8 +27,6 @@ void TableFunctionFactory::registerFunction(
         && !case_insensitive_table_functions.emplace(Poco::toLower(name), value).second)
         throw Exception("TableFunctionFactory: the case insensitive table function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
-
-    KnownTableFunctionNames::instance().add(name, (case_sensitiveness == CaseInsensitive));
 }
 
 TableFunctionPtr TableFunctionFactory::get(
