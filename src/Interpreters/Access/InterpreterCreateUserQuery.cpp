@@ -103,15 +103,21 @@ BlockIO InterpreterCreateUserQuery::execute()
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
+    AuthenticationType default_password_type = access_control.getDefaultPasswordType();
 
-     if (!query.attach && !query.alter && !query.auth_data && !implicit_no_password_allowed)
+    if (!query.attach && !query.alter && !query.auth_data && !implicit_no_password_allowed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Authentication type NO_PASSWORD must be explicitly specified, check the setting allow_implicit_no_password in the server configuration");
 
-    if (!query.attach && query.temporary_password_for_checks)
+    if (query.auth_data->getType() == AuthenticationType::NO_PASSWORD && query.temporary_password)
     {
-        access_control.checkPasswordComplexityRules(query.temporary_password_for_checks.value());
-        query.temporary_password_for_checks.reset();
+        query.auth_data = AuthenticationData::makePasswordAuthenticationData(default_password_type, query.temporary_password.value());
+    }
+
+    if (!query.attach && query.temporary_password)
+    {
+        access_control.checkPasswordComplexityRules(query.temporary_password.value());
+        query.temporary_password.reset();
     }
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
