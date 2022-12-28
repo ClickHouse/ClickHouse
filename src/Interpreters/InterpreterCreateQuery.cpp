@@ -72,6 +72,7 @@
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
@@ -552,7 +553,24 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     Block defaults_sample_block;
     /// set missing types and wrap default_expression's in a conversion-function if necessary
     if (!default_expr_list->children.empty())
+    {
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
+
+        /// check if conversion is possible
+        auto types = defaults_sample_block.getDataTypes();
+        for ( auto i = types.begin(); i != types.end(); )
+        {
+            const auto type_to = *(i++);
+            const auto type_from = *(i++);
+
+            ColumnsWithTypeAndName arguments {
+                {type_from->createColumnConstWithDefaultValue(0), type_from, ""},
+                {DataTypeString().createColumnConst(0, type_to->getName()), std::make_shared<DataTypeString>(),""                }
+            };
+
+            CastOverloadResolver<CastType::accurate>::create(context_)->build(arguments)->prepare({});
+        }
+    }
 
     bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
     bool allow_experimental_codecs = attach || context_->getSettingsRef().allow_experimental_codecs;

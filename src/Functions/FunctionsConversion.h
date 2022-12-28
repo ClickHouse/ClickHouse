@@ -2734,6 +2734,19 @@ private:
         else if (!can_apply_accurate_cast)
         {
             FunctionPtr function = FunctionTo<ToDataType>::Type::create();
+
+            /// check if conversion function accepts argument's type
+            try
+            {
+                function->getReturnTypeImpl({from_type});
+            }
+            catch (Exception &)
+            {
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                    "Conversion from {} to {} is not supported",
+                    from_type->getName(), to_type->getName());
+            }
+
             return createFunctionAdaptor(function, from_type);
         }
 
