@@ -1,34 +1,23 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/ObjectUtils.h>
-#include <Columns/ColumnObject.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/createVolume.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <IO/ConcatReadBuffer.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/S3Common.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PartLog.h>
@@ -56,7 +45,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/localBackup.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -70,22 +58,17 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/noexcept_scope.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Common/scope_guard_safe.h>
 
-#include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/replace.hpp>
 
 #include <base/insertAtEnd.h>
-#include <base/sort.h>
 
 #include <algorithm>
 #include <atomic>
-#include <iomanip>
 #include <optional>
 #include <set>
 #include <thread>
@@ -1030,7 +1013,7 @@ void MergeTreeData::loadDataPartsFromDisk(
     size_t suspicious_broken_parts_bytes = 0;
     std::atomic<bool> has_adaptive_parts = false;
     std::atomic<bool> has_non_adaptive_parts = false;
-    std::atomic<bool> has_lightweight_in_parts = false;
+    std::atomic<bool> has_lightweight_deletes_in_parts = false;
 
     std::mutex mutex;
     auto load_part = [&](const String & part_name, const DiskPtr & part_disk_ptr)
@@ -1122,7 +1105,7 @@ void MergeTreeData::loadDataPartsFromDisk(
 
         /// Check if there is lightweight delete in part
         if (part->hasLightweightDelete())
-            has_lightweight_in_parts.store(true, std::memory_order_relaxed);
+            has_lightweight_deletes_in_parts.store(true, std::memory_order_relaxed);
 
         part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
         /// Assume that all parts are Active, covered parts will be detected and marked as Outdated later
@@ -1206,7 +1189,7 @@ void MergeTreeData::loadDataPartsFromDisk(
 
     has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
 
-    if (has_lightweight_in_parts)
+    if (has_lightweight_deletes_in_parts)
         has_lightweight_delete_parts.store(true);
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
@@ -5999,20 +5982,25 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (select_query->interpolate() && !select_query->interpolate()->children.empty())
         return std::nullopt;
 
-    // Currently projections don't support GROUPING SET yet.
-    if (select_query->group_by_with_grouping_sets)
+    // Projections don't support grouping sets yet.
+    if (select_query->group_by_with_grouping_sets
+        || select_query->group_by_with_totals
+        || select_query->group_by_with_rollup
+        || select_query->group_by_with_cube)
         return std::nullopt;
 
     auto query_options = SelectQueryOptions(
         QueryProcessingStage::WithMergeableState,
         /* depth */ 1,
         /* is_subquery_= */ true
-    ).ignoreProjections().ignoreAlias();
+        ).ignoreProjections().ignoreAlias();
+
     InterpreterSelectQuery select(
         query_ptr,
         query_context,
         query_options,
         query_info.prepared_sets);
+
     const auto & analysis_result = select.getAnalysisResult();
 
     query_info.prepared_sets = select.getQueryAnalyzer()->getPreparedSets();
