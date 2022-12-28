@@ -683,7 +683,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("confidence", value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
-            ("continue_on_errors", "continue testing even if a query fails")
+            ("ignore-error,continue_on_errors", "continue testing even if a query fails")
             ("reconnect", "establish new connection for every query")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
@@ -738,7 +738,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["query_id"].as<std::string>(),
             options["query"].as<std::string>(),
             options["max-consecutive-errors"].as<size_t>(),
-            options.count("continue_on_errors"),
+            options.count("ignore-error"),
             options.count("reconnect"),
             options.count("client-side-time"),
             print_stacktrace,

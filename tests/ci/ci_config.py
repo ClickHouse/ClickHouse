@@ -171,12 +171,12 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
         },
-        "binary_amd64sse2": {
-            "compiler": "clang-15-amd64sse2",
+        "binary_amd64_compat": {
+            "compiler": "clang-15-amd64-compat",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "static_binary_name": "amd64sse2",
+            "static_binary_name": "amd64compat",
             "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
@@ -203,7 +203,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
-            "binary_amd64sse2",
+            "binary_amd64_compat",
         ],
     },
     "tests_config": {

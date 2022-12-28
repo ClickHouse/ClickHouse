@@ -176,6 +176,7 @@ public:
     ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
     bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
 

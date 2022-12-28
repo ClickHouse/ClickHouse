@@ -30,6 +30,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
+#include <Poco/Pipe.h>
 
 #include <Common/ErrorHandlers.h>
 #include <base/argsToConfig.h>
@@ -76,6 +77,7 @@ namespace DB
     {
         extern const int CANNOT_SET_SIGNAL_HANDLER;
         extern const int CANNOT_SEND_SIGNAL;
+        extern const int SYSTEM_ERROR;
     }
 }
 
@@ -176,12 +178,9 @@ __attribute__((__weak__)) void collectCrashLog(
 class SignalListener : public Poco::Runnable
 {
 public:
-    enum Signals : int
-    {
-        StdTerminate = -1,
-        StopThread = -2,
-        SanitizerTrap = -3,
-    };
+    static constexpr int StdTerminate = -1;
+    static constexpr int StopThread = -2;
+    static constexpr int SanitizerTrap = -3;
 
     explicit SignalListener(BaseDaemon & daemon_)
         : log(&Poco::Logger::get("BaseDaemon"))
@@ -206,7 +205,7 @@ public:
             // Don't use strsignal here, because it's not thread-safe.
             LOG_TRACE(log, "Received signal {}", sig);
 
-            if (sig == Signals::StopThread)
+            if (sig == StopThread)
             {
                 LOG_INFO(log, "Stop SignalListener thread");
                 break;
@@ -217,7 +216,7 @@ public:
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
                 LOG_INFO(log, "Opened new log file after received signal.");
             }
-            else if (sig == Signals::StdTerminate)
+            else if (sig == StdTerminate)
             {
                 UInt32 thread_num;
                 std::string message;
@@ -907,7 +906,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
+    logger().information("Starting " + std::string{VERSION_FULL}
         + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
         + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
@@ -956,7 +955,6 @@ void BaseDaemon::handleSignal(int signal_id)
         std::lock_guard lock(signal_handler_mutex);
         {
             ++terminate_signals_counter;
-            sigint_signals_counter += signal_id == SIGINT;
             signal_event.notify_all();
         }
 
@@ -971,9 +969,9 @@ void BaseDaemon::onInterruptSignals(int signal_id)
     is_cancelled = true;
     LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
-    if (sigint_signals_counter >= 2)
+    if (terminate_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
+        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
         call_default_signal_handler(signal_id);
         /// If the above did not help.
         _exit(128 + signal_id);
@@ -1007,11 +1005,15 @@ void BaseDaemon::setupWatchdog()
 
     while (true)
     {
+        /// This pipe is used to synchronize notifications to the service manager from the child process
+        /// to be sent after the notifications from the parent process.
+        Poco::Pipe notify_sync;
+
         static pid_t pid = -1;
         pid = fork();
 
         if (-1 == pid)
-            throw Poco::Exception("Cannot fork");
+            DB::throwFromErrno("Cannot fork", DB::ErrorCodes::SYSTEM_ERROR);
 
         if (0 == pid)
         {
@@ -1020,8 +1022,31 @@ void BaseDaemon::setupWatchdog()
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
                 logger().warning("Cannot do prctl to ask termination with parent.");
 #endif
+
+            {
+                notify_sync.close(Poco::Pipe::CLOSE_WRITE);
+                /// Read from the pipe will block until the pipe is closed.
+                /// This way we synchronize with the parent process.
+                char buf[1];
+                if (0 != notify_sync.readBytes(buf, sizeof(buf)))
+                    throw Poco::Exception("Unexpected result while waiting for watchdog synchronization pipe to close.");
+            }
+
             return;
         }
+
+#if defined(OS_LINUX)
+        /// Tell the service manager the actual main process is not this one but the forked process
+        /// because it is going to be serving the requests and it is going to send "READY=1" notification
+        /// when it is fully started.
+        /// NOTE: we do this right after fork() and then notify the child process to "unblock" so that it finishes initialization
+        /// and sends "READY=1" after we have sent "MAINPID=..."
+        systemdNotify(fmt::format("MAINPID={}\n", pid));
+#endif
+
+        /// Close the pipe after notifying the service manager.
+        /// The child process is waiting for the pipe to be closed.
+        notify_sync.close();
 
         /// Change short thread name and process name.
         setThreadName("clckhouse-watch");   /// 15 characters
@@ -1141,3 +1166,58 @@ String BaseDaemon::getStoredBinaryHash() const
 {
     return stored_binary_hash;
 }
+
+#if defined(OS_LINUX)
+void systemdNotify(const std::string_view & command)
+{
+    const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
+
+    if (path == nullptr)
+        return; /// not using systemd
+
+    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+
+    if (s == -1)
+        DB::throwFromErrno("Can't create UNIX socket for systemd notify.", DB::ErrorCodes::SYSTEM_ERROR);
+
+    SCOPE_EXIT({ close(s); });
+
+    const size_t len = strlen(path);
+
+    struct sockaddr_un addr;
+
+    addr.sun_family = AF_UNIX;
+
+    if (len < 2 || len > sizeof(addr.sun_path) - 1)
+        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
+
+    memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
+
+    size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
+
+    /// '@' means this is Linux abstract socket, per documentation sun_path[0] must be set to '\0' for it.
+    if (path[0] == '@')
+        addr.sun_path[0] = 0;
+    else if (path[0] == '/')
+        addrlen += 1; /// non-abstract-addresses should be zero terminated.
+    else
+        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
+
+    const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
+
+    size_t sent_bytes_total = 0;
+    while (sent_bytes_total < command.size())
+    {
+        auto sent_bytes = sendto(s, command.data() + sent_bytes_total, command.size() - sent_bytes_total, 0, sock_addr, static_cast<socklen_t>(addrlen));
+        if (sent_bytes == -1)
+        {
+            if (errno == EINTR)
+                continue;
+            else
+                DB::throwFromErrno("Failed to notify systemd, sendto returned error.", DB::ErrorCodes::SYSTEM_ERROR);
+        }
+        else
+            sent_bytes_total += sent_bytes;
+    }
+}
+#endif

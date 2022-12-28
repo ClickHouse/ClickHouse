@@ -60,7 +60,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Storages/NamedCollectionUtils.h>
+#include <Storages/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -70,6 +70,8 @@
 #include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <IO/Resource/registerSchedulerNodes.h>
+#include <IO/Resource/registerResourceManagers.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -203,46 +205,6 @@ int mainEntryClickHouseServer(int argc, char ** argv)
 namespace
 {
 
-void setupTmpPath(Poco::Logger * log, const std::string & path)
-try
-{
-    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
-
-    fs::create_directories(path);
-
-    /// Clearing old temporary files.
-    fs::directory_iterator dir_end;
-    size_t unknown_files = 0;
-    for (fs::directory_iterator it(path); it != dir_end; ++it)
-    {
-        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
-        {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-            fs::remove(it->path());
-        }
-        else
-        {
-            unknown_files++;
-            if (unknown_files < 100)
-                LOG_DEBUG(log, "Found unknown {} {} in temporary path",
-                    it->is_regular_file() ? "file" : (it->is_directory() ? "directory" : "element"),
-                    it->path().string());
-        }
-    }
-
-    if (unknown_files)
-        LOG_DEBUG(log, "Found {} unknown files in temporary path", unknown_files);
-}
-catch (...)
-{
-    DB::tryLogCurrentException(
-        log,
-        fmt::format(
-            "Caught exception while setup temporary path: {}. It is ok to skip this exception as cleaning old temporary files is not "
-            "necessary",
-            path));
-}
-
 size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
 {
     const size_t sleep_max_ms = 1000 * seconds_to_wait;
@@ -287,7 +249,6 @@ namespace ErrorCodes
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
-    extern const int SYSTEM_ERROR;
 }
 
 
@@ -661,51 +622,6 @@ static void sanityChecks(Server & server)
     }
 }
 
-#if defined(OS_LINUX)
-/// Sends notification to systemd, analogous to sd_notify from libsystemd
-static void systemdNotify(const std::string_view & command)
-{
-    const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
-
-    if (path == nullptr)
-        return; /// not using systemd
-
-    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-
-    if (s == -1)
-        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
-
-    SCOPE_EXIT({ close(s); });
-
-    const size_t len = strlen(path);
-
-    struct sockaddr_un addr;
-
-    addr.sun_family = AF_UNIX;
-
-    if (len < 2 || len > sizeof(addr.sun_path) - 1)
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
-
-    memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
-
-    size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
-
-    /// '@' meass this is Linux abstract socket, per documentation it must be sun_path[0] must be set to '\0' for it.
-    if (path[0] == '@')
-        addr.sun_path[0] = 0;
-    else if (path[0] == '/')
-        addrlen += 1; /// non-abstract-addresses should be zero terminated.
-    else
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
-
-    const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
-
-    if (sendto(s, command.data(), command.size(), 0, sock_addr, static_cast <socklen_t>(addrlen)) != static_cast <ssize_t>(command.size()))
-        throw Exception("Failed to notify systemd.", ErrorCodes::SYSTEM_ERROR);
-
-}
-#endif
-
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -748,8 +664,8 @@ try
     else
     {
         const String config_path = config().getString("config-file", "config.xml");
-        const auto config_dir = std::filesystem::path{config_path}.remove_filename();
-        setenv("OPENSSL_CONF", config_dir.string() + "openssl.conf", true);
+        const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
+        setenv("OPENSSL_CONF", config_dir.string(), true);
     }
 #endif
 
@@ -761,6 +677,8 @@ try
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
+    registerSchedulerNodes();
+    registerResourceManagers();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -784,6 +702,13 @@ try
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
+
+    const auto memory_amount = getMemoryAmount();
+
+    LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+        formatReadableSizeWithBinarySuffix(memory_amount),
+        getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
+        std::thread::hardware_concurrency());
 
     sanityChecks(*this);
 
@@ -857,8 +782,6 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
-
-    const auto memory_amount = getMemoryAmount();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -1055,13 +978,21 @@ try
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
     /// Storage with temporary data for processing of heavy queries.
+    if (auto temporary_policy = config().getString("tmp_policy", ""); !temporary_policy.empty())
+    {
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStoragePolicy(temporary_policy, max_size);
+    }
+    else if (auto temporary_cache = config().getString("temporary_data_in_cache", ""); !temporary_cache.empty())
+    {
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStorageInCache(temporary_cache, max_size);
+    }
+    else
     {
         std::string temporary_path = config().getString("tmp_path", path / "tmp/");
-        std::string temporary_policy = config().getString("tmp_policy", "");
         size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
-        const VolumePtr & volume = global_context->setTemporaryStorage(temporary_path, temporary_policy, max_size);
-        for (const DiskPtr & disk : volume->getDisks())
-            setupTmpPath(log, disk->getPath());
+        global_context->setTemporaryStoragePath(temporary_path, max_size);
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -1118,8 +1049,8 @@ try
         bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
         try
         {
-            LOG_DEBUG(
-                log, "Initializing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+            LOG_DEBUG(log, "Initializing MergeTree metadata cache, lru_cache_size: {} continue_if_corrupted: {}",
+                ReadableSize(size), continue_if_corrupted);
             global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
         }
         catch (...)
@@ -1335,6 +1266,11 @@ try
                 global_context->getDistributedSchedulePool().increaseThreadsCount(new_pool_size);
             }
 
+            if (config->has("resources"))
+            {
+                global_context->getResourceManager()->updateConfiguration(*config);
+            }
+
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
@@ -1463,7 +1399,7 @@ try
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        tryLogCurrentException(log, "Caught exception while setting up access control.");
         throw;
     }
 
@@ -1787,13 +1723,6 @@ try
         main_config_reloader->start();
         access_control.startPeriodicReloading();
 
-        {
-            LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
-                formatReadableSizeWithBinarySuffix(memory_amount),
-                getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
-                std::thread::hardware_concurrency());
-        }
-
         /// try to load dictionaries immediately, throw on error and die
         try
         {
@@ -1861,6 +1790,9 @@ try
         }
 
 #if defined(OS_LINUX)
+        /// Tell the service manager that service startup is finished.
+        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
+        /// the child process notifies 'READY=1'.
         systemdNotify("READY=1\n");
 #endif
 
