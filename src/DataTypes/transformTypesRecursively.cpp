@@ -8,7 +8,7 @@
 namespace DB
 {
 
-void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &, const TypeIndexesSet &)> transform_simple_types, std::function<void(DataTypes &, const TypeIndexesSet &)> transform_complex_types)
+void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &, TypeIndexesSet &)> transform_simple_types, std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types)
 {
     TypeIndexesSet type_indexes;
     for (const auto & type : types)
@@ -156,7 +156,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
 void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback)
 {
     DataTypes types = {type};
-    transformTypesRecursively(types, [callback](auto & data_types, const TypeIndexesSet &){ callback(data_types[0]); }, {});
+    transformTypesRecursively(types, [callback](auto & data_types, TypeIndexesSet &){ callback(data_types[0]); }, {});
 }
 
 }
