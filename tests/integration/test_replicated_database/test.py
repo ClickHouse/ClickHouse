@@ -836,6 +836,136 @@ def test_recover_staled_replica(started_cluster):
     dummy_node.query("DROP DATABASE recover SYNC")
 
 
+def test_recover_staled_replica_many_mvs(started_cluster):
+    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
+
+    main_node.query_with_retry(
+        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
+    )
+    started_cluster.get_kazoo_client("zoo1").set(
+        "/clickhouse/databases/recover_mvs/logs_to_keep", b"10"
+    )
+    dummy_node.query_with_retry(
+        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica2');"
+    )
+
+    settings = {"distributed_ddl_task_timeout": 0}
+
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(dummy_node)
+        dummy_node.query_and_get_error("RENAME TABLE recover_mvs.t1 TO recover_mvs.m1")
+
+        # We create
+        # rmt1 -> mv1 -> cascade_mv1 -> double_cascade_mv1 -> final_boss
+        # rmt2 -> mv2 -> cascade_mv2 -> double_cascade_mv2 ->
+        # rmt3 -> mv3 -> cascade_mv3 -> double_cascade_mv3 ->
+        # rmt4 -> mv4 -> cascade_mv4 -> double_cascade_mv4 ->
+
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query(
+                f"CREATE TABLE recover_mvs.rmt{identifier} (n int) ENGINE=ReplicatedMergeTree ORDER BY n",
+                settings=settings,
+            )
+
+        print("Created tables")
+
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query(
+                f"CREATE TABLE recover_mvs.mv_inner{identifier} (n int) ENGINE=ReplicatedMergeTree ORDER BY n",
+                settings=settings,
+            )
+
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query_with_retry(
+                f"""CREATE MATERIALIZED VIEW recover_mvs.mv{identifier}
+                    TO recover_mvs.mv_inner{identifier}
+                    AS SELECT * FROM recover_mvs.rmt{identifier}""", settings=settings
+            )
+
+        print("Created MVs")
+
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query(
+                f"CREATE TABLE recover_mvs.cascade_mv_inner{identifier} (n int) ENGINE=ReplicatedMergeTree ORDER BY n",
+                settings=settings,
+            )
+
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query_with_retry(
+                f"""CREATE MATERIALIZED VIEW recover_mvs.cascade_mv{identifier}
+                    TO recover_mvs.cascade_mv_inner{identifier}
+                    AS SELECT * FROM recover_mvs.mv_inner{identifier}""", settings=settings
+            )
+
+        print("Created cascade MVs")
+
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query(
+                f"CREATE TABLE recover_mvs.double_cascade_mv_inner{identifier} (n int) ENGINE=ReplicatedMergeTree ORDER BY n",
+                settings=settings,
+            )
+
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query_with_retry(
+                f"""CREATE MATERIALIZED VIEW recover_mvs.double_cascade_mv{identifier}
+                    TO recover_mvs.double_cascade_mv_inner{identifier}
+                    AS SELECT * FROM recover_mvs.cascade_mv_inner{identifier}""", settings=settings
+            )
+
+        print("Created double cascade MVs")
+
+        main_node.query(
+            f"CREATE TABLE recover_mvs.final_boss_inner (n int) ENGINE=ReplicatedMergeTree order by n",
+            settings=settings,
+        )
+
+        # This weird table name is actually makes sence because it starts with letter `a` and may break some internal sorting
+        main_node.query_with_retry(
+            """
+            CREATE MATERIALIZED VIEW recover_mvs.anime
+            TO recover_mvs.final_boss_inner
+            AS
+            SELECT n
+            FROM
+            (
+                SELECT *
+                FROM
+                (
+                    SELECT *
+                    FROM
+                    (
+                        SELECT *
+                        FROM recover_mvs.double_cascade_mv_inner1 AS q1
+                        INNER JOIN recover_mvs.double_cascade_mv_inner2 AS q2 ON q1.n = q2.n
+                    ) AS new_table_1
+                    INNER JOIN recover_mvs.double_cascade_mv_inner3 AS q3 ON new_table_1.n = q3.n
+                ) AS new_table_2
+                INNER JOIN recover_mvs.double_cascade_mv_inner4 AS q4 ON new_table_2.n = q4.n
+            )
+            """, settings=settings
+        )
+
+        print("Created final boss")
+
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_mvs")
+    query = "SELECT name FROM system.tables WHERE database='recover_mvs' ORDER BY name"
+    assert main_node.query(query) == dummy_node.query(query)
+
+    for table in ["rmt1", "rmt2", "rmt3", "rmt4"]:
+        dummy_node.query(f"INSERT INTO recover_mvs.{table} VALUES (42)")
+
+    for table in ["rmt1", "rmt2", "rmt3", "rmt4"]:
+        dummy_node.query(f"SYSTEM SYNC REPLICA recover_mvs.{table}")
+
+    # This is to make anime work reliably
+    dummy_node.query("INSERT INTO recover_mvs.rmt1 SELECT * FROM numbers(1000)", settings={"max_block_size":1})
+    assert dummy_node.query("SELECT * FROM recover_mvs.anime") == "42\n"
+
+    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
+
+
 def test_startup_without_zk(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
