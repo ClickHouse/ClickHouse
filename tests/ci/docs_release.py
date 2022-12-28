@@ -60,7 +60,7 @@ if __name__ == "__main__":
     else:
         user = f"{os.geteuid()}:{os.getegid()}"
 
-    run_log_path = os.path.join(test_output, "runlog.log")
+    run_log_path = os.path.join(test_output, "run.log")
 
     with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
         cmd = (

@@ -1704,7 +1704,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     break;
                 default:
                     throw DB::Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
+                        ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", Coordination::toString(sub_zk_request->getOpNum()));
             }
         }
 

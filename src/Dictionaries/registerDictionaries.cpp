@@ -6,6 +6,7 @@ namespace DB
 
 class DictionarySourceFactory;
 
+void registerDictionarySourceNull(DictionarySourceFactory & factory);
 void registerDictionarySourceFile(DictionarySourceFactory & source_factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & source_factory);
 void registerDictionarySourceClickHouse(DictionarySourceFactory & source_factory);
@@ -36,6 +37,7 @@ void registerDictionaries()
 {
     {
         auto & source_factory = DictionarySourceFactory::instance();
+        registerDictionarySourceNull(source_factory);
         registerDictionarySourceFile(source_factory);
         registerDictionarySourceMysql(source_factory);
         registerDictionarySourceClickHouse(source_factory);
