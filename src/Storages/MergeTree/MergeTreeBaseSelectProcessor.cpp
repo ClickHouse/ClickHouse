@@ -74,7 +74,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     result_header = header_without_const_virtual_columns;
     injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
 
-//    std::cerr << "PREWHERE actions:\n" << (prewhere_actions ? prewhere_actions->dump() : std::string()) << "\n\n\n";
+    LOG_TEST(log, "PREWHERE actions: {}", (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
 }
 
 

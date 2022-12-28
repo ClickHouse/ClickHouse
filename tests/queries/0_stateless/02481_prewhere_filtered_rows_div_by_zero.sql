@@ -24,5 +24,5 @@ SELECT intDiv(b, c) FROM test_filter;
 SELECT * FROM test_filter PREWHERE intDiv(b, c) > 0;
 SELECT * FROM test_filter PREWHERE b != 0 WHERE intDiv(b, c) > 0;
 
--- { ehcoOff }
+-- { echoOff }
 DROP TABLE test_filter;

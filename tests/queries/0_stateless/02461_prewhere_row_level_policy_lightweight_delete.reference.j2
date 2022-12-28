@@ -26,4 +26,4 @@ SELECT rows FROM system.parts WHERE database = currentDatabase() AND table = 'ur
 SELECT count() FROM url_na_log PREWHERE DateVisit >= '2022-08-10' AND DateVisit <= '2022-08-20' WHERE SiteId = 209 SETTINGS max_block_size = 200000, max_threads = 1;
 20000
 DROP ROW POLICY url_na_log_policy0 ON url_na_log;
-{% endfor %}
+{% endfor -%}

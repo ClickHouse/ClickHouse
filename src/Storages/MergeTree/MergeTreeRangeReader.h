@@ -50,8 +50,6 @@ public:
 
     explicit FilterWithCachedCount(const ColumnPtr & column_)
         : const_description(*column_)
-//        : column(column_->convertToFullIfNeeded()) // TODO: is this optimal?
-//        , data(&typeid_cast<const ColumnUInt8 &>(*column).getData())
     {
         ColumnPtr col = column_->convertToFullIfNeeded();
         FilterDescription desc(*col);
