@@ -2233,12 +2233,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(
-            config,
-            config.has("zookeeper")    ? "zookeeper"
-                : config.has("keeper") ? "keeper"
-                                       : "keeper_server",
-            getZooKeeperLog());
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, zkutil::getZookeeperConfigName(config), getZooKeeperLog());
     else if (shared->zookeeper->expired())
     {
         Stopwatch watch;
@@ -2478,13 +2473,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(
-        config,
-        config->has("zookeeper")    ? "zookeeper"
-            : config->has("keeper") ? "keeper"
-                                    : "keeper_server",
-        shared->zookeeper,
-        getZooKeeperLog());
+    reloadZooKeeperIfChangedImpl(config, zkutil::getZookeeperConfigName(*config), shared->zookeeper, getZooKeeperLog());
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
