@@ -1,4 +1,5 @@
 import pytest
+import time
 from helpers.cluster import ClickHouseCluster
 from kazoo.client import KazooClient, KazooState
 from kazoo.security import ACL, make_digest_acl, make_acl
@@ -162,6 +163,13 @@ def test_digest_auth_basic(started_cluster, get_zk):
     with pytest.raises(AuthFailedError):
         no_auth_connection.add_auth("world", "anyone")
 
+    # FIXME: this sleep is a workaround for the bug that is fixed by this patch [1].
+    #
+    # The problem is that after AUTH_FAILED (that is caused by the line above)
+    # there can be a race, because of which, stop() will hang indefinitely.
+    #
+    #    [1]: https://github.com/python-zk/kazoo/pull/688
+    time.sleep(5)
     no_auth_connection.stop()
     # session became broken, reconnect
     no_auth_connection = get_zk()
