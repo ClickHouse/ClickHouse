@@ -165,24 +165,15 @@ private:
     struct ReaderHolder
     {
     public:
-        enum ReadMode
-        {
-            ONLY_VIRTUAL_COLUMNS,
-            ALL
-        };
-
         ReaderHolder(
             String path_,
             std::unique_ptr<ReadBuffer> read_buf_,
             std::unique_ptr<QueryPipeline> pipeline_,
-            std::unique_ptr<PullingPipelineExecutor> reader_,
-            ReadMode read_mode_ = ALL)
+            std::unique_ptr<PullingPipelineExecutor> reader_)
             : path(std::move(path_))
             , read_buf(std::move(read_buf_))
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
-            , is_finished_for_only_virtual_columns(path.empty() ? true : false)
-            , read_mode(read_mode_)
         {
         }
 
@@ -192,17 +183,12 @@ private:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
         const String & getPath() const { return path; }
-        ReadMode getReadMode() const { return read_mode; }
-        bool isFinishedForOnlyVirtualColumns() const { return is_finished_for_only_virtual_columns; }
-        void setFinishedForOnlyVirtualColumns() { is_finished_for_only_virtual_columns = true; }
 
     private:
         String path;
         std::unique_ptr<ReadBuffer> read_buf;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
-        bool is_finished_for_only_virtual_columns{false};
-        ReadMode read_mode = ALL;
     };
 
     ReaderHolder reader;

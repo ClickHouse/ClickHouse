@@ -551,10 +551,12 @@ StorageS3Source::StorageS3Source(
     , create_reader_pool(1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
+    /// If user only need virtual columns, StorageS3Source does not use ReaderHolder and does not initialize ReadBufferFromS3.
+    if (only_need_virtual_columns)
+        return;
+
     reader = createReader();
-    if (reader ||
-        (reader.getReadMode() == StorageS3Source::ReaderHolder::ONLY_VIRTUAL_COLUMNS &&
-        !reader.isFinishedForOnlyVirtualColumns()))
+    if (reader)
         reader_future = createReaderAsync();
 }
 
@@ -572,14 +574,6 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     auto [current_key, info] = (*file_iterator)();
     if (current_key.empty())
         return {};
-
-    if (only_need_virtual_columns)
-        return ReaderHolder{
-            fs::path(bucket) / current_key,
-            nullptr,
-            nullptr,
-            nullptr,
-            StorageS3Source::ReaderHolder::ONLY_VIRTUAL_COLUMNS};
 
     size_t object_size = info
         ? info->size
@@ -695,10 +689,8 @@ String StorageS3Source::getName() const
 
 Chunk StorageS3Source::generate()
 {
-    auto add_virtual_column = [&](Chunk & chunk, UInt64 num_rows)
+    auto add_virtual_columns = [&](Chunk & chunk, const String & file_path, UInt64 num_rows)
     {
-        const auto & file_path = reader.getPath();
-
         for (const auto & virtual_column : requested_virtual_columns)
         {
             if (virtual_column.name == "_path")
@@ -714,40 +706,38 @@ Chunk StorageS3Source::generate()
         }
     };
 
+    if (only_need_virtual_columns)
+    {
+        Chunk chunk;
+        auto current_key = (*file_iterator)().key;
+        if (!current_key.empty())
+        {
+            const auto & file_path = fs::path(bucket) / current_key;
+            add_virtual_columns(chunk, file_path, 1);
+        }
+        return chunk;
+    }
+
     while (true)
     {
-        if (isCancelled())
+        if (!reader || isCancelled())
             break;
 
         Chunk chunk;
-        if (reader.getReadMode() == ReaderHolder::ONLY_VIRTUAL_COLUMNS)
+        if (reader->pull(chunk))
         {
-            if (!reader.isFinishedForOnlyVirtualColumns())
+            UInt64 num_rows = chunk.getNumRows();
+
+            const auto & file_path = reader.getPath();
+            size_t total_size = file_iterator->getTotalSize();
+            if (num_rows && total_size)
             {
-                add_virtual_column(chunk, 1);
-                reader.setFinishedForOnlyVirtualColumns();
-                return chunk;
+                updateRowsProgressApprox(
+                    *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
-        }
-        else
-        {
-            if (!reader)
-                break;
 
-            if (reader->pull(chunk))
-            {
-                UInt64 num_rows = chunk.getNumRows();
-
-                size_t total_size = file_iterator->getTotalSize();
-                if (num_rows && total_size)
-                {
-                    updateRowsProgressApprox(
-                        *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-                }
-
-                add_virtual_column(chunk, num_rows);
-                return chunk;
-            }
+            add_virtual_columns(chunk, file_path, num_rows);
+            return chunk;
         }
 
         {
@@ -756,10 +746,7 @@ Chunk StorageS3Source::generate()
             assert(reader_future.valid());
             reader = reader_future.get();
 
-            if ((!reader &&
-                reader.getReadMode() == ReaderHolder::ALL) ||
-                (reader.getReadMode() == ReaderHolder::ONLY_VIRTUAL_COLUMNS &&
-                reader.isFinishedForOnlyVirtualColumns()))
+            if (!reader)
                 break;
 
             /// Even if task is finished the thread may be not freed in pool.
