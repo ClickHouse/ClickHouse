@@ -567,6 +567,8 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
 endif()
 
+dbms_target_link_libraries (PUBLIC ch_contrib::ulid)
+
 if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
