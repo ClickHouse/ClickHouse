@@ -147,9 +147,9 @@ public:
             properties);
 
         if (function_node.isAggregateFunction())
-            function_node.resolveAsAggregateFunction(std::move(aggregate_function), aggregate_function->getResultType());
+            function_node.resolveAsAggregateFunction(std::move(aggregate_function));
         else if (function_node.isWindowFunction())
-            function_node.resolveAsWindowFunction(std::move(aggregate_function), aggregate_function->getResultType());
+            function_node.resolveAsWindowFunction(std::move(aggregate_function));
     }
 
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
