@@ -113,7 +113,6 @@ def clickhouse_execute_http(
 
     for i in range(MAX_RETRIES):
         try:
-
             client.request(
                 "POST",
                 f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
