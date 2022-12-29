@@ -143,14 +143,14 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 std::make_shared<ASTLiteral>(kind_str),
                 std::make_shared<ASTLiteral>(settings_str),
                 explained_ast);
-            result_node = buildSelectFromTableFunction(std::move(view_explain));
+            result_node = buildSelectFromTableFunction(view_explain);
         }
         else
         {
             auto view_explain = makeASTFunction("viewExplain",
                 std::make_shared<ASTLiteral>(kind_str),
                 std::make_shared<ASTLiteral>(settings_str));
-            result_node = buildSelectFromTableFunction(std::move(view_explain));
+            result_node = buildSelectFromTableFunction(view_explain);
         }
     }
     else
