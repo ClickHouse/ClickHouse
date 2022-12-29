@@ -54,7 +54,7 @@ static size_t scoreForType(const DataTypePtr & type)
     if (which.isMap() || which.isArray() || which.isTuple())
         return 25;
 
-    if (which.isDecimal() || which.isFloat())
+    if (which.isDecimal() || which.isFloat() || which.isInt() || which.isUInt())
         return 5;
 
     return 1;
@@ -84,25 +84,6 @@ static size_t scoreForField(FormatSettings::EscapingRule rule, const DataTypePtr
 {
     return scoreForRule(rule) * scoreForType(type);
 }
-
-static DataTypePtr makeFloatIfInt(const DataTypePtr & type)
-{
-    WhichDataType which(type);
-
-    if (which.isNullable())
-    {
-        const auto * nullable_type = assert_cast<const DataTypeNullable *>(type.get());
-        return makeNullable(makeFloatIfInt(nullable_type->getNestedType()));
-    }
-
-    if (which.isInt() || which.isUInt())
-    {
-        return std::make_shared<DataTypeFloat64>();
-    }
-
-    return type;
-}
-
 
 std::vector<std::pair<String, String>> JSONFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
 {
@@ -172,7 +153,7 @@ std::vector<std::pair<String, String>> RawByWhitespaceFieldMatcher::parseFields(
 }
 
 FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSettings & settings_)
-    : format_settings(settings_), max_rows_to_check(std::min<size_t>(100, settings_.max_rows_to_read_for_schema_inference)), in(in_)
+    : max_rows_to_check(std::min<size_t>(100, settings_.max_rows_to_read_for_schema_inference)), in(in_)
 {
     // matchers are pushed in the order of priority, this helps with exiting early and reducing the search tree.
     matchers.emplace_back(std::make_unique<JSONFieldMatcher>(FormatSettings::EscapingRule::JSON, settings_));
@@ -217,7 +198,6 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
                     if (field.size() == 1 && isPunctuationASCII(field[0]))
                         continue;
 
-                    type = makeFloatIfInt(type);
                     columns.emplace_back(name, type);
 
                     type_score += scoreForType(type);
@@ -324,33 +304,35 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
                 if (in.eof())
                     break;
 
-                std::unordered_map<String, DataTypePtr> parsed_types;
-                for (size_t col = 0; const auto & i : solution.matchers_order)
+                std::unordered_map<String, size_t> field_index;
+                for (size_t i = 0; const auto & [name, _] : solution.columns)
+                {
+                    field_index[name] = i;
+                    ++i;
+                }
+
+                size_t col = 0;
+                for (const auto & i : solution.matchers_order)
                 {
                     skipWhitespacesAndDelimiters(in);
                     auto fields = matchers[i]->parseFields(in, col);
                     for (const auto & [name, field] : fields)
                     {
                         auto type = matchers[i]->getDataTypeFromField(field);
-                        if (type)
+                        if (type && field_index.contains(name))
                         {
-                            type = makeFloatIfInt(type);
-                            parsed_types[name] = type;
+                            auto type_index = field_index[name];
+                            matchers[i]->transformTypesIfPossible(solution.columns[type_index].type, type);
+                            if (!solution.columns[type_index].type->equals(*type))
+                                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Received unexpected type after transform attempt.");
+
                             ++col;
                         }
                     }
                 }
 
-                if (parsed_types.size() < solution.columns.size())
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unable to parse the desired number of fields");
-
-                for (const auto & [name, type] : solution.columns)
-                    if (parsed_types[name]->getName() != type->getName())
-                        throw Exception(
-                            ErrorCodes::CANNOT_READ_ALL_DATA,
-                            "Received unexpected type: expected: {}, actual: {}",
-                            type->getName(),
-                            parsed_types[name]->getName());
+                if (col + 1 < solution.columns.size())
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unable to parse the desired number of fields.");
 
                 if (!in.eof() && *in.position() != '\n')
                     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Solution did not end at newline character.");

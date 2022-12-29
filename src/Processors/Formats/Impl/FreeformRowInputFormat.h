@@ -16,12 +16,17 @@ class FieldMatcher
 public:
     explicit FieldMatcher(const FormatSettings::EscapingRule & rule_, const FormatSettings & settings_) : rule(rule_), settings(settings_)
     {
+        settings.try_infer_integers = true;
     }
 
     virtual String getName() const = 0;
     // parseFields returns a vector of fields (field_name, field_value), index is used as the column name if there isn't a better option
     virtual std::vector<std::pair<String, String>> parseFields(ReadBuffer & in, size_t index) const = 0;
     DataTypePtr getDataTypeFromField(const String & s) { return tryInferDataTypeByEscapingRule(s, settings, rule, &json_inference_info); }
+    void transformTypesIfPossible(DataTypePtr & first, DataTypePtr & second)
+    {
+        transformInferredTypesByEscapingRuleIfNeeded(first, second, settings, rule, &json_inference_info);
+    }
     const FormatSettings::EscapingRule & getEscapingRule() const { return rule; }
 
     virtual ~FieldMatcher() = default;
@@ -94,7 +99,7 @@ public:
 
     struct Solution
     {
-        NamesAndTypes columns;
+        mutable NamesAndTypes columns;
         std::vector<uint8_t> matchers_order;
         size_t score;
         size_t size;
@@ -120,7 +125,6 @@ private:
     std::unordered_map<String, size_t> field_name_to_index;
     bool first_row = true;
 
-    const FormatSettings format_settings;
     // for now it's min(100, settings_.max_rows_to_read_for_schema_inference) to keep it fast
     // we could reconsider using settings_.max_rows_to_read_for_schema_inference once we are able to store solutions
     size_t max_rows_to_check;
