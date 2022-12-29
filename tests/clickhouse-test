@@ -111,12 +111,21 @@ def clickhouse_execute_http(
     if default_format is not None:
         params["default_format"] = default_format
 
-    client.request(
-        "POST",
-        f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
-    )
-    res = client.getresponse()
-    data = res.read()
+    for i in range(MAX_RETRIES):
+        try:
+            client.request(
+                "POST",
+                f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
+            )
+            res = client.getresponse()
+            data = res.read()
+            break
+        except Exception as ex:
+            if i == MAX_RETRIES - 1:
+                raise ex
+
+            sleep(i + 1)
+
     if res.status != 200:
         raise HTTPError(data.decode(), res.status)
 
@@ -1001,18 +1010,28 @@ class TestCase:
             seconds_left = max(
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
             )
+            drop_database_query = "DROP DATABASE " + database
+            if args.replicated_database:
+                drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+
             try:
-                drop_database_query = "DROP DATABASE " + database
-                if args.replicated_database:
-                    drop_database_query += " ON CLUSTER test_cluster_database_replicated"
-                clickhouse_execute(
-                    args,
-                    drop_database_query,
-                    timeout=seconds_left,
-                    settings={
-                        "log_comment": args.testcase_basename,
-                    },
-                )
+                # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
+                for _ in range(1, 60):
+                    try:
+                        clickhouse_execute(
+                            args,
+                            drop_database_query,
+                            timeout=seconds_left,
+                            settings={
+                                "log_comment": args.testcase_basename,
+                            },
+                        )
+                    except HTTPError as e:
+                        if need_retry(args, e.message, e.message, 0):
+                            continue
+                        raise
+                    break
+
             except socket.timeout:
                 total_time = (datetime.now() - start_time).total_seconds()
                 return (

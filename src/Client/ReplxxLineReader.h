@@ -1,8 +1,10 @@
 #pragma once
 
 #include "LineReader.h"
-
 #include <replxx.hxx>
+
+namespace DB
+{
 
 class ReplxxLineReader : public LineReader
 {
@@ -36,3 +38,5 @@ private:
 
     std::string editor;
 };
+
+}
