@@ -469,7 +469,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         sleep 60
 
         stop
-        mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.clean.log
+        mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.dirty.log
 
         # Error messages (we should ignore some errors)
         # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
@@ -517,7 +517,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "MutateFromLogEntryTask" \
                    -e "No connection to ZooKeeper, cannot get shared table ID" \
                    -e "Session expired" \
-            /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
+            /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
             && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
