@@ -75,7 +75,7 @@ public:
 class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
-    CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_);
+    CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
 private:
     DataTypes readRowAndGetDataTypes() override;

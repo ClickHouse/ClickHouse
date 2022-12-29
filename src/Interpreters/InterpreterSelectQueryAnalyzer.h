@@ -41,6 +41,8 @@ public:
 
     QueryPlan && extractQueryPlan() &&;
 
+    void addStorageLimits(const StorageLimitsList & storage_limits);
+
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }

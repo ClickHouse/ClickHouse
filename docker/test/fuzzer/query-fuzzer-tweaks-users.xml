@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <max_execution_time>10</max_execution_time>
+
             <!--
                 Don't let the fuzzer change this setting (I've actually seen it
                 do this before).
@@ -14,6 +15,11 @@
                 <max_memory_usage>
                     <max>10G</max>
                 </max_memory_usage>
+
+                <!-- Analyzer is unstable, not ready for testing. -->
+                <allow_experimental_analyzer>
+                    <readonly/>
+                </allow_experimental_analyzer>
             </constraints>
         </default>
     </profiles>

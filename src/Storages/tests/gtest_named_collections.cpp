@@ -1,6 +1,6 @@
 #include <Common/tests/gtest_global_context.h>
-#include <Storages/NamedCollections.h>
-#include <Storages/NamedCollectionUtils.h>
+#include <Storages/NamedCollections/NamedCollections.h>
+#include <Storages/NamedCollections/NamedCollectionUtils.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 #include <gtest/gtest.h>

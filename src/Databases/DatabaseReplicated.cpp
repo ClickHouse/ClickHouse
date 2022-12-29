@@ -584,7 +584,14 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
 
             if (!enable_functional_tests_helper)
-                LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+            {
+                if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments)
+                    LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+                else
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                    "It's not allowed to specify explicit zookeeper_path and replica_name for ReplicatedMergeTree arguments in Replicated database. "
+                                    "If you really want to specify them explicitly, enable setting database_replicated_allow_replicated_engine_arguments.");
+            }
 
             if (maybe_shard_macros && maybe_replica_macros)
                 return;
