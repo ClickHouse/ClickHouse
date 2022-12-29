@@ -447,7 +447,13 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
             || echo -e 'Backward compatibility check: Test script failed\tFAIL' >> /test_output/test_results.tsv
         rm -rf tmp_stress_output
 
-        clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
+        # We experienced deadlocks in this command in very rare cases. Let's debug it:
+        timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables" ||
+        (
+            echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
+            timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+            clickhouse stop --force
+        )
 
         stop 1
         mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
