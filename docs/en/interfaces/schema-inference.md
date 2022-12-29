@@ -1494,6 +1494,7 @@ In this format ClickHouse reads the whole JSON object from the data into a singl
 In this format ClickHouse reads the whole JSON object from the data into a single column with `Object('json'')` data type. Inferred type for this format is always `String` and column name is `json`.
 
 Note: This format works only if `allow_experimental_object_type` is enabled.
+
 **Example**
 
 ```sql
