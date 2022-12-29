@@ -2,6 +2,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/quoteString.h>
 #include <unordered_set>
 #include <string_view>
 #include <fmt/format.h>
@@ -50,8 +51,8 @@ void validateNamedCollection(
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected key `{}` in named collection. Required keys: {}, optional keys: {}",
-                key, fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
+                "Unexpected key {} in named collection. Required keys: {}, optional keys: {}",
+                backQuoteIfNeed(key), fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
         }
     }
 
