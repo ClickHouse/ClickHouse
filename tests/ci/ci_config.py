@@ -263,8 +263,8 @@ CI_CONFIG = {
         "Stateless tests (release, DatabaseOrdinary)": {
             "required_build": "package_release",
         },
-        "Stateless tests (release, DatabaseReplicated)": {
-            "required_build": "package_release",
+        "Stateless tests (asan, DatabaseReplicated)": {
+            "required_build": "package_asan",
         },
         "Stateless tests (release, s3 storage)": {
             "required_build": "package_release",

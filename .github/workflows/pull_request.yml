@@ -1096,7 +1096,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestReleaseDatabaseReplicated0:
-    needs: [BuilderDebRelease]
+    needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
       - name: Set envs
@@ -1104,7 +1104,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_database_replicated
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (release, DatabaseReplicated)
+          CHECK_NAME=Stateless tests (asan, DatabaseReplicated)
           REPO_COPY=${{runner.temp}}/stateless_database_replicated/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1132,7 +1132,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestReleaseDatabaseReplicated1:
-    needs: [BuilderDebRelease]
+    needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
       - name: Set envs
@@ -1140,7 +1140,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_database_replicated
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (release, DatabaseReplicated)
+          CHECK_NAME=Stateless tests (asan, DatabaseReplicated)
           REPO_COPY=${{runner.temp}}/stateless_database_replicated/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1168,7 +1168,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestReleaseDatabaseReplicated2:
-    needs: [BuilderDebRelease]
+    needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
       - name: Set envs
@@ -1176,7 +1176,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_database_replicated
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (release, DatabaseReplicated)
+          CHECK_NAME=Stateless tests (asan, DatabaseReplicated)
           REPO_COPY=${{runner.temp}}/stateless_database_replicated/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=2
@@ -1204,7 +1204,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestReleaseDatabaseReplicated3:
-    needs: [BuilderDebRelease]
+    needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
       - name: Set envs
@@ -1212,7 +1212,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_database_replicated
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (release, DatabaseReplicated)
+          CHECK_NAME=Stateless tests (asan, DatabaseReplicated)
           REPO_COPY=${{runner.temp}}/stateless_database_replicated/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=3
