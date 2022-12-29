@@ -111,7 +111,8 @@ public:
             QueryPlan & plan,
             const StorageMetadataPtr & snapshot_,
             const ContextPtr & context_,
-            bool apply_deleted_mask_) const;
+            bool apply_deleted_mask_,
+            bool can_execute_) const;
     };
 
 private:
