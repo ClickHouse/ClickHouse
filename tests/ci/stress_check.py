@@ -142,7 +142,7 @@ if __name__ == "__main__":
     )
     logging.info("Going to run func tests: %s", run_command)
 
-    with TeePopen(run_command, run_log_path) as process:
+    with TeePopen(run_command, run_log_path, timeout=60 * 150) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")

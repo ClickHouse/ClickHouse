@@ -464,6 +464,9 @@ bool tryInferDate(const std::string_view & field)
 
 bool tryInferDateTime(const std::string_view & field, const FormatSettings & settings)
 {
+    if (field.empty())
+        return false;
+
     ReadBufferFromString buf(field);
     Float64 tmp_float;
     /// Check if it's just a number, and if so, don't try to infer DateTime from it,
