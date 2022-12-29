@@ -677,12 +677,6 @@ namespace S3
     ClientFactory::ClientFactory()
     {
         aws_options = Aws::SDKOptions{};
-
-        /// We don't load EC2 metadata.
-        /// This is needed to allow to subclass `ClientConfiguration` so that any possible SDK client will use extended configuration
-        /// without circular dependencies `Client` -> `ClientConfiguration` -> `Client`.
-        setenv("AWS_EC2_METADATA_DISABLED", "true", 1/*override*/); // NOLINT(concurrency-mt-unsafe): this is safe if not called concurrently
-
         Aws::InitAPI(aws_options);
         Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
         Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
