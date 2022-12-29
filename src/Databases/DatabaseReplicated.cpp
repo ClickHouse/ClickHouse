@@ -913,13 +913,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     TablesDependencyGraph tables_dependencies("DatabaseReplicated (" + getDatabaseName() + ")");
     for (const auto & [table_name, create_table_query] : table_name_to_metadata)
     {
-        auto qualified_name = QualifiedTableName::parseFromString(table_name);
+        /// Note that table_name could contain a dot inside (e.g. .inner.1234-1234-1234-1234)
+        /// And QualifiedTableName::parseFromString doesn't handle this.
+        auto qualified_name = QualifiedTableName{.database = getDatabaseName(), .table = table_name};
         auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
         tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext(), qualified_name, query_ast));
     }
 
     tables_dependencies.checkNoCyclicDependencies();
-    tables_dependencies.log();
     auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
 
     for (const auto & table_id : tables_to_create)
@@ -938,7 +939,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         InterpreterCreateQuery(query_ast, create_query_context).execute();
     }
     LOG_INFO(log, "All tables are created successfully");
-
 
     if (max_log_ptr_at_creation != 0)
     {
