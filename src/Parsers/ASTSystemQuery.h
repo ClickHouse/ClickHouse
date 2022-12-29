@@ -49,6 +49,7 @@ public:
         RELOAD_CONFIG,
         RELOAD_USERS,
         RELOAD_SYMBOLS,
+        RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
         STOP_TTL_MERGES,

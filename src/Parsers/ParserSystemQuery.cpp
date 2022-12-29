@@ -68,6 +68,7 @@ enum class SystemQueryTargetType
 {
     Model,
     Function,
+    Disk,
 };
 
 [[nodiscard]] static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
@@ -123,6 +124,11 @@ enum class SystemQueryTargetType
         case SystemQueryTargetType::Function:
         {
             res->target_function = std::move(target);
+            break;
+        }
+        case SystemQueryTargetType::Disk:
+        {
+            res->disk = std::move(target);
             break;
         }
     }
@@ -249,7 +255,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-
+        case Type::RESTART_DISK:
+        {
+            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
+                return false;
+            break;
+        }
         /// FLUSH DISTRIBUTED requires table
         /// START/STOP DISTRIBUTED SENDS does not require table
         case Type::STOP_DISTRIBUTED_SENDS:
