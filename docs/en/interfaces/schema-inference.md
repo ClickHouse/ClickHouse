@@ -344,7 +344,7 @@ As you can see, there are two different schemas for the same file but with diffe
 
 For text formats ClickHouse reads the data row by row, extracts column values according to the format
 and then uses some recursive parsers and heuristics to determine the type of the values. The maximum number of rows read from the data in schema inference
-is controlled by the setting input_format_max_rows_to_read_for_schema_inference with default value 25000.
+is controlled by the setting `input_format_max_rows_to_read_for_schema_inference` with default value 25000.
 By default, all inferred types are [Nullable](../sql-reference/data-types/nullable.md), but you can change it using setting schema_inference_make_columns_nullable (see examples in [settings](#settings-for-text-formats) section)
 
 ## JSON formats {#json-formats}
@@ -1263,7 +1263,7 @@ $$)
 
 ## Avro {#avro}
 
-In Avro format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following match:
+In Avro format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following types match:
 
 | Avro data type                     | ClickHouse data type                                                           |
 |------------------------------------|--------------------------------------------------------------------------------|
@@ -1274,7 +1274,7 @@ In Avro format ClickHouse reads its schema from the data and converts to ClickHo
 | `double`                           | [Float64](../sql-reference/data-types/float.md)                                |
 | `bytes`, `string`                  | [String](../sql-reference/data-types/string.md)                                |
 | `fixed`                            | [FixedString(N)](../sql-reference/data-types/fixedstring.md)                   |
-| `enum`                             | [Enum(8\/16)](../sql-reference/data-types/enum.md)                             |
+| `enum`                             | [Enum](../sql-reference/data-types/enum.md)                                    |
 | `array(T)`                         | [Array(T)](../sql-reference/data-types/array.md)                               |
 | `union(null, T)`, `union(T, null)` | [Nullable(T)](../sql-reference/data-types/date.md)                             |
 | `null`                             | [Nullable(Nothing)](../sql-reference/data-types/special-data-types/nothing.md) |
@@ -1283,7 +1283,7 @@ Other Avro types are not supported.
 
 ## Parquet {#parquet}
 
-In Parquet format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following match:
+In Parquet format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following types match:
 
 | Parquet data type            | ClickHouse data type                                    |
 |------------------------------|---------------------------------------------------------|
@@ -1307,11 +1307,11 @@ In Parquet format ClickHouse reads its schema from the data and converts to Clic
 | `STRUCT`                     | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                        | [Map](../sql-reference/data-types/map.md)               |
 
-Other Parquet types are not supported.
+Other Parquet types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
 
 ## Arrow {#arrow}
 
-In Arrow format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following match:
+In Arrow format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following types match:
 
 | Arrow data type                 | ClickHouse data type                                    |
 |---------------------------------|---------------------------------------------------------|
@@ -1335,11 +1335,11 @@ In Arrow format ClickHouse reads its schema from the data and converts to ClickH
 | `STRUCT`                        | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                           | [Map](../sql-reference/data-types/map.md)               |
 
-Other Arrow types are not supported.
+Other Arrow types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
 
 ## ORC {#orc}
 
-In ORC format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following match:
+In ORC format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following types match:
 
 | ORC data type                        | ClickHouse data type                                    |
 |--------------------------------------|---------------------------------------------------------|
@@ -1358,7 +1358,7 @@ In ORC format ClickHouse reads its schema from the data and converts to ClickHou
 | `Struct`                             | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `Map`                                | [Map](../sql-reference/data-types/map.md)               |
 
-Other ORC types are not supported.
+Other ORC types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
 
 ## Native {#native}
 
@@ -1372,10 +1372,136 @@ To automatically infer a schema from files in such formats, ClickHouse reads ext
 
 # Protobuf {#protobuf}
 
+In schema inference for Protobuf format ClickHouse uses the following types match:
+
+| Protobuf data type            | ClickHouse data type                              |
+|-------------------------------|---------------------------------------------------|
+| `bool`                        | [UInt8](../sql-reference/data-types/int-uint.md)  |
+| `float`                       | [Float32](../sql-reference/data-types/float.md)   |
+| `double`                      | [Float64](../sql-reference/data-types/float.md)   |
+| `int32`, `sint32`, `sfixed32` | [Int32](../sql-reference/data-types/int-uint.md)  |
+| `int64`, `sint64`, `sfixed64` | [Int64](../sql-reference/data-types/int-uint.md)  |
+| `uint32`, `fixed32`           | [UInt32](../sql-reference/data-types/int-uint.md) |
+| `uint64`, `fixed64`           | [UInt64](../sql-reference/data-types/int-uint.md) |
+| `string`, `bytes`             | [String](../sql-reference/data-types/string.md)   |
+| `enum`                        | [Enum](../sql-reference/data-types/enum.md)       |
+| `repeated T`                  | [Array(T)](../sql-reference/data-types/array.md)  |
+| `message`, `group`            | [Tuple](../sql-reference/data-types/tuple.md)     |
+
 # CapnProto {#capnproto}
+
+In schema inference for CapnProto format ClickHouse uses the following types match:
+
+| CapnProto data type                | ClickHouse data type                                   |
+|------------------------------------|--------------------------------------------------------|
+| `Bool`                             | [UInt8](../sql-reference/data-types/int-uint.md)       |
+| `Int8`                             | [Int8](../sql-reference/data-types/int-uint.md)        |
+| `UInt8`                            | [UInt8](../sql-reference/data-types/int-uint.md)       |
+| `Int16`                            | [Int16](../sql-reference/data-types/int-uint.md)       |
+| `UInt16`                           | [UInt16](../sql-reference/data-types/int-uint.md)      |
+| `Int32`                            | [Int32](../sql-reference/data-types/int-uint.md)       |
+| `UInt32`                           | [UInt32](../sql-reference/data-types/int-uint.md)      |
+| `Int64`                            | [Int64](../sql-reference/data-types/int-uint.md)       |
+| `UInt64`                           | [UInt64](../sql-reference/data-types/int-uint.md)      |
+| `Float32`                          | [Float32](../sql-reference/data-types/float.md)        |
+| `Float64`                          | [Float64](../sql-reference/data-types/float.md)        |
+| `Text`, `Data`                     | [String](../sql-reference/data-types/string.md)        |
+| `enum`                             | [Enum](../sql-reference/data-types/enum.md)            |
+| `List`                             | [Array](../sql-reference/data-types/array.md)          |
+| `struct`                           | [Tuple](../sql-reference/data-types/tuple.md)          |
+| `union(T, Void)`, `union(Void, T)` | [Nullable(T)](../sql-reference/data-types/nullable.md) |
 
 # Strong-typed binary formats {#strong-typed-binary-formats}
 
+In such formats, each serialized value contains information about its type (and possibly about it's name), but there is no information about the whole table.
+In schema inference for such formats ClickHouse reads data row by row (up to `input_format_max_rows_to_read_for_schema_inference` rows) and extracts
+the type (and possibly name) for each value from the data and then converts these types to ClickHouse types.
+
+## MsgPack {msgpack}
+
+In MsgPack format there is no delimiters between rows, to use schema inference for this format you should specify the number of columns in the table
+using setting `input_format_msgpack_number_of_columns`. ClickHouse uses the following types match:
+
+| MessagePack data type (`INSERT`)                                   | ClickHouse data type                                      |
+|--------------------------------------------------------------------|-----------------------------------------------------------|
+| `int N`, `uint N`, `negative fixint`, `positive fixint`            | [Int64](../sql-reference/data-types/int-uint.md)          |
+| `bool`                                                             | [UInt8](../sql-reference/data-types/int-uint.md)          |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [String](../sql-reference/data-types/string.md)           |
+| `float 32`                                                         | [Float32](../sql-reference/data-types/float.md)           |
+| `float 64`                                                         | [Float64](../sql-reference/data-types/float.md)           |
+| `uint 16`                                                          | [Date](../sql-reference/data-types/date.md)               |
+| `uint 32`                                                          | [DateTime](../sql-reference/data-types/datetime.md)       |
+| `uint 64`                                                          | [DateTime64](../sql-reference/data-types/datetime.md)     |
+| `fixarray`, `array 16`, `array 32`                                 | [Array](../sql-reference/data-types/array.md)             |
+| `fixmap`, `map 16`, `map 32`                                       | [Map](../sql-reference/data-types/map.md)                 |
+
+By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
+
+## BSONEachRow {#bsoneachrow}
+
+In BSONEachRow each row of data is presented as BSON document. In schema inference ClickHouse reads BSON documents one by one and extracts
+values names and types from the data and then transform these types to ClickHouse types using the following types match:
+
+| BSON Type                                                                                     | ClickHouse type                                                                                                             |
+|-----------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| `\x08` boolean                                                                                | [Bool](../sql-reference/data-types/boolean.md)                                                                              |
+| `\x10` int32                                                                                  | [Int32](../sql-reference/data-types/int-uint.md)                                                                            |
+| `\x12` int64                                                                                  | [Int64](../sql-reference/data-types/int-uint.md)                                                                            |
+| `\x01` double                                                                                 | [Float64](../sql-reference/data-types/float.md)                                                                             |
+| `\x09` datetime                                                                               | [DateTime64](../sql-reference/data-types/datetime64.md)                                                                     |
+| `\x05` binary with`\x00` binary subtype, `\x02` string, `\x0E` symbol, `\x0D` JavaScript code | [String](../sql-reference/data-types/string.md)                                                                             |
+| `\x07` ObjectId,                                                                              | [FixedString(12)](../sql-reference/data-types/fixedstring.md)                                                               |
+| `\x05` binary with `\x04` uuid subtype, size = 16                                             | [UUID](../sql-reference/data-types/uuid.md)                                                                                 |
+| `\x04` array                                                                                  | [Array](../sql-reference/data-types/array.md)/[Tuple](../sql-reference/data-types/tuple.md) (if nested types are different) |
+| `\x03` document                                                                               | [Named Tuple](../sql-reference/data-types/tuple.md)/[Map](../sql-reference/data-types/map.md) (with String keys)            |
+
+By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
+
 # Formats with constant schema {#formats-with-constant-schema}
 
+Data in such formats always have the same schema.
 
+## LineAsString {#line-as-string}
+
+In this format ClickHouse reads the whole line from the data into a single column with `String` data type. Inferred type for this format is always `String` and column name is `line`.
+
+**Example**
+
+```sql
+:) DESC format(LineAsString, 'Hello\nworld!')
+
+┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ line │ String │              │                    │         │                  │                │
+└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+## JSONAsString {#json-as-string}
+
+In this format ClickHouse reads the whole JSON object from the data into a single column with `String` data type. Inferred type for this format is always `String` and column name is `json`.
+
+**Example**
+
+```sql
+:) DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}')
+
+┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ json │ String │              │                    │         │                  │                │
+└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+## JSONAsObject {#json-as-object}
+
+In this format ClickHouse reads the whole JSON object from the data into a single column with `Object('json'')` data type. Inferred type for this format is always `String` and column name is `json`.
+
+Note: This format works only if `allow_experimental_object_type` is enabled.
+**Example**
+
+```sql
+:) DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_experimental_object_type=1
+
+┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ json │ Object('json') │              │                    │         │                  │                │
+└──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+[Original article](https://clickhouse.com/docs/en/interfaces/schema-inference) <!--hide-->

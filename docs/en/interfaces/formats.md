@@ -2251,7 +2251,7 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 | MessagePack data type (`INSERT`)                                   | ClickHouse data type                                      | MessagePack data type (`SELECT`)   |
 |--------------------------------------------------------------------|-----------------------------------------------------------|------------------------------------|
 | `uint N`, `positive fixint`                                        | [UIntN](../sql-reference/data-types/int-uint.md)          | `uint N`                           |
-| `int N`                                                            | [IntN](../sql-reference/data-types/int-uint.md)           | `int N`                            |
+| `int N`, `negative fixint`                                         | [IntN](../sql-reference/data-types/int-uint.md)           | `int N`                            |
 | `bool`                                                             | [UInt8](../sql-reference/data-types/int-uint.md)          | `uint 8`                           |
 | `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [String](../sql-reference/data-types/string.md)           | `bin 8`, `bin 16`, `bin 32`        |
 | `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [FixedString](../sql-reference/data-types/fixedstring.md) | `bin 8`, `bin 16`, `bin 32`        |
@@ -2344,3 +2344,5 @@ Query id: 17d59664-ebce-4053-bb79-d46a516fb590
 │ 3 │
 └───┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/interfaces/formats) <!--hide-->
