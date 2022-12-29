@@ -171,7 +171,6 @@ struct ProjectionCandidate
   */
 struct SelectQueryInfo
 {
-
     SelectQueryInfo()
         : prepared_sets(std::make_shared<PreparedSets>())
     {}

@@ -1,5 +1,9 @@
-#include <base/ReplxxLineReader.h>
+#include <Client/ReplxxLineReader.h>
 #include <base/errnoToString.h>
+
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
 
 #include <stdexcept>
 #include <chrono>
@@ -108,13 +112,11 @@ void writeRetry(int fd, const std::string & data)
 }
 std::string readFile(const std::string & path)
 {
-    std::ifstream t(path);
-    std::string str;
-    t.seekg(0, std::ios::end);
-    str.reserve(t.tellg());
-    t.seekg(0, std::ios::beg);
-    str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-    return str;
+    std::string out;
+    DB::WriteBufferFromString out_buffer(out);
+    DB::ReadBufferFromFile in_buffer(path);
+    DB::copyData(in_buffer, out_buffer);
+    return out;
 }
 
 /// Simple wrapper for temporary files.
@@ -269,6 +271,9 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 
 }
 
+namespace DB
+{
+
 static bool replxx_last_is_delimiter = false;
 void ReplxxLineReader::setLastIsDelimiter(bool flag)
 {
@@ -402,10 +407,11 @@ ReplxxLineReader::ReplxxLineReader(
                 words.push_back(hs.get().text());
         }
 
+        std::string current_query(rx.get_state().text());
         std::string new_query;
         try
         {
-            new_query = std::string(skim(words));
+            new_query = std::string(skim(current_query, words));
         }
         catch (const std::exception & e)
         {
@@ -506,4 +512,6 @@ void ReplxxLineReader::enableBracketedPaste()
 {
     bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
+}
+
 }

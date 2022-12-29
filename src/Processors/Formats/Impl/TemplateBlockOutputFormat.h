@@ -57,8 +57,6 @@ private:
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;
 
-    Statistics statistics;
-
     size_t row_count = 0;
 
     std::string row_between_delimiter;
