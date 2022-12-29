@@ -123,6 +123,22 @@ EOL
     <core_path>$PWD</core_path>
 </clickhouse>
 EOL
+
+    # Analyzer is not yet ready for testing
+    cat > /etc/clickhouse-server/users.d/no_analyzer.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <constraints>
+                <allow_experimental_analyzer>
+                    <readonly/>
+                </allow_experimental_analyzer>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+
 }
 
 function stop()
@@ -439,7 +455,8 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         # Start new server
         mv package_folder/clickhouse /usr/bin/
         mv package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
-        export ZOOKEEPER_FAULT_INJECTION=1
+        # Disable fault injections on start (we don't test them here, and it can lead to tons of requests in case of huge number of tables).
+        export ZOOKEEPER_FAULT_INJECTION=0
         configure
         start 500
         clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
