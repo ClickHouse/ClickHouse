@@ -20,7 +20,7 @@ public:
         , planner_context(planner_context_)
     {}
 
-    bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
+    static bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType & child)
     {
         const auto & node_type = child->getNodeType();
         return node_type !=  QueryTreeNodeType::TABLE
