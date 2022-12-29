@@ -33,6 +33,8 @@ def cluster():
 
 def test_different_types(cluster):
     node = cluster.instances["node"]
+    fs = HdfsClient(hosts=cluster.hdfs_ip)
+
     response = TSV.toMat(node.query("SELECT * FROM system.disks FORMAT TSVWithNames"))
 
     assert len(response) > len(disk_types)  # at least one extra line for header
@@ -58,6 +60,8 @@ def test_different_types(cluster):
 
 def test_select_by_type(cluster):
     node = cluster.instances["node"]
+    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    
     for name, disk_type in list(disk_types.items()):
         if disk_type != "s3":
             assert (
