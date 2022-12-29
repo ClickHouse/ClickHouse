@@ -89,7 +89,7 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer &buffer) const
 GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer &buffer)
 {
     UInt8 postings_list_size{0};
-    buffer.read(reinterpret_cast<char&>(postings_list_size));
+    buffer.readStrict(reinterpret_cast<char&>(postings_list_size));
 
     if (postings_list_size != UsesBitMap)
     {
@@ -133,7 +133,7 @@ UInt32 GinIndexStore::getNextIDRange(const String& file_name, size_t n)
 
         const auto& int_type = DB::DataTypePtr(std::make_shared<DB::DataTypeUInt32>());
         auto size_serialization = int_type->getDefaultSerialization();
-        size_serialization->serializeBinary(1, *ostr);
+        size_serialization->serializeBinary(1, *ostr, {});
         ostr->sync();
     }
 
@@ -146,8 +146,8 @@ UInt32 GinIndexStore::getNextIDRange(const String& file_name, size_t n)
         const auto& size_type = DB::DataTypePtr(std::make_shared<DB::DataTypeUInt32>());
         auto size_serialization = size_type->getDefaultSerialization();
 
-        size_type->getDefaultSerialization()->deserializeBinary(field_rows, *istr);
-        result = field_rows.get<UInt32>();
+        size_type->getDefaultSerialization()->deserializeBinary(field_rows, *istr, {});
+        result = static_cast<UInt32>(field_rows.get<UInt32>());
     }
     //save result+n
     {
@@ -155,7 +155,7 @@ UInt32 GinIndexStore::getNextIDRange(const String& file_name, size_t n)
 
         const auto& int_type = DB::DataTypePtr(std::make_shared<DB::DataTypeUInt32>());
         auto size_serialization = int_type->getDefaultSerialization();
-        size_serialization->serializeBinary(result + n, *ostr);
+        size_serialization->serializeBinary(result + n, *ostr, {});
         ostr->sync();
     }
     return result;
@@ -190,8 +190,8 @@ UInt32 GinIndexStore::getSegmentNum()
         const auto& size_type = DB::DataTypePtr(std::make_shared<DB::DataTypeUInt32>());
         auto size_serialization = size_type->getDefaultSerialization();
 
-        size_type->getDefaultSerialization()->deserializeBinary(field_rows, *istr);
-        result = field_rows.get<UInt32>();
+        size_type->getDefaultSerialization()->deserializeBinary(field_rows, *istr, {});
+        result = static_cast<UInt32>(field_rows.get<UInt32>());
     }
 
     cached_segment_num = result - 1;
@@ -316,7 +316,7 @@ void GinIndexStoreDeserializer::readSegments()
 
     assert(segment_file_stream != nullptr);
 
-    segment_file_stream->read(reinterpret_cast<char*>(segments.data()), segment_num * sizeof(GinIndexSegment));
+    segment_file_stream->readStrict(reinterpret_cast<char*>(segments.data()), segment_num * sizeof(GinIndexSegment));
     for (size_t i = 0; i < segment_num; ++i)
     {
         auto seg_id = segments[i].segment_id;
@@ -409,7 +409,7 @@ GinIndexStorePtr GinIndexStoreFactory::get(const String& name, DataPartStoragePt
         GinIndexStoreDeserializer reader(store);
         reader.readSegments();
 
-        for (size_t seg_index = 0; seg_index < store->getSegmentNum(); ++seg_index)
+        for (UInt32 seg_index = 0; seg_index < store->getSegmentNum(); ++seg_index)
         {
             reader.readTermDictionary(seg_index);
         }

@@ -107,7 +107,7 @@ public:
         storage(storage_)
     {
     }
-    GinIndexStore(const String& name_, DataPartStoragePtr storage_, DataPartStorageBuilderPtr data_part_storage_builder_, UInt64 max_digestion_size_)
+    GinIndexStore(const String& name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_)
         : name(name_),
         storage(storage_),
         data_part_storage_builder(data_part_storage_builder_),
@@ -138,7 +138,7 @@ public:
     /// Accumulate the size of text data which has been digested
     void addSize(UInt64 sz) { current_size += sz; }
 
-    UInt64 getCurrentSegmentID() { return current_segment.segment_id;}
+    UInt32 getCurrentSegmentID() { return current_segment.segment_id;}
 
     /// Do last segment writing
     void finalize();
@@ -154,8 +154,8 @@ private:
     void initFileStreams();
 
     String name;
-    DataPartStoragePtr storage;
-    DataPartStorageBuilderPtr data_part_storage_builder;
+    DataPartStoragePtr storage;    
+    MutableDataPartStoragePtr data_part_storage_builder;
 
     UInt32 cached_segment_num = 0;
 

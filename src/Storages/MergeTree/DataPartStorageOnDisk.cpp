@@ -741,7 +741,7 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
     return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DataPartStorageBuilderOnDisk::writeFile(
+std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
     const String & name,
     size_t buf_size,
     WriteMode mode,

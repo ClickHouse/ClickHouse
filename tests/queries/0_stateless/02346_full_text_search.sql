@@ -18,8 +18,9 @@ SYSTEM FLUSH LOGS;
 SELECT read_rows, result_rows from system.query_log 
         where query_kind ='Select'
             and current_database = currentDatabase()
-            and endsWith(trimRight(query), 'SELECT * FROM simple1 WHERE s LIKE \'%01%\';') 
-            and result_rows==2 limit 1;
+            and endsWith(trimRight(query), 'SELECT * FROM simple1 WHERE s LIKE \'%01%\';')
+            and type='QueryFinish' 
+            limit 1;
 
 -- create table for inverted()
 DROP TABLE IF EXISTS simple2;
@@ -40,6 +41,7 @@ SELECT read_rows, result_rows from system.query_log
     where query_kind ='Select'
         and current_database = currentDatabase()
         and endsWith(trimRight(query), 'SELECT * FROM simple2 WHERE hasToken(s, \'Alick\');') 
+        and type='QueryFinish' 
         and result_rows==4 limit 1;
 
 -- create table for inverted(2) with two parts
