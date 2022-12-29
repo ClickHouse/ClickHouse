@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest_02286, no-parallel, no-s3-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-s3-storage, no-random-settings
 
 # set -x
 
