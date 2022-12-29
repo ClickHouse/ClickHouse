@@ -81,9 +81,11 @@ def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
         cursor.execute(create_table_sql_template.format(table_name))
 
+
 def drop_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
         cursor.execute(drop_table_sql_template.format(table_name))
+
 
 def get_postgres_conn(started_cluster):
     conn_string = "host={} port={} user='postgres' password='mysecretpassword'".format(
@@ -575,6 +577,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     )
 
     node1.query("SYSTEM RELOAD DICTIONARIES")
+
 
 def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
     skip_test_msan(node1)
