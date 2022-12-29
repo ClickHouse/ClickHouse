@@ -161,79 +161,14 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         NodeRawConstPtrs children,
         std::string result_name)
 {
-    size_t num_arguments = children.size();
+    auto [arguments, all_const] = getFunctionArguments(children);
 
-    Node node;
-    node.type = ActionType::FUNCTION;
-    node.children = std::move(children);
-
-    bool all_const = true;
-    ColumnsWithTypeAndName arguments(num_arguments);
-
-    for (size_t i = 0; i < num_arguments; ++i)
-    {
-        const auto & child = *node.children[i];
-
-        ColumnWithTypeAndName argument;
-        argument.column = child.column;
-        argument.type = child.result_type;
-        argument.name = child.result_name;
-
-        if (!argument.column || !isColumnConst(*argument.column))
-            all_const = false;
-
-        arguments[i] = std::move(argument);
-    }
-
-    node.function_base = function->build(arguments);
-    node.result_type = node.function_base->getResultType();
-    node.function = node.function_base->prepare(arguments);
-    node.is_deterministic = node.function_base->isDeterministic();
-
-    /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (node.function_base->isSuitableForConstantFolding())
-    {
-        ColumnPtr column;
-
-        if (all_const)
-        {
-            size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
-            column = node.function->execute(arguments, node.result_type, num_rows, true);
-        }
-        else
-        {
-            column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
-        }
-
-        /// If the result is not a constant, just in case, we will consider the result as unknown.
-        if (column && isColumnConst(*column))
-        {
-            /// All constant (literal) columns in block are added with size 1.
-            /// But if there was no columns in block before executing a function, the result has size 0.
-            /// Change the size to 1.
-
-            if (column->empty())
-                column = column->cloneResized(1);
-
-            node.column = std::move(column);
-        }
-    }
-
-    if (result_name.empty())
-    {
-        result_name = function->getName() + "(";
-        for (size_t i = 0; i < num_arguments; ++i)
-        {
-            if (i)
-                result_name += ", ";
-            result_name += node.children[i]->result_name;
-        }
-        result_name += ")";
-    }
-
-    node.result_name = std::move(result_name);
-
-    return addNode(std::move(node));
+    return addFunctionImpl(
+        function->build(arguments),
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        all_const);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunction(
@@ -241,29 +176,28 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     NodeRawConstPtrs children,
     std::string result_name)
 {
+    auto [arguments, all_const] = getFunctionArguments(children);
+
+    return addFunctionImpl(
+        function_base,
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        all_const);
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
+    const FunctionBasePtr & function_base,
+    NodeRawConstPtrs children,
+    ColumnsWithTypeAndName arguments,
+    std::string result_name,
+    bool all_const)
+{
     size_t num_arguments = children.size();
 
     Node node;
     node.type = ActionType::FUNCTION;
     node.children = std::move(children);
-
-    bool all_const = true;
-    ColumnsWithTypeAndName arguments(num_arguments);
-
-    for (size_t i = 0; i < num_arguments; ++i)
-    {
-        const auto & child = *node.children[i];
-
-        ColumnWithTypeAndName argument;
-        argument.column = child.column;
-        argument.type = child.result_type;
-        argument.name = child.result_name;
-
-        if (!argument.column || !isColumnConst(*argument.column))
-            all_const = false;
-
-        arguments[i] = std::move(argument);
-    }
 
     node.function_base = function_base;
     node.result_type = node.function_base->getResultType();
@@ -314,6 +248,30 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.result_name = std::move(result_name);
 
     return addNode(std::move(node));
+}
+
+std::pair<ColumnsWithTypeAndName, bool> ActionsDAG::getFunctionArguments(const NodeRawConstPtrs & children)
+{
+    size_t num_arguments = children.size();
+
+    bool all_const = true;
+    ColumnsWithTypeAndName arguments(num_arguments);
+
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        const auto & child = *children[i];
+
+        ColumnWithTypeAndName argument;
+        argument.column = child.column;
+        argument.type = child.result_type;
+        argument.name = child.result_name;
+
+        if (!argument.column || !isColumnConst(*argument.column))
+            all_const = false;
+
+        arguments[i] = std::move(argument);
+    }
+    return { std::move(arguments), all_const };
 }
 
 const ActionsDAG::Node & ActionsDAG::findInOutputs(const std::string & name) const
