@@ -111,12 +111,21 @@ def clickhouse_execute_http(
     if default_format is not None:
         params["default_format"] = default_format
 
-    client.request(
-        "POST",
-        f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
-    )
-    res = client.getresponse()
-    data = res.read()
+    for i in range(MAX_RETRIES):
+        try:
+            client.request(
+                "POST",
+                f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
+            )
+            res = client.getresponse()
+            data = res.read()
+            break
+        except Exception as ex:
+            if i == MAX_RETRIES - 1:
+                raise ex
+
+            sleep(i + 1)
+
     if res.status != 200:
         raise HTTPError(data.decode(), res.status)
 
