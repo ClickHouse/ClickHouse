@@ -61,7 +61,7 @@ def test_different_types(cluster):
 def test_select_by_type(cluster):
     node = cluster.instances["node"]
     fs = HdfsClient(hosts=cluster.hdfs_ip)
-    
+
     for name, disk_type in list(disk_types.items()):
         if disk_type != "s3":
             assert (
