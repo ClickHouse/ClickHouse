@@ -62,7 +62,7 @@ struct MergeTreeIndexAggregatorGinFilter final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeConditionGinFilter final : public IMergeTreeIndexCondition
+class MergeTreeConditionGinFilter final : public IMergeTreeIndexCondition, WithContext
 {
 public:
     MergeTreeConditionGinFilter(
@@ -132,17 +132,17 @@ private:
 
     using RPN = std::vector<RPNElement>;
 
-    bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+    bool traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out);
 
     bool traverseASTEquals(
         const String & function_name,
-        const ASTPtr & key_ast,
+        const RPNBuilderTreeNode & key_ast,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);
 
     bool getKey(const std::string & key_column_name, size_t & key_column_num);
-    bool tryPrepareSetGinFilter(const ASTs & args, RPNElement & out);
+    bool tryPrepareSetGinFilter(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
         RPNElement & out, const Field & value, const GinFilterParameters & params, TokenExtractorPtr token_extractor);

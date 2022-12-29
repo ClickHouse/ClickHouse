@@ -99,7 +99,7 @@ namespace FST
         }
         inline void readFlag(ReadBuffer & read_buffer)
         {
-            read_buffer.read(reinterpret_cast<char&>(flag));
+            read_buffer.readStrict(reinterpret_cast<char&>(flag));
         }
 
         UInt64 id = 0;

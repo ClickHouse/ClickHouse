@@ -349,7 +349,7 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(const String& term)
     read_buffer.seek(data.size()-1, SEEK_SET);
 
     UInt8 length{ 0 };
-    read_buffer.read(reinterpret_cast<char&>(length));
+    read_buffer.readStrict(reinterpret_cast<char&>(length));
     if (length == 0)
         return { 0, false };
 
@@ -377,7 +377,7 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(const String& term)
         {
             /// Read number of labels
             UInt8 label_num{ 0 };
-            read_buffer.read(reinterpret_cast<char&>(label_num));
+            read_buffer.readStrict(reinterpret_cast<char&>(label_num));
 
             if (label_num == 0)
                 return { 0, false };
