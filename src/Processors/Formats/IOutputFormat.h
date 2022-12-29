@@ -84,6 +84,15 @@ public:
         resetFormatterImpl();
     }
 
+    /// Reset the statistics watch to a specific point in time
+    /// If set to not running it will stop on the call (elapsed = now() - given start)
+    void setStartTime(UInt64 start, bool is_running)
+    {
+        statistics.watch = Stopwatch(CLOCK_MONOTONIC, start, true);
+        if (!is_running)
+            statistics.watch.stop();
+    }
+
     void writePrefixIfNeeded()
     {
         if (need_write_prefix)
@@ -143,9 +152,6 @@ protected:
         Chunk extremes;
     };
 
-    void setOutsideStatistics(Statistics statistics_) { statistics = std::make_shared<Statistics>(std::move(statistics_)); }
-    std::shared_ptr<Statistics> getOutsideStatistics() const { return statistics; }
-
     /// In some formats the way we print extremes depends on
     /// were totals printed or not. In this case in parallel formatting
     /// we should notify underling format if totals were printed.
@@ -171,10 +177,10 @@ protected:
     bool need_write_suffix = true;
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
+    Statistics statistics;
 
 private:
     size_t rows_read_before = 0;
-    std::shared_ptr<Statistics> statistics = nullptr;
     bool are_totals_written = false;
 
     /// Counters for consumed chunks. Are used for QueryLog.

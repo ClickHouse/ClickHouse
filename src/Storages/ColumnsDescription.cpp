@@ -123,6 +123,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             {
                 default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
                 default_desc.expression = std::move(col_ast->default_expression);
+                default_desc.ephemeral_default = col_ast->ephemeral_default;
             }
 
             if (col_ast->comment)
