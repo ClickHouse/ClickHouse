@@ -30,6 +30,9 @@ statements with the path to your directories.
 
 ## Script to launch the container
 
+TODO: Split run.sh into `install.sh` and `test.sh` so that the install can be done once, and 
+then individual tests can be run instead of all.
+
 ```bash
 docker run -ti \
   --volume=/home/droscigno/Downloads/clickhouse-debs:/package_folder \
