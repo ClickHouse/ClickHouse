@@ -5424,6 +5424,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 part->getDataPartStorage().commitTransaction();
 
         if (txn)
+        {
             for (const auto & part : precommitted_parts)
             {
                 DataPartPtr covering_part;
@@ -5445,6 +5446,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
                 MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
             }
+        }
 
         MergeTreeData::WriteAheadLogPtr wal;
         auto get_inited_wal = [&] ()
