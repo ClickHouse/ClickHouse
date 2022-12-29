@@ -46,6 +46,22 @@ def get_genuine_zk():
     return cluster.get_kazoo_client("zoo1")
 
 
+# FIXME: this sleep is a workaround for the bug that is fixed by this patch [1].
+#
+# The problem is that after AUTH_FAILED (that is caused by the line above)
+# there can be a race, because of which, stop() will hang indefinitely.
+#
+#    [1]: https://github.com/python-zk/kazoo/pull/688
+def zk_auth_failure_workaround():
+    time.sleep(2)
+
+
+def zk_stop_and_close(zk):
+    if zk:
+        zk.stop()
+        zk.close()
+
+
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_remove_acl(started_cluster, get_zk):
     auth_connection = None
@@ -118,111 +134,102 @@ def test_remove_acl(started_cluster, get_zk):
             assert acl.acl_list == ["ALL"]
             assert acl.perms == 31
     finally:
-        if auth_connection:
-            auth_connection.stop()
-            auth_connection.close()
+        zk_stop_and_close(auth_connection)
 
 
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_digest_auth_basic(started_cluster, get_zk):
-    auth_connection = None
-    no_auth_connection = None
+    try:
+        auth_connection = None
+        no_auth_connection = None
 
-    auth_connection = get_zk()
-    auth_connection.add_auth("digest", "user1:password1")
+        auth_connection = get_zk()
+        auth_connection.add_auth("digest", "user1:password1")
 
-    auth_connection.create("/test_no_acl", b"")
-    auth_connection.create(
-        "/test_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
-    )
-    # Consistent with zookeeper, accept generated digest
-    auth_connection.create(
-        "/test_all_digest_acl",
-        b"dataX",
-        acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)],
-    )
+        auth_connection.create("/test_no_acl", b"")
+        auth_connection.create(
+            "/test_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
+        )
+        # Consistent with zookeeper, accept generated digest
+        auth_connection.create(
+            "/test_all_digest_acl",
+            b"dataX",
+            acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)],
+        )
 
-    assert auth_connection.get("/test_all_acl")[0] == b"data"
-    assert auth_connection.get("/test_all_digest_acl")[0] == b"dataX"
+        assert auth_connection.get("/test_all_acl")[0] == b"data"
+        assert auth_connection.get("/test_all_digest_acl")[0] == b"dataX"
 
-    no_auth_connection = get_zk()
-    no_auth_connection.set("/test_no_acl", b"hello")
-    assert no_auth_connection.get("/test_no_acl")[0] == b"hello"
+        no_auth_connection = get_zk()
+        no_auth_connection.set("/test_no_acl", b"hello")
+        assert no_auth_connection.get("/test_no_acl")[0] == b"hello"
 
-    # no ACL, so cannot access these nodes
-    with pytest.raises(NoAuthError):
-        no_auth_connection.set("/test_all_acl", b"hello")
+        # no ACL, so cannot access these nodes
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_all_acl", b"hello")
 
-    with pytest.raises(NoAuthError):
-        no_auth_connection.get("/test_all_acl")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_all_acl")
 
-    with pytest.raises(NoAuthError):
-        no_auth_connection.get("/test_all_digest_acl")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_all_digest_acl")
 
-    # still doesn't help
-    with pytest.raises(AuthFailedError):
-        no_auth_connection.add_auth("world", "anyone")
+        # still doesn't help
+        with pytest.raises(AuthFailedError):
+            no_auth_connection.add_auth("world", "anyone")
 
-    # FIXME: this sleep is a workaround for the bug that is fixed by this patch [1].
-    #
-    # The problem is that after AUTH_FAILED (that is caused by the line above)
-    # there can be a race, because of which, stop() will hang indefinitely.
-    #
-    #    [1]: https://github.com/python-zk/kazoo/pull/688
-    time.sleep(5)
-    no_auth_connection.stop()
-    # session became broken, reconnect
-    no_auth_connection = get_zk()
+        zk_auth_failure_workaround()
+        zk_stop_and_close(no_auth_connection)
+        # session became broken, reconnect
+        no_auth_connection = get_zk()
 
-    # wrong auth
-    no_auth_connection.add_auth("digest", "user2:password2")
+        # wrong auth
+        no_auth_connection.add_auth("digest", "user2:password2")
 
-    with pytest.raises(NoAuthError):
-        no_auth_connection.set("/test_all_acl", b"hello")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_all_acl", b"hello")
 
-    with pytest.raises(NoAuthError):
-        no_auth_connection.set("/test_all_acl", b"hello")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_all_acl", b"hello")
 
-    with pytest.raises(NoAuthError):
-        no_auth_connection.get("/test_all_acl")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_all_acl")
 
-    with pytest.raises(NoAuthError):
-        no_auth_connection.get("/test_all_digest_acl")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_all_digest_acl")
 
-    # but can access some non restricted nodes
-    no_auth_connection.create("/some_allowed_node", b"data")
+        # but can access some non restricted nodes
+        no_auth_connection.create("/some_allowed_node", b"data")
 
-    # auth added, go on
-    no_auth_connection.add_auth("digest", "user1:password1")
-    for path in ["/test_no_acl", "/test_all_acl"]:
-        no_auth_connection.set(path, b"auth_added")
-        assert no_auth_connection.get(path)[0] == b"auth_added"
-
-    if auth_connection:
-        auth_connection.stop()
-        auth_connection.close()
-
-    if no_auth_connection:
-        no_auth_connection.stop()
-        no_auth_connection.close()
+        # auth added, go on
+        no_auth_connection.add_auth("digest", "user1:password1")
+        for path in ["/test_no_acl", "/test_all_acl"]:
+            no_auth_connection.set(path, b"auth_added")
+            assert no_auth_connection.get(path)[0] == b"auth_added"
+    finally:
+        zk_stop_and_close(auth_connection)
+        zk_stop_and_close(no_auth_connection)
 
 
 def test_super_auth(started_cluster):
     auth_connection = get_fake_zk()
-
-    auth_connection.add_auth("digest", "user1:password1")
-
-    auth_connection.create("/test_super_no_acl", b"")
-    auth_connection.create(
-        "/test_super_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
-    )
+    try:
+        auth_connection.add_auth("digest", "user1:password1")
+        auth_connection.create("/test_super_no_acl", b"")
+        auth_connection.create(
+            "/test_super_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
+        )
+    finally:
+        zk_stop_and_close(auth_connection)
 
     super_connection = get_fake_zk()
-    super_connection.add_auth("digest", "super:admin")
-
-    for path in ["/test_super_no_acl", "/test_super_all_acl"]:
-        super_connection.set(path, b"value")
-        assert super_connection.get(path)[0] == b"value"
+    try:
+        super_connection.add_auth("digest", "super:admin")
+        for path in ["/test_super_no_acl", "/test_super_all_acl"]:
+            super_connection.set(path, b"value")
+            assert super_connection.get(path)[0] == b"value"
+    finally:
+        zk_stop_and_close(super_connection)
 
 
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
@@ -254,24 +261,15 @@ def test_digest_auth_multiple(started_cluster, get_zk):
 
         assert other_auth_connection.get("/test_multi_all_acl")[0] == b"Y"
     finally:
-        if auth_connection:
-            auth_connection.stop()
-            auth_connection.close()
-
-        if one_auth_connection:
-            auth_connection.stop()
-            auth_connection.close()
-
-        if other_auth_connection:
-            auth_connection.stop()
-            auth_connection.close()
+        zk_stop_and_close(auth_connection)
+        zk_stop_and_close(one_auth_connection)
+        zk_stop_and_close(other_auth_connection)
 
 
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_partial_auth(started_cluster, get_zk):
-    auth_connection = None
+    auth_connection = get_zk()
     try:
-        auth_connection = get_zk()
         auth_connection.add_auth("digest", "user1:password1")
 
         auth_connection.create(
@@ -372,52 +370,81 @@ def test_partial_auth(started_cluster, get_zk):
         with pytest.raises(NoAuthError):
             auth_connection.delete("/test_partial_acl_delete/subnode")
     finally:
-        if auth_connection:
-            auth_connection.stop()
-            auth_connection.close()
+        zk_stop_and_close(auth_connection)
 
 
-def test_bad_auth(started_cluster):
+def test_bad_auth_1(started_cluster):
     auth_connection = get_fake_zk()
-
     with pytest.raises(AuthFailedError):
         auth_connection.add_auth("world", "anyone")
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_2(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(AuthFailedError):
         print("Sending 1")
         auth_connection.add_auth("adssagf", "user1:password1")
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_3(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(AuthFailedError):
         print("Sending 2")
         auth_connection.add_auth("digest", "")
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_4(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(AuthFailedError):
         print("Sending 3")
         auth_connection.add_auth("", "user1:password1")
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_5(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(AuthFailedError):
         print("Sending 4")
         auth_connection.add_auth("digest", "user1")
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_6(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(AuthFailedError):
         print("Sending 5")
         auth_connection.add_auth("digest", "user1:password:otherpassword")
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_7(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(AuthFailedError):
         print("Sending 6")
         auth_connection.add_auth("auth", "user1:password")
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_8(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(AuthFailedError):
         print("Sending 7")
         auth_connection.add_auth("world", "somebody")
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_9(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(InvalidACLError):
         print("Sending 8")
@@ -436,7 +463,11 @@ def test_bad_auth(started_cluster):
                 )
             ],
         )
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_10(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(InvalidACLError):
         print("Sending 9")
@@ -455,7 +486,11 @@ def test_bad_auth(started_cluster):
                 )
             ],
         )
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_11(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(InvalidACLError):
         print("Sending 10")
@@ -468,7 +503,11 @@ def test_bad_auth(started_cluster):
                 )
             ],
         )
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_12(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(InvalidACLError):
         print("Sending 11")
@@ -487,7 +526,11 @@ def test_bad_auth(started_cluster):
                 )
             ],
         )
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
+
+def test_bad_auth_13(started_cluster):
     auth_connection = get_fake_zk()
     with pytest.raises(InvalidACLError):
         print("Sending 12")
@@ -506,66 +549,82 @@ def test_bad_auth(started_cluster):
                 )
             ],
         )
+    zk_auth_failure_workaround()
+    zk_stop_and_close(auth_connection)
 
 
 def test_auth_snapshot(started_cluster):
-    connection = get_fake_zk()
-    connection.add_auth("digest", "user1:password1")
+    connection = None
+    connection1 = None
+    connection2 = None
 
-    connection.create(
-        "/test_snapshot_acl", b"data", acl=[make_acl("auth", "", all=True)]
-    )
+    try:
+        connection = get_fake_zk()
+        connection.add_auth("digest", "user1:password1")
 
-    connection1 = get_fake_zk()
-    connection1.add_auth("digest", "user2:password2")
-
-    connection1.create(
-        "/test_snapshot_acl1", b"data", acl=[make_acl("auth", "", all=True)]
-    )
-
-    connection2 = get_fake_zk()
-
-    connection2.create("/test_snapshot_acl2", b"data")
-
-    for i in range(100):
         connection.create(
-            f"/test_snapshot_acl/path{i}", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_snapshot_acl", b"data", acl=[make_acl("auth", "", all=True)]
         )
 
-    node.restart_clickhouse()
+        connection1 = get_fake_zk()
+        connection1.add_auth("digest", "user2:password2")
 
-    connection = get_fake_zk()
+        connection1.create(
+            "/test_snapshot_acl1", b"data", acl=[make_acl("auth", "", all=True)]
+        )
 
-    with pytest.raises(NoAuthError):
-        connection.get("/test_snapshot_acl")
+        connection2 = get_fake_zk()
 
-    connection.add_auth("digest", "user1:password1")
+        connection2.create("/test_snapshot_acl2", b"data")
 
-    assert connection.get("/test_snapshot_acl")[0] == b"data"
+        for i in range(100):
+            connection.create(
+                f"/test_snapshot_acl/path{i}",
+                b"data",
+                acl=[make_acl("auth", "", all=True)],
+            )
 
-    with pytest.raises(NoAuthError):
-        connection.get("/test_snapshot_acl1")
+        node.restart_clickhouse()
 
-    assert connection.get("/test_snapshot_acl2")[0] == b"data"
+        zk_stop_and_close(connection)
+        connection = get_fake_zk()
 
-    for i in range(100):
-        assert connection.get(f"/test_snapshot_acl/path{i}")[0] == b"data"
+        with pytest.raises(NoAuthError):
+            connection.get("/test_snapshot_acl")
 
-    connection1 = get_fake_zk()
-    connection1.add_auth("digest", "user2:password2")
+        connection.add_auth("digest", "user1:password1")
 
-    assert connection1.get("/test_snapshot_acl1")[0] == b"data"
+        assert connection.get("/test_snapshot_acl")[0] == b"data"
 
-    with pytest.raises(NoAuthError):
-        connection1.get("/test_snapshot_acl")
+        with pytest.raises(NoAuthError):
+            connection.get("/test_snapshot_acl1")
 
-    connection2 = get_fake_zk()
-    assert connection2.get("/test_snapshot_acl2")[0] == b"data"
-    with pytest.raises(NoAuthError):
-        connection2.get("/test_snapshot_acl")
+        assert connection.get("/test_snapshot_acl2")[0] == b"data"
 
-    with pytest.raises(NoAuthError):
-        connection2.get("/test_snapshot_acl1")
+        for i in range(100):
+            assert connection.get(f"/test_snapshot_acl/path{i}")[0] == b"data"
+
+        zk_stop_and_close(connection1)
+        connection1 = get_fake_zk()
+        connection1.add_auth("digest", "user2:password2")
+
+        assert connection1.get("/test_snapshot_acl1")[0] == b"data"
+
+        with pytest.raises(NoAuthError):
+            connection1.get("/test_snapshot_acl")
+
+        zk_stop_and_close(connection2)
+        connection2 = get_fake_zk()
+        assert connection2.get("/test_snapshot_acl2")[0] == b"data"
+        with pytest.raises(NoAuthError):
+            connection2.get("/test_snapshot_acl")
+
+        with pytest.raises(NoAuthError):
+            connection2.get("/test_snapshot_acl1")
+    finally:
+        zk_stop_and_close(connection)
+        zk_stop_and_close(connection1)
+        zk_stop_and_close(connection2)
 
 
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
@@ -630,10 +689,5 @@ def test_get_set_acl(started_cluster, get_zk):
                 "/test_set_get_acl", acls=[make_acl("auth", "", all=True)], version=0
             )
     finally:
-        if auth_connection:
-            auth_connection.stop()
-            auth_connection.close()
-
-        if other_auth_connection:
-            other_auth_connection.stop()
-            other_auth_connection.close()
+        zk_stop_and_close(auth_connection)
+        zk_stop_and_close(other_auth_connection)
