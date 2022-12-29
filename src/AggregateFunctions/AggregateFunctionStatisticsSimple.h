@@ -299,7 +299,7 @@ struct StatFuncArbitraryArgData
     void add(const IColumn ** column, const size_t row_num)
     {
         for (size_t i = 0; i < num_args; ++i)
-            for (size_t j = 0; j <= i; ++j) 
+            for (size_t j = 0; j <= i; ++j)
                  data_matrix[i * (i + 1) / 2 + j].add(column[i]->getFloat64(row_num), column[j]->getFloat64(row_num));
     }
 
