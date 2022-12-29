@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_ULID
+
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
@@ -74,3 +78,5 @@ REGISTER_FUNCTION(GenerateULID)
 }
 
 }
+
+#endif
