@@ -1,41 +1,30 @@
 #include <Client/ClientBase.h>
+#include <Client/LineReader.h>
+#include <Client/ClientBaseHelpers.h>
+#include <Client/TestHint.h>
+#include <Client/InternalTextLogs.h>
+#include <Client/TestTags.h>
 
-#include <iostream>
-#include <filesystem>
-#include <map>
-#include <unordered_map>
-
-#include "config.h"
-
+#include <base/argsToConfig.h>
+#include <base/safeExit.h>
+#include <Core/Block.h>
+#include <Core/Protocol.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
-#include <base/argsToConfig.h>
-#include <base/LineReader.h>
 #include <Common/scope_guard_safe.h>
-#include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
-#include <Core/Protocol.h>
-#include <Formats/FormatFactory.h>
-
-#include "config_version.h"
-
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
-#include <Storages/ColumnsDescription.h>
-
-#include <Client/ClientBaseHelpers.h>
-#include <Client/TestHint.h>
-#include "TestTags.h"
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Formats/FormatFactory.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -43,6 +32,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -51,26 +41,36 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
-#include <Client/InternalTextLogs.h>
 #include <IO/ForkWriteBuffer.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
+
+#include <Access/AccessControl.h>
+#include <Storages/ColumnsDescription.h>
+
 #include <boost/algorithm/string/case_conv.hpp>
+#include <iostream>
+#include <filesystem>
+#include <map>
+#include <unordered_map>
+
+#include "config_version.h"
+#include "config.h"
 
 
 namespace fs = std::filesystem;
@@ -1034,7 +1034,13 @@ void ClientBase::onEndOfStream()
         progress_indication.clearProgressOutput(*tty_buf);
 
     if (output_format)
+    {
+        /// Do our best to estimate the start of the query so the output format matches the one reported by the server
+        bool is_running = false;
+        output_format->setStartTime(
+            clock_gettime_ns(CLOCK_MONOTONIC) - static_cast<UInt64>(progress_indication.elapsedSeconds() * 1000000000), is_running);
         output_format->finalize();
+    }
 
     resetOutput();
 
@@ -1401,6 +1407,11 @@ try
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
+    if (need_render_progress)
+    {
+        pipeline.setProgressCallback([this](const Progress & progress){ onProgress(progress); });
+    }
+
     Block block;
     while (executor.pull(block))
     {
@@ -1445,12 +1456,6 @@ catch (...)
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
-    if (need_render_progress)
-    {
-        /// Add callback to track reading from fd.
-        std_in.setProgressCallback(global_context);
-    }
-
     /// Send data read from stdin.
     try
     {
@@ -1563,6 +1568,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             updateLoggerLevel(logs_level_field->safeGet<String>());
     }
 
+    if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
+    {
+        if (!create_user_query->attach && create_user_query->temporary_password_for_checks)
+        {
+            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password_for_checks.value());
+            create_user_query->temporary_password_for_checks.reset();
+        }
+    }
+
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
@@ -1670,6 +1684,11 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     else if (print_time_to_stderr)
     {
         std::cerr << progress_indication.elapsedSeconds() << "\n";
+    }
+
+    if (!is_interactive && print_num_processed_rows)
+    {
+        std::cout << "Processed rows: " << processed_rows << "\n";
     }
 
     if (have_error && report_error)
@@ -2369,6 +2388,7 @@ void ClientBase::init(int argc, char ** argv)
         ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
+        ("processed-rows", "print the number of locally processed rows")
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
@@ -2447,6 +2467,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("print-profile-events", true);
     if (options.count("profile-events-delay-ms"))
         config().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
+    if (options.count("processed-rows"))
+        print_num_processed_rows = true;
     if (options.count("progress"))
     {
         switch (options["progress"].as<ProgressOption>())

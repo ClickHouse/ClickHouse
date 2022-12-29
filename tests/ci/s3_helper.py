@@ -46,7 +46,7 @@ class S3Helper:
         self.host = host
         self.download_host = download_host
 
-    def _upload_file_to_s3(self, bucket_name, file_path, s3_path):
+    def _upload_file_to_s3(self, bucket_name: str, file_path: str, s3_path: str) -> str:
         logging.debug(
             "Start uploading %s to bucket=%s path=%s", file_path, bucket_name, s3_path
         )
@@ -110,7 +110,7 @@ class S3Helper:
         url = f"{self.download_host}/{bucket_name}/{s3_path}"
         return url.replace("+", "%2B").replace(" ", "%20")
 
-    def upload_test_report_to_s3(self, file_path, s3_path):
+    def upload_test_report_to_s3(self, file_path: str, s3_path: str) -> str:
         if CI:
             return self._upload_file_to_s3(S3_TEST_REPORTS_BUCKET, file_path, s3_path)
         else:
@@ -296,7 +296,7 @@ class S3Helper:
             return False
 
     @staticmethod
-    def copy_file_to_local(bucket_name, file_path, s3_path):
+    def copy_file_to_local(bucket_name: str, file_path: str, s3_path: str) -> str:
         local_path = os.path.abspath(
             os.path.join(RUNNER_TEMP, "s3", bucket_name, s3_path)
         )

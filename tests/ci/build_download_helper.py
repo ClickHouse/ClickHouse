@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 import time
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import requests  # type: ignore
 
@@ -18,7 +18,7 @@ def get_with_retries(
     url: str,
     retries: int = DOWNLOAD_RETRIES_COUNT,
     sleep: int = 3,
-    **kwargs,
+    **kwargs: Any,
 ) -> requests.Response:
     logging.info(
         "Getting URL with %i tries and sleep %i in between: %s", retries, sleep, url
@@ -41,18 +41,18 @@ def get_with_retries(
     return response
 
 
-def get_build_name_for_check(check_name) -> str:
-    return CI_CONFIG["tests_config"][check_name]["required_build"]
+def get_build_name_for_check(check_name: str) -> str:
+    return CI_CONFIG["tests_config"][check_name]["required_build"]  # type: ignore
 
 
-def read_build_urls(build_name, reports_path) -> List[str]:
+def read_build_urls(build_name: str, reports_path: str) -> List[str]:
     for root, _, files in os.walk(reports_path):
         for f in files:
             if build_name in f:
                 logging.info("Found build report json %s", f)
                 with open(os.path.join(root, f), "r", encoding="utf-8") as file_handler:
                     build_report = json.load(file_handler)
-                    return build_report["build_urls"]
+                    return build_report["build_urls"]  # type: ignore
     return []
 
 

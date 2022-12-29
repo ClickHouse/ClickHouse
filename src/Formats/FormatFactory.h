@@ -118,6 +118,7 @@ private:
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
+        bool supports_subcolumns{false};
         bool supports_subset_of_columns{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
@@ -205,8 +206,10 @@ public:
     void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
+    void markFormatSupportsSubcolumns(const String & name);
     void markFormatSupportsSubsetOfColumns(const String & name);
 
+    bool checkIfFormatSupportsSubcolumns(const String & name) const;
     bool checkIfFormatSupportsSubsetOfColumns(const String & name) const;
 
     bool checkIfFormatHasSchemaReader(const String & name) const;

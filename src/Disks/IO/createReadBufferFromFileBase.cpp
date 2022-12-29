@@ -42,7 +42,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     if (read_hint.has_value())
         estimated_size = *read_hint;
     else if (file_size.has_value())
-        estimated_size = file_size.has_value() ? *file_size : 0;
+        estimated_size = *file_size;
 
     if (!existing_memory
         && settings.local_fs_method == LocalFSReadMethod::mmap
@@ -158,7 +158,15 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 #endif
 
     ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    return create(settings.local_fs_buffer_size, flags);
+
+    size_t buffer_size = settings.local_fs_buffer_size;
+    /// Check if the buffer can be smaller than default
+    if (read_hint.has_value() && *read_hint > 0 && *read_hint < buffer_size)
+        buffer_size = *read_hint;
+    if (file_size.has_value() && *file_size < buffer_size)
+        buffer_size = *file_size;
+
+    return create(buffer_size, flags);
 }
 
 }

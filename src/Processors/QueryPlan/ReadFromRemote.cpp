@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int LOGICAL_ERROR;
 }
 
 static void addConvertingActions(Pipe & pipe, const Block & header)
@@ -51,6 +52,32 @@ static void addConvertingActions(Pipe & pipe, const Block & header)
     });
 }
 
+static void enforceSorting(QueryProcessingStage::Enum stage, DataStream & output_stream, Context & context, SortDescription output_sort_description)
+{
+    if (stage != QueryProcessingStage::WithMergeableState)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot enforce sorting for ReadFromRemote step up to stage {}",
+            QueryProcessingStage::toString(stage));
+
+    context.setSetting("enable_memory_bound_merging_of_aggregation_results", true);
+
+    output_stream.sort_description = std::move(output_sort_description);
+    output_stream.sort_scope = DataStream::SortScope::Stream;
+}
+
+static void enforceAggregationInOrder(QueryProcessingStage::Enum stage, Context & context)
+{
+    if (stage != QueryProcessingStage::WithMergeableState)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot enforce aggregation in order for ReadFromRemote step up to stage {}",
+            QueryProcessingStage::toString(stage));
+
+    context.setSetting("optimize_aggregation_in_order", true);
+    context.setSetting("force_aggregation_in_order", true);
+}
+
 static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
@@ -70,7 +97,7 @@ ReadFromRemote::ReadFromRemote(
     QueryProcessingStage::Enum stage_,
     StorageID main_table_,
     ASTPtr table_func_ptr_,
-    ContextPtr context_,
+    ContextMutablePtr context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
     Tables external_tables_,
@@ -90,6 +117,16 @@ ReadFromRemote::ReadFromRemote(
     , log(log_)
     , shard_count(shard_count_)
 {
+}
+
+void ReadFromRemote::enforceSorting(SortDescription output_sort_description)
+{
+    DB::enforceSorting(stage, *output_stream, *context, output_sort_description);
+}
+
+void ReadFromRemote::enforceAggregationInOrder()
+{
+    DB::enforceAggregationInOrder(stage, *context);
 }
 
 void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard)
@@ -234,7 +271,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     QueryProcessingStage::Enum stage_,
     StorageID main_table_,
     ASTPtr table_func_ptr_,
-    ContextPtr context_,
+    ContextMutablePtr context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
     Tables external_tables_,
@@ -262,6 +299,15 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     setStepDescription(boost::algorithm::join(description, ", "));
 }
 
+void ReadFromParallelRemoteReplicasStep::enforceSorting(SortDescription output_sort_description)
+{
+    DB::enforceSorting(stage, *output_stream, *context, output_sort_description);
+}
+
+void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder()
+{
+    DB::enforceAggregationInOrder(stage, *context);
+}
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {

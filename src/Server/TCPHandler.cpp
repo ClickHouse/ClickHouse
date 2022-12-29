@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
+#include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -736,14 +737,20 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     auto & pipeline = state.io.pipeline;
 
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+    {
+        std::lock_guard lock(task_callback_mutex);
         sendPartUUIDs();
+    }
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
         const auto & header = pipeline.getHeader();
 
         if (header)
+        {
+            std::lock_guard lock(task_callback_mutex);
             sendData(header);
+        }
     }
 
     {
@@ -1193,6 +1200,17 @@ void TCPHandler::sendHello()
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(DBMS_VERSION_PATCH, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
+    {
+        auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
+
+        writeVarUInt(rules.size(), *out);
+        for (const auto & [original_pattern, exception_message] : rules)
+        {
+            writeStringBinary(original_pattern, *out);
+            writeStringBinary(exception_message, *out);
+        }
+    }
     out->next();
 }
 

@@ -16,15 +16,18 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
+#include <Access/resolveSetting.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
-#include <base/find_symbols.h>
+#include <IO/Operators.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <re2/re2.h>
 #include <filesystem>
 #include <mutex>
 
@@ -36,8 +39,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
+    extern const int CANNOT_COMPILE_REGEXP;
+    extern const int BAD_ARGUMENTS;
 }
-
 
 namespace
 {
@@ -103,7 +107,7 @@ public:
 
     bool isSettingNameAllowed(std::string_view setting_name) const
     {
-        if (Settings::hasBuiltin(setting_name))
+        if (settingIsBuiltin(setting_name))
             return true;
 
         std::lock_guard lock{mutex};
@@ -139,6 +143,109 @@ private:
 };
 
 
+class AccessControl::PasswordComplexityRules
+{
+public:
+    void setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_)
+    {
+        std::lock_guard lock{mutex};
+
+        rules.clear();
+
+        if (config_.has("password_complexity"))
+        {
+            Poco::Util::AbstractConfiguration::Keys password_complexity;
+            config_.keys("password_complexity", password_complexity);
+
+            for (const auto & key : password_complexity)
+            {
+                if (key == "rule" || key.starts_with("rule["))
+                {
+                    String pattern(config_.getString("password_complexity." + key + ".pattern"));
+                    String message(config_.getString("password_complexity." + key + ".message"));
+
+                    auto matcher = std::make_unique<RE2>(pattern, RE2::Quiet);
+                    if (!matcher->ok())
+                        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                            "Password complexity pattern {} cannot be compiled: {}",
+                            pattern, matcher->error());
+
+                    rules.push_back({std::move(matcher), std::move(pattern), std::move(message)});
+                }
+            }
+        }
+    }
+
+    void setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_)
+    {
+        Rules new_rules;
+
+        for (const auto & [original_pattern, exception_message] : rules_)
+        {
+            auto matcher = std::make_unique<RE2>(original_pattern, RE2::Quiet);
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "Password complexity pattern {} cannot be compiled: {}",
+                    original_pattern, matcher->error());
+
+            new_rules.push_back({std::move(matcher), original_pattern, exception_message});
+        }
+
+        std::lock_guard lock{mutex};
+        rules = std::move(new_rules);
+    }
+
+    void checkPasswordComplexityRules(const String & password_) const
+    {
+        String exception_text;
+        bool failed = false;
+
+        std::lock_guard lock{mutex};
+        for (const auto & rule : rules)
+        {
+            if (!RE2::PartialMatch(password_, *rule.matcher))
+            {
+                failed = true;
+
+                if (!exception_text.empty())
+                    exception_text += ", ";
+
+                exception_text += rule.exception_message;
+            }
+        }
+
+        if (failed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid password. The password should: {}", exception_text);
+    }
+
+    std::vector<std::pair<String, String>> getPasswordComplexityRules()
+    {
+        std::vector<std::pair<String, String>> result;
+
+        std::lock_guard lock{mutex};
+        result.reserve(rules.size());
+
+        for (const auto & rule : rules)
+            result.push_back({rule.original_pattern, rule.exception_message});
+
+        return result;
+    }
+
+private:
+    struct Rule
+    {
+        std::unique_ptr<RE2> matcher;
+        String original_pattern;
+        String exception_message;
+    };
+
+    using Rules = std::vector<Rule>;
+
+    Rules rules TSA_GUARDED_BY(mutex);
+    mutable std::mutex mutex;
+};
+
+
 AccessControl::AccessControl()
     : MultipleAccessStorage("user directories"),
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
@@ -148,7 +255,8 @@ AccessControl::AccessControl()
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
       external_authenticators(std::make_unique<ExternalAuthenticators>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>()),
-      changes_notifier(std::make_unique<AccessChangesNotifier>())
+      changes_notifier(std::make_unique<AccessChangesNotifier>()),
+      password_rules(std::make_unique<PasswordComplexityRules>())
 {
 }
 
@@ -165,6 +273,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
+    setPasswordComplexityRulesFromConfig(config_);
 
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
@@ -454,9 +563,21 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
 
+        WriteBufferFromOwnString message;
+        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
+
+        /// Better exception message for usability.
+        /// It is typical when users install ClickHouse, type some password and instantly forget it.
+        if (credentials.getUserName().empty() || credentials.getUserName() == "default")
+            message << "\n\n"
+                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
+                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
+                << "and deleting this file will reset the password.\n"
+                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
+
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
-        throw Exception(credentials.getUserName() + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
+        throw Exception(message.str(), ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 
@@ -528,6 +649,26 @@ void AccessControl::setPlaintextPasswordAllowed(bool allow_plaintext_password_)
 bool AccessControl::isPlaintextPasswordAllowed() const
 {
     return allow_plaintext_password;
+}
+
+void AccessControl::setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_)
+{
+    password_rules->setPasswordComplexityRulesFromConfig(config_);
+}
+
+void AccessControl::setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_)
+{
+    password_rules->setPasswordComplexityRules(rules_);
+}
+
+void AccessControl::checkPasswordComplexityRules(const String & password_) const
+{
+    password_rules->checkPasswordComplexityRules(password_);
+}
+
+std::vector<std::pair<String, String>> AccessControl::getPasswordComplexityRules() const
+{
+    return password_rules->getPasswordComplexityRules();
 }
 
 

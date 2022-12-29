@@ -85,7 +85,7 @@ Example of setting the addresses of the auxiliary ZooKeeper cluster:
 </auxiliary_zookeepers>
 ```
 
-To store table datameta in a auxiliary ZooKeeper cluster instead of default ZooKeeper cluster, we can use the SQL to create table with
+To store table metadata in an auxiliary ZooKeeper cluster instead of default ZooKeeper cluster, we can use the SQL to create table with
 ReplicatedMergeTree engine as follow:
 
 ```

@@ -494,7 +494,12 @@ template <typename... Args>
 static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... args)
 {
     auto ast_function = makeASTFunction(op.function_name, std::forward<Args>(args)...);
-    ast_function->is_lambda_function = op.type == OperatorType::Lambda;
+
+    if (op.type == OperatorType::Lambda)
+    {
+        ast_function->is_lambda_function = true;
+        ast_function->kind = ASTFunction::Kind::LAMBDA_FUNCTION;
+    }
     return ast_function;
 }
 
@@ -696,7 +701,7 @@ public:
         /// 2. If there is already tuple do nothing
         if (tryGetFunctionName(elements.back()) == "tuple")
         {
-            pushOperand(elements.back());
+            pushOperand(std::move(elements.back()));
             elements.pop_back();
         }
         /// 3. Put all elements in a single tuple
@@ -706,6 +711,19 @@ public:
             elements.clear();
             pushOperand(function);
         }
+
+        /// We must check that tuple arguments are identifiers
+        auto * func_ptr = operands.back()->as<ASTFunction>();
+        auto * args_ptr = func_ptr->arguments->as<ASTExpressionList>();
+
+        for (const auto & child : args_ptr->children)
+        {
+            if (typeid_cast<ASTIdentifier *>(child.get()))
+                continue;
+
+            return false;
+        }
+
         return true;
     }
 
@@ -920,7 +938,7 @@ public:
                         , ErrorCodes::SYNTAX_ERROR);
                 }
 
-                if (allow_function_parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+                if (allow_function_parameters && !parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 {
                     parameters = std::make_shared<ASTExpressionList>();
                     std::swap(parameters->children, elements);
@@ -999,6 +1017,7 @@ public:
             if (over.ignore(pos, expected))
             {
                 function_node->is_window_function = true;
+                function_node->kind = ASTFunction::Kind::WINDOW_FUNCTION;
 
                 ASTPtr function_node_as_iast = function_node;
 
@@ -1058,9 +1077,7 @@ public:
                         is_tuple = true;
 
                 // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
-                auto test_pos = pos;
-                auto test_expected = expected;
-                if (parseOperator(test_pos, "->", test_expected))
+                if (pos->type == TokenType::Arrow)
                     is_tuple = true;
             }
 
@@ -1728,6 +1745,29 @@ private:
     bool parsed_interval_kind = false;
 };
 
+class TupleLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        bool result = LayerWithSeparator::parse(pos, expected, action);
+
+        /// Check that after the tuple() function there is no lambdas operator
+        if (finished && pos->type == TokenType::Arrow)
+            return false;
+
+        return result;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("tuple", std::move(elements));
+        return true;
+    }
+};
+
+
 class IntervalLayer : public Layer
 {
 public:
@@ -2030,6 +2070,9 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         else if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
     }
+
+    if (function_name == "tuple")
+        return std::make_unique<TupleLayer>();
 
     if (function_name_lowercase == "cast")
         return std::make_unique<CastLayer>();
@@ -2355,6 +2398,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (layers.back()->previousType() == OperatorType::Comparison)
     {
+        auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
 
         if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
@@ -2379,6 +2423,10 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
             layers.back()->pushOperand(std::move(function));
             return Action::OPERATOR;
+        }
+        else
+        {
+            pos = old_pos;
         }
     }
 
