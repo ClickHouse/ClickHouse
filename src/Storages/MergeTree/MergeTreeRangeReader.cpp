@@ -36,7 +36,9 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter, siz
     {
         if (column)
         {
-            assert(column->size() == filter.size());
+            if (column->size() != filter.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
+                    column->size(), filter.size());
 
             column = column->filter(filter, filter_bytes);
 
@@ -359,21 +361,27 @@ void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns, const NumRo
 void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
 {
     /// Check that filter size matches number of rows that will be read.
-    assert(!final_filter.present() || final_filter.size() == total_rows_per_granule);
+    if (final_filter.present() && final_filter.size() != total_rows_per_granule)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Final filter size {} doesn't match total_rows_per_granule {}",
+            final_filter.size(), total_rows_per_granule);
 
     /// Check that num_rows is consistent with final_filter and rows_per_granule.
-    assert(!final_filter.present()
-        || final_filter.countBytesInFilter() == num_rows /// If filter has been applied.
-        || total_rows_per_granule == num_rows  /// If filter has not been applied.
-    );
+    if (final_filter.present() && final_filter.countBytesInFilter() != num_rows && total_rows_per_granule != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Number of rows {} doesn't match neither filter 1s count {} nor total_rows_per_granule {}",
+            num_rows, final_filter.countBytesInFilter(), total_rows_per_granule);
 
     /// Check that additional columns have the same number of rows as the main columns.
-    assert(!additional_columns || additional_columns.rows() == num_rows);
+    if (additional_columns && additional_columns.rows() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Number of rows in additional columns {} is not equal to number of rows in result columns {}",
+            additional_columns.rows(), num_rows);
 
     for (const auto & column : columns)
     {
         if (column)
-            assert(column->size() == num_rows);
+            chassert(column->size() == num_rows);
     }
 }
 
@@ -429,8 +437,11 @@ void MergeTreeRangeReader::ReadResult::setFilterConstTrue()
 
 ColumnPtr andFilters(ColumnPtr c1, ColumnPtr c2)
 {
+    if (c1->size() != c2->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of filters don't match: {} and {}",
+            c1->size(), c2->size());
+
     // TODO: use proper vectorized implementation of AND?
-    assert(c1->size() == c2->size());
     auto res = ColumnUInt8::create(c1->size());
     auto & res_data = res->getData();
     const auto & c1_data = typeid_cast<const ColumnUInt8&>(*c1).getData();
@@ -452,7 +463,9 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second);
 
 void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount & filter)
 {
-    assert(filter.size() == num_rows);
+    if (filter.size() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter size {} doesn't match number of rows {}",
+            filter.size(), num_rows);
 
     LOG_TEST(log, "ReadResult::applyFilter() num_rows before: {}", num_rows);
 
@@ -559,7 +572,9 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
 
             /// Shorten the filter by removing zeros from granule tails
             collapseZeroTails(filter.getData(), rows_per_granule_previous, new_data);
-            assert(total_rows_per_granule == new_filter->size());
+            if (total_rows_per_granule != new_filter->size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "New filter size {} doesn't match number of rows to be read {}",
+                    new_filter->size(), total_rows_per_granule);
 
             /// Need to apply combined filter here before replacing it with shortened one because otherwise
             /// the filter size will not match the number of rows in the result columns.
@@ -575,7 +590,9 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             }
 
             final_filter = FilterWithCachedCount(new_filter->getPtr());
-            assert(num_rows == final_filter.countBytesInFilter());
+            if (num_rows != final_filter.countBytesInFilter())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Count of 1s in final filter {} doesn't match number of rows {}",
+                    final_filter.countBytesInFilter(), num_rows);
 
             LOG_TEST(log, "ReadResult::optimize() after colapseZeroTails {}", dumpInfo());
         }
@@ -952,8 +969,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             {
                 /// We have filter applied from the previous step
                 /// So we need to apply it to the newly read rows
-                assert(read_result.final_filter.present());
-                assert(read_result.final_filter.countBytesInFilter() == read_result.num_rows);
+                if (!read_result.final_filter.present() || read_result.final_filter.countBytesInFilter() != read_result.num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Final filter is missing or has mistaching size, read_result: {}",
+                        read_result.dumpInfo());
 
                 filterColumns(columns, read_result.final_filter);
             }
@@ -1030,7 +1048,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
         read_result.can_return_prewhere_column_without_filtering = true;
     }
-    assert(read_result.num_rows == 0 || read_result.columns.size() == getSampleBlock().columns());
+
+    if (read_result.num_rows != 0 && read_result.columns.size() != getSampleBlock().columns())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Number of columns in result doesn't match number of columns in sample block, read_result: {}, sample block: {}",
+            read_result.dumpInfo(), getSampleBlock().dumpStructure());
 
     return read_result;
 }
