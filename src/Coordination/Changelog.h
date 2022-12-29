@@ -1,8 +1,10 @@
 #pragma once
 
 #include <libnuraft/nuraft.hxx>
+#include <libnuraft/raft_server.hxx>
 #include <city.h>
 #include <optional>
+#include <base/defines.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/CompressionMethod.h>
@@ -121,12 +123,22 @@ public:
     /// Fsync latest log to disk and flush buffer
     void flush();
 
+    bool flushAsync();
+
     void shutdown();
 
     uint64_t size() const
     {
         return logs.size();
     }
+
+    uint64_t lastDurableIndex() const
+    {
+        std::lock_guard lock{durable_idx_mutex};
+        return last_durable_idx;
+    }
+
+    void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server_);
 
     /// Fsync log to disk
     ~Changelog();
@@ -136,7 +148,7 @@ private:
     static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
 
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
-    void rotate(uint64_t new_start_log_index);
+    void rotate(uint64_t new_start_log_index, std::lock_guard<std::mutex> & writer_lock);
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
@@ -162,7 +174,7 @@ private:
     Poco::Logger * log;
     bool compress_logs;
 
-
+    std::mutex writer_mutex;
     /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
     /// Mapping log_id -> log_entry
@@ -175,6 +187,33 @@ private:
     /// 128 is enough, even if log is not removed, it's not a problem
     ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
     ThreadFromGlobalPool clean_log_thread;
+
+    struct AppendLog
+    {
+        uint64_t index;
+        nuraft::ptr<nuraft::log_entry> log_entry;
+    };
+
+    struct Flush
+    {
+        uint64_t index;
+    };
+
+    using WriteOperation = std::variant<AppendLog, Flush>;
+
+    void writeThread();
+
+    ThreadFromGlobalPool write_thread;
+    ConcurrentBoundedQueue<WriteOperation> write_operations;
+
+    // last_durable_index needs to be exposed through const getter so we make mutex mutable
+    mutable std::mutex durable_idx_mutex;
+    std::condition_variable durable_idx_cv;
+    uint64_t last_durable_idx{0};
+
+    nuraft::wptr<nuraft::raft_server> raft_server;
+
+    bool initialized = false;
 };
 
 }

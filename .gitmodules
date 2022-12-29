@@ -65,12 +65,6 @@
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
 	url = https://github.com/ClickHouse/libgsasl.git
-[submodule "contrib/libcxx"]
-	path = contrib/libcxx
-	url = https://github.com/ClickHouse/libcxx.git
-[submodule "contrib/libcxxabi"]
-	path = contrib/libcxxabi
-	url = https://github.com/ClickHouse/libcxxabi.git
 [submodule "contrib/snappy"]
 	path = contrib/snappy
 	url = https://github.com/ClickHouse/snappy.git
@@ -275,9 +269,6 @@
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
 	url = https://github.com/VectorCamp/vectorscan.git
-[submodule "contrib/liburing"]
-	path = contrib/liburing
-	url = https://github.com/axboe/liburing.git
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/ClickHouse/c-ares
@@ -290,3 +281,16 @@
 [submodule "contrib/morton-nd"]
 	path = contrib/morton-nd
 	url = https://github.com/morton-nd/morton-nd
+[submodule "contrib/xxHash"]
+	path = contrib/xxHash
+	url = https://github.com/Cyan4973/xxHash.git
+[submodule "contrib/openssl"]
+	path = contrib/openssl
+	url = https://github.com/openssl/openssl
+	branch = openssl-3.0
+[submodule "contrib/google-benchmark"]
+	path = contrib/google-benchmark
+	url = https://github.com/google/benchmark.git
+[submodule "contrib/libdivide"]
+	path = contrib/libdivide
+	url = https://github.com/ridiculousfish/libdivide.git

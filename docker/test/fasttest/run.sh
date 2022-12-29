@@ -116,9 +116,9 @@ function clone_submodules
             contrib/base64
             contrib/cctz
             contrib/libcpuid
+            contrib/libdivide
             contrib/double-conversion
-            contrib/libcxx
-            contrib/libcxxabi
+            contrib/llvm-project
             contrib/lz4
             contrib/zstd
             contrib/fastops
@@ -137,6 +137,7 @@ function clone_submodules
             contrib/hashidsxx
             contrib/c-ares
             contrib/morton-nd
+            contrib/xxHash
         )
 
         git submodule sync

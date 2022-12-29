@@ -26,11 +26,12 @@ namespace ErrorCodes
 /// Since 22.11 it creates single ephemeral node with `path_prefix` that references persistent fake "secondary node".
 class EphemeralLockInZooKeeper : public boost::noncopyable
 {
+    template<typename T>
     friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path);
+        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
 
 protected:
-    EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_);
+    EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, const String & conflict_path_ = "");
 
 public:
     EphemeralLockInZooKeeper() = delete;
@@ -51,6 +52,7 @@ public:
         rhs.zookeeper = nullptr;
         path_prefix = std::move(rhs.path_prefix);
         path = std::move(rhs.path);
+        conflict_path = std::move(rhs.conflict_path);
         return *this;
     }
 
@@ -63,6 +65,13 @@ public:
     {
         checkCreated();
         return path;
+    }
+
+    // In case of async inserts, we try to get locks for multiple inserts and need to know which insert is conflicted.
+    // That's why we need this function.
+    String getConflictPath() const
+    {
+        return conflict_path;
     }
 
     /// Parse the number at the end of the path.
@@ -97,11 +106,12 @@ private:
     ZooKeeperWithFaultInjectionPtr zookeeper;
     String path_prefix;
     String path;
+    String conflict_path;
 };
 
+template<typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path);
-
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
 
 /// Acquires block number locks in all partitions.
 class EphemeralLocksInAllPartitions : public boost::noncopyable

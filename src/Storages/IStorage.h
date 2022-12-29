@@ -583,7 +583,8 @@ public:
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
-    /// Returns true if all disks of storage are read-only.
+    /// Returns true if all disks of storage are read-only or write-once.
+    /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
     virtual bool isStaticStorage() const;
 
     virtual bool supportsSubsetOfColumns() const { return false; }
@@ -616,12 +617,12 @@ public:
 
     /// Number of rows INSERTed since server start.
     ///
-    /// Does not takes underlying Storage (if any) into account.
+    /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeRows() const { return {}; }
 
     /// Number of bytes INSERTed since server start.
     ///
-    /// Does not takes underlying Storage (if any) into account.
+    /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
     /// Creates a storage snapshot from given metadata.

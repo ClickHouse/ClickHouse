@@ -39,6 +39,13 @@ REGISTER_FUNCTION(Hashing)
 
     factory.registerFunction<FunctionXxHash32>();
     factory.registerFunction<FunctionXxHash64>();
+    factory.registerFunction<FunctionXXH3>(
+        {
+            "Calculates value of XXH3 64-bit hash function. Refer to https://github.com/Cyan4973/xxHash for detailed documentation.",
+            Documentation::Examples{{"hash", "SELECT xxh3('ClickHouse')"}},
+            Documentation::Categories{"Hash"}
+        },
+        FunctionFactory::CaseSensitive);
 
     factory.registerFunction<FunctionWyHash64>();
 

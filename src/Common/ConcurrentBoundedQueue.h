@@ -138,9 +138,27 @@ public:
     }
 
     /// Returns false if queue is (finished and empty) or (object was not popped during timeout)
-    [[nodiscard]] bool tryPop(T & x, UInt64 milliseconds = 0)
+    [[nodiscard]] bool tryPop(T & x, UInt64 milliseconds)
     {
         return popImpl(x, milliseconds);
+    }
+
+    /// Returns false if queue is empty.
+    [[nodiscard]] bool tryPop(T & x)
+    {
+        // we don't use popImpl to avoid CV wait
+        {
+            std::lock_guard queue_lock(queue_mutex);
+
+            if (queue.empty())
+                return false;
+
+            detail::moveOrCopyIfThrow(std::move(queue.front()), x);
+            queue.pop();
+        }
+
+        push_condition.notify_one();
+        return true;
     }
 
     /// Returns size of queue

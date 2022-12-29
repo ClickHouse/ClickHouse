@@ -171,6 +171,11 @@ protected:
 
     void initTtyBuffer(ProgressOption progress);
 
+    /// Should be one of the first, to be destroyed the last,
+    /// since other members can use them.
+    SharedContextHolder shared_context;
+    ContextMutablePtr global_context;
+
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
     bool delayed_interactive = false;
@@ -207,9 +212,6 @@ protected:
 
     /// Settings specified via command line args
     Settings cmd_settings;
-
-    SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
 
     /// thread status should be destructed before shared context because it relies on process list.
     std::optional<ThreadStatus> thread_status;
@@ -251,6 +253,7 @@ protected:
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
+    bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the

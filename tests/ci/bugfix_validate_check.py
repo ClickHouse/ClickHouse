@@ -41,7 +41,7 @@ def process_result(file_path):
     if is_ok and report_url == "null":
         return is_ok, None
 
-    status = f'OK: Bug reproduced (<a href="{report_url}">Report</a>'
+    status = f'OK: Bug reproduced (<a href="{report_url}">Report</a>)'
     if not is_ok:
         status = f'Bug is not reproduced (<a href="{report_url}">Report</a>)'
     test_results.append([f"{prefix}: {description}", status])
@@ -86,7 +86,7 @@ def main(args):
         gh,
         pr_info.sha,
         check_name_with_group,
-        "" if is_ok else "Changed tests doesn't reproduce the bug",
+        "" if is_ok else "Changed tests don't reproduce the bug",
         "success" if is_ok else "error",
         report_url,
     )

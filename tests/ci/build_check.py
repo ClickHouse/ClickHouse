@@ -121,8 +121,9 @@ def check_for_success_run(
     s3_prefix: str,
     build_name: str,
     build_config: BuildConfig,
-):
-    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix)
+) -> None:
+    # the final empty argument is necessary for distinguish build and build_suffix
+    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix, "")
     logging.info("Checking for artifacts in %s", logged_prefix)
     try:
         # TODO: theoretically, it would miss performance artifact for pr==0,
@@ -174,7 +175,7 @@ def create_json_artifact(
     build_config: BuildConfig,
     elapsed: int,
     success: bool,
-):
+) -> None:
     subprocess.check_call(
         f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
     )
@@ -218,7 +219,7 @@ def upload_master_static_binaries(
     build_config: BuildConfig,
     s3_helper: S3Helper,
     build_output_path: str,
-):
+) -> None:
     """Upload binary artifacts to a static S3 links"""
     static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:
