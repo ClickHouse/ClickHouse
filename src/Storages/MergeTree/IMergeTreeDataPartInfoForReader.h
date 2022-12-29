@@ -41,6 +41,8 @@ public:
 
     virtual const NamesAndTypesList & getColumns() const = 0;
 
+    virtual bool isNonConstVirtualColumn(const String & column_name) const = 0;
+
     virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
 
     virtual String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const = 0;

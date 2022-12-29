@@ -191,6 +191,8 @@ ActionsDAGPtr evaluateMissingDefaults(
 static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
     const NamesAndTypesList & available_columns, const Columns & res_columns)
 {
+    assert(available_columns.size() == res_columns.size());
+
     std::unordered_map<String, ColumnPtr> offsets_columns;
 
     auto available_column = available_columns.begin();
@@ -241,10 +243,11 @@ void fillMissingColumns(
     StorageMetadataPtr metadata_snapshot)
 {
     size_t num_columns = requested_columns.size();
-    if (num_columns != res_columns.size())
+    size_t num_available_columns = available_columns.size();
+    if (num_columns != num_available_columns || num_columns != res_columns.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid number of columns passed to fillMissingColumns. Expected {}, got {}",
-            num_columns, res_columns.size());
+            "Invalid number of columns passed to fillMissingColumns. Expected {}, got available {}, result {}",
+            num_columns, num_available_columns, res_columns.size());
 
     /// For a missing column of a nested data structure
     /// we must create not a column of empty arrays,

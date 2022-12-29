@@ -19,7 +19,11 @@ namespace ErrorCodes
 void StorageSnapshot::init()
 {
     for (const auto & [name, type] : storage.getVirtuals())
+    {
         virtual_columns[name] = type;
+        if (storage.isNonConstVirtualColumn(name))
+            system_columns[name] = type;
+    }
 
     if (storage.hasLightweightDeletedMask())
         system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;

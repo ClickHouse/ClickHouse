@@ -82,7 +82,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const Names & system_columns,
+    const Names & virtual_columns,
     const PrewhereInfoPtr & prewhere_info,
     bool with_subcolumns);
 
