@@ -2,7 +2,7 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from tests.integration.helpers.test_tools import TSV
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
