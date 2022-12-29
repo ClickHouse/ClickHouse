@@ -48,3 +48,4 @@ select dictGet('regexp_dict1', ('name', 'version'), '31/tclwebkit1024');
 select dictGet('regexp_dict1', ('name', 'version'), '999/tclwebkit1024');
 drop dictionary regexp_dict1;
 "
+rm -rf "$USER_FILES_PATH/test_02504"
