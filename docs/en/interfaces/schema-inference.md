@@ -119,7 +119,7 @@ Ok.
 
 ## clickhouse-local
 
-`clickhouse-local` has optional parameter `-S/--structure` with the structure of input data. If this parameter is not specified ot set to `auto`, the structure will be inferred from the data.
+`clickhouse-local` has optional parameter `-S/--structure` with the structure of input data. If this parameter is not specified or set to `auto`, the structure will be inferred from the data.
 
 **Example:**
 
@@ -140,7 +140,7 @@ $ clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FR
 
 # Using structure from insertion table {#using-structure-from-insertion-table}
 
-When table functions `file/s3/url/hdfs` are used to insert data into a table in queries,
+When table functions `file/s3/url/hdfs` are used to insert data into a table,
 there is an option to use the structure from the insertion table instead of extracting it from the data.
 It can improve insertion performance because schema inference can take some time. Also, it will be helpful when the table has optimized schema, so
 no conversions between types will be performed.
@@ -204,12 +204,12 @@ Let's create table `hobbies3` with the next structure:
 ```sql
 CREATE TABLE hobbies3
 (
-  `identified` UInt64,
+  `identifier` UInt64,
   `age` LowCardinality(UInt8),
   `hobbies` Array(String)
 )
   ENGINE = MergeTree
-ORDER BY identified;
+ORDER BY identifier;
 ```
 
 And insert data from the file `hobbies.jsonl`:
@@ -219,7 +219,7 @@ INSERT INTO hobbies3 SELECT id, age, hobbies FROM file(hobbies.jsonl)
 ```
 
 In this case column `id` is used in `SELECT` query, but the table doesn't have this column (it has column with different name `identifier`),
-so ClickHouse cannot use the structure from the insertion table, and it will use schema inference.
+so ClickHouse cannot use the structure from the insertion table, and schema inference will be used.
 
 **Example 4:**
 
@@ -238,10 +238,10 @@ ORDER BY id;
 And insert data from the file `hobbies.jsonl`:
 
 ```sql
-INSERT INTO hobbies4 SELECT id,  empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
+INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
 ```
 
-In this case there are some operations performed on the column `hobbies` in `SELECT` query to insert it into the table, so ClickHouse cannot use the structure from the insertion table, and it will use schema inference.
+In this case there are some operations performed on the column `hobbies` in `SELECT` query to insert it into the table, so ClickHouse cannot use the structure from the insertion table, and schema inference will be used.
 
 # Schema inference cache {#schema-inference-cache}
 
@@ -256,7 +256,7 @@ The schema of the file can be changed by modifying the data or by changing forma
 For this reason schema inference cache identifies the schema by file source, format name, used format settings and last modification time of the file.
 
 Note: some files accessed by url in `url` table function could not contain information about last modification time, for this case there is a special setting
-`schema_inference_cache_require_modification_time_for_url`, disabling it that allows to use schema from cache without last modification time for such files
+`schema_inference_cache_require_modification_time_for_url`, disabling it that allows to use schema from cache without last modification time for such files.
 
 There is also a system table [schema_inference_cache](../operations/system-tables/schema_inference_cache.md) with all current schemas in cache and system query `SYSTEM DROP SCHEMA CACHE [FOR File/S3/URL/HDFS]`
 that allows to clean schema cache for all sources or for specific source.
@@ -317,13 +317,15 @@ As you can see, the schema from the cache was not used for the same file, becaus
 Let's check the content of `system.schema_inference_cache` table:
 
 ```sql
-:) SELECT * FROM system.schema_inference_cache WHERE storage='S3'
+:) SELECT schema, format, source FROM system.schema_inference_cache WHERE storage='S3'
 
-┌─storage─┬─source───────────────────────────────────────────────────────────────────────────────────────────────────┬─format─┬─additional_format_info────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬───registration_time─┬─schema──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ S3      │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │ NDJSON │ schema_inference_hints=, max_rows_to_read_for_schema_inference=25000, schema_inference_make_columns_nullable=true, try_infer_integers=true, try_infer_dates=true, try_infer_datetimes=true, try_infer_numbers_from_strings=true, read_bools_as_numbers=true, read_objects_as_strings=false, read_numbers_as_strings=false, try_infer_objects=true │ 2022-12-23 19:59:59 │ type Nullable(String), actor Object(Nullable('json')), repo Object(Nullable('json')), created_at Nullable(String), payload Object(Nullable('json')) │
-│ S3      │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │ NDJSON │ schema_inference_hints=, max_rows_to_read_for_schema_inference=25000, schema_inference_make_columns_nullable=true, try_infer_integers=true, try_infer_dates=true, try_infer_datetimes=true, try_infer_numbers_from_strings=true, read_bools_as_numbers=true, read_objects_as_strings=true, read_numbers_as_strings=false, try_infer_objects=false │ 2022-12-23 20:00:02 │ type Nullable(String), actor Nullable(String), repo Nullable(String), created_at Nullable(String), payload Nullable(String)                         │
-└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─schema──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─format─┬─source───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ type Nullable(String), actor Object(Nullable('json')), repo Object(Nullable('json')), created_at Nullable(String), payload Object(Nullable('json')) │ NDJSON │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │
+│ type Nullable(String), actor Nullable(String), repo Nullable(String), created_at Nullable(String), payload Nullable(String)                         │ NDJSON │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+As you can see, there are two different schemas for the same file.
 
 We can clear schema cache using system query:
 ```sql
@@ -338,18 +340,16 @@ Ok.
 └─────────┘
 ```
 
-As you can see, there are two different schemas for the same file but with different settings.
-
 # Text formats {#text-formats}
 
 For text formats ClickHouse reads the data row by row, extracts column values according to the format
-and then uses some recursive parsers and heuristics to determine the type of the values. The maximum number of rows read from the data in schema inference
+and then uses some recursive parsers and heuristics to determine the type for each value. The maximum number of rows read from the data in schema inference
 is controlled by the setting `input_format_max_rows_to_read_for_schema_inference` with default value 25000.
-By default, all inferred types are [Nullable](../sql-reference/data-types/nullable.md), but you can change it using setting schema_inference_make_columns_nullable (see examples in [settings](#settings-for-text-formats) section)
+By default, all inferred types are [Nullable](../sql-reference/data-types/nullable.md), but you can change it using setting `schema_inference_make_columns_nullable` (see examples in [settings](#settings-for-text-formats) section).
 
 ## JSON formats {#json-formats}
 
-In JSON formats ClickHouse parses values according to JSON specification and then tries to fine the most appropriate data type for it.
+In JSON formats ClickHouse parses values according to JSON specification and then tries to find the most appropriate data type for them.
 
 Let's see how it works, what types can be inferred and what specific settings can be used in JSON formats.
 
@@ -458,7 +458,7 @@ Nested complex types:
 └───────┴────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-If ClickHouse cannot determine the type, because the data contains only nulls, ClickHouse will throw an exception:
+If ClickHouse cannot determine the type, because the data contains only nulls, an exception will be thrown:
 ```sql
 :) DESC format(JSONEachRow, '{"arr" : [null, null]}')
 
@@ -475,7 +475,7 @@ most likely this column contains only Nulls or empty Arrays/Maps.
 Enabling this setting allows reading nested JSON objects as strings.
 This setting can be used to read nested JSON objects without using JSON object type.
 
-This setting is disabled by default.
+This setting is enabled by default.
 
 ```sql
 :) SET input_format_json_read_objects_as_strings = 1;
@@ -551,9 +551,9 @@ This setting is enabled by default.
 
 ## CSV {#csv}
 
-In CSV format ClickHouse extracts column value from the row according to delimiters. ClickHouse expects all types except numbers and strings to be enclosed in double quotes. If the value is in double quotes, ClickHouse tries to parse
-the data inside quotes using recursive parser and then tries to find the most appropriate data type for it. If the value not in double quotes, ClickHouse tries to parse it as number,
-and if the value is not a number, ClickHouse treat it as a string.
+In CSV format ClickHouse extracts columns values from the row according to delimiters. ClickHouse expects all types except numbers and strings to be enclosed in double quotes. If the value is in double quotes, ClickHouse tries to parse
+the data inside quotes using recursive parser and then tries to find the most appropriate data type for it. If the value is not in double quotes, ClickHouse tries to parse it as number,
+and if the value is not a number, ClickHouse treats it as a string.
 
 If you don't want ClickHouse to try to determine complex types using some parsers and heuristics, you can disable setting `input_format_csv_use_best_effort_in_schema_inference`
 and ClickHouse will treat all columns as Strings.
@@ -850,7 +850,7 @@ Nested Arrays, Tuples and Maps:
 └──────┴─────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-If ClickHouse cannot determine the type, because the data contains only nulls, ClickHouse will throw an exception:
+If ClickHouse cannot determine the type, because the data contains only nulls, an exception will be thrown:
 ```sql
 :) DESC format(Values, '([NULL, NULL])')
 
@@ -991,7 +991,7 @@ The list of column names to use in schema inference for formats without explicit
 ### schema_inference_hints
 
 The list of column names and types to use in schema inference instead of automatically determined types. The format: 'column_name1 column_type1, column_name2 column_type2, ...'.
-This setting can be used to specify the types of columns that could not be determined automatically or for oprimizing the schema.
+This setting can be used to specify the types of columns that could not be determined automatically or for optimizing the schema.
 
 **Example**
 
@@ -1013,7 +1013,7 @@ SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(St
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
 If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
 
-Disabled by default.
+Enabled by default.
 
 **Examples**
 
@@ -1211,8 +1211,8 @@ $$)
 
 ## JSON formats with metadata {#json-with-metadata}
 
-Some JSON input formats ([JSON](formats.md#json), [JSONCompact](formats.md#json-compact), [JSONColumnsWithMetadata](formats.md#jsoncolumnswithmetadata)) contain metadata about data structure.
-In schema inference for such formats, ClickHouse reads this metadata and extracts column names and types.
+Some JSON input formats ([JSON](formats.md#json), [JSONCompact](formats.md#json-compact), [JSONColumnsWithMetadata](formats.md#jsoncolumnswithmetadata)) contain metadata with column names and types.
+In schema inference for such formats, ClickHouse reads this metadata.
 
 **Example**
 ```sql
@@ -1307,7 +1307,7 @@ In Parquet format ClickHouse reads its schema from the data and converts to Clic
 | `STRUCT`                     | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                        | [Map](../sql-reference/data-types/map.md)               |
 
-Other Parquet types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
+Other Parquet types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
 
 ## Arrow {#arrow}
 
@@ -1335,7 +1335,7 @@ In Arrow format ClickHouse reads its schema from the data and converts to ClickH
 | `STRUCT`                        | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                           | [Map](../sql-reference/data-types/map.md)               |
 
-Other Arrow types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
+Other Arrow types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
 
 ## ORC {#orc}
 
@@ -1358,7 +1358,7 @@ In ORC format ClickHouse reads its schema from the data and converts to ClickHou
 | `Struct`                             | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `Map`                                | [Map](../sql-reference/data-types/map.md)               |
 
-Other ORC types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
+Other ORC types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
 
 ## Native {#native}
 
@@ -1435,7 +1435,7 @@ using setting `input_format_msgpack_number_of_columns`. ClickHouse uses the foll
 | `fixarray`, `array 16`, `array 32`                                 | [Array](../sql-reference/data-types/array.md)             |
 | `fixmap`, `map 16`, `map 32`                                       | [Map](../sql-reference/data-types/map.md)                 |
 
-By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
+By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
 
 ## BSONEachRow {#bsoneachrow}
 
@@ -1455,7 +1455,7 @@ values names and types from the data and then transform these types to ClickHous
 | `\x04` array                                                                                  | [Array](../sql-reference/data-types/array.md)/[Tuple](../sql-reference/data-types/tuple.md) (if nested types are different) |
 | `\x03` document                                                                               | [Named Tuple](../sql-reference/data-types/tuple.md)/[Map](../sql-reference/data-types/map.md) (with String keys)            |
 
-By default, all inferred types are inside `Nullable`, but it can be changed by disabling setting `schema_inference_make_columns_nullable`.
+By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
 
 # Formats with constant schema {#formats-with-constant-schema}
 
