@@ -1,6 +1,6 @@
-import time
+#!/usr/bin/env python3
+
 import pytest
-import logging
 from helpers.cluster import ClickHouseCluster
 from tests.integration.helpers.test_tools import TSV
 
