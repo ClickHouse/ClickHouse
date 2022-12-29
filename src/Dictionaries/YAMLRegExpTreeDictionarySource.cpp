@@ -144,7 +144,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_PARSE_YAML;
-    extern const int INVALID_REGEXP_TREE_CONFIGURATION;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int PATH_ACCESS_DENIED;
 }
 
@@ -159,19 +159,12 @@ struct MatchNode
 
 struct ResultColumns
 {
-    MutableColumnPtr ids;
-    MutableColumnPtr parent_ids;
-    MutableColumnPtr reg_exps;
-    MutableColumnPtr keys;
-    MutableColumnPtr values;
-    ResultColumns()
-    {
-        ids = ColumnUInt64::create();
-        parent_ids = ColumnUInt64::create();
-        reg_exps = ColumnString::create();
-        keys = ColumnArray::create(ColumnString::create());
-        values = ColumnArray::create(ColumnString::create());
-    }
+    MutableColumnPtr ids = ColumnUInt64::create();
+    MutableColumnPtr parent_ids = ColumnUInt64::create();
+    MutableColumnPtr reg_exps = ColumnString::create();
+    MutableColumnPtr keys = ColumnArray::create(ColumnString::create());
+    MutableColumnPtr values = ColumnArray::create(ColumnString::create());
+    ResultColumns() {}
 };
 
 using StringToNode = std::unordered_map<String, YAML::Node>;
@@ -224,7 +217,7 @@ void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 {
     if (!node.IsMap())
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` node must be map type", kMatch);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "`{}` node must be map type", kMatch);
     }
 
     auto match = parseYAMLMap(node);
@@ -236,14 +229,14 @@ void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 
     if (!match.contains(key_name))
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Yaml match rule must contain key {}", key_name);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Yaml match rule must contain key {}", key_name);
     }
     for (const auto & [key, node] : match)
     {
         if (key == key_name)
         {
             if (!node.IsScalar())
-                throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` should be a String", key_name);
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "`{}` should be a String", key_name);
 
             attributes_to_insert.reg_exp = node.as<String>();
         }
@@ -265,7 +258,7 @@ void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 {
     if (!node.IsSequence())
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Configuration {} must be a yaml list of match rules", node.as<String>());
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Configuration {} must be a yaml list of match rules", node.as<String>());
     }
 
     for (const auto & child_node : node)
@@ -317,7 +310,7 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
 
 QueryPipeline YAMLRegExpTreeDictionarySource::loadAll()
 {
-    LOG_INFO(logger, "Loading all from {}", filepath);
+    LOG_INFO(logger, "Loading regexp tree from yaml '{}'", filepath);
     last_modification = getLastModification();
 
     const auto node = loadYAML(filepath);

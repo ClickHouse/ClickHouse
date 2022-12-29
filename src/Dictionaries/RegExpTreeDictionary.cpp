@@ -10,26 +10,21 @@
 
 #include <Common/ArenaUtils.h>
 #include <Common/logger_useful.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/Regexps.h>
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <Dictionaries/RegExpTreeDictionary.h>
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/RegExpTreeDictionary.h>
+
 #include <re2_st/stringpiece.h>
 
-#include "Columns/ColumnsNumber.h"
-#include "Core/ColumnWithTypeAndName.h"
-#include "DataTypes/DataTypeString.h"
-#include "DataTypes/DataTypesNumber.h"
-#include "DataTypes/Serializations/ISerialization.h"
-#include "Dictionaries/ClickHouseDictionarySource.h"
-#include "Formats/FormatSettings.h"
-#include "Functions/FunctionHelpers.h"
-#include "IO/ReadBufferFromString.h"
-#include "base/types.h"
 #include "config.h"
 
 #if USE_VECTORSCAN
@@ -256,11 +251,11 @@ RegExpTreeDictionary::RegExpTreeDictionary(
     {
         Block sample_block;
         /// id, parent_id, regex, keys, values
-        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeUInt64()), kId));
-        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeUInt64()), kParentId));
-        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeString()), kRegExp));
-        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeArray(DataTypePtr(new DataTypeString()))), kKeys));
-        sample_block.insert(ColumnWithTypeAndName(DataTypePtr(new DataTypeArray(DataTypePtr(new DataTypeString()))), kValues));
+        sample_block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), kId));
+        sample_block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), kParentId));
+        sample_block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), kRegExp));
+        sample_block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), kKeys));
+        sample_block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), kValues));
         ch_source->sample_block = std::move(sample_block);
     }
 
