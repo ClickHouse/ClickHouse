@@ -19,8 +19,6 @@ to the existing content.  For more information, see the [Docker docs](https://do
 
 ## Volumes to be mounted in the container
 
-## Script to launch the container
-
 There are four volumes mounted from your machine into the container:
 - The directory containing the ClickHouse `deb` files
 - The `tests` dir from the ClickHouse GitHub repo
@@ -29,6 +27,8 @@ There are four volumes mounted from your machine into the container:
 
 You should create the four directories and replace the left-hand side of the volume 
 statements with the path to your directories.
+
+## Script to launch the container
 
 ```bash
 docker run -ti \
