@@ -39,17 +39,16 @@ public:
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::ARRAY_JOIN ||
-            column_source_node_type == QueryTreeNodeType::LAMBDA)
+        if (column_source_node_type == QueryTreeNodeType::LAMBDA)
             return;
 
         /// JOIN using expression
-        if (column_node->hasExpression() && column_source_node->getNodeType() == QueryTreeNodeType::JOIN)
+        if (column_node->hasExpression() && column_source_node_type == QueryTreeNodeType::JOIN)
             return;
 
         auto & table_expression_data = planner_context.getOrCreateTableExpressionData(column_source_node);
 
-        if (column_node->hasExpression())
+        if (column_node->hasExpression() && column_source_node_type != QueryTreeNodeType::ARRAY_JOIN)
         {
             /// Replace ALIAS column with expression
             table_expression_data.addAliasColumnName(column_node->getColumnName());
@@ -61,9 +60,10 @@ public:
         if (column_source_node_type != QueryTreeNodeType::TABLE &&
             column_source_node_type != QueryTreeNodeType::TABLE_FUNCTION &&
             column_source_node_type != QueryTreeNodeType::QUERY &&
-            column_source_node_type != QueryTreeNodeType::UNION)
+            column_source_node_type != QueryTreeNodeType::UNION &&
+            column_source_node_type != QueryTreeNodeType::ARRAY_JOIN)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expected table, table function, query or union column source. Actual {}",
+                "Expected table, table function, array join, query or union column source. Actual {}",
                 column_source_node->formatASTForErrorMessage());
 
         bool column_already_exists = table_expression_data.hasColumn(column_node->getColumnName());

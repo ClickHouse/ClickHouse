@@ -3,6 +3,7 @@
 import argparse
 import csv
 import itertools
+import logging
 import os
 
 from github import Github
@@ -37,8 +38,10 @@ def process_result(file_path):
     state, report_url, description = post_commit_status_from_file(file_path)
     prefix = os.path.basename(os.path.dirname(file_path))
     is_ok = state == "success"
+    if is_ok and report_url == "null":
+        return is_ok, None
 
-    status = f'OK: Bug reproduced (<a href="{report_url}">Report</a>'
+    status = f'OK: Bug reproduced (<a href="{report_url}">Report</a>)'
     if not is_ok:
         status = f'Bug is not reproduced (<a href="{report_url}">Report</a>)'
     test_results.append([f"{prefix}: {description}", status])
@@ -51,14 +54,22 @@ def process_all_results(file_paths):
     for status_path in file_paths:
         is_ok, test_results = process_result(status_path)
         any_ok = any_ok or is_ok
-        all_results.extend(test_results)
+        if test_results is not None:
+            all_results.extend(test_results)
+
     return any_ok, all_results
 
 
 def main(args):
+    logging.basicConfig(level=logging.INFO)
+
     check_name_with_group = "Bugfix validate check"
 
     is_ok, test_results = process_all_results(args.status)
+
+    if not test_results:
+        logging.info("No results to upload")
+        return
 
     pr_info = PRInfo()
     report_url = upload_results(
@@ -75,7 +86,7 @@ def main(args):
         gh,
         pr_info.sha,
         check_name_with_group,
-        "" if is_ok else "Changed tests doesn't reproduce the bug",
+        "" if is_ok else "Changed tests don't reproduce the bug",
         "success" if is_ok else "error",
         report_url,
     )

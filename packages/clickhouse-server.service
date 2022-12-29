@@ -9,7 +9,10 @@ After=time-sync.target network-online.target
 Wants=time-sync.target
 
 [Service]
-Type=simple
+Type=notify
+
+# NOTE: we leave clickhouse watchdog process enabled to be able to see OOM/SIGKILL traces in clickhouse-server.log files.
+# If you wish to disable the watchdog and rely on systemd logs just add "Environment=CLICKHOUSE_WATCHDOG_ENABLE=0" line.
 User=clickhouse
 Group=clickhouse
 Restart=always

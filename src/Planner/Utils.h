@@ -34,6 +34,9 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
 
+/// Update mutable context for subquery execution
+void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
+
 /// Build limits for storage
 StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptions & options);
 

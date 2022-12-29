@@ -15,7 +15,7 @@ slug: /zh/operations/system-tables/mutations
 
 -   `command` ([String](../../sql-reference/data-types/string.md)) — mutation命令字符串（`ALTER TABLE [db.]table`语句之后的部分)。
 
--   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — mutation命令提交执行的日期和时间。
+-   `create_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — mutation命令提交执行的日期和时间。
 
 -   `block_numbers.partition_id` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — 对于复制表的mutation，该数组包含分区的ID（每个分区都有一条记录）。对于非复制表的mutation，该数组为空。
 
@@ -39,7 +39,7 @@ slug: /zh/operations/system-tables/mutations
 
 -   `latest_failed_part`([String](../../sql-reference/data-types/string.md)) — 最近不能mutation的part的名称。
 
--   `latest_fail_time`([Datetime](../../sql-reference/data-types/datetime.md)) — 最近的一个mutation失败的时间。
+-   `latest_fail_time`([DateTime](../../sql-reference/data-types/datetime.md)) — 最近的一个mutation失败的时间。
 
 -   `latest_fail_reason`([String](../../sql-reference/data-types/string.md)) — 导致最近part的mutation失败的异常消息。
 

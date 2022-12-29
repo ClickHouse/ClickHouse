@@ -76,7 +76,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 }
 
 template <typename T>
-requires (sizeof(T) > sizeof(DB::UInt64))
+requires std::has_unique_object_representations_v<T> && (sizeof(T) % sizeof(DB::UInt64) == 0)
 inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
     const auto * begin = reinterpret_cast<const char *>(&x);
@@ -89,6 +89,25 @@ inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
     return updated_value;
 }
 
+template <std::floating_point T>
+requires(sizeof(T) <= sizeof(UInt64))
+inline DB::UInt64 intHashCRC32(T x, DB::UInt64 updated_value)
+{
+    static_assert(std::numeric_limits<T>::is_iec559);
+
+    // In IEEE 754, the only two floating point numbers that compare equal are 0.0 and -0.0.
+    // See std::hash<float>.
+    if (x == static_cast<T>(0.0))
+        return intHashCRC32(0, updated_value);
+
+    UInt64 repr;
+    if constexpr (sizeof(T) == sizeof(UInt32))
+        repr = std::bit_cast<UInt32>(x);
+    else
+        repr = std::bit_cast<UInt64>(x);
+
+    return intHashCRC32(repr, updated_value);
+}
 
 inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 updated_value)
 {
@@ -161,14 +180,9 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t DefaultHash64(T key)
 {
-    union
-    {
-        T in;
-        DB::UInt64 out;
-    } u;
-    u.out = 0;
-    u.in = key;
-    return intHash64(u.out);
+    DB::UInt64 out {0};
+    std::memcpy(&out, &key, sizeof(T));
+    return intHash64(out);
 }
 
 
@@ -224,14 +238,9 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
-    union
-    {
-        T in;
-        DB::UInt64 out;
-    } u;
-    u.out = 0;
-    u.in = key;
-    return intHashCRC32(u.out, updated_value);
+    DB::UInt64 out {0};
+    std::memcpy(&out, &key, sizeof(T));
+    return intHashCRC32(out, updated_value);
 }
 
 template <typename T>
@@ -446,14 +455,9 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
-            union
-            {
-                T in;
-                DB::UInt64 out;
-            } u;
-            u.out = 0;
-            u.in = key;
-            return intHash32<salt>(u.out);
+            DB::UInt64 out {0};
+            std::memcpy(&out, &key, sizeof(T));
+            return intHash32<salt>(out);
         }
 
         UNREACHABLE();

@@ -259,7 +259,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
             {
                 wb_key.restart();
 
-                column_it->type->getDefaultSerialization()->serializeBinary(*column, i, wb_key);
+                column_it->type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
                 auto status = batch.Delete(wb_key.str());
                 if (!status.ok())
                     throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);

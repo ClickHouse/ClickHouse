@@ -539,7 +539,7 @@ date_trunc(unit, value[, timezone])
 
 -   按指定的单位向前取整后的DateTime。
 
-类型: [Datetime](../../sql-reference/data-types/datetime.md).
+类型: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **示例**
 
@@ -850,7 +850,7 @@ now([timezone])
 
 -   当前日期和时间。
 
-类型: [Datetime](../../sql-reference/data-types/datetime.md).
+类型: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **示例**
 

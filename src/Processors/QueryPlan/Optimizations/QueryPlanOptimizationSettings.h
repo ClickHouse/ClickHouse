@@ -24,6 +24,12 @@ struct QueryPlanOptimizationSettings
     /// if distinct in order optimization is enabled
     bool distinct_in_order = false;
 
+    /// If read-in-order optimisation is enabled
+    bool read_in_order = true;
+
+    /// If aggregation-in-order optimisation is enabled
+    bool aggregation_in_order = false;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

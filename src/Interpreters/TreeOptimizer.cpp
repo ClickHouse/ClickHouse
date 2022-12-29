@@ -246,36 +246,6 @@ GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
     return data;
 }
 
-///eliminate functions of other GROUP BY keys
-void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
-{
-    if (!select_query->groupBy())
-        return;
-
-    auto group_by = select_query->groupBy();
-    const auto & group_by_keys = group_by->children;
-
-    ASTs modified; ///result
-
-    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
-
-    if (!group_by_keys_data.has_function)
-        return;
-
-    GroupByFunctionKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
-    GroupByFunctionKeysVisitor(visitor_data).visit(group_by);
-
-    modified.reserve(group_by_keys.size());
-
-    /// filling the result
-    for (const auto & group_key : group_by_keys)
-        if (group_by_keys_data.key_names.contains(group_key->getColumnName()))
-            modified.push_back(group_key);
-
-    /// modifying the input
-    group_by->children = modified;
-}
-
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
 void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, ASTPtr & node)
 {
@@ -788,9 +758,39 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         OptimizeIfChainsVisitor().visit(query);
 }
 
-void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query)
+void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query, ContextPtr context)
 {
-    RewriteCountVariantsVisitor::visit(query);
+    RewriteCountVariantsVisitor(context).visit(query);
+}
+
+///eliminate functions of other GROUP BY keys
+void TreeOptimizer::optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
+{
+    if (!select_query->groupBy())
+        return;
+
+    auto group_by = select_query->groupBy();
+    const auto & group_by_keys = group_by->children;
+
+    ASTs modified; ///result
+
+    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
+
+    if (!group_by_keys_data.has_function)
+        return;
+
+    GroupByFunctionKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
+    GroupByFunctionKeysVisitor(visitor_data).visit(group_by);
+
+    modified.reserve(group_by_keys.size());
+
+    /// filling the result
+    for (const auto & group_key : group_by_keys)
+        if (group_by_keys_data.key_names.contains(group_key->getColumnName()))
+            modified.push_back(group_key);
+
+    /// modifying the input
+    group_by->children = modified;
 }
 
 void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
@@ -835,7 +835,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         optimizeAnyFunctions(query);
 
     if (settings.optimize_normalize_count_variants)
-        optimizeCountConstantAndSumOne(query);
+        optimizeCountConstantAndSumOne(query, context);
 
     if (settings.optimize_multiif_to_if)
         optimizeMultiIfToIf(query);

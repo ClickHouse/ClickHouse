@@ -63,6 +63,7 @@ ASTPtr ASTIdentifier::clone() const
 {
     auto ret = std::make_shared<ASTIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    ret->cloneChildren();
     return ret;
 }
 

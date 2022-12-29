@@ -447,6 +447,7 @@
 "FORMAT"
 "formatDateTime"
 "formatReadableQuantity"
+"formatReadableDecimalSize"
 "formatReadableSize"
 "formatReadableTimeDelta"
 "formatRow"

@@ -31,6 +31,8 @@ ALTER TABLE mt_01451 ATTACH PART 'all_4_4_0'; -- { serverError 233 }
 
 SELECT v FROM mt_01451 ORDER BY v;
 
+SELECT name FROM system.parts WHERE table = 'mt_01451' AND active AND database = currentDatabase();
+
 SELECT '-- resume merges --';
 SYSTEM START MERGES mt_01451;
 OPTIMIZE TABLE mt_01451 FINAL;

@@ -21,6 +21,9 @@
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -47,6 +50,9 @@
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/InterpreterCreateIndexQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterCreateNamedCollectionQuery.h>
+#include <Interpreters/InterpreterDropNamedCollectionQuery.h>
+#include <Interpreters/InterpreterAlterNamedCollectionQuery.h>
 #include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterDescribeCacheQuery.h>
@@ -230,6 +236,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterAlterQuery>(query, context);
     }
+    else if (query->as<ASTAlterNamedCollectionQuery>())
+    {
+        return std::make_unique<InterpreterAlterNamedCollectionQuery>(query, context);
+    }
     else if (query->as<ASTCheckQuery>())
     {
         return std::make_unique<InterpreterCheckQuery>(query, context);
@@ -269,6 +279,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTDropAccessEntityQuery>())
     {
         return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
+    }
+    else if (query->as<ASTDropNamedCollectionQuery>())
+    {
+        return std::make_unique<InterpreterDropNamedCollectionQuery>(query, context);
     }
     else if (query->as<ASTGrantQuery>())
     {
@@ -313,6 +327,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTCreateIndexQuery>())
     {
         return std::make_unique<InterpreterCreateIndexQuery>(query, context);
+    }
+    else if (query->as<ASTCreateNamedCollectionQuery>())
+    {
+        return std::make_unique<InterpreterCreateNamedCollectionQuery>(query, context);
     }
     else if (query->as<ASTDropIndexQuery>())
     {

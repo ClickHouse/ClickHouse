@@ -179,8 +179,8 @@ protected:
     /// Is used to send logs from logs_queue to client in case of fatal errors.
     std::function<void()> fatal_error_callback;
 
-    /// It is used to avoid enabling the query profiler when you have multiple ThreadStatus in the same thread
-    bool query_profiler_enabled = true;
+    /// See setInternalThread()
+    bool internal_thread = false;
 
     /// Requires access to query_id.
     friend class MemoryTrackerThreadSwitcher;
@@ -225,11 +225,21 @@ public:
         return global_context.lock();
     }
 
-    void disableProfiling()
-    {
-        assert(!query_profiler_real && !query_profiler_cpu);
-        query_profiler_enabled = false;
-    }
+    /// "Internal" ThreadStatus is used for materialized views for separate
+    /// tracking into system.query_views_log
+    ///
+    /// You can have multiple internal threads, but only one non-internal with
+    /// the same thread_id.
+    ///
+    /// "Internal" thread:
+    /// - cannot have query profiler
+    ///   since the running (main query) thread should already have one
+    /// - should not try to obtain latest counter on detach
+    ///   because detaching of such threads will be done from a different
+    ///   thread_id, and some counters are not available (i.e. getrusage()),
+    ///   but anyway they are accounted correctly in the main ThreadStatus of a
+    ///   query.
+    void setInternalThread();
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();

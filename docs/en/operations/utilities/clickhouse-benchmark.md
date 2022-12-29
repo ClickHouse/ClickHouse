@@ -109,56 +109,38 @@ In the report you can find:
 
 `clickhouse-benchmark` can compare performances for two running ClickHouse servers.
 
-To use the comparison mode, specify endpoints of both servers by two pairs of `--host`, `--port` keys. Keys matched together by position in arguments list, the first `--host` is matched with the first `--port` and so on. `clickhouse-benchmark` establishes connections to both servers, then sends queries. Each query addressed to a randomly selected server. The results are shown for each server separately.
+To use the comparison mode, specify endpoints of both servers by two pairs of `--host`, `--port` keys. Keys matched together by position in arguments list, the first `--host` is matched with the first `--port` and so on. `clickhouse-benchmark` establishes connections to both servers, then sends queries. Each query addressed to a randomly selected server. The results are shown in a table.
 
 ## Example {#clickhouse-benchmark-example}
 
 ``` bash
-$ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark -i 10
+$ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10
 ```
 
 ``` text
 Loaded 1 queries.
 
-Queries executed: 6.
+Queries executed: 5.
 
-localhost:9000, queries 6, QPS: 6.153, RPS: 123398340.957, MiB/s: 941.455, result RPS: 61532982.200, result MiB/s: 469.459.
+localhost:9001, queries 2, QPS: 3.764, RPS: 75446929.370, MiB/s: 575.614, result RPS: 37639659.982, result MiB/s: 287.168.
+localhost:9000, queries 3, QPS: 3.815, RPS: 76466659.385, MiB/s: 583.394, result RPS: 38148392.297, result MiB/s: 291.049.
 
-0.000%      0.159 sec.
-10.000%     0.159 sec.
-20.000%     0.159 sec.
-30.000%     0.160 sec.
-40.000%     0.160 sec.
-50.000%     0.162 sec.
-60.000%     0.164 sec.
-70.000%     0.165 sec.
-80.000%     0.166 sec.
-90.000%     0.166 sec.
-95.000%     0.167 sec.
-99.000%     0.167 sec.
-99.900%     0.167 sec.
-99.990%     0.167 sec.
+0.000%          0.258 sec.      0.250 sec.
+10.000%         0.258 sec.      0.250 sec.
+20.000%         0.258 sec.      0.250 sec.
+30.000%         0.258 sec.      0.267 sec.
+40.000%         0.258 sec.      0.267 sec.
+50.000%         0.273 sec.      0.267 sec.
+60.000%         0.273 sec.      0.267 sec.
+70.000%         0.273 sec.      0.267 sec.
+80.000%         0.273 sec.      0.269 sec.
+90.000%         0.273 sec.      0.269 sec.
+95.000%         0.273 sec.      0.269 sec.
+99.000%         0.273 sec.      0.269 sec.
+99.900%         0.273 sec.      0.269 sec.
+99.990%         0.273 sec.      0.269 sec.
 
-
-
-Queries executed: 10.
-
-localhost:9000, queries 10, QPS: 6.082, RPS: 121959604.568, MiB/s: 930.478, result RPS: 60815551.642, result MiB/s: 463.986.
-
-0.000%      0.159 sec.
-10.000%     0.159 sec.
-20.000%     0.160 sec.
-30.000%     0.163 sec.
-40.000%     0.164 sec.
-50.000%     0.165 sec.
-60.000%     0.166 sec.
-70.000%     0.166 sec.
-80.000%     0.167 sec.
-90.000%     0.167 sec.
-95.000%     0.170 sec.
-99.000%     0.172 sec.
-99.900%     0.172 sec.
-99.990%     0.172 sec.
+No difference proven at 99.5% confidence
 ```
 
 [Original article](https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark.md) <!--hide-->

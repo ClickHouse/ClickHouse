@@ -23,7 +23,7 @@ namespace
     }
 
 
-    void formatAuthenticationData(const AuthenticationData & auth_data, bool show_password, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const AuthenticationData & auth_data, const IAST::FormatSettings & settings)
     {
         auto auth_type = auth_data.getType();
         if (auth_type == AuthenticationType::NO_PASSWORD)
@@ -93,7 +93,7 @@ namespace
                 throw Exception("AST: Unexpected authentication type " + toString(auth_type), ErrorCodes::LOGICAL_ERROR);
         }
 
-        if (password && !show_password)
+        if (password && !settings.show_secrets)
         {
             prefix = "";
             password.reset();
@@ -275,7 +275,24 @@ String ASTCreateUserQuery::getID(char) const
 
 ASTPtr ASTCreateUserQuery::clone() const
 {
-    return std::make_shared<ASTCreateUserQuery>(*this);
+    auto res = std::make_shared<ASTCreateUserQuery>(*this);
+
+    if (names)
+        res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+
+    if (default_roles)
+        res->default_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
+
+    if (default_database)
+        res->default_database = std::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
+
+    if (grantees)
+        res->grantees = std::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
+
+    if (settings)
+        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+
+    return res;
 }
 
 
@@ -307,7 +324,7 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
         formatRenameTo(*new_name, format);
 
     if (auth_data)
-        formatAuthenticationData(*auth_data, show_password, format);
+        formatAuthenticationData(*auth_data, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);
@@ -328,4 +345,18 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (grantees)
         formatGrantees(*grantees, format);
 }
+
+bool ASTCreateUserQuery::hasSecretParts() const
+{
+    if (auth_data)
+    {
+        auto auth_type = auth_data->getType();
+        if ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
+            || (auth_type == AuthenticationType::SHA256_PASSWORD)
+            || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD))
+            return true;
+    }
+    return childrenHaveSecretParts();
+}
+
 }

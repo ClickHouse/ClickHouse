@@ -528,16 +528,17 @@ namespace detail
 
             auto on_retriable_error = [&]()
             {
-                    retry_with_range_header = true;
-                    impl.reset();
-                    auto http_session = session->getSession();
-                    http_session->reset();
-                    sleepForMilliseconds(milliseconds_to_wait);
+                retry_with_range_header = true;
+                impl.reset();
+                auto http_session = session->getSession();
+                http_session->reset();
+                sleepForMilliseconds(milliseconds_to_wait);
             };
 
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
                 exception = nullptr;
+                initialization_error = InitializeError::NONE;
 
                 try
                 {

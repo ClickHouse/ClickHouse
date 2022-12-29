@@ -15,7 +15,7 @@ slug: /ru/operations/system-tables/mutations
 
 -   `command` ([String](../../sql-reference/data-types/string.md)) — команда мутации (часть запроса после `ALTER TABLE [db.]table`).
 
--   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — дата и время создания мутации.
+-   `create_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время создания мутации.
 
 -   `block_numbers.partition_id` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Для мутаций реплицированных таблиц массив содержит содержит номера партиций (по одной записи для каждой партиции). Для мутаций нереплицированных таблиц массив пустой.
 
@@ -39,7 +39,7 @@ slug: /ru/operations/system-tables/mutations
 
 -   `latest_failed_part` ([String](../../sql-reference/data-types/string.md)) — имя последнего куска, мутация которого не удалась.
 
--   `latest_fail_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — дата и время последней ошибки мутации.
+-   `latest_fail_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время последней ошибки мутации.
 
 -   `latest_fail_reason` ([String](../../sql-reference/data-types/string.md)) — причина последней ошибки мутации.
 

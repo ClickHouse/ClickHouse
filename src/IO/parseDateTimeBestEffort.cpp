@@ -659,6 +659,9 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
         fractional *= common::exp10_i64(scale - subsecond.digits);
     }
 
+    if constexpr (std::is_same_v<ReturnType, bool>)
+        return DecimalUtils::tryGetDecimalFromComponents<DateTime64>(whole, fractional, scale, res);
+
     res = DecimalUtils::decimalFromComponents<DateTime64>(whole, fractional, scale);
     return ReturnType(true);
 }

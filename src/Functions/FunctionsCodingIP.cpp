@@ -232,8 +232,8 @@ public:
 private:
     static bool isIPv4Mapped(const UInt8 * address)
     {
-        return (unalignedLoad<UInt64>(address) == 0) &&
-               ((unalignedLoad<UInt64>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
+        return (unalignedLoadLE<UInt64>(address) == 0) &&
+               ((unalignedLoadLE<UInt64>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
     }
 
     static void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
@@ -514,7 +514,11 @@ private:
     static void mapIPv4ToIPv6(UInt32 in, UInt8 * buf)
     {
         unalignedStore<UInt64>(buf, 0);
-        unalignedStore<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+            unalignedStoreLE<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
+#else
+            unalignedStoreLE<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(__builtin_bswap32(ntohl(in))) << 32));
+#endif
     }
 };
 
