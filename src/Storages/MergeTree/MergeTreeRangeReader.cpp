@@ -435,7 +435,7 @@ void MergeTreeRangeReader::ReadResult::setFilterConstTrue()
     final_filter = FilterWithCachedCount();
 }
 
-ColumnPtr andFilters(ColumnPtr c1, ColumnPtr c2)
+static ColumnPtr andFilters(ColumnPtr c1, ColumnPtr c2)
 {
     if (c1->size() != c2->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of filters don't match: {} and {}",
@@ -472,10 +472,10 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
     filterColumns(columns, filter);
 
     {
-        auto c = additional_columns.getColumns();
-        filterColumns(c, filter);
-        if (!c.empty())
-            additional_columns.setColumns(c);
+        auto tmp_columns = additional_columns.getColumns();
+        filterColumns(tmp_columns, filter);
+        if (!tmp_columns.empty())
+            additional_columns.setColumns(tmp_columns);
         else
             additional_columns.clear();
     }
