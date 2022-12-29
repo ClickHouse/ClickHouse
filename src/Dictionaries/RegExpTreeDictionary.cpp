@@ -271,7 +271,7 @@ String processBackRefs(const String & data, const re2_st::RE2 & searcher, const 
     searcher.Match(haystack, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
     for (const auto & item : pieces)
     {
-        if (item.ref_num >= 0)
+        if (item.ref_num >= 0 && item.ref_num < 10)
             result += matches[item.ref_num].ToString();
         else
             result += item.literal;
