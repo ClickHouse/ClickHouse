@@ -134,10 +134,6 @@ void TemplateBlockOutputFormat::writePrefix()
 void TemplateBlockOutputFormat::finalizeImpl()
 {
     size_t parts = format.format_idx_to_column_idx.size();
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
-
     for (size_t i = 0; i < parts; ++i)
     {
         auto type = std::make_shared<DataTypeUInt64>();
