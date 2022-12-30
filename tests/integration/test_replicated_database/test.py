@@ -1142,6 +1142,9 @@ def test_force_synchronous_settings(started_cluster):
 
 
 def test_recover_digest_mismatch(started_cluster):
+    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
+
     main_node.query(
         "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica1');"
     )
@@ -1151,16 +1154,19 @@ def test_recover_digest_mismatch(started_cluster):
 
     create_some_tables("recover_digest_mismatch")
 
+    main_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
+
     ways_to_corrupt_metadata = [
-        f"mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
-        f"sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
-        f"rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
+        "mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
+        "sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
+        "rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
         # f"rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/", # Directory already exists
-        f"rm -rf /var/lib/clickhouse/store",
+        "rm -rf /var/lib/clickhouse/store",
     ]
 
     for command in ways_to_corrupt_metadata:
-        need_remove_is_active_node = "rm -rf" in command
+        need_remove_is_active_node = "rm -f" in command
         dummy_node.stop_clickhouse(kill=not need_remove_is_active_node)
         dummy_node.exec_in_container(["bash", "-c", command])
         dummy_node.start_clickhouse()
@@ -1171,10 +1177,14 @@ def test_recover_digest_mismatch(started_cluster):
         )
         expected = main_node.query(query)
 
-        if "rm -rf" in command:
+        if "rm -f" in command:
             # NOTE Otherwise it fails to recreate ReplicatedMergeTree table due to "Replica already exists"
             main_node.query(
                 "SYSTEM DROP REPLICA '2' FROM DATABASE recover_digest_mismatch"
             )
 
+        dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
         assert_eq_with_retry(dummy_node, query, expected)
+
+    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
