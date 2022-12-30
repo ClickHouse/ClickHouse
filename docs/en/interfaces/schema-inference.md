@@ -1071,6 +1071,7 @@ DESC format(JSONEachRow, $$
 │ status  │ Nullable(String)        │              │                    │         │                  │                │
 │ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
 ```sql
 SET schema_inference_make_columns_nullable = 0
 DESC format(JSONEachRow, $$
