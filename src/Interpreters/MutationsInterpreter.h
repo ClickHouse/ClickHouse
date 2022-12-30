@@ -62,6 +62,7 @@ public:
         bool return_deleted_rows_ = false);
 
     void validate();
+    size_t evaluateCommandsSize();
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
