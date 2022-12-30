@@ -344,11 +344,14 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        auto it = std::find_if(children.begin(), children.end(), [&](const ASTPtr & node)
-        {
-            const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
-            return dict_attr->name == identifier_name;
-        });
+        const auto * it = std::find_if(
+            children.begin(),
+            children.end(),
+            [&](const ASTPtr & node)
+            {
+                const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
+                return dict_attr->name == identifier_name;
+            });
 
         if (it == children.end())
         {
@@ -624,20 +627,21 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 {
     ClickHouseDictionarySourceInfo info;
 
-    String host = config->getString("dictionary.source.clickhouse.host", "");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", 0);
+    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
+    UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
+
+    String host = config->getString("dictionary.source.clickhouse.host", "localhost");
+    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", default_port);
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
-    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
 
-    if (host.empty() || port == 0 || table.empty())
+    if (table.empty())
         return {};
 
     info.table_name = {database, table};
 
     try
     {
-        UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
         if (isLocalAddress({host, port}, default_port))
             info.is_local = true;
     }

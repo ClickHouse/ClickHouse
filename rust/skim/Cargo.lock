@@ -9,6 +9,7 @@ dependencies = [
  "cxx",
  "cxx-build",
  "skim",
+ "term",
 ]
 
 [[package]]
