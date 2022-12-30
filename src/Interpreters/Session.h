@@ -32,7 +32,7 @@ public:
     /// Stops using named sessions. The method must be called at the server shutdown.
     static void shutdownNamedSessions();
 
-    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure = false, const std::string & certificate = "");
+    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure = false);
     ~Session();
 
     Session(const Session &&) = delete;
@@ -64,8 +64,6 @@ public:
     ContextMutablePtr makeSessionContext(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_);
     ContextMutablePtr sessionContext() { return session_context; }
     ContextPtr sessionContext() const { return session_context; }
-
-    ContextPtr  sessionOrGlobalContext() const { return session_context ? session_context : global_context; }
 
     /// Makes a query context, can be used multiple times, with or without makeSession() called earlier.
     /// The query context will be created from a copy of a session context if it exists, or from a copy of

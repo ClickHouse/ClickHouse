@@ -70,21 +70,23 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
 {
     /// Wait for running tasks to finish and temporarily stop checking
-    auto pause_checking_parts = task->getExecLock();
-
-    std::lock_guard lock(parts_mutex);
-    for (auto it = parts_queue.begin(); it != parts_queue.end();)
+    stop();
+    SCOPE_EXIT({ start(); });
     {
-        if (drop_range_info.contains(MergeTreePartInfo::fromPartName(it->first, storage.format_version)))
+        std::lock_guard lock(parts_mutex);
+        for (auto it = parts_queue.begin(); it != parts_queue.end();)
         {
-            /// Remove part from the queue to avoid part resurrection
-            /// if we will check it and enqueue fetch after DROP/REPLACE execution.
-            parts_set.erase(it->first);
-            it = parts_queue.erase(it);
-        }
-        else
-        {
-            ++it;
+            if (drop_range_info.contains(MergeTreePartInfo::fromPartName(it->first, storage.format_version)))
+            {
+                /// Remove part from the queue to avoid part resurrection
+                /// if we will check it and enqueue fetch after DROP/REPLACE execution.
+                parts_set.erase(it->first);
+                it = parts_queue.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
         }
     }
 }
@@ -373,7 +375,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 LOG_ERROR(log, fmt::runtime(message));
 
                 /// Delete part locally.
-                storage.outdateBrokenPartAndCloneToDetached(part, "broken");
+                storage.forgetPartAndMoveToDetached(part, "broken");
 
                 /// Part is broken, let's try to find it and fetch.
                 searchForMissingPartAndFetchIfPossible(part_name, exists_in_zookeeper);
@@ -390,7 +392,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
             String message = "Unexpected part " + part_name + " in filesystem. Removing.";
             LOG_ERROR(log, fmt::runtime(message));
-            storage.outdateBrokenPartAndCloneToDetached(part, "unexpected");
+            storage.forgetPartAndMoveToDetached(part, "unexpected");
             return {part_name, false, message};
         }
         else

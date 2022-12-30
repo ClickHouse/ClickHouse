@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/math-functions
 sidebar_position: 44
 sidebar_label: "Математические функции"
 ---

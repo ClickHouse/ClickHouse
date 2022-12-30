@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/settings/query-complexity
 sidebar_position: 59
 sidebar_label: "Ограничения на сложность запроса"
 ---

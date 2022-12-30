@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/table-functions/merge
 sidebar_position: 38
 sidebar_label: merge
 ---

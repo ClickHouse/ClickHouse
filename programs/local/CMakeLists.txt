@@ -18,13 +18,6 @@ if(NOT CLICKHOUSE_ONE_SHARED)
     target_link_libraries(clickhouse-local-lib PRIVATE clickhouse-server-lib)
 endif()
 
-if (TARGET ch_rust::skim)
-    target_link_libraries(clickhouse-local-lib PRIVATE ch_rust::skim)
-endif()
-
-# Always use internal readpassphrase
-target_link_libraries(clickhouse-local-lib PRIVATE readpassphrase)
-
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
     set (WITH_COVERAGE ON)

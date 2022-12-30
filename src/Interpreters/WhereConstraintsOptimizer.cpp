@@ -170,7 +170,7 @@ void WhereConstraintsOptimizer::perform()
                 return replaceTermsToConstants(atom, compare_graph);
             })
             .reduce()
-            .pushNotInFunctions();
+            .pushNotInFuntions();
 
         if (optimize_append_index)
             AddIndexConstraintsOptimizer(metadata_snapshot).perform(cnf);

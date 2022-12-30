@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/asynchronous_metric_log
----
 # asynchronous_metric_log
 
 Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. Enabled by default.

@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/opentelemetry_span_log
----
 # system.opentelemetry_span_log {#system_tables-opentelemetry_span_log}
 
 Содержит информацию о [trace spans](https://opentracing.io/docs/overview/spans/) для выполненных запросов.

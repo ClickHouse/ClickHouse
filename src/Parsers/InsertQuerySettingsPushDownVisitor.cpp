@@ -55,7 +55,7 @@ void InsertQuerySettingsPushDownMatcher::visit(ASTSelectQuery & select_query, AS
             insert_settings.push_back(setting);
         else
         {
-            /// Do not overwrite setting that was passed for INSERT
+            /// Do not ovewrite setting that was passed for INSERT
             /// by settings that was passed for SELECT
         }
     }

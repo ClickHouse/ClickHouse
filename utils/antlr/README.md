@@ -1,7 +1,3 @@
-## This parser is unsupported
-
-We keep it in this repository for your curiosity. But this is not the parser of ClickHouse.
-
 ## How to generate source code files from grammar
 
 Grammar is located inside `ClickHouseLexer.g4` and `ClickHouseParser.g4` files.

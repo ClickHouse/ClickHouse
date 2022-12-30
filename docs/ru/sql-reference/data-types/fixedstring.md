@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/fixedstring
 sidebar_position: 45
 sidebar_label: FixedString(N)
 ---

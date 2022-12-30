@@ -16,7 +16,7 @@
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/HadoopSnappyReadBuffer.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -52,31 +52,7 @@ std::string toContentEncodingName(CompressionMethod method)
         case CompressionMethod::None:
             return "";
     }
-    UNREACHABLE();
-}
-
-CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
-{
-    /// The compression methods are ordered from most to least preferred.
-
-    if (std::string::npos != list.find("zstd"))
-        return CompressionMethod::Zstd;
-    else if (std::string::npos != list.find("br"))
-        return CompressionMethod::Brotli;
-    else if (std::string::npos != list.find("lz4"))
-        return CompressionMethod::Lz4;
-    else if (std::string::npos != list.find("snappy"))
-        return CompressionMethod::Snappy;
-    else if (std::string::npos != list.find("gzip"))
-        return CompressionMethod::Gzip;
-    else if (std::string::npos != list.find("deflate"))
-        return CompressionMethod::Zlib;
-    else if (std::string::npos != list.find("xz"))
-        return CompressionMethod::Xz;
-    else if (std::string::npos != list.find("bz2"))
-        return CompressionMethod::Bzip2;
-    else
-        return CompressionMethod::None;
+    __builtin_unreachable();
 }
 
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)
@@ -118,7 +94,7 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::None;
 
     throw Exception(
-        "Unknown compression method '" + hint + "'. Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods",
+        "Unknown compression method " + hint + ". Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods",
         ErrorCodes::NOT_IMPLEMENTED);
 }
 

@@ -1,5 +1,4 @@
 ---
-slug: /zh/getting-started/example-datasets/criteo
 sidebar_position: 18
 sidebar_label: Terabyte Click Logs from Criteo
 ---

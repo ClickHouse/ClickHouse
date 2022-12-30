@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/configuration-files
 sidebar_position: 50
 sidebar_label: Configuration Files
 ---

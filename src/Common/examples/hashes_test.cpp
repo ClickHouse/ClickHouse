@@ -5,7 +5,7 @@
 #include <Common/SipHash.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
-#include "config.h"
+#include "config_core.h"
 #if USE_SSL
 #   include <openssl/md5.h>
 #endif

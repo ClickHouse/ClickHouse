@@ -4,7 +4,6 @@
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/ProfileEvents.h>
-#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace ProfileEvents
@@ -26,8 +25,8 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
     AccessFlags required_access = getSourceAccessType();
-    auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
-    if (!(table_function_properties && table_function_properties->allow_readonly))
+    String function_name = getName();
+    if ((function_name != "null") && (function_name != "view") && (function_name != "viewIfPermitted"))
         required_access |= AccessType::CREATE_TEMPORARY_TABLE;
     context->checkAccess(required_access);
 

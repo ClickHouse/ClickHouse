@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/ym-dict-functions
 sidebar_position: 59
 sidebar_label: "Функции для работы со словарями Яндекс.Метрики"
 ---

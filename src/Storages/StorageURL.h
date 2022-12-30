@@ -35,7 +35,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
@@ -44,7 +44,7 @@ public:
     static ColumnsDescription getTableStructureFromData(
         const String & format,
         const String & uri,
-        CompressionMethod compression_method,
+        const String & compression_method,
         const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
@@ -67,7 +67,7 @@ protected:
         ASTPtr partition_by = nullptr);
 
     String uri;
-    CompressionMethod compression_method;
+    String compression_method;
     String format_name;
     // For URL engine, we use format settings from server context + `SETTINGS`
     // clause of the `CREATE` query. In this case, format_settings is set.
@@ -206,7 +206,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     struct Configuration
     {

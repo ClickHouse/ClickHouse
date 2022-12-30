@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/logical-functions
 sidebar_position: 37
 sidebar_label: "Логические функции"
 ---

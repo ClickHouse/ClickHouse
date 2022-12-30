@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/categoricalinformationvalue
 sidebar_position: 250
 ---
 

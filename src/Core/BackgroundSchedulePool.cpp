@@ -73,11 +73,6 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
     return true;
 }
 
-std::unique_lock<std::mutex> BackgroundSchedulePoolTaskInfo::getExecLock()
-{
-    return std::unique_lock{exec_mutex};
-}
-
 void BackgroundSchedulePoolTaskInfo::execute()
 {
     Stopwatch watch;
@@ -149,9 +144,9 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
 
     threads.resize(size_);
     for (auto & thread : threads)
-        thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
+        thread = ThreadFromGlobalPool([this] { threadFunction(); });
 
-    delayed_thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { delayExecutionThreadFunction(); });
+    delayed_thread = ThreadFromGlobalPool([this] { delayExecutionThreadFunction(); });
 }
 
 
@@ -168,7 +163,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 
     threads.resize(new_threads_count);
     for (size_t i = old_threads_count; i < new_threads_count; ++i)
-        threads[i] = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
+        threads[i] = ThreadFromGlobalPool([this] { threadFunction(); });
 }
 
 
@@ -244,14 +239,8 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
 }
 
 
-scope_guard BackgroundSchedulePool::attachToThreadGroup()
+void BackgroundSchedulePool::attachToThreadGroup()
 {
-    scope_guard guard = [&]()
-        {
-            if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
-        };
-
     std::lock_guard lock(delayed_tasks_mutex);
 
     if (thread_group)
@@ -264,7 +253,6 @@ scope_guard BackgroundSchedulePool::attachToThreadGroup()
         CurrentThread::initializeQuery();
         thread_group = CurrentThread::getGroup();
     }
-    return guard;
 }
 
 
@@ -272,7 +260,7 @@ void BackgroundSchedulePool::threadFunction()
 {
     setThreadName(thread_name.c_str());
 
-    auto detach_thread_guard = attachToThreadGroup();
+    attachToThreadGroup();
 
     while (!shutdown)
     {
@@ -303,7 +291,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName((thread_name + "/D").c_str());
 
-    auto detach_thread_guard = attachToThreadGroup();
+    attachToThreadGroup();
 
     while (!shutdown)
     {

@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import time
 import sys
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
@@ -52,7 +52,7 @@ class DockerImage:
             and self.only_amd64 == other.only_amd64
         )
 
-    def __lt__(self, other: Any) -> bool:
+    def __lt__(self, other) -> bool:
         if not isinstance(other, DockerImage):
             return False
         if self.parent and not other.parent:
@@ -270,7 +270,7 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache,
     push: bool,
     child: bool,
 ) -> List[Tuple[str, str, str]]:

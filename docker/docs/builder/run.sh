@@ -25,7 +25,6 @@ done
 sed -i '/onBrokenMarkdownLinks:/ s/ignore/error/g' docusaurus.config.js
 
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
-  export CI=true 
   exec yarn build "$@"
 fi
 

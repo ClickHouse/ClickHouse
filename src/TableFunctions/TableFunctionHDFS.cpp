@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 #include "registerTableFunctions.h"
 
 #if USE_HDFS

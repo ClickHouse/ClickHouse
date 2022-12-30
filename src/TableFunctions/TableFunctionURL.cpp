@@ -55,7 +55,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
         filename = configuration.url;
         format = configuration.format;
         if (format == "auto")
-            format = FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
+            format = FormatFactory::instance().getFormatFromFileName(filename, true);
         structure = configuration.structure;
         compression_method = configuration.compression_method;
     }
@@ -103,9 +103,10 @@ ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
     for (const auto & [header, value] : configuration.headers)
     {
+        auto value_literal = value.safeGet<String>();
         if (header == "Range")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
-        headers.emplace_back(header, value);
+        headers.emplace_back(std::make_pair(header, value_literal));
     }
     return headers;
 }
@@ -115,20 +116,10 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context)
     if (structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageURL::getTableStructureFromData(format,
-            filename,
-            chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-            getHeaders(),
-            std::nullopt,
-            context);
+        return StorageURL::getTableStructureFromData(format, filename, compression_method, getHeaders(), std::nullopt, context);
     }
 
     return parseColumnsListFromString(structure, context);
-}
-
-String TableFunctionURL::getFormatFromFirstArgument()
-{
-    return FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)

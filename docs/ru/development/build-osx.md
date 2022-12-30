@@ -1,6 +1,5 @@
 ---
-slug: /ru/development/build-osx
-sidebar_position: 66
+sidebar_position: 65
 sidebar_label: Сборка на Mac OS X
 ---
 

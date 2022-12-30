@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/functions/in-functions
 sidebar_position: 60
 sidebar_label: IN 运算符
 ---

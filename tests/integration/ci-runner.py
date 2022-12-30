@@ -168,8 +168,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Killing all alive docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
-            shell=True,
+            "timeout -s 9 10m docker kill $(docker ps -q)", shell=True
         )
     except subprocess.CalledProcessError as err:
         logging.info("docker kill excepted: " + str(err))
@@ -177,8 +176,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Removing all docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
-            shell=True,
+            "timeout -s 9 10m docker rm $(docker ps -a -q) --force", shell=True
         )
     except subprocess.CalledProcessError as err:
         logging.info("docker rm excepted: " + str(err))
@@ -983,21 +981,8 @@ if __name__ == "__main__":
     runner = ClickhouseIntegrationTestsRunner(result_path, params)
 
     logging.info("Running tests")
-
-    # Avoid overlaps with previous runs
-    logging.info("Clearing dmesg before run")
-    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-        "dmesg --clear", shell=True
-    )
-
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
-
-    # Dump dmesg (to capture possible OOMs)
-    logging.info("Dumping dmesg")
-    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-        "dmesg -T", shell=True
-    )
 
     status = (state, description)
     out_results_file = os.path.join(str(runner.path()), "test_results.tsv")

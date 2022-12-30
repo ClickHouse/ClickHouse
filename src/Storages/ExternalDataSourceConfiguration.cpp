@@ -307,8 +307,7 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
             {
                 const auto header_prefix = headers_prefix + header;
                 configuration.headers.emplace_back(
-                    headers_config->getString(header_prefix + ".name"),
-                    headers_config->getString(header_prefix + ".value"));
+                    std::make_pair(headers_config->getString(header_prefix + ".name"), headers_config->getString(header_prefix + ".value")));
             }
         }
 
@@ -447,9 +446,7 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
                 for (const auto & header : header_keys)
                 {
                     const auto header_prefix = config_prefix + ".headers." + header;
-                    configuration.headers.emplace_back(
-                        config.getString(header_prefix + ".name"),
-                        config.getString(header_prefix + ".value"));
+                    configuration.headers.emplace_back(std::make_pair(config.getString(header_prefix + ".name"), config.getString(header_prefix + ".value")));
                 }
             }
             else

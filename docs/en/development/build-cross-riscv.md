@@ -1,9 +1,9 @@
 ---
-slug: /en/development/build-cross-riscv
 sidebar_position: 68
-title: How to Build ClickHouse on Linux for RISC-V 64 Architecture 
 sidebar_label: Build on Linux for RISC-V 64
 ---
+
+# How to Build ClickHouse on Linux for RISC-V 64 Architecture 
 
 As of writing (11.11.2021) building for risc-v considered to be highly experimental. Not all features can be enabled.
 

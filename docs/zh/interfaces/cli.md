@@ -1,5 +1,4 @@
 ---
-slug: /zh/interfaces/cli
 sidebar_position: 17
 sidebar_label: 命令行客户端
 ---

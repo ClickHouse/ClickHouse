@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/processes
----
 # system.processes {#system_tables-processes}
 
 Используется для реализации запроса `SHOW PROCESSLIST`.

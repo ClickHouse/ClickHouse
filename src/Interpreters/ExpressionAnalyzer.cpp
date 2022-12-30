@@ -23,7 +23,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
@@ -256,7 +255,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
     auto * select_query = query->as<ASTSelectQuery>();
 
     makeAggregateDescriptions(temp_actions, aggregate_descriptions);
-    has_aggregation = !aggregate_descriptions.empty() || (select_query && select_query->groupBy());
+    has_aggregation = !aggregate_descriptions.empty() || (select_query && (select_query->groupBy() || select_query->having()));
 
     if (!has_aggregation)
     {
@@ -413,7 +412,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
             if (group_asts.empty())
             {
                 select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-                has_aggregation = !aggregate_descriptions.empty();
+                has_aggregation = select_query->having() || !aggregate_descriptions.empty();
             }
         }
 
@@ -425,7 +424,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         aggregated_columns = temp_actions->getNamesAndTypesList();
 
     for (const auto & desc : aggregate_descriptions)
-        aggregated_columns.emplace_back(desc.column_name, desc.function->getResultType());
+        aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
 }
 
 
@@ -1012,26 +1011,12 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
 
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block);
 
-
-static std::shared_ptr<IJoin> chooseJoinAlgorithm(
-    std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
+static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
-    const auto & settings = context->getSettings();
-
-    Block left_sample_block(left_sample_columns);
-    for (auto & column : left_sample_block)
-    {
-        if (!column.column)
-            column.column = column.type->createColumn();
-    }
-
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
-
-    std::vector<String> tried_algorithms;
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::DIRECT));
         JoinPtr direct_join = tryKeyValueJoin(analyzed_join, right_sample_block);
         if (direct_join)
         {
@@ -1044,7 +1029,6 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE) ||
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE))
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::PARTIAL_MERGE));
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
     }
@@ -1054,37 +1038,22 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE) ||
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
         if (analyzed_join->allowParallelHashJoin())
-            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
+            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::FULL_SORTING_MERGE));
         if (FullSortingMergeJoin::isSupported(analyzed_join))
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
     }
 
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
-    {
-        tried_algorithms.push_back(toString(JoinAlgorithm::GRACE_HASH));
-        if (GraceHashJoin::isSupported(analyzed_join))
-            return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
-    }
-
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
-    {
-        tried_algorithms.push_back(toString(JoinAlgorithm::AUTO));
+        return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
 
-        if (MergeJoin::isSupported(analyzed_join))
-            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
-    }
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Can't execute {} join algorithm for this strictness/kind and right storage type",
-        fmt::join(tried_algorithms, " or "));
+    throw Exception("Can't execute any of specified algorithms for specified strictness/kind and right storage type",
+                     ErrorCodes::NOT_IMPLEMENTED);
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
@@ -1219,7 +1188,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
         joined_plan->addStep(std::move(converting_step));
     }
 
-    JoinPtr join = chooseJoinAlgorithm(analyzed_join, left_columns, joined_plan, getContext());
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan, getContext());
     return join;
 }
 
@@ -1964,7 +1933,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             /// TODO correct conditions
             optimize_aggregation_in_order =
                     context->getSettingsRef().optimize_aggregation_in_order
-                    && (!context->getSettingsRef().query_plan_aggregation_in_order)
                     && storage && query.groupBy();
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
@@ -2041,13 +2009,20 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         }
 
         optimize_read_in_order =
-            settings.optimize_read_in_order && (!settings.query_plan_read_in_order)
+            settings.optimize_read_in_order
             && storage
             && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query_analyzer.hasWindow()
             && !query.final()
             && join_allow_read_in_order;
+
+        if (storage && optimize_read_in_order)
+        {
+            Names columns_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_sorting_key.begin(), columns_for_sorting_key.end());
+        }
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
@@ -2074,24 +2049,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 for (const auto & f : w.window_functions)
                 {
                     query_analyzer.columns_after_window.push_back(
-                        {f.column_name, f.aggregate_function->getResultType()});
-                }
-            }
-
-            // Here we need to set order by expression as required output to avoid
-            // their removal from the ActionsDAG.
-            const auto * select_query = query_analyzer.getSelectQuery();
-            if (select_query->orderBy())
-            {
-                for (auto & child : select_query->orderBy()->children)
-                {
-                    auto * ast = child->as<ASTOrderByElement>();
-                    ASTPtr order_expression = ast->children.at(0);
-                    if (auto * function = order_expression->as<ASTFunction>();
-                        function && (function->is_window_function || function->compute_after_window_functions))
-                        continue;
-                    const String & column_name = order_expression->getColumnName();
-                    chain.getLastStep().addRequiredOutput(column_name);
+                        {f.column_name, f.aggregate_function->getReturnType()});
                 }
             }
 
@@ -2114,6 +2072,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             // produced the expressions required to calculate window functions.
             // They are not needed in the final SELECT result. Knowing the correct
             // list of columns is important when we apply SELECT DISTINCT later.
+            const auto * select_query = query_analyzer.getSelectQuery();
             for (const auto & child : select_query->select()->children)
             {
                 step.addRequiredOutput(child->getColumnName());

@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/grants
----
 # system.grants {#system_tables-grants}
 
 Привилегии пользовательских аккаунтов ClickHouse.

@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/
 sidebar_label: "Начало работы"
 sidebar_position: 8
 ---

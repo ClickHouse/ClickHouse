@@ -2,10 +2,16 @@
 
 #include <Disks/IDisk.h>
 
+#include <Poco/Util/Application.h>
+
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/copyData.h>
+
 #include <boost/program_options.hpp>
 
+#include <Common/TerminalSize.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Poco/Util/Application.h>
 
 #include <memory>
 
@@ -37,7 +43,7 @@ public:
 protected:
     void printHelpMessage() const;
 
-    static String validatePathAndGetAsRelative(const String & path);
+    static String fullPathWithValidate(const DiskPtr & disk, const String & path);
 
 public:
     String command_name;
@@ -49,16 +55,13 @@ protected:
     po::positional_options_description positional_options_description;
 };
 
-using CommandPtr = std::unique_ptr<ICommand>;
-
 }
 
-DB::CommandPtr makeCommandCopy();
-DB::CommandPtr makeCommandLink();
-DB::CommandPtr makeCommandList();
-DB::CommandPtr makeCommandListDisks();
-DB::CommandPtr makeCommandMove();
-DB::CommandPtr makeCommandRead();
-DB::CommandPtr makeCommandRemove();
-DB::CommandPtr makeCommandWrite();
-DB::CommandPtr makeCommandMkDir();
+std::unique_ptr <DB::ICommand> makeCommandCopy();
+std::unique_ptr <DB::ICommand> makeCommandLink();
+std::unique_ptr <DB::ICommand> makeCommandList();
+std::unique_ptr <DB::ICommand> makeCommandListDisks();
+std::unique_ptr <DB::ICommand> makeCommandMove();
+std::unique_ptr <DB::ICommand> makeCommandRead();
+std::unique_ptr <DB::ICommand> makeCommandRemove();
+std::unique_ptr <DB::ICommand> makeCommandWrite();

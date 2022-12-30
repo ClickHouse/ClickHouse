@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/attach
 sidebar_position: 40
 sidebar_label: ATTACH
 ---
