@@ -51,7 +51,6 @@ function clone
     )
 
     ls -lath ||:
-
 }
 
 function wget_with_retry
@@ -385,7 +384,7 @@ th { cursor: pointer; }
 <tr>
   <td>AST Fuzzer</td>
   <td>$(cat status.txt)</td>
-  <td style="white-space: pre;">$(clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt)</td>
+  <td style="white-space: pre;">$(clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt)</td>
 </tr>
 </table>
 </body>
