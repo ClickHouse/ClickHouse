@@ -1,7 +1,6 @@
 #include <Storages/MessageQueueSink.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Core/BackgroundSchedulePool.h>
 
 namespace DB
 {
