@@ -149,13 +149,12 @@ class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
     static constexpr char EC2_IMDS_TOKEN_TTL_HEADER[] = "x-aws-ec2-metadata-token-ttl-seconds";
 
-    static constexpr char EC2_DEFAULT_METADATA_ENDPOINT[] = "http://169.254.169.254";
-
 public:
     /// See EC2MetadataClient.
 
-    explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+    explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
         : Aws::Internal::AWSHttpResourceClient(client_configuration)
+        , endpoint(endpoint_)
         , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
     {
     }
@@ -180,7 +179,7 @@ public:
         {
             std::lock_guard locker(token_mutex);
 
-            LOG_TRACE(logger, "Getting default credentials for EC2 instance.");
+            LOG_TRACE(logger, "Getting default credentials for ec2 instance from {}", endpoint);
             auto result = GetResourceWithAWSWebServiceResult(endpoint.c_str(), EC2_SECURITY_CREDENTIALS_RESOURCE, nullptr);
             credentials_string = result.GetPayload();
             if (result.GetResponseCode() == Aws::Http::HttpResponseCode::UNAUTHORIZED)
@@ -286,11 +285,49 @@ public:
     }
 
 private:
-    const Aws::String endpoint = EC2_DEFAULT_METADATA_ENDPOINT;
+    const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
     mutable Aws::String token;
     Poco::Logger * logger;
 };
+
+std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+{
+    Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
+    auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
+    if (ec2_metadata_service_endpoint.empty())
+    {
+        Aws::String ec2_metadata_service_endpoint_mode = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
+        if (ec2_metadata_service_endpoint_mode.length() == 0)
+        {
+            ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
+        }
+        else
+        {
+            if (ec2_metadata_service_endpoint_mode.length() == 4)
+            {
+                if (Aws::Utils::StringUtils::CaselessCompare(ec2_metadata_service_endpoint_mode.c_str(), "ipv4"))
+                {
+                    ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
+                }
+                else if (Aws::Utils::StringUtils::CaselessCompare(ec2_metadata_service_endpoint_mode.c_str(), "ipv6"))
+                {
+                    ec2_metadata_service_endpoint = "http://[fd00:ec2::254]";
+                }
+                else
+                {
+                    LOG_ERROR(logger, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE can only be set to ipv4 or ipv6, received: {}", ec2_metadata_service_endpoint_mode);
+                }
+            }
+            else
+            {
+                LOG_ERROR(logger, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE can only be set to ipv4 or ipv6, received: {}", ec2_metadata_service_endpoint_mode);
+            }
+        }
+    }
+    LOG_INFO(logger, "Using IMDS endpoint: {}", ec2_metadata_service_endpoint);
+    return std::make_shared<AWSEC2MetadataClient>(client_configuration, ec2_metadata_service_endpoint.c_str());
+}
 
 class AWSEC2InstanceProfileConfigLoader : public Aws::Config::AWSProfileConfigLoader
 {
@@ -646,7 +683,7 @@ public:
 
                 aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
 
-                auto ec2_metadata_client = std::make_shared<AWSEC2MetadataClient>(aws_client_configuration);
+                auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
                 auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !use_insecure_imds_request);
 
                 AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));
