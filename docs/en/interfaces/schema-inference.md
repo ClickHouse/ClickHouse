@@ -62,13 +62,13 @@ Let's say we have a file `hobbies.jsonl` in JSONEachRow format in the `user_file
 
 ClickHouse can read this data without you specifying its structure:
 ```sql
-:) SELECT * FROM file('hobbies.jsonl')
+SELECT * FROM file('hobbies.jsonl')
 ```
 ```response
 ┌─id─┬─age─┬─name───┬─hobbies──────────────────────────┐
 │  1 │  25 │ Josh   │ ['football','cooking','music']   │
 │  2 │  19 │ Alan   │ ['tennis','art']                 │
-│  3 │  32 │ Lana   │ ['fintess','reading','shopping'] │
+│  3 │  32 │ Lana   │ ['fitness','reading','shopping'] │
 │  4 │  47 │ Brayan │ ['movies','skydiving']           │
 └────┴─────┴────────┴──────────────────────────────────┘
 ```
@@ -96,21 +96,26 @@ If the list of columns is not specified in `CREATE TABLE` query, the structure o
 
 Let's use the file `hobbies.jsonl`. We can create a table with engine `File` with the data from this file:
 ```sql
-:) CREATE TABLE hobbies ENGINE=File(JSONEachRow, 'hobbies.jsonl')
-
+CREATE TABLE hobbies ENGINE=File(JSONEachRow, 'hobbies.jsonl')
+```
+```response
 Ok.
-
-:) SELECT * FROM hobbies
-
+```
+```sql
+SELECT * FROM hobbies
+```
+```response
 ┌─id─┬─age─┬─name───┬─hobbies──────────────────────────┐
 │  1 │  25 │ Josh   │ ['football','cooking','music']   │
 │  2 │  19 │ Alan   │ ['tennis','art']                 │
-│  3 │  32 │ Lana   │ ['fintess','reading','shopping'] │
+│  3 │  32 │ Lana   │ ['fitness','reading','shopping'] │
 │  4 │  47 │ Brayan │ ['movies','skydiving']           │
 └────┴─────┴────────┴──────────────────────────────────┘
-
-:) DESCRIBE TABLE hobbies
-
+```
+```sql
+DESCRIBE TABLE hobbies
+```
+```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Nullable(Int64)         │              │                    │         │                  │                │
 │ age     │ Nullable(Int64)         │              │                    │         │                  │                │
@@ -127,16 +132,21 @@ Ok.
 
 Let's use the file `hobbies.jsonl`. We can query the data from this file using `clickhouse-local`:
 ```shell
-$ clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='DESCRIBE TABLE hobbies'
+clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='DESCRIBE TABLE hobbies'
+```
+```response
 id	Nullable(Int64)
 age	Nullable(Int64)
 name	Nullable(String)
 hobbies	Array(Nullable(String))
-
-$ clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM hobbies'
+```
+```shell
+clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM hobbies'
+```
+```response
 1	25	Josh	['football','cooking','music']
 2	19	Alan	['tennis','art']
-3	32	Lana	['fintess','reading','shopping']
+3	32	Lana	['fitness','reading','shopping']
 4	47	Brayan	['movies','skydiving']
 ```
 
@@ -268,9 +278,10 @@ that allows cleaning the schema cache for all sources, or for a specific source.
 Let's try to infer the structure of a sample dataset from s3 `github-2022.ndjson.gz` and see how the schema inference cache works:
 
 ```sql
-:) DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
 SETTINGS allow_experimental_object_type = 1
-
+```
+```response
 ┌─name───────┬─type─────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ type       │ Nullable(String)         │              │                    │         │                  │                │
 │ actor      │ Object(Nullable('json')) │              │                    │         │                  │                │
@@ -280,10 +291,12 @@ SETTINGS allow_experimental_object_type = 1
 └────────────┴──────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 
 5 rows in set. Elapsed: 0.601 sec.
-
-:) DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+```
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
 SETTINGS allow_experimental_object_type = 1
-
+```
+```response
 ┌─name───────┬─type─────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ type       │ Nullable(String)         │              │                    │         │                  │                │
 │ actor      │ Object(Nullable('json')) │              │                    │         │                  │                │
@@ -300,7 +313,7 @@ As you can see, the second query succeeded almost instantly.
 Let's try to change some settings that can affect inferred schema:
 
 ```sql
-:) DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
 SETTINGS input_format_json_read_objects_as_strings = 1
 
 ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -536,12 +549,13 @@ This setting is disabled by default.
 **Example**
 
 ```sql
-:) SET input_format_json_read_numbers_as_strings = 1;
-:) DESC format(JSONEachRow, $$
+SET input_format_json_read_numbers_as_strings = 1;
+DESC format(JSONEachRow, $$
                                 {"value" : 1055}
                                 {"value" : "unknown"}
                             $$)
-
+```
+```response
 ┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(String) │              │                    │         │                  │                │
 └───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -556,12 +570,13 @@ This setting is enabled by default.
 **Example:**
 
 ```sql
-:) SET input_format_json_read_bools_as_numbers = 1;
-:) DESC format(JSONEachRow, $$
+SET input_format_json_read_bools_as_numbers = 1;
+DESC format(JSONEachRow, $$
                                 {"value" : true}
                                 {"value" : 42}
                             $$)
-
+```
+```response
 ┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(Int64) │              │                    │         │                  │                │
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -580,8 +595,9 @@ and ClickHouse will treat all columns as Strings.
 
 Integers, Floats, Bools, Strings:
 ```sql
-:) DESC format(CSV, '42,42.42,true,"Hello,World!"')
-
+DESC format(CSV, '42,42.42,true,"Hello,World!"')
+```
+```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
 │ c2   │ Nullable(Float64) │              │                    │         │                  │                │
@@ -592,8 +608,9 @@ Integers, Floats, Bools, Strings:
 
 Strings without quotes:
 ```sql
-:) DESC format(CSV, 'Hello world!,World hello!')
-
+DESC format(CSV, 'Hello world!,World hello!')
+```
+```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
 │ c2   │ Nullable(String) │              │                    │         │                  │                │
@@ -603,8 +620,9 @@ Strings without quotes:
 Dates, DateTimes:
 
 ```sql
-:) DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00"')
-
+DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00"')
+```
+```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
 │ c2   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
@@ -613,15 +631,18 @@ Dates, DateTimes:
 
 Arrays:
 ```sql
-:) DESC format(CSV, '"[1,2,3]","[[1, 2], [], [3, 4]]"')
-
+DESC format(CSV, '"[1,2,3]","[[1, 2], [], [3, 4]]"')
+```
+```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
 │ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) DESC format(CSV, $$"['Hello', 'world']","[['Abc', 'Def'], []]"$$)
-
+```
+```sql
+DESC format(CSV, $$"['Hello', 'world']","[['Abc', 'Def'], []]"$$)
+```
+```response
 ┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(String))        │              │                    │         │                  │                │
 │ c2   │ Array(Array(Nullable(String))) │              │                    │         │                  │                │
@@ -630,8 +651,9 @@ Arrays:
 
 If an array contains null, ClickHouse will use types from the other array elements:
 ```sql
-:) DESC format(CSV, '"[NULL, 42, NULL]"')
-
+DESC format(CSV, '"[NULL, 42, NULL]"')
+```
+```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -639,8 +661,9 @@ If an array contains null, ClickHouse will use types from the other array elemen
 
 Maps:
 ```sql
-:) DESC format(CSV, $$"{'key1' : 42, 'key2' : 24}"$$)
-
+DESC format(CSV, $$"{'key1' : 42, 'key2' : 24}"$$)
+```
+```response
 ┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
 └──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -648,9 +671,9 @@ Maps:
 
 Nested Arrays and Maps:
 ```sql
-:) DESC format(CSV, $$"[{'key1' : [[42, 42], []], 'key2' : [[null], [42]]}]"$$)
-
-
+DESC format(CSV, $$"[{'key1' : [[42, 42], []], 'key2' : [[null], [42]]}]"$$)
+```
+```response
 ┌─name─┬─type──────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Map(String, Array(Array(Nullable(Int64))))) │              │                    │         │                  │                │
 └──────┴───────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -658,8 +681,9 @@ Nested Arrays and Maps:
 
 If ClickHouse cannot determine the type inside quotes, because the data contains only nulls, ClickHouse will treat it as String:
 ```sql
-:) DESC format(CSV, '"[NULL, NULL]"')
-
+DESC format(CSV, '"[NULL, NULL]"')
+```
+```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -667,9 +691,10 @@ If ClickHouse cannot determine the type inside quotes, because the data contains
 
 Example with disabled setting `input_format_csv_use_best_effort_in_schema_inference`:
 ```sql
-:) SET input_format_csv_use_best_effort_in_schema_inference = 0
-:) DESC format(CSV, '"[1,2,3]",42.42,Hello World!')
-
+SET input_format_csv_use_best_effort_in_schema_inference = 0
+DESC format(CSV, '"[1,2,3]",42.42,Hello World!')
+```
+```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
 │ c2   │ Nullable(String) │              │                    │         │                  │                │
@@ -690,17 +715,20 @@ and ClickHouse will treat all columns as Strings.
 
 Integers, Floats, Bools, Strings:
 ```sql
-:) DESC format(TSV, '42	42.42	true	Hello,World!')
-
+DESC format(TSV, '42	42.42	true	Hello,World!')
+```
+```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
 │ c2   │ Nullable(Float64) │              │                    │         │                  │                │
 │ c3   │ Nullable(Bool)    │              │                    │         │                  │                │
 │ c4   │ Nullable(String)  │              │                    │         │                  │                │
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) DESC format(TSKV, 'int=42	float=42.42	bool=true	string=Hello,World!\n')
-
+```
+```sql
+DESC format(TSKV, 'int=42	float=42.42	bool=true	string=Hello,World!\n')
+```
+```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ int    │ Nullable(Int64)   │              │                    │         │                  │                │
 │ float  │ Nullable(Float64) │              │                    │         │                  │                │
@@ -712,7 +740,9 @@ Integers, Floats, Bools, Strings:
 Dates, DateTimes:
 
 ```sql
-:) DESC format(TSV, '2020-01-01	2020-01-01 00:00:00')
+DESC format(TSV, '2020-01-01	2020-01-01 00:00:00')
+```
+```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
 │ c2   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
@@ -721,15 +751,18 @@ Dates, DateTimes:
 
 Arrays:
 ```sql
-:) DESC format(TSV, '[1,2,3]	[[1, 2], [], [3, 4]]')
-
+DESC format(TSV, '[1,2,3]	[[1, 2], [], [3, 4]]')
+```
+```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
 │ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) DESC format(TSV, '[''Hello'', ''world'']	[[''Abc'', ''Def''], []]')
-
+```
+```sql
+DESC format(TSV, '[''Hello'', ''world'']	[[''Abc'', ''Def''], []]')
+```
+```response
 ┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(String))        │              │                    │         │                  │                │
 │ c2   │ Array(Array(Nullable(String))) │              │                    │         │                  │                │
@@ -738,8 +771,9 @@ Arrays:
 
 If an array contains null, ClickHouse will use types from the other array elements:
 ```sql
-:) DESC format(TSV, '[NULL, 42, NULL]')
-
+DESC format(TSV, '[NULL, 42, NULL]')
+```
+```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -747,8 +781,9 @@ If an array contains null, ClickHouse will use types from the other array elemen
 
 Tuples:
 ```sql
-:) DESC format(TSV, $$(42, 'Hello, world!')$$)
-
+DESC format(TSV, $$(42, 'Hello, world!')$$)
+```
+```response
 ┌─name─┬─type─────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Tuple(Nullable(Int64), Nullable(String)) │              │                    │         │                  │                │
 └──────┴──────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -756,8 +791,9 @@ Tuples:
 
 Maps:
 ```sql
-:) DESC format(TSV, $${'key1' : 42, 'key2' : 24}$$)
-
+DESC format(TSV, $${'key1' : 42, 'key2' : 24}$$)
+```
+```response
 ┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
 └──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -765,8 +801,9 @@ Maps:
 
 Nested Arrays, Tuples and Maps:
 ```sql
-:) DESC format(TSV, $$[{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}]$$)
-
+DESC format(TSV, $$[{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}]$$)
+```
+```response
 ┌─name─┬─type────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Map(String, Array(Tuple(Nullable(Int64), Nullable(String))))) │              │                    │         │                  │                │
 └──────┴─────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -774,8 +811,9 @@ Nested Arrays, Tuples and Maps:
 
 If ClickHouse cannot determine the type, because the data contains only nulls, ClickHouse will treat it as String:
 ```sql
-:) DESC format(TSV, '[NULL, NULL]')
-
+DESC format(TSV, '[NULL, NULL]')
+```
+```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -783,9 +821,10 @@ If ClickHouse cannot determine the type, because the data contains only nulls, C
 
 Example with disabled setting `input_format_tsv_use_best_effort_in_schema_inference`:
 ```sql
-:) SET input_format_tsv_use_best_effort_in_schema_inference = 0
-:) DESC format(TSV, '[1,2,3]	42.42	Hello World!')
-
+SET input_format_tsv_use_best_effort_in_schema_inference = 0
+DESC format(TSV, '[1,2,3]	42.42	Hello World!')
+```
+```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
 │ c2   │ Nullable(String) │              │                    │         │                  │                │
@@ -802,8 +841,9 @@ the recursive parser similar to how literals are parsed.
 
 Integers, Floats, Bools, Strings:
 ```sql
-:) DESC format(Values, $$(42, 42.42, true, 'Hello,World!')$$)
-
+DESC format(Values, $$(42, 42.42, true, 'Hello,World!')$$)
+```
+```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
 │ c2   │ Nullable(Float64) │              │                    │         │                  │                │
@@ -815,7 +855,9 @@ Integers, Floats, Bools, Strings:
 Dates, DateTimes:
 
 ```sql
-:) DESC format(Values, $$('2020-01-01', '2020-01-01 00:00:00')$$)
+DESC format(Values, $$('2020-01-01', '2020-01-01 00:00:00')$$)
+```
+```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
 │ c2   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
@@ -824,8 +866,9 @@ Dates, DateTimes:
 
 Arrays:
 ```sql
-:) DESC format(Values, '([1,2,3], [[1, 2], [], [3, 4]])')
-
+DESC format(Values, '([1,2,3], [[1, 2], [], [3, 4]])')
+```
+```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
 │ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
@@ -834,8 +877,9 @@ Arrays:
 
 If an array contains null, ClickHouse will use types from the other array elements:
 ```sql
-:) DESC format(Values, '([NULL, 42, NULL])')
-
+DESC format(Values, '([NULL, 42, NULL])')
+```
+```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -843,8 +887,9 @@ If an array contains null, ClickHouse will use types from the other array elemen
 
 Tuples:
 ```sql
-:) DESC format(Values, $$((42, 'Hello, world!'))$$)
-
+DESC format(Values, $$((42, 'Hello, world!'))$$)
+```
+```response
 ┌─name─┬─type─────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Tuple(Nullable(Int64), Nullable(String)) │              │                    │         │                  │                │
 └──────┴──────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -852,8 +897,9 @@ Tuples:
 
 Maps:
 ```sql
-:) DESC format(Values, $$({'key1' : 42, 'key2' : 24})$$)
-
+DESC format(Values, $$({'key1' : 42, 'key2' : 24})$$)
+```
+```response
 ┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
 └──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -861,8 +907,9 @@ Maps:
 
 Nested Arrays, Tuples and Maps:
 ```sql
-:) DESC format(Values, $$([{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}])$$)
-
+DESC format(Values, $$([{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}])$$)
+```
+```response
 ┌─name─┬─type────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Map(String, Array(Tuple(Nullable(Int64), Nullable(String))))) │              │                    │         │                  │                │
 └──────┴─────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -870,8 +917,9 @@ Nested Arrays, Tuples and Maps:
 
 If ClickHouse cannot determine the type, because the data contains only nulls, an exception will be thrown:
 ```sql
-:) DESC format(Values, '([NULL, NULL])')
-
+DESC format(Values, '([NULL, NULL])')
+```
+```response
 Code: 652. DB::Exception: Received from localhost:9000. DB::Exception:
 Cannot determine type for column 'c1' by first 1 rows of data,
 most likely this column contains only Nulls or empty Arrays/Maps.
@@ -880,9 +928,10 @@ most likely this column contains only Nulls or empty Arrays/Maps.
 
 Example with disabled setting `input_format_tsv_use_best_effort_in_schema_inference`:
 ```sql
-:) SET input_format_tsv_use_best_effort_in_schema_inference = 0
-:) DESC format(TSV, '[1,2,3]	42.42	Hello World!')
-
+SET input_format_tsv_use_best_effort_in_schema_inference = 0
+DESC format(TSV, '[1,2,3]	42.42	Hello World!')
+```
+```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
 │ c2   │ Nullable(String) │              │                    │         │                  │                │
@@ -898,7 +947,7 @@ the data type for each value according to escaping rule.
 **Example**
 
 ```sql
-:) SET format_custom_row_before_delimiter = '<row_before_delimiter>',
+SET format_custom_row_before_delimiter = '<row_before_delimiter>',
        format_custom_row_after_delimiter = '<row_after_delimiter>\n',
        format_custom_row_between_delimiter = '<row_between_delimiter>\n',
        format_custom_result_before_delimiter = '<result_before_delimiter>\n',
@@ -906,13 +955,14 @@ the data type for each value according to escaping rule.
        format_custom_field_delimiter = '<field_delimiter>',
        format_custom_escaping_rule = 'Quoted'
 
-:) DESC format(CustomSeparated, $$<result_before_delimiter>
+DESC format(CustomSeparated, $$<result_before_delimiter>
 <row_before_delimiter>42.42<field_delimiter>'Some string 1'<field_delimiter>[1, NULL, 3]<row_after_delimiter>
 <row_between_delimiter>
 <row_before_delimiter>NULL<field_delimiter>'Some string 3'<field_delimiter>[1, 2, NULL]<row_after_delimiter>
 <result_after_delimiter>
 $$)
-
+```
+```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Float64)      │              │                    │         │                  │                │
 │ c2   │ Nullable(String)       │              │                    │         │                  │                │
@@ -941,17 +991,18 @@ And a file `row_format` with the next content:
 Then we can make the next queries:
 
 ```sql
-:) SET format_template_rows_between_delimiter = '<row_between_delimiter>\n',
+SET format_template_rows_between_delimiter = '<row_between_delimiter>\n',
        format_template_row = 'row_format',
        format_template_resultset = 'resultset_format'
 
-:) DESC format(Template, $$<result_before_delimiter>
+DESC format(Template, $$<result_before_delimiter>
 <row_before_delimiter>42.42<field_delimiter_1>'Some string 1'<field_delimiter_2>[1, null, 2]<row_after_delimiter>
 <row_between_delimiter>
 <row_before_delimiter>\N<field_delimiter_1>'Some string 3'<field_delimiter_2>[1, 2, null]<row_after_delimiter>
 <result_after_delimiter>
 $$)
-
+```
+```response
 ┌─name─────┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ column_1 │ Nullable(Float64)      │              │                    │         │                  │                │
 │ column_2 │ Nullable(String)       │              │                    │         │                  │                │
@@ -967,12 +1018,13 @@ data type for each value according to the specified escaping rule.
 **Example**
 
 ```sql
-:) SET format_regexp = '^Line: value_1=(.+?), value_2=(.+?), value_3=(.+?)',
+SET format_regexp = '^Line: value_1=(.+?), value_2=(.+?), value_3=(.+?)',
        format_regexp_escaping_rule = 'CSV'
        
-:) DESC format(Regexp, $$Line: value_1=42, value_2="Some string 1", value_3="[1, NULL, 3]"
+DESC format(Regexp, $$Line: value_1=42, value_2="Some string 1", value_3="[1, NULL, 3]"
 Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
-
+```
+```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)        │              │                    │         │                  │                │
 │ c2   │ Nullable(String)       │              │                    │         │                  │                │
@@ -997,8 +1049,9 @@ The list of column names to use in schema inference for formats without explicit
 **Example**
 
 ```sql
-:) DESC format(TSV, 'Hello, World!	42	[1, 2, 3]') settings column_names_for_schema_inference = 'str,int,arr'
-
+DESC format(TSV, 'Hello, World!	42	[1, 2, 3]') settings column_names_for_schema_inference = 'str,int,arr'
+```
+```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ str  │ Nullable(String)       │              │                    │         │                  │                │
 │ int  │ Nullable(Int64)        │              │                    │         │                  │                │
@@ -1014,9 +1067,10 @@ This setting can be used to specify the types of columns that could not be deter
 **Example**
 
 ```sql
-:) DESC format(JSONEachRow, '{"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}'
+DESC format(JSONEachRow, '{"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}'
 SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)'
-
+```
+```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Nullable(Int64)         │              │                    │         │                  │                │
 │ age     │ LowCardinality(UInt8)   │              │                    │         │                  │                │
@@ -1036,12 +1090,13 @@ Enabled by default.
 **Examples**
 
 ```sql
-:) SET schema_inference_make_columns_nullable = 0
-:) DESC format(JSONEachRow, $$
+SET schema_inference_make_columns_nullable = 0
+DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
                             $$)
-
+```
+```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Nullable(Int64)         │              │                    │         │                  │                │
 │ age     │ Nullable(Int64)         │              │                    │         │                  │                │
@@ -1050,8 +1105,8 @@ Enabled by default.
 │ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 
-:) SET schema_inference_make_columns_nullable = 0
-:) DESC format(JSONEachRow, $$
+SET schema_inference_make_columns_nullable = 0
+DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
                             $$)
@@ -1076,40 +1131,47 @@ Enabled by default.
 **Examples**
 
 ```sql
-:) SET input_format_try_infer_integers = 0
-:) DESC format(JSONEachRow, $$
+SET input_format_try_infer_integers = 0
+DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2}
                             $$)
-
+```
+```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ number │ Nullable(Float64) │              │                    │         │                  │                │
 └────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) SET input_format_try_infer_integers = 1
-:) DESC format(JSONEachRow, $$
+```
+```sql
+SET input_format_try_infer_integers = 1
+DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2}
                             $$)
-
+```
+```response
 ┌─name───┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ number │ Nullable(Int64) │              │                    │         │                  │                │
 └────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) DESC format(JSONEachRow, $$
+```
+```sql
+DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 18446744073709551615}
                             $$)
-
+```
+```response
 ┌─name───┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ number │ Nullable(UInt64) │              │                    │         │                  │                │
 └────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) DESC format(JSONEachRow, $$
+```
+```sql
+DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2.2}
                             $$)
-
+```
+```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ number │ Nullable(Float64) │              │                    │         │                  │                │
 └────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -1126,31 +1188,36 @@ Enabled by default.
 **Examples**
 
 ```sql
-:) SET input_format_try_infer_datetimes = 0
-:) DESC format(JSONEachRow, $$
+SET input_format_try_infer_datetimes = 0
+DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "2022-01-01 00:00:00.000"}
                             $$)
-
+```
+```response
 ┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ datetime │ Nullable(String) │              │                    │         │                  │                │
 └──────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) SET input_format_try_infer_datetimes = 1
-:) DESC format(JSONEachRow, $$
+```
+```sql
+SET input_format_try_infer_datetimes = 1
+DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "2022-01-01 00:00:00.000"}
                             $$)
-
+```
+```response
 ┌─name─────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ datetime │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 └──────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) DESC format(JSONEachRow, $$
+```
+```sql
+DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "unknown"}
                             $$)
-
+```
+```response
 ┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ datetime │ Nullable(String) │              │                    │         │                  │                │
 └──────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -1169,31 +1236,36 @@ Enabled by default.
 **Examples**
 
 ```sql
-:) SET input_format_try_infer_datetimes = 0, input_format_try_infer_dates = 0
-:) DESC format(JSONEachRow, $$
+SET input_format_try_infer_datetimes = 0, input_format_try_infer_dates = 0
+DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "2022-01-01"}
                             $$)
-
+```
+```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ date │ Nullable(String) │              │                    │         │                  │                │
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) SET input_format_try_infer_dates = 1
-:) DESC format(JSONEachRow, $$
+```
+```sql
+SET input_format_try_infer_dates = 1
+DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "2022-01-01"}
                             $$)
-
+```
+```response
 ┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ date │ Nullable(Date) │              │                    │         │                  │                │
 └──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) DESC format(JSONEachRow, $$
+```
+```sql
+DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "unknown"}
                             $$)
-
+```
+```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ date │ Nullable(String) │              │                    │         │                  │                │
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -1214,12 +1286,13 @@ While schema inference for such formats, ClickHouse reads the first two rows and
 **Example**
 
 ```sql
-:) DESC format(TSVWithNamesAndTypes,
+DESC format(TSVWithNamesAndTypes,
 $$num	str	arr
 UInt8	String	Array(UInt8)
 42	Hello, World!	[1,2,3]
 $$)
-
+```
+```response
 ┌─name─┬─type─────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ num  │ UInt8        │              │                    │         │                  │                │
 │ str  │ String       │              │                    │         │                  │                │
@@ -1234,7 +1307,7 @@ In schema inference for such formats, ClickHouse reads this metadata.
 
 **Example**
 ```sql
-:) DESC format(JSON, $$
+DESC format(JSON, $$
 {
 	"meta":
 	[
@@ -1271,7 +1344,8 @@ In schema inference for such formats, ClickHouse reads this metadata.
 	}
 }
 $$)
-
+```
+```response
 ┌─name─┬─type─────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ num  │ UInt8        │              │                    │         │                  │                │
 │ str  │ String       │              │                    │         │                  │                │
@@ -1486,8 +1560,9 @@ In this format, ClickHouse reads the whole line from the data into a single colu
 **Example**
 
 ```sql
-:) DESC format(LineAsString, 'Hello\nworld!')
-
+DESC format(LineAsString, 'Hello\nworld!')
+```
+```response
 ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ line │ String │              │                    │         │                  │                │
 └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -1500,8 +1575,9 @@ In this format, ClickHouse reads the whole JSON object from the data into a sing
 **Example**
 
 ```sql
-:) DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}')
-
+DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}')
+```
+```response
 ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ json │ String │              │                    │         │                  │                │
 └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -1516,8 +1592,9 @@ Note: This format works only if `allow_experimental_object_type` is enabled.
 **Example**
 
 ```sql
-:) DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_experimental_object_type=1
-
+DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_experimental_object_type=1
+```
+```response
 ┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ json │ Object('json') │              │                    │         │                  │                │
 └──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
