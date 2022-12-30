@@ -341,20 +341,6 @@ void createMergeTreeSequentialSource(
         storage, storage_snapshot, std::move(data_part), std::move(columns_to_read), apply_deleted_mask, filter, std::move(context), log);
 
     plan.addStep(std::move(reading));
-
-    // if (filter)
-    // {
-    //     if (filter->getOutputs().size() != 1)
-    //         throw Exception(
-    //             ErrorCodes::LOGICAL_ERROR,
-    //             "Filter condition is exprected to have single output. Filter {}",
-    //             filter->dumpDAG());
-
-    //     auto column_name = filter->getOutputs().front()->result_name;
-
-    //     auto filtering = std::make_unique<FilterStep>(plan.getCurrentDataStream(), filter, column_name, true);
-    //     plan.addStep(std::move(filtering));
-    // }
 }
 
 }
