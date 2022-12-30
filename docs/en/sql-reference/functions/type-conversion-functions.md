@@ -166,7 +166,117 @@ Result:
 
 ## toDate
 
-Alias: `DATE`.
+Converts the argument to `Date` data type. 
+
+If the argument is `DateTime` or `DateTime64`, it truncates it, leaving the date component of the DateTime:
+```
+milovidov-desktop :) SELECT now() AS x, toDate(x)
+
+SELECT
+    now() AS x,
+    toDate(x)
+
+┌───────────────────x─┬─toDate(now())─┐
+│ 2022-12-30 13:44:17 │    2022-12-30 │
+└─────────────────────┴───────────────┘
+```
+
+If the argument is a string, it is parsed as Date or DateTime. If it was parsed as DateTime, the date component is being used:
+```
+milovidov-desktop :) SELECT toDate('2022-12-30') AS x, toTypeName(x)
+
+SELECT
+    toDate('2022-12-30') AS x,
+    toTypeName(x)
+
+┌──────────x─┬─toTypeName(toDate('2022-12-30'))─┐
+│ 2022-12-30 │ Date                             │
+└────────────┴──────────────────────────────────┘
+
+1 row in set. Elapsed: 0.001 sec. 
+
+milovidov-desktop :) SELECT toDate('2022-12-30 01:02:03') AS x, toTypeName(x)
+
+SELECT
+    toDate('2022-12-30 01:02:03') AS x,
+    toTypeName(x)
+
+┌──────────x─┬─toTypeName(toDate('2022-12-30 01:02:03'))─┐
+│ 2022-12-30 │ Date                                      │
+└────────────┴───────────────────────────────────────────┘
+```
+
+If the argument is number and it looks like a unix timestamp (is greater than 65535), it is interpreted as a DateTime, then truncated to Date in the current timezone. The timezone argument can be specified as a second argument of the function. The truncation to Date depends on the timezone:
+
+```
+SELECT
+    now() AS current_time,
+    toUnixTimestamp(current_time) AS ts,
+    toDateTime(ts) AS time_Amsterdam,
+    toDateTime(ts, 'Pacific/Apia') AS time_Samoa,
+    toDate(time_Amsterdam) AS date_Amsterdam,
+    toDate(time_Samoa) AS date_Samoa,
+    toDate(ts) AS date_Amsterdam_2,
+    toDate(ts, 'Pacific/Apia') AS date_Samoa_2
+
+Query id: edf430b5-b4b3-4dbf-bb5a-47daace05d13
+
+Row 1:
+──────
+current_time:     2022-12-30 13:51:54
+ts:               1672404714
+time_Amsterdam:   2022-12-30 13:51:54
+time_Samoa:       2022-12-31 01:51:54
+date_Amsterdam:   2022-12-30
+date_Samoa:       2022-12-31
+date_Amsterdam_2: 2022-12-30
+date_Samoa_2:     2022-12-31
+```
+
+The example above demonstrates how the same unix timestamp can be interpreted as different dates in different time zones.
+
+If the argument is number and it is smaller than 65536, it is interpreted as the number of days since 1970-01-01 (a unix day) and converted to Date. It corresponds the internal numeric representation of the `Date` data type. Example:
+
+```
+milovidov-desktop :) SELECT toDate(12345)
+
+SELECT toDate(12345)
+
+┌─toDate(12345)─┐
+│    2003-10-20 │
+└───────────────┘
+```
+
+This conversion does not depend on timezones.
+
+If the argument does not fit in the range of the Date type, it results in an implementation defined behavior, that can saturate to the maximum supported date or overflow:
+```
+milovidov-desktop :) SELECT toDate(1e10)
+
+SELECT toDate(10000000000.)
+
+┌─toDate(10000000000.)─┐
+│           2106-02-07 │
+└──────────────────────┘
+```
+
+The function `toDate` can be also written in alternative forms:
+
+```
+milovidov-desktop :) SELECT now() AS time, toDate(time), DATE(time), CAST(time AS Date)
+
+SELECT
+    now() AS time,
+    toDate(time),
+    DATE(time),
+    CAST(time, 'Date')
+
+┌────────────────time─┬─toDate(now())─┬─DATE(now())─┬─CAST(now(), 'Date')─┐
+│ 2022-12-30 13:54:58 │    2022-12-30 │  2022-12-30 │          2022-12-30 │
+└─────────────────────┴───────────────┴─────────────┴─────────────────────┘
+```
+
+Have a nice day working with dates and times.
 
 ## toDateOrZero
 
