@@ -3625,7 +3625,7 @@ z	IPv4
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
 If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
 
-Default value: `false`.
+Default value: `true`.
 
 ## input_format_try_infer_integers {#input_format_try_infer_integers}
 
