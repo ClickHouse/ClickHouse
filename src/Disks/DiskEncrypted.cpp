@@ -209,7 +209,8 @@ DiskEncrypted::DiskEncrypted(
 }
 
 DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
-    : DiskDecorator(settings_->wrapped_disk)
+    : IDisk(name_)
+    , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
