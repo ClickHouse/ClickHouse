@@ -21,7 +21,8 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Freeform')"
 
 echo "CSV"
 
-echo -e "a,b,c,"\\nd"\\na,b,c,"\\nd"" > $DATA_FILE
+echo -e "a,b,c,\"\nd\"
+a,b,c,\"\nd\"" > $DATA_FILE
 
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform')"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Freeform')"
@@ -52,7 +53,7 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Freeform')"
 
 echo "JSONL"
 
-echo -e "{\"msg\":1,\"type\":\"log\",\"nested\":{\"object\":"a",\"field\":\"something_a\"}}
+echo -e "{\"msg\":1,\"type\":\"log\",\"nested\":{\"object\":\"a\",\"field\":\"something_a\"}}
 {\"nested\":{\"object\":\"b\",\"field\":\"\"},\"msg\":2,\"type\":\"log\",\"skipped\":\"this will be skpped\"}" > $DATA_FILE
 
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform')"
