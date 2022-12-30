@@ -15,6 +15,7 @@ namespace DB
 class ArrowFormatUtil
 {
 public:
+    /// For orc format, nested_type_has_index_ = true.
     explicit ArrowFormatUtil(bool ignore_case_, bool import_nested_, bool nested_type_has_index_, bool allow_missing_columns_)
         : ignore_case(ignore_case_)
         , import_nested(import_nested_)
