@@ -401,7 +401,7 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    if (!ddl_worker)
+    if (!ddl_worker || is_probably_dropped)
         return false;
     return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 }
@@ -473,9 +473,10 @@ void DatabaseReplicated::startupTables(ThreadPool & thread_pool, LoadingStrictne
     chassert(!TSA_SUPPRESS_WARNING_FOR_READ(tables_metadata_digest));
     TSA_SUPPRESS_WARNING_FOR_WRITE(tables_metadata_digest) = digest;
 
-    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     if (is_probably_dropped)
         return;
+
+    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
 }
 
@@ -491,7 +492,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool
     LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
 
     /// Database is probably being dropped
-    if (!local_context->getZooKeeperMetadataTransaction() && !ddl_worker->isCurrentlyActive())
+    if (!local_context->getZooKeeperMetadataTransaction() && (!ddl_worker || !ddl_worker->isCurrentlyActive()))
         return true;
 
     UInt64 local_digest = 0;
@@ -1019,8 +1020,51 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     return ast;
 }
 
+void DatabaseReplicated::dropReplica(
+    DatabaseReplicated * database, const String & database_zookeeper_path, const String & full_replica_name)
+{
+    assert(!database || database_zookeeper_path == database->zookeeper_path);
+
+    if (full_replica_name.find('/') != std::string::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name: {}", full_replica_name);
+
+    auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
+
+    String database_mark = zookeeper->get(database_zookeeper_path);
+    if (database_mark != REPLICATED_DATABASE_MARK)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} does not look like a path of Replicated database", database_zookeeper_path);
+
+    String database_replica_path = fs::path(database_zookeeper_path) / "replicas" / full_replica_name;
+    if (!zookeeper->exists(database_replica_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} does not exist (database path: {})",
+                        full_replica_name, database_zookeeper_path);
+
+    if (zookeeper->exists(database_replica_path + "/active"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} is active, cannot drop it (database path: {})",
+                        full_replica_name, database_zookeeper_path);
+
+    zookeeper->set(database_replica_path, DROPPED_MARK, -1);
+    /// Notify other replicas that cluster configuration was changed (if we can)
+    if (database)
+        database->createEmptyLogEntry(zookeeper);
+
+    zookeeper->tryRemoveRecursive(database_replica_path);
+    if (zookeeper->tryRemove(database_zookeeper_path + "/replicas") == Coordination::Error::ZOK)
+    {
+        /// It was the last replica, remove all metadata
+        zookeeper->tryRemoveRecursive(database_zookeeper_path);
+    }
+}
+
 void DatabaseReplicated::drop(ContextPtr context_)
 {
+    if (is_probably_dropped)
+    {
+        /// Don't need to drop anything from ZooKeeper
+        DatabaseAtomic::drop(context_);
+        return;
+    }
+
     auto current_zookeeper = getZooKeeper();
     current_zookeeper->set(replica_path, DROPPED_MARK, -1);
     createEmptyLogEntry(current_zookeeper);
@@ -1038,8 +1082,6 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
-    if (is_probably_dropped)
-        return;
     if (ddl_worker)
         ddl_worker->shutdown();
 }
@@ -1055,7 +1097,7 @@ void DatabaseReplicated::shutdown()
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
+    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
     if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);

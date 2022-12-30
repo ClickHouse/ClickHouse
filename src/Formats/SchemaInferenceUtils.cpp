@@ -738,7 +738,7 @@ namespace
                 if (settings.json.allow_object_type)
                     return std::make_shared<DataTypeObject>("json", true);
                 if (settings.json.read_objects_as_strings)
-                    return makeNullable(std::make_shared<DataTypeString>());
+                    return std::make_shared<DataTypeString>();
                 return nullptr;
             }
 
