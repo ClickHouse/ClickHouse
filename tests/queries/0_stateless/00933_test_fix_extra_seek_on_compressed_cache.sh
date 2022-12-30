@@ -13,11 +13,11 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE small_table (a UInt64 default 0, n UInt
 $CLICKHOUSE_CLIENT --query="INSERT INTO small_table (n) SELECT * from system.numbers limit 100000;"
 $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE small_table FINAL;"
 
-cached_query="SELECT count() FROM small_table where n > 0;"
+cached_query="SELECT count() FROM small_table where n > 0 SETTINGS use_uncompressed_cache=1;"
 
-$CLICKHOUSE_CLIENT --use_uncompressed_cache=1 --query="$cached_query" &> /dev/null
+$CLICKHOUSE_CLIENT --query="$cached_query" &> /dev/null
 
-$CLICKHOUSE_CLIENT --use_uncompressed_cache=1 --query_id="test-query-uncompressed-cache" --query="$cached_query" &> /dev/null
+$CLICKHOUSE_CLIENT --query_id="test-query-uncompressed-cache" --query="$cached_query" &> /dev/null
 
 $CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS"
 
