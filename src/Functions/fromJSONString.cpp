@@ -199,9 +199,6 @@ private:
                 auto jmap(val.get_object().value_unsafe());
                 Map map(jmap.count_fields());
                 size_t index = 0;
-                // Map map;
-                // map.reserve(jmap.count_fields());
-                // Tuple kv(2);
                 for (auto field: jmap)
                 {
                     Tuple kv(2);
