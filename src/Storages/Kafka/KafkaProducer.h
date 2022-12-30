@@ -18,7 +18,7 @@ namespace DB
 class Block;
 using ProducerPtr = std::shared_ptr<cppkafka::Producer>;
 
-class KafkaProducer : public AsynchronousMessageProducer
+class KafkaProducer : public IMessageProducer
 {
 public:
     KafkaProducer(
@@ -30,21 +30,10 @@ public:
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
+    void start(const ContextPtr &) override {}
+    void finish() override;
+
 private:
-    void stopProducingTask() override;
-    void finishImpl() override;
-
-    String getProducingTaskName() const override { return "KafkaProducingTask"; }
-
-    void startProducingTaskLoop() override;
-
-    struct Payload
-    {
-        String message;
-        std::optional<String> key;
-        std::optional<std::chrono::milliseconds> timestamp;
-    };
-
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaProducers};
 
     ProducerPtr producer;
@@ -55,7 +44,6 @@ private:
 
     std::optional<size_t> key_column_index;
     std::optional<size_t> timestamp_column_index;
-    ConcurrentBoundedQueue<Payload> payloads;
 };
 
 }
