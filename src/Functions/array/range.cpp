@@ -126,7 +126,7 @@ private:
 
         size_t total_values = 0;
         size_t pre_values = 0;
-        std::vector<size_t> row_length(input_rows_count);
+        PODArray<size_t> row_length(input_rows_count);
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -138,6 +138,8 @@ private:
                 row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step) + 1;
             else if (start > end_data[row_idx] && step < 0)
                 row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) + 1) / static_cast<__int128_t>(step) + 1;
+            else
+                row_length[row_idx] = 0;
 
             pre_values += row_length[row_idx];
 
@@ -161,8 +163,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            for (size_t idx = 0; idx < row_length[row_idx]; idx++)
-                out_data[offset++] = static_cast<T>(start + offset * step);
+            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
+            {
+                out_data[offset] = static_cast<T>(start + offset * step);
+                ++offset;
+            }
             out_offsets[row_idx] = offset;
         }
 
@@ -183,7 +188,7 @@ private:
 
         size_t total_values = 0;
         size_t pre_values = 0;
-        std::vector<size_t> row_length(input_rows_count);
+        PODArray<size_t> row_length(input_rows_count);
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -195,7 +200,8 @@ private:
                 row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step) + 1;
             else if (start_data[row_idx] > end_data[row_idx] && step < 0)
                 row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) + 1) / static_cast<__int128_t>(step) + 1;
-
+            else
+                row_length[row_idx] = 0;
 
             pre_values += row_length[row_idx];
 
@@ -241,7 +247,7 @@ private:
 
         size_t total_values = 0;
         size_t pre_values = 0;
-        std::vector<size_t> row_length(input_rows_count);
+        PODArray<size_t> row_length(input_rows_count);
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -253,6 +259,8 @@ private:
                 row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
             else if (start > end_data[row_idx] && step_data[row_idx] < 0)
                 row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) + 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+            else
+                row_length[row_idx] = 0;
 
             pre_values += row_length[row_idx];
 
@@ -301,7 +309,7 @@ private:
 
         size_t total_values = 0;
         size_t pre_values = 0;
-        std::vector<size_t> row_length(input_rows_count);
+        PODArray<size_t> row_length(input_rows_count);
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -312,6 +320,8 @@ private:
                 row_length[row_idx] = (static_cast<__int128_t>(end_start[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
             else if (start_data[row_idx] > end_start[row_idx] && step_data[row_idx] < 0)
                 row_length[row_idx] = (static_cast<__int128_t>(end_start[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) + 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+            else
+                row_length[row_idx] = 0;
 
             pre_values += row_length[row_idx];
 
