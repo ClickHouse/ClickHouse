@@ -39,7 +39,7 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     max_part_number = config.getUInt64(key + "max_part_number", max_part_number);
     max_single_part_upload_size = config.getUInt64(key + "max_single_part_upload_size", max_single_part_upload_size);
     max_single_operation_copy_size = config.getUInt64(key + "max_single_operation_copy_size", max_single_operation_copy_size);
-    
+
     /// This configuration is only applicable to s3. Other types of object storage are not applicable or have different meanings.
     storage_class_name = config.getString(config_prefix + ".s3_storage_class", storage_class_name);
     storage_class_name = Poco::toUpperInPlace(storage_class_name);
