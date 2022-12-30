@@ -390,10 +390,14 @@ th { cursor: pointer; }
 <tr>
   <td>AST Fuzzer</td>
   <td>$(cat status.txt)</td>
-  <td style="white-space: pre;">$(clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt)</td>
+  <td style="white-space: pre;">$(
+    clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt
+  )</td>
 </tr>
 <tr>
-  <td colspan="3" style="white-space: pre; overflow-x: scroll;">$(cat fatal.log)</td>
+  <td colspan="3" style="white-space: pre; overflow-x: scroll;">$(
+    clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < fatal.log || cat fatal.log
+  )</td>
 </tr>
 </table>
 </body>
