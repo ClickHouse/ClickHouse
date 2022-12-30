@@ -271,8 +271,8 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nulla
     assert node1.query("select 1") == "1\n"
 
     node1.query(f"DROP TABLE {table_name}")
-    conn.close()
     drop_mysql_table(conn, table_name)
+    conn.close()
 
 
 def test_mysql_insert(started_cluster):
