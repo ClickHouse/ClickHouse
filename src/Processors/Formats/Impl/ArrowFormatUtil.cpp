@@ -5,9 +5,7 @@
 #include <arrow/type.h>
 #include <arrow/type_fwd.h>
 #include <boost/algorithm/string/case_conv.hpp>
-#include <Poco/Logger.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -15,6 +13,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+/// Count the number of indices for types.
+/// For orc format, nested_type_has_index is true, a complex type takes one index.
 size_t ArrowFormatUtil::countIndicesForType(std::shared_ptr<arrow::DataType> type)
 {
     if (type->id() == arrow::Type::LIST)
@@ -46,6 +46,15 @@ size_t ArrowFormatUtil::countIndicesForType(std::shared_ptr<arrow::DataType> typ
     return 1;
 }
 
+/// Recursively count every field indices. Return a map
+///   - key: field name with full path. eg. a struct field's name is like a.x.i
+///   - value: a pair, first value refers to this field's start index, second value refers to how many
+///   indices this field take. eg.
+/// For a parquet schema {x: int , y: {i: int, j: int}}, the return will be
+/// - x: (0, 1)
+/// - y: (1, 2)
+/// - y.i: (1, 1)
+/// - y.j: (2, 1)
 std::map<std::string, std::pair<int, int>>
 ArrowFormatUtil::calculateFieldIndices(const arrow::Schema & schema)
 {
@@ -98,12 +107,15 @@ void ArrowFormatUtil::calculateFieldIndices(const arrow::Field & field,
     index_info.second = current_start_index - index_info.first;
 }
 
+/// Only collect the required fields' indices. Eg. when just read a field of a struct,
+/// don't need to collect the whole indices in this struct.
 std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
     const arrow::Schema & schema)
 {
     std::vector<int> required_indices;
     std::set<std::string> added_nested_table;
     std::set<int> added_indices;
+    /// Flat all named fields' index information into a map.
     auto fields_indices = calculateFieldIndices(schema);
     for (size_t i = 0; i < header.columns(); ++i)
     {
@@ -111,7 +123,10 @@ std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
         std::string col_name = named_col.name;
         if (ignore_case)
             boost::to_lower(col_name);
+        /// Since all named fields are flatten into a map, we should found the column by name
+        /// in this map.
         auto it = fields_indices.find(col_name);
+        /// It may be a nested table, not a named struct but a list field.
         if (it == fields_indices.end() && import_nested)
         {
             col_name = Nested::splitName(col_name).first;
@@ -120,6 +135,7 @@ std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
             added_nested_table.insert(col_name);
             it = fields_indices.find(col_name);
         }
+
         if (it == fields_indices.end())
         {
             if (!allow_missing_columns)
