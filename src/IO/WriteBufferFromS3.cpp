@@ -1,4 +1,3 @@
-#include <aws/s3/model/StorageClass.h>
 #include "config.h"
 #include <Common/ProfileEvents.h>
 
@@ -19,6 +18,7 @@
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/StorageClass.h>
 
 #include <utility>
 
