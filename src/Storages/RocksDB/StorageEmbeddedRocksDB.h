@@ -80,6 +80,8 @@ public:
         const std::vector<std::string> & keys,
         PaddedPODArray<UInt8> * out_null_map) const;
 
+    bool supportsDelete() const override { return true; }
+
 private:
     const String primary_key;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
