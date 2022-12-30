@@ -1050,18 +1050,18 @@ SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(St
 ### schema_inference_make_columns_nullable
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference.
+If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference.
 
 Enabled by default.
 
 **Examples**
 
 ```sql
-SET schema_inference_make_columns_nullable = 0
+SET schema_inference_make_columns_nullable = 1
 DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1071,12 +1071,15 @@ DESC format(JSONEachRow, $$
 │ status  │ Nullable(String)        │              │                    │         │                  │                │
 │ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
+```
+```sql
 SET schema_inference_make_columns_nullable = 0
 DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
-                            $$)
+                          $$)
+```
+```response
 
 ┌─name────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Int64            │              │                    │         │                  │                │
