@@ -1,4 +1,7 @@
 #include "StorageSystemParts.h"
+#include <atomic>
+#include <memory>
+#include <string_view>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -14,6 +17,29 @@
 #include <Common/hex.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/Context.h>
+
+namespace
+{
+std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
+{
+    switch (state)
+    {
+    case DB::DataPartRemovalState::NOT_ATTEMPTED:
+        return "Cleanup thread hasn't seen this part yet";
+    case DB::DataPartRemovalState::VISIBLE_TO_TRANSACTIONS:
+        return "Part maybe visible for transactions";
+    case DB::DataPartRemovalState::NON_UNIQUE_OWNERSHIP:
+        return "Part ownership is not unique";
+    case DB::DataPartRemovalState::NOT_REACHED_REMOVAL_TIME:
+        return "Part hasn't reached removal time yet";
+    case DB::DataPartRemovalState::HAS_SKIPPED_MUTATION_PARENT:
+        return "Waiting mutation parent to be removed";
+    case DB::DataPartRemovalState::REMOVED:
+        return "Part was selected to be removed";
+    }
+}
+
+}
 
 namespace DB
 {
@@ -92,6 +118,9 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
 
         {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>()},
+
+        {"last_removal_attemp_time",                    std::make_shared<DataTypeDateTime>()},
+        {"removal_state",                               std::make_shared<DataTypeString>()},
     }
     )
 {
@@ -310,6 +339,10 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->hasLightweightDelete());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt64>(part->last_removal_attemp_time.load(std::memory_order_relaxed)));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(getRemovalStateDescription(part->removal_state.load(std::memory_order_relaxed)));
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

@@ -131,9 +131,9 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
 
     DataTypePtr storage_type = DataTypeFactory::instance().get(argument_types[0]->getName());
 
-    if (!function->getReturnType()->equals(*removeLowCardinality(storage_type)))
+    if (!function->getResultType()->equals(*removeLowCardinality(storage_type)))
     {
-        throw Exception("Incompatible data types between aggregate function '" + function->getName() + "' which returns " + function->getReturnType()->getName() + " and column storage type " + storage_type->getName(),
+        throw Exception("Incompatible data types between aggregate function '" + function->getName() + "' which returns " + function->getResultType()->getName() + " and column storage type " + storage_type->getName(),
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
