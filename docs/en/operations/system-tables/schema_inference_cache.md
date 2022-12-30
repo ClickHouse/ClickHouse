@@ -6,7 +6,7 @@ slug: /en/operations/system-tables/schema_inference_cache
 Contains information about all cached file schemas.
 
 Columns:
-- `storage` ([String](/docs/en/sql-reference/data-types/string.md)) — Storage name: File, URL, S3 or URL.
+- `storage` ([String](/docs/en/sql-reference/data-types/string.md)) — Storage name: File, URL, S3 or HDFS.
 - `source` ([String](/docs/en/sql-reference/data-types/string.md)) — File source.
 - `format` ([String](/docs/en/sql-reference/data-types/string.md)) — Format name.
 - `additional_format_info` ([String](/docs/en/sql-reference/data-types/string.md)) - Additional information required to identify the schema. For example, format specific settings.
