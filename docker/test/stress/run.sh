@@ -447,7 +447,13 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
             || echo -e 'Backward compatibility check: Test script failed\tFAIL' >> /test_output/test_results.tsv
         rm -rf tmp_stress_output
 
-        clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
+        # We experienced deadlocks in this command in very rare cases. Let's debug it:
+        timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables" ||
+        (
+            echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
+            timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+            clickhouse stop --force
+        )
 
         stop 1
         mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
@@ -469,7 +475,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         sleep 60
 
         stop
-        mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.clean.log
+        mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.dirty.log
 
         # Error messages (we should ignore some errors)
         # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
@@ -517,7 +523,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "MutateFromLogEntryTask" \
                    -e "No connection to ZooKeeper, cannot get shared table ID" \
                    -e "Session expired" \
-            /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
+            /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
             && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
