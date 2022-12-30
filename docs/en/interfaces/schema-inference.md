@@ -48,22 +48,23 @@ Schema inference is used when ClickHouse needs to read the data in a specific da
 
 ## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md).
 
-These table functions have optional argument `structure` with the structure of input data. If this argument is not specified or set to `auto`, the structure will be inferred from the data.
+These table functions have the optional argument `structure` with the structure of input data. If this argument is not specified or set to `auto`, the structure will be inferred from the data.
 
 **Example:**
 
-Let's say we have a file `hobbies.jsonl` in JSONEachRow format in `user_files` directory with the next content:
+Let's say we have a file `hobbies.jsonl` in JSONEachRow format in the `user_files` directory with this content:
 ```json
 {"id" :  1, "age" :  25, "name" :  "Josh", "hobbies" :  ["football", "cooking", "music"]}
 {"id" :  2, "age" :  19, "name" :  "Alan", "hobbies" :  ["tennis", "art"]}
-{"id" :  3, "age" :  32, "name" :  "Lana", "hobbies" :  ["fintess", "reading", "shopping"]}
+{"id" :  3, "age" :  32, "name" :  "Lana", "hobbies" :  ["fitness", "reading", "shopping"]}
 {"id" :  4, "age" :  47, "name" :  "Brayan", "hobbies" :  ["movies", "skydiving"]}
 ```
 
-ClickHouse can read this data without specifying it's structure:
+ClickHouse can read this data without you specifying its structure:
 ```sql
 :) SELECT * FROM file('hobbies.jsonl')
-
+```
+```response
 ┌─id─┬─age─┬─name───┬─hobbies──────────────────────────┐
 │  1 │  25 │ Josh   │ ['football','cooking','music']   │
 │  2 │  19 │ Alan   │ ['tennis','art']                 │
@@ -74,10 +75,11 @@ ClickHouse can read this data without specifying it's structure:
 
 Note: the format `JSONEachRow` was automatically determined by file extension `.jsonl`.
 
-You can see an automatically determined structure using `DESCRIBE` query:
+You can see an automatically determined structure using the `DESCRIBE` query:
 ```sql
-:) DESCRIBE file('hobbies.jsonl')
-
+DESCRIBE file('hobbies.jsonl')
+```
+```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Nullable(Int64)         │              │                    │         │                  │                │
 │ age     │ Nullable(Int64)         │              │                    │         │                  │                │
@@ -119,7 +121,7 @@ Ok.
 
 ## clickhouse-local
 
-`clickhouse-local` has optional parameter `-S/--structure` with the structure of input data. If this parameter is not specified or set to `auto`, the structure will be inferred from the data.
+`clickhouse-local` has an optional parameter `-S/--structure` with the structure of input data. If this parameter is not specified or set to `auto`, the structure will be inferred from the data.
 
 **Example:**
 
@@ -142,14 +144,14 @@ $ clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FR
 
 When table functions `file/s3/url/hdfs` are used to insert data into a table,
 there is an option to use the structure from the insertion table instead of extracting it from the data.
-It can improve insertion performance because schema inference can take some time. Also, it will be helpful when the table has optimized schema, so
+It can improve insertion performance because schema inference can take some time. Also, it will be helpful when the table has an optimized schema, so
 no conversions between types will be performed.
 
-There is a special setting [use_structure_from_insertion_table_in_table_functions](../operations/settings/settings.md#use_structure_from_insertion_table_in_table_functions)
+There is a special setting [use_structure_from_insertion_table_in_table_functions](/docs/en/operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions)
 that controls this behaviour. It has 3 possible values:
 - 0 - table function will extract the structure from the data.
-- 1 - table function will use the structure from insertion table.
-- 2 - ClickHouse will automatically determine if it's possible to use the structure from insertion table or use schema inference. Default value.
+- 1 - table function will use the structure from the insertion table.
+- 2 - ClickHouse will automatically determine if it's possible to use the structure from the insertion table or use schema inference. Default value.
 
 **Example 1:**
 
@@ -172,7 +174,7 @@ And insert data from the file `hobbies.jsonl`:
 INSERT INTO hobbies1 SELECT * FROM file(hobbies.jsonl)
 ```
 
-In this case all columns from the file are inserted into the table without changes, so ClickHouse will use the structure from insertion table instead of schema inference.
+In this case, all columns from the file are inserted into the table without changes, so ClickHouse will use the structure from the insertion table instead of schema inference.
 
 **Example 2:**
 
@@ -194,8 +196,8 @@ And insert data from the file `hobbies.jsonl`:
 INSERT INTO hobbies2 SELECT id, age, hobbies FROM file(hobbies.jsonl)
 ```
 
-In this case all columns in `SELECT` query are present in the table, so ClickHouse will use the structure from insertion table.
-Note that it will work only for input formats that support reading subset of columns like JSONEachRow, TSKV, Parquet, etc. (so it won't work for example for TSV format).
+In this case, all columns in the `SELECT` query are present in the table, so ClickHouse will use the structure from the insertion table.
+Note that it will work only for input formats that support reading a subset of columns like JSONEachRow, TSKV, Parquet, etc. (so it won't work for example for TSV format).
 
 **Example 3:**
 
@@ -218,7 +220,7 @@ And insert data from the file `hobbies.jsonl`:
 INSERT INTO hobbies3 SELECT id, age, hobbies FROM file(hobbies.jsonl)
 ```
 
-In this case column `id` is used in `SELECT` query, but the table doesn't have this column (it has column with different name `identifier`),
+In this case, column `id` is used in the `SELECT` query, but the table doesn't have this column (it has a column with the name `identifier`),
 so ClickHouse cannot use the structure from the insertion table, and schema inference will be used.
 
 **Example 4:**
@@ -241,29 +243,29 @@ And insert data from the file `hobbies.jsonl`:
 INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
 ```
 
-In this case there are some operations performed on the column `hobbies` in `SELECT` query to insert it into the table, so ClickHouse cannot use the structure from the insertion table, and schema inference will be used.
+In this case, there are some operations performed on the column `hobbies` in the `SELECT` query to insert it into the table, so ClickHouse cannot use the structure from the insertion table, and schema inference will be used.
 
 # Schema inference cache {#schema-inference-cache}
 
 For most input formats schema inference reads some data to determine its structure and this process can take some time.
 To prevent inferring the same schema every time ClickHouse read the data from the same file, the inferred schema is cached and when accessing the same file again, ClickHouse will use the schema from the cache.
 
-There are special settings that controls this cache:
-- `schema_inference_cache_max_elements_for_{file/s3/hdfs/url}` - the maximum number of cached schemas for corresponding table function. Default value is `4096`. These settings should be set in server config.
+There are special settings that control this cache:
+- `schema_inference_cache_max_elements_for_{file/s3/hdfs/url}` - the maximum number of cached schemas for the corresponding table function. The default value is `4096`. These settings should be set in the server config.
 - `use_cache_for_{file,s3,hdfs,url}_schema_inference` - allows turning on/off using cache for schema inference. These settings can be used in queries.
 
 The schema of the file can be changed by modifying the data or by changing format settings.
-For this reason schema inference cache identifies the schema by file source, format name, used format settings and last modification time of the file.
+For this reason, schema inference cache identifies the schema by file source, format name, used format settings, and the last modification time of the file.
 
-Note: some files accessed by url in `url` table function could not contain information about last modification time, for this case there is a special setting
-`schema_inference_cache_require_modification_time_for_url`, disabling it that allows to use schema from cache without last modification time for such files.
+Note: some files accessed by url in `url` table function may not contain information about the last modification time; for this case there is a special setting
+`schema_inference_cache_require_modification_time_for_url`. Disabling this settings allows the use of the schema from cache without the last modification time for such files.
 
 There is also a system table [schema_inference_cache](../operations/system-tables/schema_inference_cache.md) with all current schemas in cache and system query `SYSTEM DROP SCHEMA CACHE [FOR File/S3/URL/HDFS]`
-that allows to clean schema cache for all sources or for specific source.
+that allows cleaning the schema cache for all sources, or for a specific source.
 
 **Examples:**
 
-Let's try to infer the structure of sample dataset from s3 `github-2022.ndjson.gz` and see how schema inference cache works:
+Let's try to infer the structure of a sample dataset from s3 `github-2022.ndjson.gz` and see how the schema inference cache works:
 
 ```sql
 :) DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
@@ -317,8 +319,9 @@ As you can see, the schema from the cache was not used for the same file, becaus
 Let's check the content of `system.schema_inference_cache` table:
 
 ```sql
-:) SELECT schema, format, source FROM system.schema_inference_cache WHERE storage='S3'
-
+SELECT schema, format, source FROM system.schema_inference_cache WHERE storage='S3'
+```
+```response
 ┌─schema──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─format─┬─source───────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ type Nullable(String), actor Object(Nullable('json')), repo Object(Nullable('json')), created_at Nullable(String), payload Object(Nullable('json')) │ NDJSON │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │
 │ type Nullable(String), actor Nullable(String), repo Nullable(String), created_at Nullable(String), payload Nullable(String)                         │ NDJSON │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │
@@ -327,14 +330,17 @@ Let's check the content of `system.schema_inference_cache` table:
 
 As you can see, there are two different schemas for the same file.
 
-We can clear schema cache using system query:
+We can clear the schema cache using a system query:
 ```sql
-:) SYSTEM DROP SCHEMA CACHE FOR S3
-  
+SYSTEM DROP SCHEMA CACHE FOR S3
+```
+```response
 Ok.
-
-:) SELECT count() FROM system.schema_inference_cache WHERE storage='S3'
-
+```
+```sql
+SELECT count() FROM system.schema_inference_cache WHERE storage='S3'
+```
+```response
 ┌─count()─┐
 │       0 │
 └─────────┘
@@ -342,25 +348,26 @@ Ok.
 
 # Text formats {#text-formats}
 
-For text formats ClickHouse reads the data row by row, extracts column values according to the format
+For text formats, ClickHouse reads the data row by row, extracts column values according to the format,
 and then uses some recursive parsers and heuristics to determine the type for each value. The maximum number of rows read from the data in schema inference
 is controlled by the setting `input_format_max_rows_to_read_for_schema_inference` with default value 25000.
-By default, all inferred types are [Nullable](../sql-reference/data-types/nullable.md), but you can change it using setting `schema_inference_make_columns_nullable` (see examples in [settings](#settings-for-text-formats) section).
+By default, all inferred types are [Nullable](../sql-reference/data-types/nullable.md), but you can change this by setting `schema_inference_make_columns_nullable` (see examples in the [settings](#settings-for-text-formats) section).
 
 ## JSON formats {#json-formats}
 
-In JSON formats ClickHouse parses values according to JSON specification and then tries to find the most appropriate data type for them.
+In JSON formats ClickHouse parses values according to the JSON specification and then tries to find the most appropriate data type for them.
 
 Let's see how it works, what types can be inferred and what specific settings can be used in JSON formats.
 
 **Examples**
 
-Here and further the [format](../sql-reference/table-functions/format.md) table function will be used in examples.
+Here and further, the [format](../sql-reference/table-functions/format.md) table function will be used in examples.
 
 Integers, Floats, Bools, Strings:
 ```sql
-:) DESC format(JSONEachRow, '{"int" : 42, "float" : 42.42, "string" : "Hello, World!"}');
-
+DESC format(JSONEachRow, '{"int" : 42, "float" : 42.42, "string" : "Hello, World!"}');
+```
+```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ int    │ Nullable(Int64)   │              │                    │         │                  │                │
 │ float  │ Nullable(Float64) │              │                    │         │                  │                │
@@ -372,8 +379,9 @@ Integers, Floats, Bools, Strings:
 Dates, DateTimes:
 
 ```sql
-:) DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00:00"}')
-
+DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00:00"}')
+```
+```response
 ┌─name─────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ date     │ Nullable(Date)          │              │                    │         │                  │                │
 │ datetime │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
@@ -382,8 +390,9 @@ Dates, DateTimes:
 
 Arrays:
 ```sql
-:) DESC format(JSONEachRow, '{"arr" : [1, 2, 3], "nested_arrays" : [[1, 2, 3], [4, 5, 6], []]}')
-
+DESC format(JSONEachRow, '{"arr" : [1, 2, 3], "nested_arrays" : [[1, 2, 3], [4, 5, 6], []]}')
+```
+```response
 ┌─name──────────┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ arr           │ Array(Nullable(Int64))        │              │                    │         │                  │                │
 │ nested_arrays │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
@@ -392,8 +401,9 @@ Arrays:
 
 If an array contains `null`, ClickHouse will use types from the other array elements:
 ```sql
-:) DESC format(JSONEachRow, '{"arr" : [null, 42, null]}')
-
+DESC format(JSONEachRow, '{"arr" : [null, 42, null]}')
+```
+```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ arr  │ Array(Nullable(Int64)) │              │                    │         │                  │                │
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -403,8 +413,9 @@ Tuples:
 
 In JSON formats we treat Arrays with elements of different types as Tuples.
 ```sql
-:) DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
-
+DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
+```
+```response
 ┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ tuple │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │              │                    │         │                  │                │
 └───────┴──────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -412,12 +423,13 @@ In JSON formats we treat Arrays with elements of different types as Tuples.
 
 If some values are `null` or empty, we use types of corresponding values from the other rows:
 ```sql
-:) DESC format(JSONEachRow, $$
+DESC format(JSONEachRow, $$
                               {"tuple" : [1, null, null]}
                               {"tuple" : [null, "Hello, World!", []]}
                               {"tuple" : [null, null, [1, 2, 3]]}
                             $$)
-
+```
+```response
 ┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ tuple │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │              │                    │         │                  │                │
 └───────┴──────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -427,8 +439,9 @@ Maps:
 
 In JSON we can read objects with values of the same type as Map type.
 ```sql
-:) DESC format(JSONEachRow, '{"map" : {"key1" : 42, "key2" : 24, "key3" : 4}}')
-
+DESC format(JSONEachRow, '{"map" : {"key1" : 42, "key2" : 24, "key3" : 4}}')
+```
+```response
 ┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ map  │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
 └──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -437,13 +450,14 @@ In JSON we can read objects with values of the same type as Map type.
 JSON Object type (if setting `allow_experimental_object_type` is enabled):
 
 ```sql
-:) SET allow_experimental_object_type = 1
-:) DESC format(JSONEachRow, $$
-                                {"obj" : {"key1" : 42}}
-                                {"obj" : {"key2" : "Hello, World!"}}
-                                {"obj" : {"key1" : 24, "key3" : {"a" : 42, "b" : null}}}
-                            $$)
-
+SET allow_experimental_object_type = 1
+DESC format(JSONEachRow, $$
+                            {"obj" : {"key1" : 42}}
+                            {"obj" : {"key2" : "Hello, World!"}}
+                            {"obj" : {"key1" : 24, "key3" : {"a" : 42, "b" : null}}}
+                        $$)
+```
+```response
 ┌─name─┬─type─────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Object(Nullable('json')) │              │                    │         │                  │                │
 └──────┴──────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -451,8 +465,9 @@ JSON Object type (if setting `allow_experimental_object_type` is enabled):
 
 Nested complex types:
 ```sql
-:) DESC format(JSONEachRow, '{"value" : [[[42, 24], []], {"key1" : 42, "key2" : 24}]}')
-
+DESC format(JSONEachRow, '{"value" : [[[42, 24], []], {"key1" : 42, "key2" : 24}]}')
+```
+```response
 ┌─name──┬─type───────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Tuple(Array(Array(Nullable(Int64))), Map(String, Nullable(Int64))) │              │                    │         │                  │                │
 └───────┴────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -460,8 +475,9 @@ Nested complex types:
 
 If ClickHouse cannot determine the type, because the data contains only nulls, an exception will be thrown:
 ```sql
-:) DESC format(JSONEachRow, '{"arr" : [null, null]}')
-
+DESC format(JSONEachRow, '{"arr" : [null, null]}')
+```
+```response
 Code: 652. DB::Exception: Received from localhost:9000. DB::Exception:
 Cannot determine type for column 'arr' by first 1 rows of data,
 most likely this column contains only Nulls or empty Arrays/Maps.
@@ -478,12 +494,13 @@ This setting can be used to read nested JSON objects without using JSON object t
 This setting is enabled by default.
 
 ```sql
-:) SET input_format_json_read_objects_as_strings = 1;
-:) DESC format(JSONEachRow, $$
-                                {"obj" : {"key1" : 42, "key2" : [1,2,3,4]}}
-                                {"obj" : {"key3" : {"nested_key" : 1}}}
-                            $$)
-
+SET input_format_json_read_objects_as_strings = 1;
+DESC format(JSONEachRow, $$
+                             {"obj" : {"key1" : 42, "key2" : [1,2,3,4]}}
+                             {"obj" : {"key3" : {"nested_key" : 1}}}
+                         $$)
+```
+```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Nullable(String) │              │                    │         │                  │                │
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -491,19 +508,20 @@ This setting is enabled by default.
 
 #### input_format_json_try_infer_numbers_from_strings
 
-Enabling this setting allow inferring numbers from string values.
+Enabling this setting allows inferring numbers from string values.
 
 This setting is enabled by default.
 
 **Example:**
 
 ```sql
-:) SET input_format_json_try_infer_numbers_from_strings = 1;
-:) DESC format(JSONEachRow, $$
-                                {"value" : "42"}
-                                {"value" : "424242424242"}
-                            $$)
-
+SET input_format_json_try_infer_numbers_from_strings = 1;
+DESC format(JSONEachRow, $$
+                              {"value" : "42"}
+                              {"value" : "424242424242"}
+                         $$)
+```
+```reponse
 ┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(Int64) │              │                    │         │                  │                │
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
