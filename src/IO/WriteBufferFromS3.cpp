@@ -1,3 +1,4 @@
+#include <aws/s3/model/StorageClass.h>
 #include "config.h"
 #include <Common/ProfileEvents.h>
 
@@ -473,6 +474,8 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
     req.SetBody(temporary_buffer);
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
+    if (settings.storageClassNameChanged())
+        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(settings.storage_class_name));
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");

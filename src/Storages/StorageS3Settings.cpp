@@ -39,6 +39,10 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     max_part_number = config.getUInt64(key + "max_part_number", max_part_number);
     max_single_part_upload_size = config.getUInt64(key + "max_single_part_upload_size", max_single_part_upload_size);
     max_single_operation_copy_size = config.getUInt64(key + "max_single_operation_copy_size", max_single_operation_copy_size);
+    
+    /// This configuration is only applicable to s3. Other types of object storage are not applicable or have different meanings.
+    storage_class_name = config.getString(config_prefix + ".s3_storage_class", storage_class_name);
+    storage_class_name = Poco::toUpperInPlace(storage_class_name);
 
     validate();
 }
@@ -49,6 +53,10 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedC
     upload_part_size_multiply_factor = collection.getOrDefault<UInt64>("upload_part_size_multiply_factor", upload_part_size_multiply_factor);
     upload_part_size_multiply_parts_count_threshold = collection.getOrDefault<UInt64>("upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
     max_single_part_upload_size = collection.getOrDefault<UInt64>("max_single_part_upload_size", max_single_part_upload_size);
+
+    /// This configuration is only applicable to s3. Other types of object storage are not applicable or have different meanings.
+    storage_class_name = collection.getOrDefault<String>("s3_storage_class", storage_class_name);
+    storage_class_name = Poco::toUpperInPlace(storage_class_name);
 
     validate();
 }
@@ -136,6 +144,13 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
             ErrorCodes::INVALID_SETTING_VALUE,
             "Setting upload_part_size_multiply_factor is too big ({}). Multiplication to max_upload_part_size ({}) will cause integer overflow",
             ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
+
+    std::unordered_set<String> storage_class_names {"NOT_SET", "STANDARD", "INTELLIGENT_TIERING"};
+    if (!storage_class_names.contains(storage_class_name))
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting storage_class has invalid value {} which only supports NOT_SET, STANDARD and INTELLIGENT_TIERING",
+            storage_class_name);
 
     /// TODO: it's possible to set too small limits. We can check that max possible object size is not too small.
 }

@@ -11,7 +11,6 @@
 #include <Storages/HeaderCollection.h>
 
 #include <IO/S3Common.h>
-
 namespace Poco::Util
 {
 class AbstractConfiguration;
@@ -36,9 +35,11 @@ struct S3Settings
             size_t max_part_number = 10000;
             size_t max_single_part_upload_size = 32 * 1024 * 1024;
             size_t max_single_operation_copy_size = 5ULL * 1024 * 1024 * 1024;
+            String storage_class_name = "NOT_SET";
 
             void updateFromSettings(const Settings & settings) { updateFromSettingsImpl(settings, true); }
             void validate();
+            bool storageClassNameChanged() const { return storage_class_name != "NOT_SET"; }
 
         private:
             PartUploadSettings() = default;
