@@ -3,7 +3,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Client/LineReader.h>
+#include <base/LineReader.h>
 #include <Common/logger_useful.h>
 
 #include <iostream>
@@ -70,7 +70,7 @@ int main(int argc, char ** argv)
         Poco::Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk{zkutil::ZooKeeperArgs(argv[1])};
-        DB::LineReader lr({}, false, {"\\"}, {});
+        LineReader lr({}, false, {"\\"}, {});
 
         do
         {

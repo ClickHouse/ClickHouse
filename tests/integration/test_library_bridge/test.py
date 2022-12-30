@@ -331,12 +331,10 @@ def test_bridge_dies_with_parent(ch_cluster):
         )
         logging.debug(f"Bridge is running, gdb output:\n{out}")
 
-    try:
-        assert clickhouse_pid is None
-        assert bridge_pid is None
-    finally:
-        instance.start_clickhouse(20)
-        instance.query("DROP DICTIONARY lib_dict_c")
+    assert clickhouse_pid is None
+    assert bridge_pid is None
+    instance.start_clickhouse(20)
+    instance.query("DROP DICTIONARY lib_dict_c")
 
 
 def test_path_validation(ch_cluster):

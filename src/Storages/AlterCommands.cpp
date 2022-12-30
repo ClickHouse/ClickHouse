@@ -30,6 +30,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
+
 namespace DB
 {
 
@@ -1023,7 +1024,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 command.ignore = true;
         }
     }
-
     prepared = true;
 }
 
@@ -1355,20 +1355,12 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
-    {
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context); mutation_cmd)
-        {
             result.push_back(*mutation_cmd);
-        }
-        else if (with_alters)
-        {
-            result.push_back(MutationCommand{.ast = alter_cmd.ast->clone(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
-        }
-    }
 
     if (materialize_ttl)
     {

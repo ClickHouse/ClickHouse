@@ -83,7 +83,7 @@ public:
     ASTPtr lateness_function;
     String as_database;
     String as_table;
-    IAST * as_table_function = nullptr;
+    ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
 

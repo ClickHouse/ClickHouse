@@ -1,3 +1,5 @@
+#pragma once
+
 #include "ICommand.h"
 #include <Interpreters/Context.h>
 
@@ -9,7 +11,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandRemove final : public ICommand
+class CommandRemove : public ICommand
 {
 public:
     CommandRemove()
@@ -37,13 +39,13 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        const String & path = command_arguments[0];
+        String path = command_arguments[0];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String relative_path = validatePathAndGetAsRelative(path);
+        String full_path = fullPathWithValidate(disk, path);
 
-        disk->removeRecursive(relative_path);
+        disk->removeRecursive(full_path);
     }
 };
 }

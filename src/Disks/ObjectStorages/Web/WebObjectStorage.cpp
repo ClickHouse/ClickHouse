@@ -46,10 +46,7 @@ void WebObjectStorage::initialize(const String & uri_path) const
             Poco::Net::HTTPRequest::HTTP_GET,
             ReadWriteBufferFromHTTP::OutStreamCallback(),
             ConnectionTimeouts::getHTTPTimeouts(getContext()),
-            credentials,
-            /* max_redirects= */ 0,
-            /* buffer_size_= */ DBMS_DEFAULT_BUFFER_SIZE,
-            getContext()->getReadSettings());
+            credentials);
 
         String file_name;
         FileData file_data{};
@@ -84,15 +81,6 @@ void WebObjectStorage::initialize(const String & uri_path) const
         }
 
         files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
-    }
-    catch (HTTPException & e)
-    {
-        /// 404 - no files
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            return;
-
-        e.addMessage("while loading disk metadata");
-        throw;
     }
     catch (Exception & e)
     {
@@ -187,6 +175,17 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     {
         auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl), read_settings);
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
+    }
+}
+
+void WebObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
+{
+    for (const auto & [file_path, file_info] : files)
+    {
+        if (file_info.type == FileType::File && file_path.starts_with(path))
+        {
+            children.emplace_back(file_path, file_info.size);
+        }
     }
 }
 

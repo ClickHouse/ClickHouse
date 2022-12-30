@@ -1,4 +1,4 @@
-set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxxabi")
+set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libcxxabi")
 
 set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/abort_message.cpp"
@@ -9,7 +9,6 @@ set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_exception_storage.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_guard.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_handlers.cpp"
-# "${LIBCXXABI_SOURCE_DIR}/src/cxa_noexception.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_personality.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_thread_atexit.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_vector.cpp"

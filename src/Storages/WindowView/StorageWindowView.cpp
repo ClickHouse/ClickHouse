@@ -471,7 +471,7 @@ void StorageWindowView::alter(
     create_interpreter.setInternal(true);
     create_interpreter.execute();
 
-    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().addDependency(select_table_id, table_id);
 
     shutdown_called = false;
 
@@ -1566,7 +1566,7 @@ void StorageWindowView::writeIntoWindowView(
 
 void StorageWindowView::startup()
 {
-    DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
+    DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();
@@ -1586,17 +1586,17 @@ void StorageWindowView::shutdown()
     fire_task->deactivate();
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
 }
 
 void StorageWindowView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (!view_ids.empty())
+    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    if (!dependencies.empty())
     {
-        StorageID view_id = *view_ids.begin();
-        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table has dependency {}", view_id);
+        StorageID dependent_table_id = dependencies.front();
+        throw Exception("Table has dependency " + dependent_table_id.getNameForLogs(), ErrorCodes::TABLE_WAS_NOT_DROPPED);
     }
 }
 

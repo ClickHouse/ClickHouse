@@ -7,7 +7,6 @@ import os
 import subprocess
 import sys
 import atexit
-from typing import List, Tuple
 
 from github import Github
 
@@ -123,11 +122,8 @@ def get_tests_to_run(pr_info):
     return list(result)
 
 
-def process_results(
-    result_folder: str,
-    server_log_path: str,
-) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
-    test_results = []  # type: List[Tuple[str, str]]
+def process_results(result_folder, server_log_path):
+    test_results = []
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content of result_folder.
@@ -170,7 +166,7 @@ def process_results(
         return "error", "Not found test_results.tsv", test_results, additional_files
 
     with open(results_path, "r", encoding="utf-8") as results_file:
-        test_results = list(csv.reader(results_file, delimiter="\t"))  # type: ignore
+        test_results = list(csv.reader(results_file, delimiter="\t"))
     if len(test_results) == 0:
         return "error", "Empty test_results.tsv", test_results, additional_files
 
@@ -207,37 +203,34 @@ if __name__ == "__main__":
     args = parse_args()
     check_name = args.check_name
     kill_timeout = args.kill_timeout
-    validate_bugfix_check = args.validate_bugfix
+    validate_bugix_check = args.validate_bugfix
 
     flaky_check = "flaky" in check_name.lower()
 
-    run_changed_tests = flaky_check or validate_bugfix_check
+    run_changed_tests = flaky_check or validate_bugix_check
     gh = Github(get_best_robot_token(), per_page=100)
 
-    # For validate_bugfix_check we need up to date information about labels, so pr_event_from_api is used
-    pr_info = PRInfo(
-        need_changed_files=run_changed_tests, pr_event_from_api=validate_bugfix_check
-    )
+    pr_info = PRInfo(need_changed_files=run_changed_tests)
 
     atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
+    if validate_bugix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
                 os.path.join(temp_path, "post_commit_status.tsv"),
-                f"Skipped (no pr-bugfix in {pr_info.labels})",
+                "Skipped (no pr-bugfix)",
                 "success",
                 "null",
             )
-        logging.info("Skipping '%s' (no pr-bugfix in %s)", check_name, pr_info.labels)
+        logging.info("Skipping '%s' (no pr-bugfix)", check_name)
         sys.exit(0)
 
     if "RUN_BY_HASH_NUM" in os.environ:
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
+        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM"))
+        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL"))
         check_name_with_group = (
             check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
         )
@@ -256,7 +249,7 @@ if __name__ == "__main__":
         tests_to_run = get_tests_to_run(pr_info)
         if not tests_to_run:
             commit = get_commit(gh, pr_info.sha)
-            state = override_status("success", check_name, validate_bugfix_check)
+            state = override_status("success", check_name, validate_bugix_check)
             if args.post_commit_status == "commit_status":
                 commit.create_status(
                     context=check_name_with_group,
@@ -279,7 +272,7 @@ if __name__ == "__main__":
     if not os.path.exists(packages_path):
         os.makedirs(packages_path)
 
-    if validate_bugfix_check:
+    if validate_bugix_check:
         download_last_release(packages_path)
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
@@ -292,12 +285,12 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_log_path = os.path.join(result_path, "run.log")
+    run_log_path = os.path.join(result_path, "runlog.log")
 
     additional_envs = get_additional_envs(
         check_name, run_by_hash_num, run_by_hash_total
     )
-    if validate_bugfix_check:
+    if validate_bugix_check:
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
 
     run_command = get_run_command(
@@ -327,7 +320,7 @@ if __name__ == "__main__":
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path
     )
-    state = override_status(state, check_name, invert=validate_bugfix_check)
+    state = override_status(state, check_name, validate_bugix_check)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)

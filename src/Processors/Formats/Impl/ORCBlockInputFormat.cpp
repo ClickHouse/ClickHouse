@@ -3,7 +3,7 @@
 #if USE_ORC
 
 #include <Formats/FormatFactory.h>
-#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -54,19 +54,14 @@ Chunk ORCBlockInputFormat::generate()
         throw ParsingException(
             ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_result.status().ToString());
 
-    /// We should extract the number of rows directly from the stripe, because in case when
-    /// record batch contains 0 columns (for example if we requested only columns that
-    /// are not presented in data) the number of rows in record batch will be 0.
-    size_t num_rows = file_reader->GetRawORCReader()->getStripe(stripe_current)->getNumberOfRows();
-
     auto table = table_result.ValueOrDie();
-    if (!table || !num_rows)
+    if (!table || !table->num_rows())
         return {};
 
     ++stripe_current;
 
     Chunk res;
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, num_rows);
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     if (format_settings.defaults_for_omitted_fields)
@@ -106,7 +101,7 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
     if (type->id() == arrow::Type::MAP)
     {
         auto * map_type = static_cast<arrow::MapType *>(type.get());
-        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type()) + 1;
+        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
     }
 
     return 1;
@@ -203,7 +198,6 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatSupportsSubcolumns("ORC");
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 

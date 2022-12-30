@@ -4,7 +4,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/SchemaInferenceUtils.h>
 #include <Common/HashTable/HashMap.h>
 
 
@@ -95,16 +94,15 @@ protected:
 class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
 {
 public:
-    JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings, const FormatSettings & format_settings_);
 
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
+    bool json_strings;
     bool first_row = true;
     bool data_in_square_brackets = false;
-    JSONInferenceInfo inference_info;
 };
 
 }

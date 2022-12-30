@@ -132,7 +132,7 @@ void assertDigest(
             "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest "
             "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
-            Coordination::toString(request.getOpNum()),
+            request.getOpNum(),
             first.value,
             second.value,
             first.version,

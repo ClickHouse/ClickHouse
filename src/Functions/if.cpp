@@ -904,7 +904,6 @@ private:
 
             if (cond_col)
             {
-                arg_else_column = arg_else_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_else_column));
                 if (else_is_short)
                     result_column->expand(cond_col->getData(), true);
@@ -942,7 +941,6 @@ private:
 
             if (cond_col)
             {
-                arg_then_column = arg_then_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_then_column));
                 if (then_is_short)
                     result_column->expand(cond_col->getData(), false);
@@ -1026,7 +1024,6 @@ public:
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

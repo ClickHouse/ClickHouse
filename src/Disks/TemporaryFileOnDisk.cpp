@@ -15,6 +15,7 @@ namespace CurrentMetrics
     extern const Metric TotalTemporaryFiles;
 }
 
+
 namespace DB
 {
 

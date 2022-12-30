@@ -203,24 +203,6 @@ public:
     {
         keeper_stats.reset();
     }
-
-    /// Create snapshot manually, return the last committed log index in the snapshot
-    uint64_t createSnapshot()
-    {
-        return server->createSnapshot();
-    }
-
-    /// Get Raft information
-    KeeperLogInfo getKeeperLogInfo()
-    {
-        return server->getKeeperLogInfo();
-    }
-
-    /// Request to be leader.
-    bool requestLeader()
-    {
-        return server->requestLeader();
-    }
 };
 
 }

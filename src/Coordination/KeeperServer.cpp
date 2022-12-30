@@ -266,7 +266,6 @@ void KeeperServer::forceRecovery()
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
     nuraft::raft_params params;
-    params.parallel_log_appending_ = true;
     params.heart_beat_interval_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
     params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(
@@ -325,7 +324,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
         auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
         if (!asio_listener)
-            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {}", state_manager->getPort());
+            return;
         asio_listeners.emplace_back(std::move(asio_listener));
     }
     else
@@ -352,8 +351,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
-
-    state_manager->getLogStore()->setRaftServer(raft_instance);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
@@ -449,8 +446,8 @@ void KeeperServer::shutdownRaftServer()
 
 void KeeperServer::shutdown()
 {
-    shutdownRaftServer();
     state_manager->flushAndShutDownLogStore();
+    shutdownRaftServer();
     state_machine->shutdownStorage();
 }
 
@@ -908,44 +905,6 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
     result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
     return result;
-}
-
-uint64_t KeeperServer::createSnapshot()
-{
-    uint64_t log_idx = raft_instance->create_snapshot();
-    if (log_idx != 0)
-        LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
-    else
-        LOG_WARNING(log, "Failed to schedule snapshot creation task.");
-    return log_idx;
-}
-
-KeeperLogInfo KeeperServer::getKeeperLogInfo()
-{
-    KeeperLogInfo log_info;
-    auto log_store = state_manager->load_log_store();
-    if (log_store)
-    {
-        log_info.first_log_idx = log_store->start_index();
-        log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
-    }
-
-    if (raft_instance)
-    {
-        log_info.last_log_idx = raft_instance->get_last_log_idx();
-        log_info.last_log_term = raft_instance->get_last_log_term();
-        log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
-        log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
-        log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();
-        log_info.last_snapshot_idx = raft_instance->get_last_snapshot_idx();
-    }
-
-    return log_info;
-}
-
-bool KeeperServer::requestLeader()
-{
-    return isLeader() || raft_instance->request_leadership();
 }
 
 }

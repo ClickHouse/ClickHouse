@@ -66,6 +66,7 @@ protected:
     size_t row_count = 0;
     Names names;   /// The column names are pre-escaped to be put into JSON string literal.
 
+    Statistics statistics;
     FormatSettings settings;
 
     bool yield_strings;
