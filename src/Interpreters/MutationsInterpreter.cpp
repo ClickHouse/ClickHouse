@@ -1295,6 +1295,11 @@ const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
     return dependencies;
 }
 
+size_t MutationsInterpreter::evaluateCommandsSize()
+{
+    return prepareQueryAffectedAST(commands, source.getStorage(), context)->size();
+}
+
 std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const
 {
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
