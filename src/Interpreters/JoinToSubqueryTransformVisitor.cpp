@@ -60,6 +60,7 @@ public:
     struct Data
     {
         std::unordered_map<String, NamesAndTypesList> table_columns;
+        std::unordered_map<String, String> table_name_alias;
         std::vector<String> tables_order;
         std::shared_ptr<ASTExpressionList> new_select_expression_list;
 
@@ -71,6 +72,7 @@ public:
                 String table_name = table.table.getQualifiedNamePrefix(false);
                 NamesAndTypesList columns = table.columns;
                 tables_order.push_back(table_name);
+                table_name_alias.emplace(table.table.table /* table_name */, table_name /* alias_name */);
                 table_columns.emplace(std::move(table_name), std::move(columns));
             }
         }
@@ -85,7 +87,14 @@ public:
             ASTs & columns,
             ShouldAddColumnPredicate should_add_column_predicate = [](const String &) { return true; })
         {
-            auto it = table_columns.find(table_name);
+            String name = table_name;
+            auto table_name_it = table_name_alias.find(table_name);
+            if (table_name_it != table_name_alias.end())
+            {
+                name = table_name_it->second;
+            }
+
+            auto it = table_columns.find(name);
             if (it == table_columns.end())
                 throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
@@ -146,8 +155,6 @@ private:
             {
                 has_asterisks = true;
 
-                if (child->children.size() != 1)
-                    throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
                 auto & identifier = child->children[0]->as<ASTTableIdentifier &>();
 
                 data.addTableColumns(identifier.name(), columns);
@@ -155,7 +162,10 @@ private:
                 // QualifiedAsterisk's transformers start to appear at child 1
                 for (const auto * it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
                 {
-                    IASTColumnsTransformer::transform(*it, columns);
+                    if (it->get()->as<ASTColumnsApplyTransformer>() || it->get()->as<ASTColumnsExceptTransformer>() || it->get()->as<ASTColumnsReplaceTransformer>())
+                        IASTColumnsTransformer::transform(*it, columns);
+                    else
+                        throw Exception("Logical error: qualified asterisk must only have children of IASTColumnsTransformer type", ErrorCodes::LOGICAL_ERROR);
                 }
             }
             else if (const auto * columns_list_matcher = child->as<ASTColumnsListMatcher>())
