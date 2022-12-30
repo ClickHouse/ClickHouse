@@ -376,7 +376,7 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
             break;
         case Protocol::Server::Data:
             /// If the block is not empty and is not a header block
-            if (packet.block && (packet.block.rows() > 0))
+            if (packet.block)
                 return adaptBlockStructure(packet.block, header);
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
@@ -411,11 +411,17 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
             break;
 
         case Protocol::Server::Totals:
+            /// If the block is not empty and is not a header block
             totals = packet.block;
+            if (totals)
+                totals = adaptBlockStructure(totals, header);
             break;
 
         case Protocol::Server::Extremes:
             extremes = packet.block;
+            /// If the block is not empty and is not a header block
+            if (extremes)
+                extremes = adaptBlockStructure(packet.block, header);
             break;
 
         case Protocol::Server::Log:
