@@ -205,7 +205,7 @@ During parsing, the first row is expected to contain the column names. You can u
 
 :::warning
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings.md/#input_format_skip_unknown_fields) is set to 1.
+the columns from the input data will be mapped to the columns of the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
 :::
 
@@ -217,7 +217,7 @@ Differs from the `TabSeparated` format in that the column names are written to t
 
 :::warning
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings.md/#input_format_skip_unknown_fields) is set to 1.
+the columns from the input data will be mapped to the columns in the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
 If setting [input_format_with_types_use_header](/docs/en/operations/settings/settings.md/#input_format_with_types_use_header) is set to 1,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
@@ -245,7 +245,7 @@ This format allows specifying a custom format string with placeholders for value
 
 It uses settings `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
 
-Setting `format_template_row` specifies path to file, which contains format string for rows with the following syntax:
+Setting `format_template_row` specifies the path to the file containing format strings for rows with the following syntax:
 
 `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
@@ -253,10 +253,10 @@ where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as 
 `column_i` is a name or index of a column whose values are to be selected or inserted (if empty, then column will be skipped),
 `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
 
--   `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
--   `Escaped` (similarly to `TSV`)
--   `Quoted` (similarly to `Values`)
--   `Raw` (without escaping, similarly to `TSVRaw`)
+-   `CSV`, `JSON`, `XML` (similar to the formats of the same names)
+-   `Escaped` (similar to `TSV`)
+-   `Quoted` (similar to `Values`)
+-   `Raw` (without escaping, similar to `TSVRaw`)
 -   `None` (no escaping rule, see further)
 
 If an escaping rule is omitted, then `None` will be used. `XML` is suitable only for output.
@@ -269,9 +269,9 @@ the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quo
 
 `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
 
-The `format_template_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
+The `format_template_rows_between_delimiter` setting specifies the delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
-Setting `format_template_resultset` specifies the path to file, which contains a format string for resultset. Format string for resultset has the same syntax as a format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
+Setting `format_template_resultset` specifies the path to the file, which contains a format string for resultset. Format string for resultset has the same syntax as a format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
 
 -   `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
 -   `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
@@ -284,8 +284,8 @@ Setting `format_template_resultset` specifies the path to file, which contains a
 -   `bytes_read` is the number of bytes (uncompressed) has been read
 
 The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
-If the `format_template_resultset` setting is an empty string, `${data}` is used as default value.
-For insert queries format allows skipping some columns or some fields if prefix or suffix (see example).
+If the `format_template_resultset` setting is an empty string, `${data}` is used as the default value.
+For insert queries format allows skipping some columns or fields if prefix or suffix (see example).
 
 Select example:
 
@@ -373,8 +373,8 @@ All delimiters in the input data must be strictly equal to delimiters in specifi
 ## TemplateIgnoreSpaces {#templateignorespaces}
 
 This format is suitable only for input.
-Similar to `Template`, but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows to specify empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters.
-It’s possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
+Similar to `Template`, but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows specifying empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters.
+It’s possible to read `JSON` using this format if the values of columns have the same order in all rows. For example, the following request can be used for inserting data from its output example of format [JSON](#json):
 
 ``` sql
 INSERT INTO table_name SETTINGS
@@ -433,7 +433,7 @@ During import, columns with unknown names will be skipped if setting [input_form
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-When formatting, rows are enclosed in double-quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double-quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](/docs/en/operations/settings/settings.md/#format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double-quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
+When formatting, rows are enclosed in double quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](/docs/en/operations/settings/settings.md/#format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
@@ -445,7 +445,7 @@ When parsing, all values can be parsed either with or without quotes. Both doubl
 
 `NULL` is formatted according to setting [format_csv_null_representation](/docs/en/operations/settings/settings.md/#format_csv_null_representation) (default value is `\N`).
 
-In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
+In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to the ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](/docs/en/operations/settings/settings.md/#input_format_csv_enum_as_number) to optimize ENUM parsing.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
@@ -456,12 +456,12 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [format_csv_allow_single_quotes](/docs/en/operations/settings/settings.md/#format_csv_allow_single_quotes) - allow strings in single quotes. Default value - `true`.
 - [format_csv_allow_double_quotes](/docs/en/operations/settings/settings.md/#format_csv_allow_double_quotes) - allow strings in double quotes. Default value - `true`.
 - [format_csv_null_representation](/docs/en/operations/settings/settings.md/#format_tsv_null_representation) - custom NULL representation in CSV format. Default value - `\N`.
-- [input_format_csv_empty_as_default](/docs/en/operations/settings/settings.md/#input_format_csv_empty_as_default) - treat empty fields in CSV input as default values. Default value - `true`. For complex default expressions [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings.md/#input_format_defaults_for_omitted_fields) must be enabled too.
+- [input_format_csv_empty_as_default](/docs/en/operations/settings/settings.md/#input_format_csv_empty_as_default) - treat empty fields in CSV input as default values. Default value - `true`. For complex default expressions, [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings.md/#input_format_defaults_for_omitted_fields) must be enabled too.
 - [input_format_csv_enum_as_number](/docs/en/operations/settings/settings.md/#input_format_csv_enum_as_number) - treat inserted enum values in CSV formats as enum indices. Default value - `false`.
 - [input_format_csv_use_best_effort_in_schema_inference](/docs/en/operations/settings/settings.md/#input_format_csv_use_best_effort_in_schema_inference) - use some tweaks and heuristics to infer schema in CSV format. If disabled, all fields will be inferred as Strings. Default value - `true`.
 - [input_format_csv_arrays_as_nested_csv](/docs/en/operations/settings/settings.md/#input_format_csv_arrays_as_nested_csv) - when reading Array from CSV, expect that its elements were serialized in nested CSV and then put into string. Default value - `false`.
-- [output_format_csv_crlf_end_of_line](/docs/en/operations/settings/settings.md/#output_format_csv_crlf_end_of_line) - if it is set true, end of line in CSV output format will be `\r\n` instead of `\n`. Default value - `false`.
-- [input_format_csv_skip_first_lines](/docs/en/operations/settings/settings.md/#input_format_csv_skip_first_lines) - skip specified number of lines at the beginning of data. Default value - `0`.
+- [output_format_csv_crlf_end_of_line](/docs/en/operations/settings/settings.md/#output_format_csv_crlf_end_of_line) - if it is set to true, end of line in CSV output format will be `\r\n` instead of `\n`. Default value - `false`.
+- [input_format_csv_skip_first_lines](/docs/en/operations/settings/settings.md/#input_format_csv_skip_first_lines) - skip the specified number of lines at the beginning of data. Default value - `0`.
 
 ## CSVWithNames {#csvwithnames}
 
@@ -531,15 +531,15 @@ INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
 INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
 ```
 
-To read data output by this format ypu can use [MySQLDump](#mysqldump) input format.
+To read data output by this format you can use [MySQLDump](#mysqldump) input format.
 
 ### SQLInsert format settings {#sqlinsert-format-settings}
 
 - [output_format_sql_insert_max_batch_size](/docs/en/operations/settings/settings.md/#output_format_sql_insert_max_batch_size) - The maximum number of rows in one INSERT statement. Default value - `65505`.
-- [output_format_sql_insert_table_name](/docs/en/operations/settings/settings.md/#output_format_sql_insert_table_name) - The name of table in the output INSERT query. Default value - `'table'`.
+- [output_format_sql_insert_table_name](/docs/en/operations/settings/settings.md/#output_format_sql_insert_table_name) - The name of the table in the output INSERT query. Default value - `'table'`.
 - [output_format_sql_insert_include_column_names](/docs/en/operations/settings/settings.md/#output_format_sql_insert_include_column_names) - Include column names in INSERT query. Default value - `true`.
 - [output_format_sql_insert_use_replace](/docs/en/operations/settings/settings.md/#output_format_sql_insert_use_replace) - Use REPLACE statement instead of INSERT. Default value - `false`.
-- [output_format_sql_insert_quote_names](/docs/en/operations/settings/settings.md/#output_format_sql_insert_quote_names) - Quote column names with "\`" characters . Default value - `true`.
+- [output_format_sql_insert_quote_names](/docs/en/operations/settings/settings.md/#output_format_sql_insert_quote_names) - Quote column names with "\`" characters. Default value - `true`.
 
 ## JSON {#json}
 
@@ -599,7 +599,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings.md/#output_format_json_quote_64bit_integers) to 0.
+The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings.md/#output_format_json_quote_64bit_integers) to 0.
 
 `rows` – The total number of output rows.
 
@@ -691,7 +691,7 @@ Example:
 ```
 
 During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings.md/#input_format_skip_unknown_fields) is set to 1.
-Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings.md/#input_format_defaults_for_omitted_fields) setting here)
+Columns that are not present in the block will be filled with default values (you can use the [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings.md/#input_format_defaults_for_omitted_fields) setting here)
 
 
 ## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
@@ -746,7 +746,7 @@ the types from metadata in input data will be compared with the types of the cor
 
 In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
 
-This format can only be parsed for table with a single field of type [String](/docs/en/sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](/docs/en/sql-reference/functions/json-functions.md) to process it.
+This format can only be parsed for a table with a single field of type [String](/docs/en/sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized), or omitted. Once you collect the whole JSON object to string you can use [JSON functions](/docs/en/sql-reference/functions/json-functions.md) to process it.
 
 **Examples**
 
@@ -1009,7 +1009,7 @@ the types from input data will be compared with the types of the corresponding c
 
 ## JSONObjectEachRow {#jsonobjecteachrow}
 
-In this format, all data is represented as a single JSON Object, each row is represented as separate field of this object similar to JSONEachRow format.
+In this format, all data is represented as a single JSON Object, each row is represented as a separate field of this object similar to JSONEachRow format.
 
 Example:
 
@@ -1021,12 +1021,12 @@ Example:
 }
 ```
 
-To use object name as column value you can use special setting [format_json_object_each_row_column_for_object_name](/docs/en/operations/settings/settings.md/#format_json_object_each_row_column_for_object_name). Value of this setting is set to the name of a column, that is used as JSON key for a row in resulting object.
+To use an object name as a column value you can use the special setting [format_json_object_each_row_column_for_object_name](/docs/en/operations/settings/settings.md/#format_json_object_each_row_column_for_object_name). The value of this setting is set to the name of a column, that is used as JSON key for a row in the resulting object.
 Examples:
 
 For output:
 
-Let's say we have table `test` with two columns:
+Let's say we have the table `test` with two columns:
 ```
 ┌─object_name─┬─number─┐
 │ first_obj   │      1 │
@@ -1051,7 +1051,7 @@ The output:
 
 For input:
 
-Let's say we stored output from previous example in a file with name `data.json`:
+Let's say we stored output from the previous example in a file named `data.json`:
 ```sql
 select * from file('data.json', JSONObjectEachRow, 'object_name String, number UInt64') settings format_json_object_each_row_column_for_object_name='object_name'
 ```
