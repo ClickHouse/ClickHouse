@@ -42,7 +42,7 @@ public:
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
     /// use can_execute = true, in other cases (validation, amount of commands) it can be false
     MutationsInterpreter(
-        const StoragePtr & storage_,
+        StoragePtr storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
@@ -97,15 +97,13 @@ public:
 
     struct Source
     {
-        StoragePtr storage;
-
-        /// Special case for MergeTree.
-        MergeTreeData * data = nullptr;
-        MergeTreeData::DataPartPtr part;
-
         StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_) const;
-        bool supportsLightweightDelete() const;
         StoragePtr getStorage() const;
+        const MergeTreeData * getMergeTreeData() const;
+
+        bool supportsLightweightDelete() const;
+        bool hasLightweightDeleteMask() const;
+        bool materializeTTLRecalculateOnly() const;
 
         void read(
             Stage & first_stage,
@@ -114,6 +112,16 @@ public:
             const ContextPtr & context_,
             bool apply_deleted_mask_,
             bool can_execute_) const;
+
+        explicit Source(StoragePtr storage_);
+        Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_);
+
+    private:
+        StoragePtr storage;
+
+        /// Special case for MergeTree.
+        MergeTreeData * data = nullptr;
+        MergeTreeData::DataPartPtr part;
     };
 
 private:
