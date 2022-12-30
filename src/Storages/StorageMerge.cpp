@@ -175,7 +175,10 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
         {
             const auto * src_type = column_types[column.name];
             if (src_type && !src_type->equals(*column.type))
+            {
                 can_move = false;
+                return;
+            }
         }
     });
 
