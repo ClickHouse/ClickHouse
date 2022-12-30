@@ -73,7 +73,7 @@ ClickHouse can read this data without you specifying its structure:
 └────┴─────┴────────┴──────────────────────────────────┘
 ```
 
-Note: the format `JSONEachRow` was automatically determined by file extension `.jsonl`.
+Note: the format `JSONEachRow` was automatically determined by the file extension `.jsonl`.
 
 You can see an automatically determined structure using the `DESCRIBE` query:
 ```sql
@@ -94,7 +94,7 @@ If the list of columns is not specified in `CREATE TABLE` query, the structure o
 
 **Example:**
 
-Let's use the `hobbies.jsonl` file. We can create a table with engine `File` with the data from this file:
+Let's use the file `hobbies.jsonl`. We can create a table with engine `File` with the data from this file:
 ```sql
 :) CREATE TABLE hobbies ENGINE=File(JSONEachRow, 'hobbies.jsonl')
 
@@ -125,7 +125,7 @@ Ok.
 
 **Example:**
 
-Let's use the `hobbies.jsonl` file. We can query the data from this file using `clickhouse-local`:
+Let's use the file `hobbies.jsonl`. We can query the data from this file using `clickhouse-local`:
 ```shell
 $ clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='DESCRIBE TABLE hobbies'
 id	Nullable(Int64)
@@ -255,10 +255,10 @@ There are special settings that control this cache:
 - `use_cache_for_{file,s3,hdfs,url}_schema_inference` - allows turning on/off using cache for schema inference. These settings can be used in queries.
 
 The schema of the file can be changed by modifying the data or by changing format settings.
-For this reason, schema inference cache identifies the schema by file source, format name, used format settings, and the last modification time of the file.
+For this reason, the schema inference cache identifies the schema by file source, format name, used format settings, and the last modification time of the file.
 
-Note: some files accessed by url in `url` table function may not contain information about the last modification time; for this case there is a special setting
-`schema_inference_cache_require_modification_time_for_url`. Disabling this settings allows the use of the schema from cache without the last modification time for such files.
+Note: some files accessed by url in `url` table function may not contain information about the last modification time; for this case, there is a special setting
+`schema_inference_cache_require_modification_time_for_url`. Disabling this setting allows the use of the schema from cache without the last modification time for such files.
 
 There is also a system table [schema_inference_cache](../operations/system-tables/schema_inference_cache.md) with all current schemas in cache and system query `SYSTEM DROP SCHEMA CACHE [FOR File/S3/URL/HDFS]`
 that allows cleaning the schema cache for all sources, or for a specific source.
@@ -569,8 +569,8 @@ This setting is enabled by default.
 
 ## CSV {#csv}
 
-In CSV format ClickHouse extracts columns values from the row according to delimiters. ClickHouse expects all types except numbers and strings to be enclosed in double quotes. If the value is in double quotes, ClickHouse tries to parse
-the data inside quotes using recursive parser and then tries to find the most appropriate data type for it. If the value is not in double quotes, ClickHouse tries to parse it as number,
+In CSV format ClickHouse extracts column values from the row according to delimiters. ClickHouse expects all types except numbers and strings to be enclosed in double quotes. If the value is in double quotes, ClickHouse tries to parse
+the data inside quotes using the recursive parser and then tries to find the most appropriate data type for it. If the value is not in double quotes, ClickHouse tries to parse it as a number,
 and if the value is not a number, ClickHouse treats it as a string.
 
 If you don't want ClickHouse to try to determine complex types using some parsers and heuristics, you can disable setting `input_format_csv_use_best_effort_in_schema_inference`
@@ -680,7 +680,7 @@ Example with disabled setting `input_format_csv_use_best_effort_in_schema_infere
 ## TSV/TSKV {#tsv-tskv}
 
 In TSV/TSKV formats ClickHouse extracts column value from the row according to tabular delimiters and then parses extracted value using
-recursive parser to determine the most appropriate type. If the type cannot be determined, ClickHouse treat this value as String.
+the recursive parser to determine the most appropriate type. If the type cannot be determined, ClickHouse treats this value as String.
 
 If you don't want ClickHouse to try to determine complex types using some parsers and heuristics, you can disable setting `input_format_tsv_use_best_effort_in_schema_inference`
 and ClickHouse will treat all columns as Strings.
@@ -796,7 +796,7 @@ Example with disabled setting `input_format_tsv_use_best_effort_in_schema_infere
 ## Values {#values}
 
 In Values format ClickHouse extracts column value from the row and then parses it using
-recursive parser similar to how literals are parsed.
+the recursive parser similar to how literals are parsed.
 
 **Examples:**
 
@@ -893,7 +893,7 @@ Example with disabled setting `input_format_tsv_use_best_effort_in_schema_infere
 ## CustomSeparated {#custom-separated}
 
 In CustomSeparated format ClickHouse first extracts all column values from the row according to specified delimiters and then tries to infer
-data type for each value according to escaping rule.
+the data type for each value according to escaping rule.
 
 **Example**
 
@@ -922,7 +922,7 @@ $$)
 
 ## Template {#template}
 
-In Template format ClickHouse first extracts all column values from the row according to specified template and then tries to infer
+In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the 
 data type for each value according to its escaping rule.
 
 **Example**
@@ -962,7 +962,7 @@ $$)
 ## Regexp {#regexp}
 
 Similar to Template, in Regexp format ClickHouse first extracts all column values from the row according to specified regular expression and then tries to infer
-data type for each value according to specified escaping rule.
+data type for each value according to the specified escaping rule.
 
 **Example**
 
@@ -1029,7 +1029,7 @@ SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(St
 ### schema_inference_make_columns_nullable
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+If the setting is enabled, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference.
 
 Enabled by default.
 
@@ -1156,7 +1156,7 @@ Enabled by default.
 └──────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Note: Parsing datetimes during schema inference respect setting [date_time_input_format](../operations/settings/settings.md#date_time_input_format)
+Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/en/operations/settings/settings.md#date_time_input_format)
 
 ### input_format_try_infer_dates
 
@@ -1204,12 +1204,12 @@ Enabled by default.
 Self-describing formats contain information about the structure of the data in the data itself,
 it can be some header with a description, a binary type tree, or some kind of table.
 To automatically infer a schema from files in such formats, ClickHouse reads a part of the data containing
-information about the types and convert it into a schema of the ClickHouse table.
+information about the types and converts it into a schema of the ClickHouse table.
 
 ## Formats with -WithNamesAndTypes suffix {#formats-with-names-and-types}
 
-ClickHouse supports some text formats with suffix -WithNamesAndTypes. This suffix means that the data contains two additional rows with column names and types before the actual data.
-While schema inference for such formats, ClickHouse reads first two rows and extracts column names and types.
+ClickHouse supports some text formats with the suffix -WithNamesAndTypes. This suffix means that the data contains two additional rows with column names and types before the actual data.
+While schema inference for such formats, ClickHouse reads the first two rows and extracts column names and types.
 
 **Example**
 
@@ -1281,7 +1281,7 @@ $$)
 
 ## Avro {#avro}
 
-In Avro format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following types match:
+In Avro format ClickHouse reads its schema from the data and converts it to ClickHouse schema using the following type matches:
 
 | Avro data type                     | ClickHouse data type                                                           |
 |------------------------------------|--------------------------------------------------------------------------------|
@@ -1301,7 +1301,7 @@ Other Avro types are not supported.
 
 ## Parquet {#parquet}
 
-In Parquet format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following types match:
+In Parquet format ClickHouse reads its schema from the data and converts it to ClickHouse schema using the following type matches:
 
 | Parquet data type            | ClickHouse data type                                    |
 |------------------------------|---------------------------------------------------------|
@@ -1325,11 +1325,11 @@ In Parquet format ClickHouse reads its schema from the data and converts to Clic
 | `STRUCT`                     | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                        | [Map](../sql-reference/data-types/map.md)               |
 
-Other Parquet types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
+Other Parquet types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
 
 ## Arrow {#arrow}
 
-In Arrow format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following types match:
+In Arrow format ClickHouse reads its schema from the data and converts it to ClickHouse schema using the following type matches:
 
 | Arrow data type                 | ClickHouse data type                                    |
 |---------------------------------|---------------------------------------------------------|
@@ -1353,11 +1353,11 @@ In Arrow format ClickHouse reads its schema from the data and converts to ClickH
 | `STRUCT`                        | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                           | [Map](../sql-reference/data-types/map.md)               |
 
-Other Arrow types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
+Other Arrow types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
 
 ## ORC {#orc}
 
-In ORC format ClickHouse reads its schema from the data and converts to ClickHouse schema using the following types match:
+In ORC format ClickHouse reads its schema from the data and converts it to ClickHouse schema using the following type matches:
 
 | ORC data type                        | ClickHouse data type                                    |
 |--------------------------------------|---------------------------------------------------------|
@@ -1376,12 +1376,12 @@ In ORC format ClickHouse reads its schema from the data and converts to ClickHou
 | `Struct`                             | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `Map`                                | [Map](../sql-reference/data-types/map.md)               |
 
-Other ORC types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
+Other ORC types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
 
 ## Native {#native}
 
 Native format is used inside ClickHouse and contains the schema in the data.
-In schema inference ClickHouse reads te schema from the data without any transformations.
+In schema inference, ClickHouse reads the schema from the data without any transformations.
 
 # Formats with external schema {#formats-with-external-schema}
 
@@ -1390,7 +1390,7 @@ To automatically infer a schema from files in such formats, ClickHouse reads ext
 
 # Protobuf {#protobuf}
 
-In schema inference for Protobuf format ClickHouse uses the following types match:
+In schema inference for Protobuf format ClickHouse uses the following type matches:
 
 | Protobuf data type            | ClickHouse data type                              |
 |-------------------------------|---------------------------------------------------|
@@ -1408,7 +1408,7 @@ In schema inference for Protobuf format ClickHouse uses the following types matc
 
 # CapnProto {#capnproto}
 
-In schema inference for CapnProto format ClickHouse uses the following types match:
+In schema inference for CapnProto format ClickHouse uses the following type matches:
 
 | CapnProto data type                | ClickHouse data type                                   |
 |------------------------------------|--------------------------------------------------------|
@@ -1431,14 +1431,14 @@ In schema inference for CapnProto format ClickHouse uses the following types mat
 
 # Strong-typed binary formats {#strong-typed-binary-formats}
 
-In such formats, each serialized value contains information about its type (and possibly about it's name), but there is no information about the whole table.
-In schema inference for such formats ClickHouse reads data row by row (up to `input_format_max_rows_to_read_for_schema_inference` rows) and extracts
+In such formats, each serialized value contains information about its type (and possibly about its name), but there is no information about the whole table.
+In schema inference for such formats, ClickHouse reads data row by row (up to `input_format_max_rows_to_read_for_schema_inference` rows) and extracts
 the type (and possibly name) for each value from the data and then converts these types to ClickHouse types.
 
 ## MsgPack {msgpack}
 
-In MsgPack format there is no delimiters between rows, to use schema inference for this format you should specify the number of columns in the table
-using setting `input_format_msgpack_number_of_columns`. ClickHouse uses the following types match:
+In MsgPack format there is no delimiter between rows, to use schema inference for this format you should specify the number of columns in the table
+using the setting `input_format_msgpack_number_of_columns`. ClickHouse uses the following type matches:
 
 | MessagePack data type (`INSERT`)                                   | ClickHouse data type                                      |
 |--------------------------------------------------------------------|-----------------------------------------------------------|
@@ -1453,12 +1453,12 @@ using setting `input_format_msgpack_number_of_columns`. ClickHouse uses the foll
 | `fixarray`, `array 16`, `array 32`                                 | [Array](../sql-reference/data-types/array.md)             |
 | `fixmap`, `map 16`, `map 32`                                       | [Map](../sql-reference/data-types/map.md)                 |
 
-By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
+By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
 
 ## BSONEachRow {#bsoneachrow}
 
-In BSONEachRow each row of data is presented as BSON document. In schema inference ClickHouse reads BSON documents one by one and extracts
-values names and types from the data and then transform these types to ClickHouse types using the following types match:
+In BSONEachRow each row of data is presented as a BSON document. In schema inference ClickHouse reads BSON documents one by one and extracts
+values, names, and types from the data and then transforms these types to ClickHouse types using the following type matches:
 
 | BSON Type                                                                                     | ClickHouse type                                                                                                             |
 |-----------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
@@ -1473,7 +1473,7 @@ values names and types from the data and then transform these types to ClickHous
 | `\x04` array                                                                                  | [Array](../sql-reference/data-types/array.md)/[Tuple](../sql-reference/data-types/tuple.md) (if nested types are different) |
 | `\x03` document                                                                               | [Named Tuple](../sql-reference/data-types/tuple.md)/[Map](../sql-reference/data-types/map.md) (with String keys)            |
 
-By default, all inferred types are inside `Nullable`, but it can be changed using setting `schema_inference_make_columns_nullable`.
+By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
 
 # Formats with constant schema {#formats-with-constant-schema}
 
@@ -1481,7 +1481,7 @@ Data in such formats always have the same schema.
 
 ## LineAsString {#line-as-string}
 
-In this format ClickHouse reads the whole line from the data into a single column with `String` data type. Inferred type for this format is always `String` and column name is `line`.
+In this format, ClickHouse reads the whole line from the data into a single column with `String` data type. The inferred type for this format is always `String` and the column name is `line`.
 
 **Example**
 
@@ -1495,7 +1495,7 @@ In this format ClickHouse reads the whole line from the data into a single colum
 
 ## JSONAsString {#json-as-string}
 
-In this format ClickHouse reads the whole JSON object from the data into a single column with `String` data type. Inferred type for this format is always `String` and column name is `json`.
+In this format, ClickHouse reads the whole JSON object from the data into a single column with `String` data type. The inferred type for this format is always `String` and the column name is `json`.
 
 **Example**
 
@@ -1509,7 +1509,7 @@ In this format ClickHouse reads the whole JSON object from the data into a singl
 
 ## JSONAsObject {#json-as-object}
 
-In this format ClickHouse reads the whole JSON object from the data into a single column with `Object('json'')` data type. Inferred type for this format is always `String` and column name is `json`.
+In this format, ClickHouse reads the whole JSON object from the data into a single column with `Object('json')` data type. Inferred type for this format is always `String` and the column name is `json`.
 
 Note: This format works only if `allow_experimental_object_type` is enabled.
 
