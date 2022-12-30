@@ -53,26 +53,26 @@ select dictGet(regexp_dict1, ('name', 'version'), key) from needle_table;
 
 -- test invalid
 INSERT INTO regexp_dictionary_source_table VALUES (6, 2, '3[12]/tclwebkit', ['version'], ['10'])
-SYSTEM RELOAD dictionaries; -- { serverError 489  }
+SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489  }
 
 truncate table regexp_dictionary_source_table;
 
 INSERT INTO regexp_dictionary_source_table VALUES (6, 2, '3[12]/tclwebkit', ['version'], ['10'])
-SYSTEM RELOAD dictionaries; -- { serverError 489  }
+SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489  }
 
 truncate table regexp_dictionary_source_table;
 
 INSERT INTO regexp_dictionary_source_table VALUES (1, 2, 'Linux/(\d+[\.\d]*).+tlinux', ['name', 'version'], ['TencentOS', '\1'])
 INSERT INTO regexp_dictionary_source_table VALUES (2, 3, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Andriod', '$1', 'test $1 and $2'])
 INSERT INTO regexp_dictionary_source_table VALUES (3, 1, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Andriod', '$1', 'test $1 and $2'])
-SYSTEM RELOAD dictionaries; -- { serverError 489  }
+SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489  }
 
 -- test priority
 truncate table regexp_dictionary_source_table;
 INSERT INTO regexp_dictionary_source_table VALUES (1, 0, '(\d+)/tclwebkit', ['name', 'version'], ['Andriod', '$1']);
 INSERT INTO regexp_dictionary_source_table VALUES (3, 1, '33/tclwebkit', ['name'], ['Andriod1']); -- child has more priority than parents.
 INSERT INTO regexp_dictionary_source_table VALUES (2, 0, '33/tclwebkit', ['version', 'comment'], ['13', 'matched 3']); -- larger id has lower priority than small id.
-SYSTEM RELOAD dictionaries;
+SYSTEM RELOAD dictionary regexp_dict1;
 select dictGet(regexp_dict1, ('name', 'version', 'comment'), '33/tclwebkit');
 
 

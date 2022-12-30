@@ -113,7 +113,7 @@ namespace DB
 *   - regexp: "MSIE (\\d+)"
 *     attr1: "Vecna"
 *     attr2: 22.8
-*     match: # nested match for subpattern
+*     (arbitratry name not in attribution list): # nested match node for subpattern
 *           - regexp: "Windows"
 *             attr2: 22.9
 *           - regexp: "Linux"
