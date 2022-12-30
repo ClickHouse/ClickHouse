@@ -9,40 +9,7 @@ ClickHouse can automatically determine the structure of input data in almost all
 This document will describe when schema inference is used, how it works with different input formats and which settings
 can control it.
 
-# Table of Contents
-- [Usage](#usage)
-- [Using structure from insertion table](#using-structure-from-insertion-table)
-- [Schema inference cache](#schema-inference-cache)
-- [Text formats](#text-formats)
-  - [JSON formats](#json-formats)
-    - [JSON settings](#json-settings)
-  - [CSV](#csv)
-  - [TSV/TSKV](#tsv-tskv)
-  - [Values](#values)
-  - [CustomSeparated](#custom-separated)
-  - [Template](#template)
-  - [Regexp](#regexp)
-  - [Settings for text formats](#settings-for-text-formats)
-- [Self describing formats](#self-describing-formats)
-  - [Formats with -WithNamesAndTypes suffix](#formats-with-names-and-types)
-  - [JSON formats with metadata](#json-with-metadata)
-  - [Avro](#avro)
-  - [Parquet](#parquet)
-  - [Arrow](#arrow)
-  - [ORC](#orc)
-  - [Native](#native)
-- [Formats with external schema](#formats-with-external-schema)
-  - [Protobuf](#protobuf)
-  - [CapnProto](#capnproto)
-- [Strong-typed binary formats](#strong-typed-binary-formats)
-  - [MsgPack](#msgpack)
-  - [BSONEachRow](#bsoneachrow)
-- [Formats with constant schema](#formats-with-constant-schema)
-  - [LineAsString](#line-as-string)
-  - [JSONAsString](#json-as-string)
-  - [JSONAsObject](#json-as-object)
-
-# Usage {#usage}
+## Usage {#usage}
 
 Schema inference is used when ClickHouse needs to read the data in a specific data format and the structure is unknown.
 
