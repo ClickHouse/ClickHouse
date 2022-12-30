@@ -75,8 +75,8 @@ void ReplicatedMergeTreeCleanupThread::iterate()
     {
         clearOldLogs();
         auto storage_settings = storage.getSettings();
-        clearOldBlocks("blocks", storage_settings->replicated_deduplication_window_seconds, storage_settings->replicated_deduplication_window);
-        clearOldBlocks("async_blocks", storage_settings->replicated_deduplication_window_seconds_for_async_inserts, storage_settings->replicated_deduplication_window_for_async_inserts);
+        clearOldBlocks("blocks", storage_settings->replicated_deduplication_window_seconds, storage_settings->replicated_deduplication_window, cached_block_stats_for_sync_inserts);
+        clearOldBlocks("async_blocks", storage_settings->replicated_deduplication_window_seconds_for_async_inserts, storage_settings->replicated_deduplication_window_for_async_inserts, cached_block_stats_for_async_inserts);
         clearOldMutations();
         storage.clearEmptyParts();
     }
@@ -323,12 +323,12 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
     }
 };
 
-void ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size)
+void ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size, NodeCTimeAndVersionCache & cached_block_stats)
 {
     auto zookeeper = storage.getZooKeeper();
 
     std::vector<NodeWithStat> timed_blocks;
-    getBlocksSortedByTime(blocks_dir_name, *zookeeper, timed_blocks);
+    getBlocksSortedByTime(blocks_dir_name, *zookeeper, timed_blocks, cached_block_stats);
 
     if (timed_blocks.empty())
         return;
@@ -391,7 +391,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_
 }
 
 
-void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & blocks_dir_name, zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks)
+void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & blocks_dir_name, zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks, NodeCTimeAndVersionCache & cached_block_stats)
 {
     timed_blocks.clear();
 
