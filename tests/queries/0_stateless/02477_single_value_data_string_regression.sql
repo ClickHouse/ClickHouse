@@ -90,12 +90,11 @@ SELECT '-1', maxMerge(x), length(maxMerge(x)) from (select CAST(unhex('ffffffff'
 SELECT '-2', maxMerge(x), length(maxMerge(x)) from (select CAST(unhex('fffffffe') || randomString(100500), 'AggregateFunction(max, String)') as x);
 SELECT '-2^31', maxMerge(x), length(maxMerge(x)) from (select CAST(unhex('00000080') || randomString(100500), 'AggregateFunction(max, String)') as x);
 
+SELECT '2^31-2', maxMerge(x) from (select CAST(unhex('feffff7f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError TOO_LARGE_STRING_SIZE }
 SELECT '2^31-1', maxMerge(x) from (select CAST(unhex('ffffff7f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError TOO_LARGE_STRING_SIZE }
 
-SELECT '2^31-2', maxMerge(x) from (select CAST(unhex('feffff7f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
-
-SELECT '2^30', maxMerge(x) from (select CAST(unhex('00000040') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
-SELECT '2^30+1', maxMerge(x) from (select CAST(unhex('01000040') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
+SELECT '2^30', maxMerge(x) from (select CAST(unhex('00000040') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError TOO_LARGE_STRING_SIZE }
+SELECT '2^30+1', maxMerge(x) from (select CAST(unhex('01000040') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError TOO_LARGE_STRING_SIZE }
 
 SELECT '2^30-1', maxMerge(x) from (select CAST(unhex('ffffff3f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
 -- The following query works, but it's too long and consumes to much memory
@@ -108,14 +107,3 @@ SELECT 'fuzz2', finalizeAggregation(CAST(unhex('04000000' || '30313233' || '01' 
 SELECT 'fuzz3', finalizeAggregation(CAST(unhex('04000000' || '30313233' || '00' || 'ffffffffffffffff'), 'AggregateFunction(argMax, String, UInt64)')) as x, length(x); -- { serverError CORRUPTED_DATA }
 SELECT 'fuzz4', finalizeAggregation(CAST(unhex('04000000' || '30313233' || '00'), 'AggregateFunction(argMax, String, UInt64)')) as x, length(x); -- { serverError CORRUPTED_DATA }
 SELECT 'fuzz5', finalizeAggregation(CAST(unhex('0100000000000000000FFFFFFFF0'), 'AggregateFunction(argMax, UInt64, String)')); -- { serverError CORRUPTED_DATA }
-
-
-drop table if exists aggr;
-create table aggr (n int, s AggregateFunction(max, String)) engine=MergeTree order by n;
-insert into aggr select 1, maxState('');
-insert into aggr select 2, maxState('\0');
-insert into aggr select 3, maxState('\0\0\0\0');
-insert into aggr select 4, maxState('abrac\0dabra\0');
-select n, maxMerge(s) as x, length(x) from aggr group by n order by n;
-select maxMerge(s) as x, length(x) from aggr;
-drop table aggr;

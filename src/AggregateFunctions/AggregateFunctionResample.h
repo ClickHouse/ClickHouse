@@ -43,7 +43,7 @@ public:
         size_t step_,
         const DataTypes & arguments,
         const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionResample<Key>>{arguments, params, createResultType(nested_function_)}
+        : IAggregateFunctionHelper<AggregateFunctionResample<Key>>{arguments, params}
         , nested_function{nested_function_}
         , last_col{arguments.size() - 1}
         , begin{begin_}
@@ -190,9 +190,9 @@ public:
             nested_function->deserialize(place + i * size_of_data, buf, version, arena);
     }
 
-    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
+    DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(nested_function_->getResultType());
+        return std::make_shared<DataTypeArray>(nested_function->getReturnType());
     }
 
     template <bool merge>

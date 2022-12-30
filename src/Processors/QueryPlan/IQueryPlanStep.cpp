@@ -113,9 +113,4 @@ void IQueryPlanStep::describePipeline(const Processors & processors, FormatSetti
         doDescribeProcessor(*prev, count, settings);
 }
 
-void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
-{
-    processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
-}
-
 }

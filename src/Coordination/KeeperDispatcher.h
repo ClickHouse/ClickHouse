@@ -215,12 +215,6 @@ public:
     {
         return server->getKeeperLogInfo();
     }
-
-    /// Request to be leader.
-    bool requestLeader()
-    {
-        return server->requestLeader();
-    }
 };
 
 }

@@ -685,27 +685,37 @@ public:
         }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
-            static constexpr auto target_scale = std::invoke(
-                []() -> std::optional<UInt32>
-                {
-                    if constexpr (std::is_base_of_v<AddNanosecondsImpl, Transform>)
-                        return 9;
-                    else if constexpr (std::is_base_of_v<AddMicrosecondsImpl, Transform>)
-                        return 6;
-                    else if constexpr (std::is_base_of_v<AddMillisecondsImpl, Transform>)
-                        return 3;
-
-                    return {};
-                });
-
-            auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0);
-            if (const auto* datetime64_type = typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
+            if (typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
             {
-                const auto from_scale = datetime64_type->getScale();
-                return std::make_shared<DataTypeDateTime64>(std::max(from_scale, target_scale.value_or(from_scale)), std::move(timezone));
-            }
+                const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
 
-            return std::make_shared<DataTypeDateTime64>(target_scale.value_or(DataTypeDateTime64::default_scale), std::move(timezone));
+                auto from_scale = datetime64_type.getScale();
+                auto scale = from_scale;
+
+                if (std::is_same_v<Transform, AddNanosecondsImpl>)
+                    scale = 9;
+                else if (std::is_same_v<Transform, AddMicrosecondsImpl>)
+                    scale = 6;
+                else if (std::is_same_v<Transform, AddMillisecondsImpl>)
+                    scale = 3;
+
+                scale = std::max(scale, from_scale);
+
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            }
+            else
+            {
+                auto scale = DataTypeDateTime64::default_scale;
+
+                if (std::is_same_v<Transform, AddNanosecondsImpl>)
+                    scale = 9;
+                else if (std::is_same_v<Transform, AddMicrosecondsImpl>)
+                    scale = 6;
+                else if (std::is_same_v<Transform, AddMillisecondsImpl>)
+                    scale = 3;
+
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            }
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type in datetime add interval function");

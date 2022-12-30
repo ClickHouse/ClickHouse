@@ -61,6 +61,7 @@ private:
     NamesAndTypes fields;
     Names field_tag_names;
 
+    Statistics statistics;
     const FormatSettings format_settings;
 };
 

@@ -4,7 +4,6 @@ import logging
 import subprocess
 import os
 import sys
-from typing import List, Tuple
 
 from github import Github
 
@@ -95,7 +94,7 @@ if __name__ == "__main__":
     run_command = get_run_command(build_url, workspace_path, docker_image)
     logging.info("Going to run %s", run_command)
 
-    run_log_path = os.path.join(workspace_path, "run.log")
+    run_log_path = os.path.join(workspace_path, "runlog.log")
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log
@@ -138,7 +137,7 @@ if __name__ == "__main__":
     report_url = GITHUB_RUN_URL
 
     status = "success"
-    test_results = []  # type: List[Tuple[str, str]]
+    test_results = []
     # Try to get status message saved by the SQLancer
     try:
         # with open(
@@ -146,7 +145,7 @@ if __name__ == "__main__":
         # ) as status_f:
         #     status = status_f.readline().rstrip("\n")
         if os.path.exists(os.path.join(workspace_path, "server_crashed.log")):
-            test_results.append(("Server crashed", "FAIL"))
+            test_results.append("Server crashed", "FAIL")
         with open(
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:

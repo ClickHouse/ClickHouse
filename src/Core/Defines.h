@@ -81,4 +81,3 @@
 #else
 #define QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS 0
 #endif
-

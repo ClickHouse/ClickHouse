@@ -15,7 +15,6 @@ namespace DB
   * Therefore, consider this case separately.
   */
 std::string getClusterName(const IAST & node);
-std::optional<std::string> tryGetClusterName(const IAST & node);
 
 std::string getClusterNameAndMakeLiteral(ASTPtr & node);
 

@@ -3,15 +3,12 @@
 #include <Functions/grouping.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/AggregationUtils.h>
 
 #include <Interpreters/Context.h>
-
-#include <Processors/QueryPlan/AggregatingStep.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -101,14 +98,14 @@ public:
             {
                 auto grouping_ordinary_function = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes, force_grouping_standard_compatibility);
                 auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
-                function_node->resolveAsFunction(grouping_ordinary_function_adaptor->build({}));
+                function_node->resolveAsFunction(std::move(grouping_ordinary_function_adaptor), std::make_shared<DataTypeUInt64>());
                 break;
             }
             case GroupByKind::ROLLUP:
             {
                 auto grouping_rollup_function = std::make_shared<FunctionGroupingForRollup>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
                 auto grouping_rollup_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_rollup_function));
-                function_node->resolveAsFunction(grouping_rollup_function_adaptor->build({}));
+                function_node->resolveAsFunction(std::move(grouping_rollup_function_adaptor), std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
                 break;
             }
@@ -116,7 +113,7 @@ public:
             {
                 auto grouping_cube_function = std::make_shared<FunctionGroupingForCube>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
                 auto grouping_cube_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_cube_function));
-                function_node->resolveAsFunction(grouping_cube_function_adaptor->build({}));
+                function_node->resolveAsFunction(std::move(grouping_cube_function_adaptor), std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
                 break;
             }
@@ -124,7 +121,7 @@ public:
             {
                 auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(arguments_indexes, grouping_sets_keys_indices, force_grouping_standard_compatibility);
                 auto grouping_grouping_sets_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_grouping_sets_function));
-                function_node->resolveAsFunction(grouping_grouping_sets_function_adaptor->build({}));
+                function_node->resolveAsFunction(std::move(grouping_grouping_sets_function_adaptor), std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
                 break;
             }
@@ -206,7 +203,7 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggreg
         for (const auto & parameter_node : parameters_nodes)
         {
             /// Function parameters constness validated during analysis stage
-            aggregate_description.parameters.push_back(parameter_node->as<ConstantNode &>().getValue());
+            aggregate_description.parameters.push_back(parameter_node->getConstantValue().getValue());
         }
 
         const auto & arguments_nodes = aggregate_function_node_typed.getArguments().getNodes();

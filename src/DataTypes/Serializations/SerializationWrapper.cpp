@@ -66,24 +66,24 @@ void SerializationWrapper::deserializeBinaryBulk(IColumn & column, ReadBuffer & 
     nested_serialization->deserializeBinaryBulk(column, istr, limit, avg_value_size_hint);
 }
 
-void SerializationWrapper::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationWrapper::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    nested_serialization->serializeBinary(field, ostr, settings);
+    nested_serialization->serializeBinary(field, ostr);
 }
 
-void SerializationWrapper::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationWrapper::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-    nested_serialization->deserializeBinary(field, istr, settings);
+    nested_serialization->deserializeBinary(field, istr);
 }
 
-void SerializationWrapper::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationWrapper::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    nested_serialization->serializeBinary(column, row_num, ostr, settings);
+    nested_serialization->serializeBinary(column, row_num, ostr);
 }
 
-void SerializationWrapper::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationWrapper::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    nested_serialization->deserializeBinary(column, istr, settings);
+    nested_serialization->deserializeBinary(column, istr);
 }
 
 void SerializationWrapper::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

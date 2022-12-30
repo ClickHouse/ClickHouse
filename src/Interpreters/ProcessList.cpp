@@ -69,8 +69,7 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 
-ProcessList::EntryPtr
-ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds)
+ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context)
 {
     EntryPtr res;
 
@@ -231,7 +230,6 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 /// Set up memory profiling
                 thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
                 thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
-                thread_group->performance_counters.setTraceProfileEvents(settings.trace_profile_events);
             }
 
             thread_group->memory_tracker.setDescription("(for query)");
@@ -244,16 +242,13 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             ///  since allocation and deallocation could happen in different threads
         }
 
-        auto process_it = processes.emplace(
-            processes.end(),
-            std::make_shared<QueryStatus>(
-                query_context,
-                query_,
-                client_info,
-                priorities.insert(static_cast<int>(settings.priority)),
-                std::move(thread_group),
-                query_kind,
-                watch_start_nanoseconds));
+        auto process_it = processes.emplace(processes.end(), std::make_shared<QueryStatus>(
+            query_context,
+            query_,
+            client_info,
+            priorities.insert(static_cast<int>(settings.priority)),
+            std::move(thread_group),
+            query_kind));
 
         increaseQueryKindAmount(query_kind);
 
@@ -348,13 +343,11 @@ QueryStatus::QueryStatus(
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
     ThreadGroupStatusPtr && thread_group_,
-    IAST::QueryKind query_kind_,
-    UInt64 watch_start_nanoseconds)
+    IAST::QueryKind query_kind_)
     : WithContext(context_)
     , query(query_)
     , client_info(client_info_)
     , thread_group(std::move(thread_group_))
-    , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
     , global_overcommit_tracker(context_->getGlobalOvercommitTracker())
     , query_kind(query_kind_)
@@ -528,7 +521,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
 
     res.query             = query;
     res.client_info       = client_info;
-    res.elapsed_microseconds = watch.elapsedMicroseconds();
+    res.elapsed_seconds   = watch.elapsedSeconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
     res.is_all_data_sent  = is_all_data_sent.load(std::memory_order_relaxed);
     res.read_rows         = progress_in.read_rows;

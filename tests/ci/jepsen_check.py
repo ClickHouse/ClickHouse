@@ -7,9 +7,9 @@ import sys
 
 import argparse
 
-import boto3  # type: ignore
-import requests  # type: ignore
+import boto3
 from github import Github
+import requests
 
 from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from stopwatch import Stopwatch
@@ -251,7 +251,7 @@ if __name__ == "__main__":
         )
         logging.info("Going to run jepsen: %s", cmd)
 
-        run_log_path = os.path.join(TEMP_PATH, "run.log")
+        run_log_path = os.path.join(TEMP_PATH, "runlog.log")
 
         with TeePopen(cmd, run_log_path) as process:
             retcode = process.wait()

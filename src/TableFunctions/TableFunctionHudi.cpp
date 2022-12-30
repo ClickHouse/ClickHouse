@@ -130,7 +130,7 @@ ColumnsDescription TableFunctionHudi::getActualTableStructure(ContextPtr context
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageHudi::getTableStructureFromData(configuration, std::nullopt, context);
+        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -139,7 +139,8 @@ ColumnsDescription TableFunctionHudi::getActualTableStructure(ContextPtr context
 StoragePtr TableFunctionHudi::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    S3::URI s3_uri(configuration.url);
+    Poco::URI uri(configuration.url);
+    S3::URI s3_uri(uri);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")

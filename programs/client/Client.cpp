@@ -16,8 +16,6 @@
 
 #include <base/find_symbols.h>
 
-#include <Access/AccessControl.h>
-
 #include "config_version.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -260,10 +258,6 @@ try
     if (is_interactive && !config().has("no-warnings"))
         showWarnings();
 
-    /// Set user password complexity rules
-    auto & access_control = global_context->getAccessControl();
-    access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
-
     if (is_interactive && !delayed_interactive)
     {
         runInteractive();
@@ -354,9 +348,17 @@ void Client::connect()
         }
         catch (const Exception & e)
         {
-            if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            /// It is typical when users install ClickHouse, type some password and instantly forget it.
+            /// This problem can't be fixed with reconnection so it is not attempted
+            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
+                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
             {
-                /// This problem can't be fixed with reconnection so it is not attempted
+                std::cerr << std::endl
+                          << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
+                          << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
+                          << "and deleting this file will reset the password." << std::endl
+                          << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
+                          << std::endl;
                 throw;
             }
             else

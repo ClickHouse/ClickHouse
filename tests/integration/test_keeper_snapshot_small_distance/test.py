@@ -112,57 +112,45 @@ def get_genuine_zk(node, timeout=30.0):
 
 
 def test_snapshot_and_load(started_cluster):
-    genuine_connection = None
-    fake_zks = []
+    restart_and_clear_zookeeper(node1)
+    genuine_connection = get_genuine_zk(node1)
+    for node in [node1, node2, node3]:
+        print("Stop and clear", node.name, "with dockerid", node.docker_id)
+        stop_clickhouse(node)
+        clear_clickhouse_data(node)
 
-    try:
-        restart_and_clear_zookeeper(node1)
-        genuine_connection = get_genuine_zk(node1)
-        for node in [node1, node2, node3]:
-            print("Stop and clear", node.name, "with dockerid", node.docker_id)
-            stop_clickhouse(node)
-            clear_clickhouse_data(node)
+    for i in range(1000):
+        genuine_connection.create("/test" + str(i), b"data")
 
-        for i in range(1000):
-            genuine_connection.create("/test" + str(i), b"data")
+    print("Data loaded to zookeeper")
 
-        print("Data loaded to zookeeper")
+    stop_zookeeper(node1)
+    start_zookeeper(node1)
+    stop_zookeeper(node1)
 
-        stop_zookeeper(node1)
-        start_zookeeper(node1)
-        stop_zookeeper(node1)
+    print("Data copied to node1")
+    resulted_path = convert_zookeeper_data(node1)
+    print("Resulted path", resulted_path)
+    for node in [node2, node3]:
+        print("Copy snapshot from", node1.name, "to", node.name)
+        cluster.copy_file_from_container_to_container(
+            node1, resulted_path, node, "/var/lib/clickhouse/coordination/snapshots"
+        )
 
-        print("Data copied to node1")
-        resulted_path = convert_zookeeper_data(node1)
-        print("Resulted path", resulted_path)
-        for node in [node2, node3]:
-            print("Copy snapshot from", node1.name, "to", node.name)
-            cluster.copy_file_from_container_to_container(
-                node1, resulted_path, node, "/var/lib/clickhouse/coordination/snapshots"
-            )
+    print("Starting clickhouses")
 
-        print("Starting clickhouses")
+    p = Pool(3)
+    result = p.map_async(start_clickhouse, [node1, node2, node3])
+    result.wait()
 
-        p = Pool(3)
-        result = p.map_async(start_clickhouse, [node1, node2, node3])
-        result.wait()
+    print("Loading additional data")
+    fake_zks = [get_fake_zk(node) for node in [node1, node2, node3]]
+    for i in range(1000):
+        fake_zk = random.choice(fake_zks)
+        try:
+            fake_zk.create("/test" + str(i + 1000), b"data")
+        except Exception as ex:
+            print("Got exception:" + str(ex))
 
-        print("Loading additional data")
-        fake_zks = [get_fake_zk(node) for node in [node1, node2, node3]]
-        for i in range(1000):
-            fake_zk = random.choice(fake_zks)
-            try:
-                fake_zk.create("/test" + str(i + 1000), b"data")
-            except Exception as ex:
-                print("Got exception:" + str(ex))
-
-        print("Final")
-        fake_zks[0].create("/test10000", b"data")
-    finally:
-        for zk in fake_zks:
-            if zk:
-                zk.stop()
-                zk.close()
-        if genuine_connection:
-            genuine_connection.stop()
-            genuine_connection.close()
+    print("Final")
+    fake_zks[0].create("/test10000", b"data")
