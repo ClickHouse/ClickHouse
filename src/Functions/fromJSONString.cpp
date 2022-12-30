@@ -210,14 +210,11 @@ private:
                     Tuple kv(2);
 
                     auto k(field.unescaped_key().value_unsafe());
-                    // kv.emplace_back(deserializeKey(k, key_type));
                     deserializeKey(k, key_type, kv[0]);
 
                     auto v(field.value().value_unsafe());
-                    // kv.emplace_back(deserializeValue(v, val_type));
                     deserializeValue(v, val_type, kv[1]);
 
-                    // map.emplace_back(std::move(kv));
                     map[index++] = std::move(kv);
                 }
                 res = std::move(map);
@@ -387,7 +384,6 @@ private:
 
         ENUMERATE_INTEGER_TYPES(IMPLEMENT_DESERIALIZE_AS_INTEGER)
 
-        // throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize key as {} not supported yet", type->getName());
         res = type->getDefault();
     }
 
@@ -448,12 +444,11 @@ private:
         if (which.isTuple())
             return deserializeValueAsTuple(val, type, res);
 
-        // throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize value as {} not supported yet", type->getName());
         res = type->getDefault();
     }
 };
 
-void registerFunctionFromJSONString(FunctionFactory & factory)
+REGISTER_FUNCTION(FromJSONString)
 {
     factory.registerFunction<FunctionFromJSONString>();
 }
