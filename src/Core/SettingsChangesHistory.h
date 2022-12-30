@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <boost/algorithm/string.hpp>
 #include <map>
 
@@ -28,7 +29,8 @@ public:
         for (const auto & split_element : split)
         {
             size_t component;
-            if (!tryParse(component, split_element))
+            ReadBufferFromString buf(split_element);
+            if (!tryReadIntText(component, buf) || !buf.eof())
                 throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
             components.push_back(component);
         }
