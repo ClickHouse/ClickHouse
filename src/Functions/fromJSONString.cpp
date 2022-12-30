@@ -115,20 +115,17 @@ private:
                     return;
                 }
 
-                Tuple tuple;
-                tuple.reserve(elem_types.size());
+                Tuple tuple(elem_types.size());
                 auto jmap(val.get_object().value_unsafe());
-                Field field;
                 for (size_t i = 0; i < elem_names.size(); ++i)
                 {
                     auto elem_jval = jmap.find_field(elem_names[i]);
                     if (elem_jval.error())
-                        tuple.emplace_back(elem_types[i]->getDefault());
+                        tuple[i] = elem_types[i]->getDefault();
                     else
                     {
                         auto elem_val(elem_jval.value_unsafe());
-                        deserializeValue(elem_val, elem_types[i], field);
-                        tuple.emplace_back(std::move(field));
+                        deserializeValue(elem_val, elem_types[i], tuple[i]);
                     }
                 }
                 res = std::move(tuple);
@@ -303,7 +300,7 @@ private:
                 return;
             }
             case ondemand::json_type::string: {
-                if constexpr (is_integer_v<T>)
+                if constexpr (is_integer<T>)
                 {
                     using NearestIntType = NearestFieldType<T>;
                     NearestIntType int_val;
@@ -428,7 +425,7 @@ private:
             {
                 /// We must truncate string when its size exceeds N
                 size_t n = typeid_cast<const DataTypeFixedString *>(type.get())->getN();
-                const auto & str = res.reinterpret<String>();
+                const auto & str = res.get<String>();
                 if (str.size() > n)
                     res = str.substr(0, n);
             }
