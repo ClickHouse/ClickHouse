@@ -31,7 +31,11 @@ VERSION_PATTERN = r"((?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+-[a-zA-Z]*)"
 def download_package(url, out_path, retries=10, backoff_factor=0.3):
     session = requests.Session()
     retry = Retry(
-        total=retries, read=retries, connect=retries, backoff_factor=backoff_factor, status_forcelist=[500, 502, 503, 504]
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=[500, 502, 503, 504],
     )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("http://", adapter)
