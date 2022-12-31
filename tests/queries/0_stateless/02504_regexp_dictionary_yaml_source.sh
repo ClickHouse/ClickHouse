@@ -36,7 +36,8 @@ create dictionary regexp_dict1
 (
     regexp String,
     name String,
-    version Nullable(String)
+    version Nullable(String) default 'default',
+    lucky Int64
 )
 PRIMARY KEY(regexp)
 SOURCE(YAMLRegExpTree(PATH '$yaml'))
@@ -46,6 +47,46 @@ LAYOUT(regexp_tree);
 select dictGet('regexp_dict1', ('name', 'version'), 'Linux/123.45.67 tlinux');
 select dictGet('regexp_dict1', ('name', 'version'), '31/tclwebkit1024');
 select dictGet('regexp_dict1', ('name', 'version'), '999/tclwebkit1024');
+select dictGet('regexp_dict1', ('name', 'version'), '28/tclwebkit1024');
+"
+
+cat > "$yaml" <<EOL
+- regexp: 'Linux/(\d+[\.\d]*).+tlinux'
+  name: 'TencentOS'
+  version: '\1'
+
+- regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
+  name: 'Andriod'
+  versions:
+    - regexp: '33/tclwebkit'
+      version: '13'
+    - regexp: '3[12]/tclwebkit'
+      version: '12'
+    - regexp: '30/tclwebkit'
+      version: '11'
+    - regexp: '29/tclwebkit'
+      version: '10'
+    - regexp: '28/tclwebkit'
+      version:
+      lucky: 'abcde'
+EOL
+
+$CLICKHOUSE_CLIENT -n --query="
+system reload dictionary regexp_dict1; -- { serverError 489 }
+"
+
+cat > "$yaml" <<EOL
+- regexp: 
+  name: 'TencentOS'
+  version: '\1'
+EOL
+
+$CLICKHOUSE_CLIENT -n --query="
+system reload dictionary regexp_dict1; -- { serverError 318 }
+"
+
+$CLICKHOUSE_CLIENT -n --query="
 drop dictionary regexp_dict1;
 "
+
 rm -rf "$USER_FILES_PATH/test_02504"

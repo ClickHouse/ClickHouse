@@ -57,6 +57,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_PARSE_YAML;
+    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
@@ -113,7 +117,7 @@ namespace DB
 *   - regexp: "MSIE (\\d+)"
 *     attr1: "Vecna"
 *     attr2: 22.8
-*     (arbitratry name not in attribution list): # nested match node for subpattern
+*     (arbitrary name not in attribution list): # nested match node for subpattern
 *           - regexp: "Windows"
 *             attr2: 22.9
 *           - regexp: "Linux"
@@ -139,14 +143,6 @@ const std::string kParentId = "parent_id";
 const std::string kKeys = "keys";
 const std::string kValues = "values";
 
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_PARSE_YAML;
-    extern const int INVALID_CONFIG_PARAMETER;
-    extern const int PATH_ACCESS_DENIED;
-}
 
 struct MatchNode
 {
