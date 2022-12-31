@@ -8,6 +8,7 @@
 #include <Poco/Logger.h>
 #include <Poco/RegularExpression.h>
 
+#include "Common/Exception.h"
 #include <Common/ArenaUtils.h>
 #include <Common/logger_useful.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -63,12 +64,17 @@ namespace
 
     /// TODO: We should consider what kind of types we should support.
     Field parseStringToField(const String & raw, DataTypePtr data_type)
+    try
     {
         ReadBufferFromString buffer(raw);
         auto col = data_type->createColumn();
         auto serialization = data_type->getSerialization(ISerialization::Kind::DEFAULT);
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot parse {} for data type {}, Reason is: {}", raw, data_type->getName(), getCurrentExceptionMessage(false));
     }
 }
 
