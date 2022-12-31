@@ -141,14 +141,12 @@ private:
         const Field & value_field,
         RPNElement & out);
 
-    bool getKey(const std::string & key_column_name, size_t & key_column_num);
     bool tryPrepareSetGinFilter(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
         RPNElement & out, const Field & value, const GinFilterParameters & params, TokenExtractorPtr token_extractor);
 
-    Names index_columns;
-    DataTypes index_data_types;
+    const Block & header;
     GinFilterParameters params;
     TokenExtractorPtr token_extractor;
     RPN rpn;

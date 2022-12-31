@@ -195,9 +195,7 @@ MergeTreeConditionGinFilter::MergeTreeConditionGinFilter(
     const Block & index_sample_block,
     const GinFilterParameters & params_,
     TokenExtractorPtr token_extactor_)
-    :  WithContext(context_)
-    , index_columns(index_sample_block.getNames())
-    , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
+    :  WithContext(context_), header(index_sample_block)
     , params(params_)
     , token_extractor(token_extactor_)
     , prepared_sets(query_info.prepared_sets)
@@ -212,7 +210,6 @@ MergeTreeConditionGinFilter::MergeTreeConditionGinFilter(
         rpn = std::move(
                 RPNBuilder<RPNElement>(
                         query_info.filter_actions_dag->getOutputs().at(0), context_,
-                        // [this] (const ASTPtr & node, ContextPtr /* context */, Block & block_with_constants, RPNElement & out) -> bool
                         [&](const RPNBuilderTreeNode & node, RPNElement & out)
                         {
                             return this->traverseAtomAST(node, out);
@@ -377,16 +374,6 @@ bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranule
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeConditionGinFilter::getKey(const std::string & key_column_name, size_t & key_column_num)
-{
-    auto it = std::find(index_columns.begin(), index_columns.end(), key_column_name);
-    if (it == index_columns.end())
-        return false;
-
-    key_column_num = static_cast<size_t>(it - index_columns.begin());
-    return true;
-}
-
 bool MergeTreeConditionGinFilter::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
@@ -479,10 +466,9 @@ bool MergeTreeConditionGinFilter::traverseASTEquals(
         return false;
 
     Field const_value = value_field;
-
     size_t key_column_num = 0;
-    bool key_exists = getKey(key_ast.getColumnName(), key_column_num);
-    bool map_key_exists = getKey(fmt::format("mapKeys({})", key_ast.getColumnName()), key_column_num);
+    bool key_exists = header.has(key_ast.getColumnName());
+    bool map_key_exists = header.has(fmt::format("mapKeys({})", key_ast.getColumnName()));
 
     if (key_ast.isFunction())
     {
@@ -501,23 +487,16 @@ bool MergeTreeConditionGinFilter::traverseASTEquals(
 
             auto first_argument = function.getArgumentAt(0);
             const auto map_column_name = first_argument.getColumnName();
-
-            size_t map_keys_key_column_num = 0;
             auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
-            bool map_keys_exists = getKey(map_keys_index_column_name, map_keys_key_column_num);
-
-            size_t map_values_key_column_num = 0;
             auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
-            bool map_values_exists = getKey(map_values_index_column_name, map_values_key_column_num);
 
-            if (map_keys_exists)
+            if (header.has(map_keys_index_column_name))
             {
-                // auto & argument = function->arguments.get()->children[1];
                 auto argument = function.getArgumentAt(1);
                 DataTypePtr const_type;
                 if (argument.tryGetConstant(const_value, const_type))
                 {
-                    key_column_num = map_keys_key_column_num;
+                    key_column_num = header.getPositionByName(map_keys_index_column_name);
                     key_exists = true;
                 }
                 else
@@ -525,9 +504,9 @@ bool MergeTreeConditionGinFilter::traverseASTEquals(
                     return false;
                 }
             }
-            else if (map_values_exists)
+            else if (header.has(map_values_index_column_name))
             {
-                key_column_num = map_values_key_column_num;
+                key_column_num = header.getPositionByName(map_values_index_column_name);
                 key_exists = true;
             }
             else
@@ -660,21 +639,21 @@ bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
         auto arguments_size = function.getArgumentsSize();
         for (size_t i = 0; i < arguments_size; ++i)
         {
-            size_t key = 0;
-            if (getKey(function.getArgumentAt(i).getColumnName(), key))
+            if (header.has(function.getArgumentAt(i).getColumnName()))
             {
+                auto key = header.getPositionByName(function.getArgumentAt(i).getColumnName());
                 key_tuple_mapping.emplace_back(i, key);
-                data_types.push_back(index_data_types[key]);
+                data_types.push_back(header.getByPosition(key).type);
             }
         }
     }
     else
     {
-        size_t key = 0;
-        if (getKey(lhs.getColumnName(), key))
+        if (header.has(lhs.getColumnName()))
         {
+            auto key = header.getPositionByName(lhs.getColumnName());
             key_tuple_mapping.emplace_back(0, key);
-            data_types.push_back(index_data_types[key]);
+            data_types.push_back(header.getByPosition(key).type);            
         }
     }
 
@@ -705,7 +684,7 @@ bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
         {
             gin_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
-            gin_filters.back().back().setQueryString(ref.data, ref.size);
+            token_extractor->stringToGinFilter(ref.data, ref.size, gin_filters.back().back());
         }
     }
 
