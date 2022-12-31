@@ -407,7 +407,7 @@ DESC format(JSONEachRow, $$
                               {"tuple" : [1, null, null]}
                               {"tuple" : [null, "Hello, World!", []]}
                               {"tuple" : [null, null, [1, 2, 3]]}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -435,7 +435,7 @@ DESC format(JSONEachRow, $$
                             {"obj" : {"key1" : 42}}
                             {"obj" : {"key2" : "Hello, World!"}}
                             {"obj" : {"key1" : 24, "key3" : {"a" : 42, "b" : null}}}
-                        $$)
+                         $$)
 ```
 ```response
 ┌─name─┬─type─────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -520,7 +520,7 @@ SET input_format_json_read_numbers_as_strings = 1;
 DESC format(JSONEachRow, $$
                                 {"value" : 1055}
                                 {"value" : "unknown"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -541,7 +541,7 @@ SET input_format_json_read_bools_as_numbers = 1;
 DESC format(JSONEachRow, $$
                                 {"value" : true}
                                 {"value" : 42}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1077,7 +1077,7 @@ SET schema_inference_make_columns_nullable = 0
 DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
-                          $$)
+                         $$)
 ```
 ```response
 
@@ -1105,7 +1105,7 @@ SET input_format_try_infer_integers = 0
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1117,7 +1117,7 @@ SET input_format_try_infer_integers = 1
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name───┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1128,7 +1128,7 @@ DESC format(JSONEachRow, $$
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 18446744073709551615}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name───┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1139,7 +1139,7 @@ DESC format(JSONEachRow, $$
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2.2}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1162,7 +1162,7 @@ SET input_format_try_infer_datetimes = 0
 DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "2022-01-01 00:00:00.000"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1174,7 +1174,7 @@ SET input_format_try_infer_datetimes = 1
 DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "2022-01-01 00:00:00.000"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1185,7 +1185,7 @@ DESC format(JSONEachRow, $$
 DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "unknown"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1210,7 +1210,7 @@ SET input_format_try_infer_datetimes = 0, input_format_try_infer_dates = 0
 DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "2022-01-01"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1222,7 +1222,7 @@ SET input_format_try_infer_dates = 1
 DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "2022-01-01"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1233,7 +1233,7 @@ DESC format(JSONEachRow, $$
 DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "unknown"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
