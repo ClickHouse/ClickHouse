@@ -360,7 +360,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
     echo "Clone previous release repository"
     git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
-    echo "Download previous release server"
+    echo "Download clickhouse-server from the previous release"
     mkdir previous_release_package_folder
 
     echo $previous_release_tag | download_release_packages && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
