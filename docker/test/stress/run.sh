@@ -54,7 +54,7 @@ function configure()
 
     # we mount tests folder from repo to /usr/share
     ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
-    ln -s /usr/share/clickhouse-test/ci/download_release_packets.py /usr/bin/download_release_packets
+    ln -s /usr/share/clickhouse-test/ci/download_release_packages.py /usr/bin/download_release_packages
     ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
     # avoid too slow startup
@@ -360,10 +360,10 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
     echo "Clone previous release repository"
     git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
-    echo "Download previous release server"
+    echo "Download clickhouse-server from the previous release"
     mkdir previous_release_package_folder
 
-    echo $previous_release_tag | download_release_packets && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
+    echo $previous_release_tag | download_release_packages && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
         || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
@@ -380,10 +380,10 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         echo -e "Backward compatibility check: Failed to clone previous release tests\tFAIL" >> /test_output/test_results.tsv
     elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
     then
-        echo -e "Backward compatibility check: Failed to download previous release packets\tFAIL" >> /test_output/test_results.tsv
+        echo -e "Backward compatibility check: Failed to download previous release packages\tFAIL" >> /test_output/test_results.tsv
     else
         echo -e "Successfully cloned previous release tests\tOK" >> /test_output/test_results.tsv
-        echo -e "Successfully downloaded previous release packets\tOK" >> /test_output/test_results.tsv
+        echo -e "Successfully downloaded previous release packages\tOK" >> /test_output/test_results.tsv
 
         # Uninstall current packages
         dpkg --remove clickhouse-client
