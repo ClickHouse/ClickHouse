@@ -157,7 +157,7 @@ function fuzz
     mkdir -p /var/run/clickhouse-server
 
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db 2>&1 > server.log &
+    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > server.log 2>&1 &
     server_pid=$!
 
     kill -0 $server_pid
