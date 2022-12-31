@@ -157,7 +157,7 @@ function fuzz
     mkdir -p /var/run/clickhouse-server
 
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db  2>&1 | pigz > server.log.gz &
+    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > server.log 2>&1 &
     server_pid=$!
 
     kill -0 $server_pid
@@ -262,7 +262,7 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! zgrep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log.gz > description.txt
+        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
@@ -342,10 +342,16 @@ case "$stage" in
     time fuzz
     ;&
 "report")
+
 CORE_LINK=''
 if [ -f core.gz ]; then
     CORE_LINK='<a href="core.gz">core.gz</a>'
 fi
+
+grep -F '<Fatal>' server.log > fatal.log ||:
+
+pigz server.log
+
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
 <html lang="en">
@@ -384,7 +390,14 @@ th { cursor: pointer; }
 <tr>
   <td>AST Fuzzer</td>
   <td>$(cat status.txt)</td>
-  <td style="white-space: pre;">$(clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt)</td>
+  <td style="white-space: pre;">$(
+    clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt
+  )</td>
+</tr>
+<tr>
+  <td colspan="3" style="white-space: pre; overflow-x: scroll;">$(
+    clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < fatal.log || cat fatal.log
+  )</td>
 </tr>
 </table>
 </body>
