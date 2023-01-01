@@ -122,7 +122,6 @@ StorageUniqueMergeTree::StorageUniqueMergeTree(
 
 void StorageUniqueMergeTree::startup()
 {
-    clearOldPartsFromFilesystem();
     clearOldWriteAheadLogs();
     clearEmptyParts();
 

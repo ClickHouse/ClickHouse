@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 
@@ -1347,7 +1348,11 @@ static ColumnPtr combineBitmapFilter(ColumnPtr first, ColumnPtr second)
     const auto & second_fiter = typeid_cast<const ColumnUInt8 *>(second.get());
 
     if (!first_filter || !second_fiter)
-        throw Exception("Passed filter to combine is not ColumnUInt8", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Passed filters to combine are not both Column UInt8, but Column {} and Column {}",
+            first->getName(),
+            second->getName());
 
     const auto & first_filter_data = first_filter->getData();
     const auto & second_fiter_data = second_fiter->getData();
