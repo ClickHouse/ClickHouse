@@ -214,10 +214,9 @@ def clear_ip_tables_and_restart_daemons():
             subprocess.check_output("sudo iptables -D DOCKER-USER 1", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info(
-            "All iptables rules cleared, "
-            + str(iptables_iter)
-            + "iterations, last error: "
-            + str(err)
+            "All iptables rules cleared, %s iterations, last error: %s",
+            iptables_iter,
+            str(err),
         )
 
 
