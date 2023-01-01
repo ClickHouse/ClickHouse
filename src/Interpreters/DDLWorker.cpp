@@ -279,7 +279,9 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                     task->completely_processed = true;
                 }
                 else
+                {
                     processTask(*task, zookeeper);
+                }
                 ++task_it;
             }
             else
@@ -291,6 +293,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 /// of log entry number (with leading zeros).
                 if (!first_failed_task_name || task->entry_name < *first_failed_task_name)
                     first_failed_task_name = task->entry_name;
+
                 task_it = current_tasks.erase(task_it);
             }
         }
@@ -660,8 +663,8 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     active_node->setAlreadyRemoved();
 
     task.createSyncedNodeIfNeed(zookeeper);
-    task.completely_processed = true;
     updateMaxDDLEntryID(task.entry_name);
+    task.completely_processed = true;
 }
 
 
