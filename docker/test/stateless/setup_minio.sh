@@ -45,7 +45,7 @@ MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-clickhouse}
 ./minio server --address ":11111" ./minio_data &
 
 i=0
-while ! curl -v --silent http://localhost:11111 2>&1 | grep AccessDenied
+while ! curl -v --silent http://localhost:11111 2>&1 | rg AccessDenied
 do
   if [[ $i == 60 ]]; then
     echo "Failed to setup minio"
