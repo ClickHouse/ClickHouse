@@ -48,7 +48,8 @@ def compress_fast(path, archive_path, exclude=None):
 def decompress_fast(archive_path, result_path=None):
     program_part = ""
     if archive_path.endswith(".zst"):
-        logging.info("zstd will be used for decompression ('%s' -> '%s')",
+        logging.info(
+            "zstd will be used for decompression ('%s' -> '%s')",
             archive_path,
             result_path,
         )
