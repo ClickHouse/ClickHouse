@@ -262,12 +262,12 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
+        if ! rg --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
 
-        if grep -F --text 'Sanitizer: out-of-memory' description.txt
+        if rg -F --text 'Sanitizer: out-of-memory' description.txt
         then
             # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
             task_exit_code=0
@@ -299,9 +299,9 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { grep --text -o "Found error:.*" fuzzer.log \
-            || grep --text -ao "Exception:.*" fuzzer.log \
-            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
+        { rg --text -o "Found error:.*" fuzzer.log \
+            || rg --text -ao "Exception:.*" fuzzer.log \
+            || rg "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi
 
@@ -310,7 +310,7 @@ quit
         mv core.*.gz core.gz
     fi
 
-    dmesg -T | grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
+    dmesg -T | rg -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
 }
 
 case "$stage" in
@@ -348,7 +348,7 @@ if [ -f core.gz ]; then
     CORE_LINK='<a href="core.gz">core.gz</a>'
 fi
 
-grep -F '<Fatal>' server.log > fatal.log ||:
+rg -F '<Fatal>' server.log > fatal.log ||:
 
 pigz server.log
 
