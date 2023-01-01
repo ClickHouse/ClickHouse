@@ -382,7 +382,7 @@ class ClickhouseIntegrationTestsRunner:
         cmd = (
             "cd {repo_path}/tests/integration && "
             "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
-            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' "
+            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' | sed 's/\[.*$//g' "
             "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
