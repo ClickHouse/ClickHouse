@@ -248,6 +248,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             LOG_TRACE(log, "Don't have unfinished tasks after restarting");
         else
             LOG_INFO(log, "Have {} unfinished tasks, will check them", current_tasks.size());
+
         assert(current_tasks.size() <= pool_size + (worker_pool != nullptr));
         auto task_it = current_tasks.begin();
         while (task_it != current_tasks.end())
@@ -419,18 +420,24 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 {
     current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
+
     /// Tasks are scheduled and executed in main thread <==> Parallel execution is disabled
     assert((worker_pool != nullptr) == (1 < pool_size));
+
     /// Parallel execution is disabled ==> All previous tasks are failed to start or finished,
     /// so current tasks list must be empty when we are ready to process new one.
     assert(worker_pool || current_tasks.empty());
+
     /// Parallel execution is enabled ==> Not more than pool_size tasks are currently executing.
     /// Note: If current_tasks.size() == pool_size, then all worker threads are busy,
     /// so we will wait on worker_pool->scheduleOrThrowOnError(...)
     assert(!worker_pool || current_tasks.size() <= pool_size);
+
     current_tasks.emplace_back(std::move(task));
+
     if (first_failed_task_name && *first_failed_task_name == current_tasks.back()->entry_name)
         first_failed_task_name.reset();
+
     return *current_tasks.back();
 }
 
