@@ -314,18 +314,18 @@ stop
 # Sanitizer asserts
 rg -Fa "==================" /var/log/clickhouse-server/stderr.log | rg -v "in query:" >> /test_output/tmp
 rg -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-zgrep -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
+rg -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
     && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
 rm -f /test_output/tmp
 
 # OOM
-zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
+rg -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
     && echo -e 'OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
 # Logical errors
-zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/logical_errors.txt \
+rg -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/logical_errors.txt \
     && echo -e 'Logical error thrown (see clickhouse-server.log or logical_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No logical errors\tOK' >> /test_output/test_results.tsv
 
@@ -333,7 +333,7 @@ zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-serve
 [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
 # No such key errors
-zgrep -Ea "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
+rg -Ea "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
     && echo -e 'S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No lost s3 keys\tOK' >> /test_output/test_results.tsv
 
@@ -341,22 +341,22 @@ zgrep -Ea "Code: 499.*The specified key does not exist" /var/log/clickhouse-serv
 [ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt
 
 # Crash
-zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
+rg -Fa "########################################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
     && echo -e 'Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'Not crashed\tOK' >> /test_output/test_results.tsv
 
 # It also checks for crash without stacktrace (printed by watchdog)
-zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server*.log > /test_output/fatal_messages.txt \
+rg -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server*.log > /test_output/fatal_messages.txt \
     && echo -e 'Fatal message in clickhouse-server.log (see fatal_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
 # Remove file fatal_messages.txt if it's empty
 [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
-zgrep -Fa "########################################" /test_output/* > /dev/null \
+rg -Fa "########################################" /test_output/* > /dev/null \
     && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
 
-zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
+rg -Fa " received signal " /test_output/gdb.log > /dev/null \
     && echo -e 'Found signal in gdb.log\tFAIL' >> /test_output/test_results.tsv
 
 if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
@@ -496,7 +496,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         #       ("This engine is deprecated and is not supported in transactions", "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part")
         # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
         echo "Check for Error messages in server log:"
-        zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
+        rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                    -e "Code: 236. DB::Exception: Cancelled mutating parts" \
                    -e "REPLICA_IS_ALREADY_ACTIVE" \
                    -e "REPLICA_ALREADY_EXISTS" \
@@ -532,7 +532,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "MutateFromLogEntryTask" \
                    -e "No connection to ZooKeeper, cannot get shared table ID" \
                    -e "Session expired" \
-            /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
+            /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | rg -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
             && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
@@ -540,21 +540,21 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         [ -s /test_output/bc_check_error_messages.txt ] || rm /test_output/bc_check_error_messages.txt
 
         # Sanitizer asserts
-        zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-        zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-        zgrep -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
+        rg -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+        rg -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+        rg -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
             && echo -e 'Backward compatibility check: Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No sanitizer asserts\tOK' >> /test_output/test_results.tsv
         rm -f /test_output/tmp
 
         # OOM
-        zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
+        rg -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
             && echo -e 'Backward compatibility check: OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
         # Logical errors
         echo "Check for Logical errors in server log:"
-        zgrep -Fa -A20 "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_logical_errors.txt \
+        rg -Fa -A20 "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_logical_errors.txt \
             && echo -e 'Backward compatibility check: Logical error thrown (see clickhouse-server.log or bc_check_logical_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No logical errors\tOK' >> /test_output/test_results.tsv
 
@@ -562,13 +562,13 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         [ -s /test_output/bc_check_logical_errors.txt ] || rm /test_output/bc_check_logical_errors.txt
 
         # Crash
-        zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
+        rg -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
             && echo -e 'Backward compatibility check: Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: Not crashed\tOK' >> /test_output/test_results.tsv
 
         # It also checks for crash without stacktrace (printed by watchdog)
         echo "Check for Fatal message in server log:"
-        zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_fatal_messages.txt \
+        rg -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_fatal_messages.txt \
             && echo -e 'Backward compatibility check: Fatal message in clickhouse-server.log (see bc_check_fatal_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
