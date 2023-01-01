@@ -614,7 +614,7 @@ class ClickhouseIntegrationTestsRunner:
             # -E -- (E)rror
             # -p -- (p)assed
             # -s -- (s)kipped
-            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEps --run-id={} --color=no --durations=0 {}' | tee {}".format(
+            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEps --run-id={} --color=no --durations=0 {}'".format(
                 repo_path,
                 self._get_runner_opts(),
                 image_cmd,
@@ -622,20 +622,23 @@ class ClickhouseIntegrationTestsRunner:
                 parallel_cmd,
                 i,
                 _get_deselect_option(self.should_skip_tests()),
-                info_path,
             )
 
             log_basename = test_group_str + "_" + str(i) + ".log"
             log_path = os.path.join(repo_path, "tests/integration", log_basename)
             with open(log_path, "w") as log:
-                logging.info("Executing cmd: %s", cmd)
-                retcode = subprocess.Popen(
-                    cmd, shell=True, stderr=log, stdout=log
-                ).wait()
-                if retcode == 0:
-                    logging.info("Run %s group successfully", test_group)
-                else:
-                    logging.info("Some tests failed")
+                with open(info_path, "w") as info:
+                    logging.info("Executing cmd: %s", cmd)
+                    retcode = subprocess.Popen(
+                        cmd,
+                        shell=True,
+                        stderr=log,
+                        stdout=info,
+                    ).wait()
+                    if retcode == 0:
+                        logging.info("Run %s group successfully", test_group)
+                    else:
+                        logging.info("Some tests failed")
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
