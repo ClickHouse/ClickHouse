@@ -378,7 +378,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
     for table in query_log trace_log
     do
-        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
+        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
     done
 
     tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
@@ -578,7 +578,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         tar -chf /test_output/coordination.backward.tar /var/lib/clickhouse/coordination ||:
         for table in query_log trace_log
         do
-            clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.tsv.gz ||:
+            clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.backward.tsv.zst ||:
         done
     fi
 fi
@@ -598,6 +598,6 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 
 # Core dumps
 for core in core.*; do
-    pigz $core
-    mv $core.gz /test_output/
+    zstd --threads=0 $core
+    mv $core.zst /test_output/
 done
