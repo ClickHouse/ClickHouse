@@ -89,7 +89,7 @@ def run_func_test(
 
 
 def compress_stress_logs(output_path, files_prefix):
-    cmd = f"cd {output_path} && tar -zcf stress_run_logs.tar.gz {files_prefix}* && rm {files_prefix}*"
+    cmd = f"cd {output_path} && tar --zstd -zcf stress_run_logs.tar.zst {files_prefix}* && rm {files_prefix}*"
     check_output(cmd, shell=True)
 
 
