@@ -29,4 +29,4 @@ for i in {1..300}; do
     sleep 1
 done
 
-$($CLICKHOUSE_CLIENT --query "SELECT count(*) FROM system.zookeeper WHERE path like '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_async_insert_cleanup/async_blocks%' settings allow_unrestricted_reads_from_keeper = 'true'")
+$CLICKHOUSE_CLIENT --query "SELECT count(*) FROM system.zookeeper WHERE path like '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_async_insert_cleanup/async_blocks%' settings allow_unrestricted_reads_from_keeper = 'true'"
