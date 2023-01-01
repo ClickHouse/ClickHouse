@@ -348,7 +348,7 @@ if [ -f core.gz ]; then
     CORE_LINK='<a href="core.gz">core.gz</a>'
 fi
 
-rg -F '<Fatal>' server.log > fatal.log ||:
+rg --text -F '<Fatal>' server.log > fatal.log ||:
 
 pigz server.log
 
