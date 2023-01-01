@@ -326,7 +326,7 @@ class ClickhouseIntegrationTestsRunner:
                     break
             else:
                 raise Exception("Package with {} not found".format(package))
-        logging.info("Unstripping binary")
+        # logging.info("Unstripping binary")
         # logging.info(
         #     "Unstring %s",
         #     subprocess.check_output(
