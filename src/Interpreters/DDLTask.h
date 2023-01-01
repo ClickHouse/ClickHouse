@@ -114,7 +114,7 @@ struct DDLTaskBase
 
     DDLTaskBase(const String & name, const String & path) : entry_name(name), entry_path(path) {}
     DDLTaskBase(const DDLTaskBase &) = delete;
-    virtual ~DDLTaskBase();
+    virtual ~DDLTaskBase() = default;
 
     virtual void parseQueryFromEntry(ContextPtr context);
     void formatRewrittenQuery(ContextPtr context);

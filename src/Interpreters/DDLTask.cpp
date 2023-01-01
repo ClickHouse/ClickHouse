@@ -30,12 +30,6 @@ namespace ErrorCodes
 }
 
 
-DDLTaskBase::~DDLTaskBase()
-{
-    chassert(completely_processed);
-}
-
-
 HostID HostID::fromString(const String & host_port_str)
 {
     HostID res;
