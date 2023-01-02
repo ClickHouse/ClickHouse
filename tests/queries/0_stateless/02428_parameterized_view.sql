@@ -50,15 +50,17 @@ SELECT Price FROM pv3(price=10);
 
 CREATE VIEW pv4 AS SELECT * FROM Catalog WHERE Price={price:UInt64} AND Quantity={price:UInt64}; -- {serverError DUPLICATE_COLUMN}
 
-CREATE TABLE system.Catalog (Name String, Price UInt64, Quantity UInt64) ENGINE = Memory;
+CREATE DATABASE test_02428;
 
-INSERT INTO system.Catalog VALUES ('Pen', 10, 3);
-INSERT INTO system.Catalog VALUES ('Book', 50, 2);
-INSERT INTO system.Catalog VALUES ('Paper', 20, 1);
+CREATE TABLE test_02428.Catalog (Name String, Price UInt64, Quantity UInt64) ENGINE = Memory;
 
-CREATE VIEW system.pv1 AS SELECT * FROM system.Catalog WHERE Price={price:UInt64};
-SELECT Price FROM system.pv1(price=20);
-SELECT Price FROM `system.pv1`(price=20); -- { serverError UNKNOWN_FUNCTION }
+INSERT INTO test_02428.Catalog VALUES ('Pen', 10, 3);
+INSERT INTO test_02428.Catalog VALUES ('Book', 50, 2);
+INSERT INTO test_02428.Catalog VALUES ('Paper', 20, 1);
+
+CREATE VIEW test_02428.pv1 AS SELECT * FROM test_02428.Catalog WHERE Price={price:UInt64};
+SELECT Price FROM test_02428.pv1(price=20);
+SELECT Price FROM `test_02428.pv1`(price=20); -- { serverError UNKNOWN_FUNCTION }
 
 INSERT INTO Catalog VALUES ('Book2', 30, 8);
 INSERT INTO Catalog VALUES ('Book3', 30, 8);
@@ -80,5 +82,6 @@ DROP VIEW pv6;
 DROP VIEW pv7;
 DROP VIEW v1;
 DROP TABLE Catalog;
-DROP TABLE system.pv1;
-DROP TABLE system.Catalog;
+DROP TABLE test_02428.pv1;
+DROP TABLE test_02428.Catalog;
+DROP DATABASE test_02428;
