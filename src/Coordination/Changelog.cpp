@@ -132,7 +132,7 @@ public:
                 // if we wrote at least 1 log in the log file we can rename the file to reflect correctly the
                 // contained logs
                 // file can be deleted from disk earlier by compaction
-                if (std::filesystem::exists(current_file_description->path) && last_index_written
+                if (!current_file_description->deleted && last_index_written
                     && *last_index_written != current_file_description->to_log_index)
                 {
                     auto new_path = formatChangelogPath(
@@ -296,11 +296,10 @@ private:
     {
         assert(file_buf && prealloc_done);
 
+        assert(current_file_description);
         // compact can delete the file and we don't need to do anything
-        if (std::filesystem::exists(current_file_description->path))
+        if (!current_file_description->deleted)
         {
-            assert(current_file_description);
-
             // finish the stream on disk if needed (finalize will write to in-memory block)
             if (compress_logs)
             {
@@ -942,7 +941,7 @@ void Changelog::compact(uint64_t up_to_log_index)
     bool need_rotate = false;
     for (auto itr = existing_changelogs.begin(); itr != existing_changelogs.end();)
     {
-        const auto & changelog_description = *itr->second;
+        auto & changelog_description = *itr->second;
         /// Remove all completely outdated changelog files
         if (remove_all_logs || changelog_description.to_log_index <= up_to_log_index)
         {
@@ -956,6 +955,7 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", changelog_description.path);
+
             /// If failed to push to queue for background removing, then we will remove it now
             if (!log_files_to_delete_queue.tryPush(changelog_description.path, 1))
             {
@@ -966,6 +966,8 @@ void Changelog::compact(uint64_t up_to_log_index)
                 else
                     LOG_INFO(log, "Removed changelog {} because of compaction", changelog_description.path);
             }
+
+            changelog_description.deleted = true;
 
             itr = existing_changelogs.erase(itr);
         }

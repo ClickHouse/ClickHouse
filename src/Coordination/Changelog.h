@@ -60,6 +60,8 @@ struct ChangelogFileDescription
 
     std::string path;
 
+    bool deleted = false;
+
     /// How many entries should be stored in this log
     uint64_t expectedEntriesCountInLog() const { return to_log_index - from_log_index + 1; }
 };
