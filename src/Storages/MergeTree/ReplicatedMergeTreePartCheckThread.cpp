@@ -179,10 +179,15 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
                     found_part_with_the_same_min_block = true;
                     parts_found.push_back(part_on_replica);
                 }
+
                 if (part_on_replica_info.max_block == part_info.max_block)
                 {
                     found_part_with_the_same_max_block = true;
-                    parts_found.push_back(part_on_replica);
+
+                    /// If we are looking for part like partition_X_X_level we can add part
+                    /// partition_X_X_(level-1) two times, avoiding it
+                    if (parts_found.empty() || parts_found.back() != part_on_replica)
+                        parts_found.push_back(part_on_replica);
                 }
 
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
