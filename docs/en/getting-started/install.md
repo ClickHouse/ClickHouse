@@ -9,7 +9,7 @@ slug: /en/install
 You have three options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
-- **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, ARM, or PowerPC64LE CPU architecture
+- **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, ARM, or PowerPC64LE CPU architecture
 - **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** Read the guide with the official image in Docker Hub
 
 ## ClickHouse Cloud
@@ -257,7 +257,7 @@ To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.doc
 
 ### From Sources {#from-sources}
 
-To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/development/build.md) or [Mac OS X](/docs/en/development/build-osx.md).
+To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/development/build.md) or [macOS](/docs/en/development/build-osx.md).
 
 You can compile packages and install them or use programs without installing packages.
 
@@ -352,7 +352,7 @@ To continue experimenting, you can download one of the test data sets or go thro
 
 ## Recommendations for Self-Managed ClickHouse
 
-ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86-64, ARM, or PowerPC64LE CPU architecture.
+ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, ARM, or PowerPC64LE CPU architecture.
 
 ClickHouse uses all hardware resources available to process data.
 
