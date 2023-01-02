@@ -1013,6 +1013,9 @@ def test_predefined_connection_configuration(started_cluster):
     )
     assert result == instance.query("SELECT number FROM numbers(10)")
 
+    result = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
+    assert "There is no named collection `no_collection`" in result
+
 
 result = ""
 

@@ -576,6 +576,9 @@ void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPa
             states_str += ' ';
         }
 
+        if (!states_str.empty())
+            states_str.pop_back();
+
         throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
     }
 }
@@ -1719,7 +1722,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix)
     part_is_probably_removed_from_disk = true;
 }
 
-void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     auto storage_settings = storage.getSettings();
 
@@ -1732,9 +1735,9 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
     bool broken = !prefix.empty();
     auto maybe_path_in_detached = getRelativePathForDetachedPart(prefix, broken);
     if (!maybe_path_in_detached)
-        return;
+        return nullptr;
 
-    getDataPartStorage().freeze(
+    return getDataPartStorage().freeze(
         storage.relative_data_path,
         *maybe_path_in_detached,
         /*make_source_readonly*/ true,
