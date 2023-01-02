@@ -113,7 +113,7 @@ public:
         bool hasCacheEntryForKey() const;
         Pipe && getPipe();
     private:
-        Reader(const Cache & cache_, const Key & key);
+        Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_);
         Pipe pipe;
         friend class QueryResultCache; /// for createReader()
     };
