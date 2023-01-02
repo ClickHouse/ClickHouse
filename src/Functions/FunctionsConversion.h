@@ -2183,8 +2183,10 @@ struct ToNumberMonotonicity
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
 
-        /// Do not support 128 bit integers and decimals for now.
-        if (size_of_from > sizeof(Int64) || which_inner_type.isDecimal())
+        /// Only support types represented by native integers.
+        /// It can be extended to big integers, decimals and DateTime64 later.
+        if (!((left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
+            && (right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
             return {};
 
         const bool left_in_first_half = left.isNull()
