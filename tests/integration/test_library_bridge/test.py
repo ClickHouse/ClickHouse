@@ -307,15 +307,18 @@ def test_bridge_dies_with_parent(ch_cluster):
     assert clickhouse_pid is not None
     assert bridge_pid is not None
 
-    while clickhouse_pid is not None:
-        try:
-            instance.exec_in_container(
-                ["kill", str(clickhouse_pid)], privileged=True, user="root"
-            )
-        except:
-            pass
-        clickhouse_pid = instance.get_process_pid("clickhouse server")
+    try:
+        instance.exec_in_container(
+            ["kill", str(clickhouse_pid)], privileged=True, user="root"
+        )
+    except:
+        pass
+
+    for i in range(30):
         time.sleep(1)
+        clickhouse_pid = instance.get_process_pid("clickhouse server")
+        if clickhouse_pid is None:
+            break
 
     for i in range(30):
         time.sleep(1)
