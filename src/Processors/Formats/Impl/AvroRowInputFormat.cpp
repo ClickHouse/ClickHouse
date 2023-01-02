@@ -906,11 +906,15 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
-    , input_stream(std::make_unique<InputStreamReadBufferAdapter>(*in))
-    , decoder(avro::binaryDecoder())
     , format_settings(format_settings_)
 
 {
+}
+
+void AvroConfluentRowInputFormat::readPrefix()
+{
+    input_stream = std::make_unique<InputStreamReadBufferAdapter>(*in);
+    decoder = avro::binaryDecoder();
     decoder->init(*input_stream);
 }
 

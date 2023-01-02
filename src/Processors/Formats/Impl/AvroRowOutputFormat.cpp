@@ -442,8 +442,8 @@ static avro::Codec getCodec(const std::string & codec_name)
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_, params_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_)
     , settings(settings_)
     , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings))
 {
@@ -477,56 +477,14 @@ void AvroRowOutputFormat::write(const Columns & columns, size_t row_num)
     file_writer_ptr->incr();
 }
 
-void AvroRowOutputFormat::writeSuffix()
+void AvroRowOutputFormat::finalizeImpl()
+{
+    file_writer_ptr->close();
+}
+
+void AvroRowOutputFormat::resetFormatterImpl()
 {
     file_writer_ptr.reset();
-}
-
-void AvroRowOutputFormat::consume(DB::Chunk chunk)
-{
-    if (params.callback)
-        consumeImplWithCallback(std::move(chunk));
-    else
-        consumeImpl(std::move(chunk));
-}
-
-void AvroRowOutputFormat::consumeImpl(DB::Chunk chunk)
-{
-    auto num_rows = chunk.getNumRows();
-    const auto & columns = chunk.getColumns();
-
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        write(columns, row);
-    }
-
-}
-
-void AvroRowOutputFormat::consumeImplWithCallback(DB::Chunk chunk)
-{
-    auto num_rows = chunk.getNumRows();
-    const auto & columns = chunk.getColumns();
-
-    for (size_t row = 0; row < num_rows;)
-    {
-        size_t current_row = row;
-        /// used by WriteBufferToKafkaProducer to obtain auxiliary data
-        ///   from the starting row of a file
-
-        writePrefixIfNot();
-        for (size_t row_in_file = 0;
-             row_in_file < settings.avro.output_rows_in_file && row < num_rows;
-             ++row, ++row_in_file)
-        {
-            write(columns, row);
-        }
-
-        file_writer_ptr->flush();
-        writeSuffix();
-        need_write_prefix = true;
-
-        params.callback(columns, current_row);
-    }
 }
 
 void registerOutputFormatAvro(FormatFactory & factory)
@@ -534,10 +492,9 @@ void registerOutputFormatAvro(FormatFactory & factory)
     factory.registerOutputFormat("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<AvroRowOutputFormat>(buf, sample, settings);
     });
     factory.markFormatHasNoAppendSupport("Avro");
 }

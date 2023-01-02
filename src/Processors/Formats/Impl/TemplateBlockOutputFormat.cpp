@@ -133,9 +133,6 @@ void TemplateBlockOutputFormat::writePrefix()
 
 void TemplateBlockOutputFormat::finalizeImpl()
 {
-    if (finalized)
-        return;
-
     size_t parts = format.format_idx_to_column_idx.size();
     for (size_t i = 0; i < parts; ++i)
     {
@@ -180,17 +177,19 @@ void TemplateBlockOutputFormat::finalizeImpl()
         }
         writeString(format.delimiters[i + 1], out);
     }
-
-    finalized = true;
 }
 
+void TemplateBlockOutputFormat::resetFormatterImpl()
+{
+    row_count = 0;
+    statistics = Statistics();
+}
 
 void registerOutputFormatTemplate(FormatFactory & factory)
 {
     factory.registerOutputFormat("Template", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams &,
             const FormatSettings & settings)
     {
         ParsedTemplateFormatString resultset_format;
