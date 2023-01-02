@@ -18,7 +18,6 @@
 #include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
-#include <Disks/DiskRestartProxy.h>
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
@@ -775,7 +774,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config.getUInt("local_disk_check_period_ms", 0));
         disk->startup(context, skip_access_check);
-        return std::make_shared<DiskRestartProxy>(disk);
+        return disk;
     };
     factory.registerDiskType("local", creator);
 }

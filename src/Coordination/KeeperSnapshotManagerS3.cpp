@@ -136,7 +136,6 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
             return;
 
         S3Settings::RequestSettings request_settings_1;
-        request_settings_1.setEmptyFieldsByDefault();
 
         const auto create_writer = [&](const auto & key)
         {

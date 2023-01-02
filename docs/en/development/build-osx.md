@@ -1,9 +1,9 @@
 ---
 slug: /en/development/build-osx
 sidebar_position: 65
-sidebar_label: Build on Mac OS X
-title: How to Build ClickHouse on Mac OS X
-description: How to build ClickHouse on Mac OS X
+sidebar_label: Build on macOS
+title: How to Build ClickHouse on macOS
+description: How to build ClickHouse on macOS
 ---
 
 :::info You don't have to build ClickHouse yourself!

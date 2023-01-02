@@ -71,6 +71,8 @@ struct FormatSettings
         Raw
     };
 
+    bool schema_inference_make_columns_nullable = true;
+
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
     bool input_format_ipv4_default_on_conversion_error = false;
@@ -80,6 +82,8 @@ struct FormatSettings
     Float32 input_allow_errors_ratio = 0;
 
     UInt64 max_binary_string_size = 0;
+
+    UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
     struct
     {

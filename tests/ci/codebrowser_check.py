@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     logging.info("Going to run codebrowser: %s", run_command)
 
-    run_log_path = os.path.join(TEMP_PATH, "runlog.log")
+    run_log_path = os.path.join(TEMP_PATH, "run.log")
 
     with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
