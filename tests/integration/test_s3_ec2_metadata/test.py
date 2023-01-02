@@ -1,10 +1,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-import logging
+from helpers.mock_servers import start_mock_servers
 import os
-import time
-
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 EC2_METADATA_SERVER_HOSTNAME = "resolver"
 EC2_METADATA_SERVER_PORT = 8080
@@ -22,43 +19,18 @@ node = cluster.add_instance(
 
 
 def start_ec2_metadata_server():
-    logging.info("Starting EC2 metadata server")
-    container_id = cluster.get_container_id("resolver")
-
-    cluster.copy_file_to_container(
-        container_id,
-        os.path.join(SCRIPT_DIR, "ec2_metadata_server/request_response_server.py"),
-        "request_response_server.py",
-    )
-
-    cluster.exec_in_container(
-        container_id,
-        ["python", "request_response_server.py", str(EC2_METADATA_SERVER_PORT)],
-        detach=True,
-    )
-
-    # Wait for the server to start.
-    num_attempts = 100
-    for attempt in range(num_attempts):
-        ping_response = cluster.exec_in_container(
-            container_id,
-            ["curl", "-s", f"http://localhost:{EC2_METADATA_SERVER_PORT}/"],
-            nothrow=True,
-        )
-        if ping_response != "OK":
-            if attempt == num_attempts - 1:
-                assert ping_response == "OK", 'Expected "OK", but got "{}"'.format(
-                    ping_response
-                )
-            else:
-                time.sleep(1)
-        else:
-            logging.debug(
-                f"request_response_server.py answered {ping_response} on attempt {attempt}"
+    script_dir = os.path.join(os.path.dirname(__file__), "ec2_metadata_server")
+    start_mock_servers(
+        cluster,
+        script_dir,
+        [
+            (
+                "request_response_server.py",
+                EC2_METADATA_SERVER_HOSTNAME,
+                EC2_METADATA_SERVER_PORT,
             )
-            break
-
-    logging.info("EC2 metadata server started")
+        ],
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
