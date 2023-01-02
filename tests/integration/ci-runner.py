@@ -382,7 +382,7 @@ class ClickhouseIntegrationTestsRunner:
         cmd = (
             "cd {repo_path}/tests/integration && "
             "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
-            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' | sed 's/\[.*$//g' "
+            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' "
             "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
@@ -593,10 +593,7 @@ class ClickhouseIntegrationTestsRunner:
             test_names = set([])
             for test_name in tests_in_group:
                 if test_name not in counters["PASSED"]:
-                    if "[" in test_name:
-                        test_names.add(test_name[: test_name.find("[")])
-                    else:
-                        test_names.add(test_name)
+                    test_names.add(test_name)
 
             if i == 0:
                 test_data_dirs = self._find_test_data_dirs(repo_path, test_names)
