@@ -708,6 +708,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 auto query_result_cache = context->getQueryResultCache();
 
+                /// If enabled, ask query result cache to serve the query instead of computing it
                 if ((settings.enable_experimental_query_result_cache || settings.enable_experimental_query_result_cache_passive_usage)
                     && query_result_cache != nullptr && res.pipeline.pulling())
                 {
@@ -720,6 +721,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         res.pipeline = QueryPipeline(reader.getPipe());
                 }
 
+                /// If enabled, write query result into query result cache
                 if (settings.enable_experimental_query_result_cache && query_result_cache != nullptr && res.pipeline.pulling()
                   && (settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions || !astContainsNonDeterministicFunctions(ast, context)))
                 {

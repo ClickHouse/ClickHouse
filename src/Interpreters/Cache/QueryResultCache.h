@@ -87,7 +87,7 @@ public:
         const Key key;
         size_t & cache_size_in_bytes TSA_GUARDED_BY(mutex);
         const size_t max_cache_size_in_bytes;
-        const size_t max_entries;
+        const size_t max_cache_entries;
         size_t new_entry_size_in_bytes;
         const size_t max_entry_size_in_bytes;
         size_t new_entry_size_in_rows;
@@ -99,7 +99,7 @@ public:
 
         Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
             size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
-            size_t max_entries_,
+            size_t max_cache_entries_,
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
             std::chrono::milliseconds min_query_duration_);
 

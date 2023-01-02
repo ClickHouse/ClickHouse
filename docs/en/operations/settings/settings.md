@@ -1215,7 +1215,7 @@ Default value: `0`
 
 ## query_result_cache_min_query_duration {#query-result-cache-min-query-duration}
 
-Minimum duration in milliseconds a query needs to run for its result to be cached in the [query result cache](../query-result-cache.md).
+Minimum duration in milliseconds a query needs to run for its result to be stored in the [query result cache](../query-result-cache.md).
 
 Possible values:
 
