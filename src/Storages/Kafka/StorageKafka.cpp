@@ -20,10 +20,10 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/Kafka/KafkaSink.h>
+#include <Storages/MessageQueueSink.h>
+#include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
-#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
@@ -39,6 +39,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Formats/FormatFactory.h>
 
 #include "config_version.h"
 
@@ -208,7 +209,7 @@ StorageKafka::StorageKafka(
           kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(table_id_)
                                                         : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value))
     , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
-    , row_delimiter(kafka_settings->kafka_row_delimiter.value)
+    , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
     , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
@@ -334,7 +335,28 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 
     if (topics.size() > 1)
         throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
-    return std::make_shared<KafkaSink>(*this, metadata_snapshot, modified_context);
+
+    cppkafka::Configuration conf;
+    conf.set("metadata.broker.list", brokers);
+    conf.set("client.id", client_id);
+    conf.set("client.software.name", VERSION_NAME);
+    conf.set("client.software.version", VERSION_DESCRIBE);
+    // TODO: fill required settings
+    updateConfiguration(conf);
+
+    const Settings & settings = getContext()->getSettingsRef();
+    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
+    const auto & header = metadata_snapshot->getSampleBlockNonMaterialized();
+
+    auto producer = std::make_unique<KafkaProducer>(
+        std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header);
+
+    size_t max_rows = max_rows_per_message;
+    /// Need for backward compatibility.
+    if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
+        max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
+    return std::make_shared<MessageQueueSink>(
+        header, getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
 
 
@@ -344,7 +366,7 @@ void StorageKafka::startup()
     {
         try
         {
-            pushReadBuffer(createReadBuffer(i));
+            pushConsumer(createConsumer(i));
             ++num_created_consumers;
         }
         catch (const cppkafka::Exception &)
@@ -374,29 +396,29 @@ void StorageKafka::shutdown()
 
     LOG_TRACE(log, "Closing consumers");
     for (size_t i = 0; i < num_created_consumers; ++i)
-        auto buffer = popReadBuffer();
+        auto consumer = popConsumer();
     LOG_TRACE(log, "Consumers closed");
 
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
 }
 
 
-void StorageKafka::pushReadBuffer(ConsumerBufferPtr buffer)
+void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
 {
     std::lock_guard lock(mutex);
-    buffers.push_back(buffer);
+    consumers.push_back(consumer);
     semaphore.set();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
 }
 
 
-ConsumerBufferPtr StorageKafka::popReadBuffer()
+KafkaConsumerPtr StorageKafka::popConsumer()
 {
-    return popReadBuffer(std::chrono::milliseconds::zero());
+    return popConsumer(std::chrono::milliseconds::zero());
 }
 
 
-ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
+KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
 {
     // Wait for the first free buffer
     if (timeout == std::chrono::milliseconds::zero())
@@ -409,32 +431,14 @@ ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
 
     // Take the first available buffer from the list
     std::lock_guard lock(mutex);
-    auto buffer = buffers.back();
-    buffers.pop_back();
+    auto consumer = consumers.back();
+    consumers.pop_back();
     CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
-    return buffer;
-}
-
-ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
-{
-    cppkafka::Configuration conf;
-    conf.set("metadata.broker.list", brokers);
-    conf.set("client.id", client_id);
-    conf.set("client.software.name", VERSION_NAME);
-    conf.set("client.software.version", VERSION_DESCRIBE);
-    // TODO: fill required settings
-    updateConfiguration(conf);
-
-    auto producer = std::make_shared<cppkafka::Producer>(conf);
-    const Settings & settings = getContext()->getSettingsRef();
-    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
-
-    return std::make_shared<WriteBufferToKafkaProducer>(
-        producer, topics[0], row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024, std::chrono::milliseconds(poll_timeout), header);
+    return consumer;
 }
 
 
-ConsumerBufferPtr StorageKafka::createReadBuffer(size_t consumer_number)
+KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number)
 {
     cppkafka::Configuration conf;
 
@@ -466,16 +470,16 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(size_t consumer_number)
     conf.set("enable.partition.eof", "false");     // Ignore EOF messages
 
     // Create a consumer and subscribe to topics
-    auto consumer = std::make_shared<cppkafka::Consumer>(conf);
-    consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
+    auto consumer_impl = std::make_shared<cppkafka::Consumer>(conf);
+    consumer_impl->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     if (thread_per_consumer)
     {
         auto& stream_cancelled = tasks[consumer_number]->stream_cancelled;
-        return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, stream_cancelled, topics);
+        return std::make_shared<KafkaConsumer>(consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, stream_cancelled, topics);
     }
-    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, tasks.back()->stream_cancelled, topics);
+    return std::make_shared<KafkaConsumer>(consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, tasks.back()->stream_cancelled, topics);
 }
 
 size_t StorageKafka::getMaxBlockSize() const
@@ -837,6 +841,13 @@ void registerStorageKafka(StorageFactory & factory)
             CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_client_id, 2)
+            CHECK_KAFKA_STORAGE_ARGUMENT(12, kafka_poll_timeout_ms, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(13, kafka_flush_interval_ms, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(14, kafka_thread_per_consumer, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(15, kafka_handle_error_mode, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(16, kafka_commit_on_select, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(17, kafka_max_rows_per_message, 0)
         }
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
