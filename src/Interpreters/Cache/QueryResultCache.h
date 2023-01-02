@@ -88,14 +88,14 @@ public:
         size_t & cache_size_in_bytes TSA_GUARDED_BY(mutex);
         const size_t max_cache_size_in_bytes;
         const size_t max_cache_entries;
-        size_t new_entry_size_in_bytes;
+        size_t new_entry_size_in_bytes = 0;
         const size_t max_entry_size_in_bytes;
-        size_t new_entry_size_in_rows;
+        size_t new_entry_size_in_rows = 0;
         const size_t max_entry_size_in_rows;
-        const std::chrono::time_point<std::chrono::system_clock> query_start_time; /// Writer construction/destruction coincides with query start/end
+        const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction/destruction coincides with query start/end
         const std::chrono::milliseconds min_query_duration;
         Chunks chunks;
-        bool skip_insert;
+        bool skip_insert = false;
 
         Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
             size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
@@ -137,7 +137,7 @@ private:
     Cache cache TSA_GUARDED_BY(mutex);
     TimesExecutedMap times_executed TSA_GUARDED_BY(mutex);
 
-    size_t cache_size_in_bytes TSA_GUARDED_BY(mutex); /// updated in each cache insert/delete
+    size_t cache_size_in_bytes TSA_GUARDED_BY(mutex) = 0; /// updated in each cache insert/delete
     const size_t max_cache_size_in_bytes;
     const size_t max_cache_entries;
     const size_t max_cache_entry_size_in_bytes;
