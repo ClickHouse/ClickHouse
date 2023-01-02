@@ -306,13 +306,6 @@ private:
                     assert(max_log_file_size == 0 || memory.size() < total_bytes_available - total_bytes_written);
                     total_bytes_written += ZstdDeflatingAppendableWriteBuffer::ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size();
                 }
-
-                WriteBufferMemory & cur_memory_buf
-                    = dynamic_cast<WriteBufferMemory &>(*compressed_buffer->getNestedBuffer());
-
-                // so finalize can be done
-                cur_memory_buf.restart();
-                compressed_buffer.reset();
             }
 
             flush();
@@ -325,8 +318,18 @@ private:
             LOG_WARNING(log, "Log {} is already deleted", file_buf->getFileName());
         }
 
-        if (compress_logs && !final)
-            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::make_unique<WriteBufferMemory>(memory), /* compression level = */ 3);
+        if (compress_logs)
+        {
+            WriteBufferMemory & cur_memory_buf
+                = dynamic_cast<WriteBufferMemory &>(*compressed_buffer->getNestedBuffer());
+
+            // so finalize can be done
+            cur_memory_buf.restart();
+            compressed_buffer.reset();
+
+            if (!final)
+                compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::make_unique<WriteBufferMemory>(memory), /* compression level = */ 3);
+        }
 
         file_buf.reset();
     }
