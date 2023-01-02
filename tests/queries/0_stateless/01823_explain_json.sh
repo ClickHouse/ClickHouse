@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw"
 echo "--------"
-$CLICKHOUSE_CLIENT -q "explain json = 1, description = 0, header = 1 select 1, 2 + dummy FORMAT TSVRaw" | grep Header -m 1 -A 8
+$CLICKHOUSE_CLIENT -q "explain json = 1, description = 0, header = 1 select 1, 2 + dummy FORMAT TSVRaw" 2> /dev/null | grep Header -m 1 -A 8
 
 echo "--------"
 $CLICKHOUSE_CLIENT -q "EXPLAIN json = 1, actions = 1, header = 1, description = 0

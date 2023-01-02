@@ -20,6 +20,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /**
  * ORDER-PRESERVING parallel formatting of data formats.
  * The idea is similar to ParallelParsingInputFormat.
@@ -166,6 +171,12 @@ private:
     }
 
     void finalizeImpl() override;
+
+    void resetFormatterImpl() override
+    {
+        /// Resetting parallel formatting is not obvious and it's not used anywhere
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method resetFormatterImpl is not implemented for parallel formatting");
+    }
 
     InternalFormatterCreator internal_formatter_creator;
 

@@ -99,8 +99,7 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 
 void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    IInputFormat::setReadBuffer(*buf);
+    buf->setSubBuffer(in_);
 }
 
 
