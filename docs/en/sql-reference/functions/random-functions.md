@@ -76,6 +76,49 @@ These functions are available starting from 22.10.
 
 
 
+## randUniform
+
+Return random number based on [continuous uniform distribution](https://en.wikipedia.org/wiki/Continuous_uniform_distribution) in a specified range from `min` to `max`.
+
+**Syntax**
+
+``` sql
+randUniform(min, max)
+```
+
+**Arguments**
+
+- `min` - `Float64` - min value of the range,
+- `max` - `Float64` - max value of the range.
+
+**Returned value**
+
+- Pseudo-random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT randUniform(5.5, 10) FROM numbers(5)
+```
+
+Result:
+
+``` text
+┌─randUniform(5.5, 10)─┐
+│    8.094978491443102 │
+│   7.3181248914450885 │
+│    7.177741903868262 │
+│    6.483347380953762 │
+│    6.122286382885112 │
+└──────────────────────┘
+```
+
+
+
 ## randNormal
 
 Return random number based on [normal distribution](https://en.wikipedia.org/wiki/Normal_distribution).

@@ -273,6 +273,7 @@ public:
                 tryLogCurrentException("~MergeTreeData::Transaction");
             }
         }
+        void clear();
 
         TransactionID getTID() const;
 
@@ -284,7 +285,6 @@ public:
         MutableDataParts precommitted_parts;
         MutableDataParts locked_parts;
 
-        void clear();
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
@@ -376,7 +376,6 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const StorageID & table_id_,
-                  const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata_,
                   ContextMutablePtr context_,
                   const String & date_column_name,
@@ -517,8 +516,10 @@ public:
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
 
     /// Returns the part with the given name and state or nullptr if no such part.
-    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states, DataPartsLock * acquired_lock = nullptr);
-    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock * acquired_lock = nullptr);
+    DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock);
+    DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & acquired_lock);
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
+    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -592,6 +593,8 @@ public:
     /// Used in REPLACE PARTITION command.
     void removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
+    DataPartsVector grabActivePartsToRemoveForDropRange(
+        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper
     {
@@ -975,6 +978,14 @@ public:
     /// If one_part is true, fill in at most one part.
     Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part, bool ignore_empty = false) const;
 
+    /// In merge tree we do inserts with several steps. One of them:
+    /// X. write part to temporary directory with some temp name
+    /// Y. rename temporary directory to final name with correct block number value
+    /// As temp name MergeTree use just ordinary in memory counter, but in some cases
+    /// it can be useful to add additional part in temp name to avoid collisions on FS.
+    /// FIXME: Currently unused.
+    virtual std::string getPostfixForTempInsertName() const { return ""; }
+
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;
 
@@ -1087,6 +1098,8 @@ protected:
 
     struct TagByInfo{};
     struct TagByStateAndInfo{};
+
+    void initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories=true);
 
     static const MergeTreePartInfo & dataPartPtrToInfo(const DataPartPtr & part)
     {
@@ -1318,6 +1331,12 @@ protected:
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
+    bool addTempPart(
+        MutableDataPartPtr & part,
+        Transaction & out_transaction,
+        DataPartsLock & lock,
+        DataPartsVector * out_covered_parts);
+
 private:
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
@@ -1325,7 +1344,7 @@ private:
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction
-    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction);
+    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename);
 
     /// Low-level method for preparing parts for commit (in-memory).
     /// FIXME Merge MergeTreeTransaction and Transaction

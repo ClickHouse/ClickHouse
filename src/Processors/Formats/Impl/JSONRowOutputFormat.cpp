@@ -112,10 +112,6 @@ void JSONRowOutputFormat::writeAfterExtremes()
 
 void JSONRowOutputFormat::finalizeImpl()
 {
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
-
     JSONUtils::writeAdditionalInfo(
         row_count,
         statistics.rows_before_limit,
