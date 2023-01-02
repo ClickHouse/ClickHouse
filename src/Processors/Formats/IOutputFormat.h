@@ -61,13 +61,13 @@ public:
 
     void setTotals(const Block & totals)
     {
-        writeSuffixIfNot();
+        writeSuffixIfNeeded();
         consumeTotals(Chunk(totals.getColumns(), totals.rows()));
         are_totals_written = true;
     }
     void setExtremes(const Block & extremes)
     {
-        writeSuffixIfNot();
+        writeSuffixIfNeeded();
         consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     }
 
@@ -75,6 +75,14 @@ public:
     size_t getResultBytes() const { return result_bytes; }
 
     void doNotWritePrefix() { need_write_prefix = false; }
+
+    void resetFormatter()
+    {
+        need_write_prefix = true;
+        need_write_suffix = true;
+        finalized = false;
+        resetFormatterImpl();
+    }
 
     /// Reset the statistics watch to a specific point in time
     /// If set to not running it will stop on the call (elapsed = now() - given start)
@@ -85,17 +93,7 @@ public:
             statistics.watch.stop();
     }
 
-protected:
-    friend class ParallelFormattingOutputFormat;
-
-    virtual void consume(Chunk) = 0;
-    virtual void consumeTotals(Chunk) {}
-    virtual void consumeExtremes(Chunk) {}
-    virtual void finalizeImpl() {}
-    virtual void writePrefix() {}
-    virtual void writeSuffix() {}
-
-    void writePrefixIfNot()
+    void writePrefixIfNeeded()
     {
         if (need_write_prefix)
         {
@@ -104,7 +102,11 @@ protected:
         }
     }
 
-    void writeSuffixIfNot()
+protected:
+    friend class ParallelFormattingOutputFormat;
+
+
+    void writeSuffixIfNeeded()
     {
         if (need_write_suffix)
         {
@@ -112,6 +114,15 @@ protected:
             need_write_suffix = false;
         }
     }
+
+    virtual void consume(Chunk) = 0;
+    virtual void consumeTotals(Chunk) {}
+    virtual void consumeExtremes(Chunk) {}
+    virtual void finalizeImpl() {}
+    virtual void finalizeBuffers() {}
+    virtual void writePrefix() {}
+    virtual void writeSuffix() {}
+    virtual void resetFormatterImpl() {}
 
     /// Methods-helpers for parallel formatting.
 
