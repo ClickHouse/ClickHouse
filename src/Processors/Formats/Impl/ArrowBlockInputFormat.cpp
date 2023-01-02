@@ -173,8 +173,9 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, stream ? "ArrowStream" : "Arrow", format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference);
-    return getNamesAndRecursivelyNullableTypes(header);
-}
+    if (format_settings.schema_inference_make_columns_nullable)
+        return getNamesAndRecursivelyNullableTypes(header);
+    return header.getNamesAndTypesList();}
 
 void registerInputFormatArrow(FormatFactory & factory)
 {
@@ -208,12 +209,24 @@ void registerArrowSchemaReader(FormatFactory & factory)
         {
             return std::make_shared<ArrowSchemaReader>(buf, false, settings);
         });
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("Arrow", [](const FormatSettings & settings)
+    {
+        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+    });
     factory.registerSchemaReader(
         "ArrowStream",
         [](ReadBuffer & buf, const FormatSettings & settings)
         {
             return std::make_shared<ArrowSchemaReader>(buf, true, settings);
-        });}
+        });
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("ArrowStream", [](const FormatSettings & settings)
+    {
+       return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+    });
+}
+
 }
 #else
 
