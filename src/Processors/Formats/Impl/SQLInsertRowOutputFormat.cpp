@@ -5,8 +5,8 @@
 namespace DB
 {
 
-SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), column_names(header_.getNames()), format_settings(format_settings_)
+SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_), column_names(header_.getNames()), format_settings(format_settings_)
 {
 }
 
@@ -65,36 +65,42 @@ void SQLInsertRowOutputFormat::writeRowEndDelimiter()
 {
     writeChar(')', out);
     ++rows_in_line;
+    if (rows_in_line >= format_settings.sql_insert.max_batch_size)
+    {
+        writeChar(';', out);
+        rows_in_line = 0;
+    }
 }
 
 void SQLInsertRowOutputFormat::writeRowBetweenDelimiter()
 {
-    if (rows_in_line >= format_settings.sql_insert.max_batch_size)
-    {
-        writeCString(";\n", out);
-        rows_in_line = 0;
-    }
+    if (rows_in_line == 0)
+        writeChar('\n', out);
     else
-    {
         writeCString(", ", out);
-    }
 }
 
 void SQLInsertRowOutputFormat::writeSuffix()
 {
-    writeCString(";\n", out);
+    if (rows_in_line != 0)
+        writeChar(';', out);
+    if (haveWrittenData())
+        writeChar('\n', out);
 }
 
+void SQLInsertRowOutputFormat::resetFormatterImpl()
+{
+    rows_in_line = 0;
+}
 
 void registerOutputFormatSQLInsert(FormatFactory & factory)
 {
     factory.registerOutputFormat("SQLInsert", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<SQLInsertRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<SQLInsertRowOutputFormat>(buf, sample, settings);
     });
 }
 
