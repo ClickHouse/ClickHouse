@@ -421,6 +421,7 @@ void Server::createServer(
 }
 
 
+#if defined(OS_LINUX)
 namespace
 {
 
@@ -443,6 +444,7 @@ void setOOMScore(int value, Poco::Logger * log)
 }
 
 }
+#endif
 
 
 void Server::uninitialize()
