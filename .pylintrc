@@ -12,6 +12,10 @@ max-statements=200
 [FORMAT]
 ignore-long-lines = (# )?<?https?://\S+>?$
 
+[LOGGING]
+# Not to warn about lazy formatting in logging functions
+logging-format-style=fstr
+
 [MESSAGES CONTROL]
 disable = missing-docstring,
           too-few-public-methods,
