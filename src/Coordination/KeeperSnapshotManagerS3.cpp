@@ -136,7 +136,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
             return;
 
         S3Settings::ReadWriteSettings read_write_settings;
-        read_write_settings.upload_part_size_multiply_parts_count_threshold = 10000;
+        read_write_settings.setEmptyFieldsByDefault();
 
         const auto create_writer = [&](const auto & key)
         {
