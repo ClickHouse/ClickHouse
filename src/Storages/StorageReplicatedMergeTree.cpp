@@ -3513,7 +3513,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
         if (merge_pred.hasDropRange(broken_part_info))
         {
-            LOG_INFO(log, "Broken part is covered by DROP RANGE, don't need to fetch it");
+            LOG_INFO(log, "Broken part {} is covered by DROP RANGE, don't need to fetch it", part_name);
             return;
         }
 
