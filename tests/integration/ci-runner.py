@@ -160,24 +160,6 @@ def get_test_times(output):
     return result
 
 
-def pre_pull_images():
-
-    images = ["clickhouse/integration-test"]
-    for image in images:
-        for i in range(5):
-            logging.info("Pulling %s image before running tests. Attempt %s", image, i)
-            try:
-                subprocess.check_output(
-                    "docker pull %s".format(image),
-                    shell=True,
-                )
-            except subprocess.CalledProcessError as err:
-                logging.info("docker pull failed: " + str(err))
-            continue
-        logging.error("Pulling %s failed for 5 attempts. Will fail the worker.", image)
-        exit(1)
-
-
 def clear_ip_tables_and_restart_daemons():
     logging.info(
         "Dump iptables after run %s",
@@ -310,6 +292,30 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/mysql-php-client",
             "clickhouse/postgresql-java-client",
         ]
+
+    def _pre_pull_images():
+        cmd = (
+            "cd {repo_path}/tests/integration && "
+            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} {command} ".format(
+                repo_path=repo_path,
+                runner_opts=self._get_runner_opts(),
+                image_cmd=image_cmd,
+                command=r""" find /compose -name 'docker_compose_*.yml' -exec docker-compose -f '{}' pull \; """
+            )
+        )
+
+        for i in range(5):
+            logging.info("Pulling images before running tests. Attempt %s", image, i)
+            try:
+                subprocess.check_output(
+                    cmd,
+                    shell=True,
+                )
+            except subprocess.CalledProcessError as err:
+                logging.info("docker-compose pull failed: " + str(err))
+            return
+        logging.error("Pulling %s failed for 5 attempts. Will fail the worker.", image)
+        exit(1)
 
     def _can_run_with(self, path, opt):
         with open(path, "r") as script:
@@ -999,6 +1005,9 @@ if __name__ == "__main__":
 
     params = json.loads(open(params_path, "r").read())
     runner = ClickhouseIntegrationTestsRunner(result_path, params)
+
+    logging.info("Pulling images")
+    runner._pre_pull_images()
 
     logging.info("Running tests")
 
