@@ -3,7 +3,12 @@ import logging
 import pytest
 
 from helpers.cluster import ClickHouseCluster, assert_eq_with_retry
-from test_odbc_interaction.test import create_mysql_db, create_mysql_table, get_mysql_conn, skip_test_msan
+from test_odbc_interaction.test import (
+    create_mysql_db,
+    create_mysql_table,
+    get_mysql_conn,
+    skip_test_msan,
+)
 
 
 cluster = ClickHouseCluster(__file__)
