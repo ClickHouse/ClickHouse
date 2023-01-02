@@ -40,15 +40,10 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
         return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 
     return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
-
-    // Link list implementation doesn't show noticeable performance improvement
-    // if (which.idx == TypeIndex::String)
-    //     return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeString, Trait>>(argument_type, std::forward<TArgs>(args)...);
-
-    // return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeGeneral, Trait>>(argument_type, std::forward<TArgs>(args)...);
 }
 
 
+template <bool Tlast>
 AggregateFunctionPtr createAggregateFunctionGroupArray(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
@@ -79,9 +74,13 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!limit_size)
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<false, Sampler::NONE>>(argument_types[0], parameters);
+    {
+        if (Tlast)
+            throw Exception("groupArrayLast make sense only with max_elems (groupArrayLast(max_elems)())", ErrorCodes::BAD_ARGUMENTS);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters);
+    }
     else
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::NONE>>(argument_types[0], parameters, max_elems);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArraySample(
@@ -114,7 +113,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
     else
         seed = thread_local_rng();
 
-    return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::RNG>>(argument_types[0], parameters, max_elems, seed);
+    return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, /* Tlast= */ false, /* Tsampler= */ Sampler::RNG>>(argument_types[0], parameters, max_elems, seed);
 }
 
 }
@@ -124,8 +123,9 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray, properties });
+    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
     factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
+    factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });
 }
 
 }
