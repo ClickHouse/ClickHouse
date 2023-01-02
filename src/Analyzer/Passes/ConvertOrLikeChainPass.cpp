@@ -3,6 +3,7 @@
 #include <vector>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Core/Field.h>
@@ -17,25 +18,34 @@ namespace DB
 namespace
 {
 
-class ConvertOrLikeChainImpl
+class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitor<ConvertOrLikeChainVisitor>
 {
     using FunctionNodes = std::vector<std::shared_ptr<FunctionNode>>;
 
     const FunctionOverloadResolverPtr match_function_ref;
 public:
 
-    explicit ConvertOrLikeChainImpl(FunctionOverloadResolverPtr _match_function_ref)
-        : match_function_ref(_match_function_ref)
+    explicit ConvertOrLikeChainVisitor(FunctionOverloadResolverPtr _match_function_ref)
+        : InDepthQueryTreeVisitor<ConvertOrLikeChainVisitor>()
+        , match_function_ref(_match_function_ref)
     {}
 
-    bool needVisit(QueryTreeNodePtr &) { return true; }
-
-    bool isEnabled(const Settings & settings)
+    bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
     {
-        return settings.optimize_or_like_chain
-            && settings.allow_hyperscan
-            && settings.max_hyperscan_regexp_length == 0
-            && settings.max_hyperscan_regexp_total_length == 0;
+        ContextPtr context;
+        if (auto * query = parent->as<QueryNode>())
+            context = query->getContext();
+        else if (auto * union_node = parent->as<UnionNode>())
+            context = union_node->getContext();
+        if (context)
+        {
+            const auto & settings = context->getSettingsRef();
+            return settings.optimize_or_like_chain
+                && settings.allow_hyperscan
+                && settings.max_hyperscan_regexp_length == 0
+                && settings.max_hyperscan_regexp_total_length == 0;
+        }
+        return true;
     }
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -109,13 +119,11 @@ public:
     }
 };
 
-using ConvertOrLikeChainVisitor = OptionalInDepthQueryTreeVisitor<ConvertOrLikeChainImpl>;
-
 }
 
 void ConvertOrLikeChainPass::run(QueryTreeNodePtr query_tree_node, ContextPtr  context)
 {
-    ConvertOrLikeChainVisitor visitor(context->getSettingsRef(), FunctionFactory::instance().get("multiMatchAny", context));
+    ConvertOrLikeChainVisitor visitor(FunctionFactory::instance().get("multiMatchAny", context));
     visitor.visit(query_tree_node);
 }
 
