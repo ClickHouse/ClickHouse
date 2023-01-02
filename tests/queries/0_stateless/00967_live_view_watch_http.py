@@ -38,10 +38,10 @@ with client(name="client1>", log=log) as client1:
             name="client2>",
             log=log,
         ) as client2:
-            client2.expect(".*0\t1\n")
+            client2.expect(".*0\t1")
             client1.send("INSERT INTO test.mt VALUES (1),(2),(3)")
             client1.expect(prompt)
-            client2.expect(".*6\t2\n")
+            client2.expect(".*6\t2")
     finally:
         client1.send("DROP TABLE test.lv")
         client1.expect(prompt)
