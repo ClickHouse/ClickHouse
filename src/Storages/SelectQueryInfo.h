@@ -164,7 +164,7 @@ struct ProjectionCandidate
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 
-    /// Becasue projection analysis uses a separate interpreter.
+    /// Because projection analysis uses a separate interpreter.
     ContextPtr context;
 };
 
