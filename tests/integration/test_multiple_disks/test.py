@@ -590,6 +590,13 @@ def test_jbod_overflow(start_cluster, name, engine):
         )
 
         node1.query(f"SYSTEM STOP MERGES {name}")
+        # The test tries to utilize 35/40=87.5% of space, while during last
+        # INSERT parts mover may see up to ~100% of used space on disk due to
+        # reservations (since INSERT first reserves the space and later write
+        # the same, more or less, amount of space, and util the reservation had
+        # been destroyed it will be taken into account as reserved on the
+        # disk).
+        node1.query(f"SYSTEM STOP MOVES {name}")
 
         # small jbod size is 40MB, so lets insert 5MB batch 7 times
         for i in range(7):
@@ -621,6 +628,7 @@ def test_jbod_overflow(start_cluster, name, engine):
         assert used_disks[-1] == "external"
 
         node1.query(f"SYSTEM START MERGES {name}")
+        node1.query(f"SYSTEM START MOVES {name}")
         time.sleep(1)
 
         node1.query_with_retry("OPTIMIZE TABLE {} FINAL".format(name))
