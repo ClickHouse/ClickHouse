@@ -152,13 +152,9 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
     , cache_size_in_bytes(cache_size_in_bytes_)
     , max_cache_size_in_bytes(max_cache_size_in_bytes_)
     , max_cache_entries(max_cache_entries_)
-    , new_entry_size_in_bytes(0)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
-    , new_entry_size_in_rows(0)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
-    , query_start_time(std::chrono::system_clock::now())
     , min_query_duration(min_query_duration_)
-    , skip_insert(false)
 {
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
@@ -291,8 +287,7 @@ Pipe && QueryResultCache::Reader::getPipe()
 }
 
 QueryResultCache::QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_)
-    : cache_size_in_bytes(0)
-    , max_cache_size_in_bytes(max_cache_size_in_bytes_)
+    : max_cache_size_in_bytes(max_cache_size_in_bytes_)
     , max_cache_entries(max_cache_entries_)
     , max_cache_entry_size_in_bytes(max_cache_entry_size_in_bytes_)
     , max_cache_entry_size_in_rows(max_cache_entry_size_in_rows_)
