@@ -58,7 +58,8 @@ public:
         finalized = false;
     }
 
-    size_t valuesWritten() {
+    size_t valuesWritten()
+    {
         return ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
             + sizeof(typename VectorType::value_type) - 1)  /// Align up.
             / sizeof(typename VectorType::value_type);
