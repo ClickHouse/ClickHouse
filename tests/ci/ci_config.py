@@ -308,9 +308,6 @@ CI_CONFIG = {
         "Compatibility check": {
             "required_build": "package_release",
         },
-        "Split build smoke test": {
-            "required_build": "binary_shared",
-        },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
         },
