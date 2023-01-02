@@ -715,7 +715,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     QueryResultCache::Key key(
                         ast, settings.query_result_cache_partition_key, res.pipeline.getHeader(),
                         std::make_optional<String>(context->getUserName()),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_keep_seconds_alive));
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_ttl));
                     QueryResultCache::Reader reader = query_result_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                         res.pipeline = QueryPipeline(reader.getPipe());
@@ -728,7 +728,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     QueryResultCache::Key key(
                         ast, settings.query_result_cache_partition_key, res.pipeline.getHeader(),
                         settings.query_result_cache_share_between_users ? std::nullopt : std::make_optional<String>(context->getUserName()),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_keep_seconds_alive));
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_ttl));
 
                     const size_t num_query_runs = query_result_cache->recordQueryRun(key);
                     if (num_query_runs > settings.query_result_cache_min_query_runs)

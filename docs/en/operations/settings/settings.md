@@ -1223,9 +1223,9 @@ Possible values:
 
 Default value: `0`
 
-## query_result_cache_keep_seconds_alive {#query-result-cache-keep-seconds-alive}
+## query_result_cache_ttl {#query-result-cache-ttl}
 
-After this time entries in the [query result cache](../query-result-cache.md) become stale.
+After this time in seconds entries in the [query result cache](../query-result-cache.md) become stale.
 
 Possible values:
 

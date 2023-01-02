@@ -69,7 +69,7 @@ To define how long a query must run at least such that its result is cached, use
 
 To control how often a query needs to run until its result is cached, use setting [query_result_cache_min_query_runs](settings/settings.md#query-result-cache-min-query-runs).
 
-To specify the validity period after which cache entries become stale, use setting [query_result_cache_keep_seconds_alive](settings/settings.md#query-result-cache-keep-seconds-alive).
+To specify the validity period after which cache entries become stale, use setting [query_result_cache_ttl](settings/settings.md#query-result-cache-ttl).
 
 Results of queries with non-deterministic functions such as `rand()` and `now()` are not cached by default. This behavior can be overruled using setting [query_result_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-result-cache-store-results-of-queries-with-nondeterministic-functions).
 

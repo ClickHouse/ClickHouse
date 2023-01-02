@@ -75,7 +75,7 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 
 /// Consider
 ///   (1) SET enable_experimental_query_result_cache = true;
-///       SELECT expensiveComputation(...) SETTINGS max_threads = 64, query_result_cache_keep_seconds_alive = 300;
+///       SELECT expensiveComputation(...) SETTINGS max_threads = 64, query_result_cache_ttl = 300;
 ///       SET enable_experimental_query_result_cache = false;
 /// and
 ///   (2) SELECT expensiveComputation(...) SETTINGS max_threads = 64, enable_experimental_query_result_cache_passive_usage = true;
