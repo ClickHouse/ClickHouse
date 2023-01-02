@@ -14,12 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), mono_block(mono_block_)
@@ -297,10 +291,6 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         {
             // Write row number;
             auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
-            size_t black_width = row_number_width - row_num_string.size();
-            if (black_width > row_number_width)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "blak width overflow {}, {}, {}", black_width, row_num_string.size(), row_number_width);
             for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
             {
                 writeCString(" ", out);
