@@ -2047,7 +2047,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         remove_single_thread();
         return;
     }
-    
+
     /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
     LOG_DEBUG(
         log, "Removing {} parts from filesystem (concurrently): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
