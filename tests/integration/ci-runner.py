@@ -300,7 +300,7 @@ class ClickhouseIntegrationTestsRunner:
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
                 image_cmd=image_cmd,
-                command=r""" find /compose -name 'docker_compose_*.yml' -exec docker-compose -f '{}' pull \; """
+                command=r""" find /compose -name 'docker_compose_*.yml' -exec docker-compose -f '{}' pull \; """,
             )
         )
 
