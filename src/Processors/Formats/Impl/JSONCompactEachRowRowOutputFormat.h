@@ -17,7 +17,6 @@ public:
     JSONCompactEachRowRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_,
@@ -27,6 +26,7 @@ public:
 
 private:
     void writePrefix() override;
+    void writeSuffix() override;
 
     void writeTotals(const Columns & columns, size_t row_num) override;
 
@@ -34,6 +34,7 @@ private:
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
+    void writeRowBetweenDelimiter() override;
 
     bool supportTotals() const override { return true; }
     void consumeTotals(Chunk) override;

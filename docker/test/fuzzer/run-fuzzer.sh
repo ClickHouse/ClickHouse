@@ -358,14 +358,12 @@ cat > report.html <<EOF ||:
   <style>
 body { font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: #EEE; }
 h1 { margin-left: 10px; }
-th, td { border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
-td { white-space: pre; font-family: Monospace, Courier New; }
-border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }
+th, td { border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF; }
+td { white-space: pre; font-family: Monospace, Courier New; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }
 a { color: #06F; text-decoration: none; }
 a:hover, a:active { color: #F40; text-decoration: underline; }
 table { border: 0; }
 p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }
-th { cursor: pointer; }
 
   </style>
   <title>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</title>
@@ -390,12 +388,12 @@ th { cursor: pointer; }
 <tr>
   <td>AST Fuzzer</td>
   <td>$(cat status.txt)</td>
-  <td style="white-space: pre;">$(
+  <td>$(
     clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt
   )</td>
 </tr>
 <tr>
-  <td colspan="3" style="white-space: pre; overflow-x: scroll;">$(
+  <td colspan="3" style="white-space: pre-wrap;">$(
     clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < fatal.log || cat fatal.log
   )</td>
 </tr>
