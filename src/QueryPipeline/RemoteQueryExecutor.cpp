@@ -375,7 +375,10 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
                 got_duplicated_part_uuids = true;
             break;
         case Protocol::Server::Data:
-            if (packet.block)
+            /// Note: `packet.block.rows() > 0` means it's a header block.
+            /// We can actually return it, and the first call to RemoteQueryExecutor::read
+            /// will return earlier. We should consider doing it.
+            if (packet.block && (packet.block.rows() > 0))
                 return adaptBlockStructure(packet.block, header);
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
