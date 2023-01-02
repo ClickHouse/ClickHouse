@@ -78,7 +78,7 @@ public:
     {
     public:
         ~Writer();
-        void buffer(Chunk && partial_result);
+        void buffer(Chunk && partial_query_result);
     private:
         std::mutex & mutex;
         Cache & cache TSA_GUARDED_BY(mutex);
@@ -92,7 +92,7 @@ public:
         const size_t max_entry_size_in_rows;
         const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction/destruction coincides with query start/end
         const std::chrono::milliseconds min_query_duration;
-        Chunks partial_results;
+        Chunks partial_query_results;
         std::atomic<bool> skip_insert = false;
 
         Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,

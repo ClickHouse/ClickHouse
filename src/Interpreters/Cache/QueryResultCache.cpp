@@ -180,8 +180,8 @@ try
         return res;
     };
 
-    auto result = to_single_chunk(partial_results);
-    new_entry_size_in_bytes = result.allocatedBytes(); // updated because compression potentially affects the size of the single chunk vs the aggregate size of individual chunks
+    auto query_result = to_single_chunk(partial_query_results);
+    new_entry_size_in_bytes = query_result.allocatedBytes(); // updated because compression potentially affects the size of the single chunk vs the aggregate size of individual chunks
 
     std::lock_guard lock(mutex);
 
@@ -212,13 +212,13 @@ try
     /// Insert or replace if enough space
     if (sufficient_space_in_cache())
     {
-        cache_size_in_bytes += result.allocatedBytes();
+        cache_size_in_bytes += query_result.allocatedBytes();
         if (auto it = cache.find(key); it != cache.end())
             cache_size_in_bytes -= it->second.allocatedBytes(); /// key replacement
 
-        /// cache[key] = result; /// does no replacement for unclear reasons
+        /// cache[key] = query_result; /// does no replacement for unclear reasons
         cache.erase(key);
-        cache[key] = std::move(result);
+        cache[key] = std::move(query_result);
 
         LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Stored result of query {}", key.queryStringFromAst());
     }
@@ -227,15 +227,15 @@ catch (const std::exception &)
 {
 }
 
-void QueryResultCache::Writer::buffer(Chunk && partial_result)
+void QueryResultCache::Writer::buffer(Chunk && partial_query_result)
 {
     if (skip_insert)
         return;
 
-    partial_results.emplace_back(std::move(partial_result));
+    partial_query_results.emplace_back(std::move(partial_query_result));
 
-    new_entry_size_in_bytes += partial_results.back().allocatedBytes();
-    new_entry_size_in_rows += partial_results.back().getNumRows();
+    new_entry_size_in_bytes += partial_query_results.back().allocatedBytes();
+    new_entry_size_in_rows += partial_query_results.back().getNumRows();
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
         skip_insert = true;
