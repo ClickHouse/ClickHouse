@@ -6,7 +6,6 @@ services:
     volumes:
       - ${MINIO_DATA_DIR}:/data1
       - ${MINIO_CERTS_DIR:-}:/certs
-      - ${MINIO_LOGS_DIR:-}:/logs
     expose:
       - ${MINIO_PORT:-9001}
     environment:
