@@ -330,6 +330,7 @@ flattenTuple
 floor
 format
 formatDateTime
+formatDateTimeInJodaSyntax
 formatReadableQuantity
 formatReadableSize
 formatReadableTimeDelta
@@ -342,6 +343,7 @@ fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
+fromUnixTimestampInJodaSyntax
 fullHostName
 fuzzBits
 gccMurmurHash
