@@ -38,7 +38,7 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
 
     std::lock_guard lock(query_result_cache->mutex);
 
-    for (const auto & [key, entry] : query_result_cache->cache)
+    for (const auto & [key, result] : query_result_cache->cache)
     {
         /// Showing other user's queries is considered a security risk
         if (key.username.has_value() && key.username != username)
@@ -50,7 +50,7 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
         res_columns[3]->insert(key.expires_at < std::chrono::system_clock::now());
         res_columns[4]->insert(!key.username.has_value());
         res_columns[5]->insert(key.partition_key);
-        res_columns[6]->insert(entry->allocatedBytes());
+        res_columns[6]->insert(result.allocatedBytes());
     }
 }
 
