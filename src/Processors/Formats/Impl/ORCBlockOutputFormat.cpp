@@ -520,6 +520,11 @@ void ORCBlockOutputFormat::finalizeImpl()
     writer->close();
 }
 
+void ORCBlockOutputFormat::resetFormatterImpl()
+{
+    writer.reset();
+}
+
 void ORCBlockOutputFormat::prepareWriter()
 {
     const Block & header = getPort(PortKind::Main).getHeader();
@@ -536,7 +541,6 @@ void registerOutputFormatORC(FormatFactory & factory)
     factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);

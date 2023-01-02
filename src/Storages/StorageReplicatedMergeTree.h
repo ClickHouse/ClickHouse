@@ -109,6 +109,7 @@ public:
 
     void startup() override;
     void shutdown() override;
+    void partialShutdown();
     void flush() override;
     ~StorageReplicatedMergeTree() override;
 
@@ -858,7 +859,7 @@ private:
     /// If somebody already holding the lock -- return std::nullopt.
     std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk) override;
 
-    void startupImpl();
+    void startupImpl(bool from_attach_thread);
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);
