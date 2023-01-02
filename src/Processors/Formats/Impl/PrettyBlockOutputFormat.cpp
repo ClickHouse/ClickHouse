@@ -295,7 +295,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         if (format_settings.pretty.output_format_pretty_row_numbers)
         {
             // Write row number;
-            auto row_num_string = std::to_string(i + 1) + ". ";
+            auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
             for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
             {
                 writeCString(" ", out);
