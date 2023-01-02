@@ -163,7 +163,7 @@ then
     )
 fi
 
-# May be set for split build or for performance test.
+# May be set for performance test.
 if [ "" != "$COMBINED_OUTPUT" ]
 then
     prepare_combined_output /output

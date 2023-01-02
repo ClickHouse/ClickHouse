@@ -85,7 +85,6 @@ git push
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
 - **Bundled**: `bundled` 构建使用来自 `contrib` 库, 而 `unbundled` 构建使用系统库.
-- **Splitted**: `splitted` is a [split build](https://clickhouse.com/docs/en/development/build/#split-build)
 - **Status**: `成功` 或 `失败`
 - **Build log**: 链接到构建和文件复制日志, 当构建失败时很有用.
 - **Build time**.
@@ -121,14 +120,6 @@ git push
 * Fix all other test failures first;
 * Look at the report to find the server logs and check them for possible causes
   of error.
-```
-
-## 冒烟测试 {#split-build-smoke-test}
-检查[拆分构建](./build.md#split-build)配置中的服务器构建是否可以启动并运行简单查询.如果失败:
-```
-* Fix other test errors first;
-* Build the server in [split build](./build.md#split-build) configuration
-  locally and check whether it can start and run `select 1`.
 ```
 
 ## 兼容性检查 {#compatibility-check}
