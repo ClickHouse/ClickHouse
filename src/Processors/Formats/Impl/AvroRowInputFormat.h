@@ -163,6 +163,7 @@ public:
 
 private:
     virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
 
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;

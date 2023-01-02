@@ -21,21 +21,18 @@ namespace DB
 class RabbitMQHandler;
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 
-class ReadBufferFromRabbitMQConsumer : public ReadBuffer
+class RabbitMQConsumer
 {
 
 public:
-    ReadBufferFromRabbitMQConsumer(
+    RabbitMQConsumer(
             RabbitMQHandler & event_handler_,
             std::vector<String> & queues_,
             size_t channel_id_base_,
             const String & channel_base_,
             Poco::Logger * log_,
-            char row_delimiter_,
             uint32_t queue_size_,
             const std::atomic<bool> & stopped_);
-
-    ~ReadBufferFromRabbitMQConsumer() override;
 
     struct AckTracker
     {
@@ -55,6 +52,10 @@ public:
         AckTracker track{};
     };
 
+    /// Return read buffer containing next available message
+    /// or nullptr if there are no messages to process.
+    ReadBufferPtr consume();
+
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();
     bool needChannelUpdate();
@@ -68,7 +69,6 @@ public:
     void updateAckTracker(AckTracker record = AckTracker());
 
     bool queueEmpty() { return received.empty(); }
-    void allowNext() { allowed = true; } // Allow to read next message.
 
     auto getChannelID() const { return current.track.channel_id; }
     auto getDeliveryTag() const { return current.track.delivery_tag; }
@@ -77,8 +77,6 @@ public:
     auto getTimestamp() const { return current.timestamp; }
 
 private:
-    bool nextImpl() override;
-
     void subscribe();
     void iterateEventLoop();
 
@@ -88,8 +86,6 @@ private:
     const String channel_base;
     const size_t channel_id_base;
     Poco::Logger * log;
-    char row_delimiter;
-    bool allowed = true;
     const std::atomic<bool> & stopped;
 
     String channel_id;

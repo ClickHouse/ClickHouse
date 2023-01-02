@@ -75,7 +75,7 @@ fi
 TEST_PATH=${1:-/usr/share/clickhouse-test}
 MINIO_DATA_PATH=${TEST_PATH}/queries/${QUERY_DIR}/data_minio
 
-# Iterating over globs will cause redudant FILE variale to be a path to a file, not a filename
+# Iterating over globs will cause redundant FILE variable to be a path to a file, not a filename
 # shellcheck disable=SC2045
 for FILE in $(ls "${MINIO_DATA_PATH}"); do
     echo "$FILE";
