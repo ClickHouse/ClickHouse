@@ -131,7 +131,9 @@ public:
                 assert(current_file_description);
                 // if we wrote at least 1 log in the log file we can rename the file to reflect correctly the
                 // contained logs
-                if (last_index_written && *last_index_written != current_file_description->to_log_index)
+                // file can be deleted from disk earlier by compaction
+                if (std::filesystem::exists(current_file_description->path) && last_index_written
+                    && *last_index_written != current_file_description->to_log_index)
                 {
                     auto new_path = formatChangelogPath(
                         changelogs_dir,
@@ -297,6 +299,8 @@ private:
         // compact can delete the file and we don't need to do anything
         if (std::filesystem::exists(current_file_description->path))
         {
+            assert(current_file_description);
+
             // finish the stream on disk if needed (finalize will write to in-memory block)
             if (compress_logs)
             {
