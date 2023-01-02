@@ -241,7 +241,7 @@ void QueryResultCache::Writer::buffer(Chunk && chunk)
         skip_insert = true;
 }
 
-QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key)
+QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_)
 {
     auto it = cache_.find(key);
 
@@ -259,12 +259,14 @@ QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key)
 
     if (it->first.expires_at < std::chrono::system_clock::now())
     {
-        LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Stale entry found for query {}", key.queryStringFromAst());
+        Cache & cache_rw = const_cast<Cache &>(cache_);
+        cache_size_in_bytes_ -= it->second->allocatedBytes();
+        cache_rw.erase(it);
+        LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Stale entry found and removed for query {}", key.queryStringFromAst());
         return;
     }
 
     LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Entry found for query {}", key.queryStringFromAst());
-
     pipe = Pipe(std::make_shared<SourceFromSingleChunk>(key.header, it->second->clone()));
 }
 
@@ -297,7 +299,7 @@ QueryResultCache::QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_c
 QueryResultCache::Reader QueryResultCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
-    return Reader(cache, key);
+    return Reader(cache, key, cache_size_in_bytes);
 }
 
 QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, std::chrono::milliseconds min_query_duration)
