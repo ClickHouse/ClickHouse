@@ -72,11 +72,11 @@ ShellCommand::~ShellCommand()
         if (process_terminated_normally)
             return;
 
-        LOG_TRACE(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
+        LOG_TRACE(getLogger(), "Will kill shell command pid {} with signal {}", pid, config.terminate_in_destructor_strategy.termination_signal);
 
-        int retcode = kill(pid, SIGTERM);
+        int retcode = kill(pid, config.terminate_in_destructor_strategy.termination_signal);
         if (retcode != 0)
-            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString());
+            LOG_WARNING(getLogger(), "Cannot kill shell command pid {}, error: '{}'", pid, errnoToString());
     }
     else
     {

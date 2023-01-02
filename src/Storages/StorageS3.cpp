@@ -529,7 +529,8 @@ StorageS3Source::StorageS3Source(
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
-    const size_t download_thread_num_)
+    const size_t download_thread_num_,
+    bool only_need_virtual_columns_)
     : ISource(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
     , name(std::move(name_))
@@ -543,12 +544,17 @@ StorageS3Source::StorageS3Source(
     , client(client_)
     , sample_block(sample_block_)
     , format_settings(format_settings_)
+    , only_need_virtual_columns(only_need_virtual_columns_)
     , requested_virtual_columns(requested_virtual_columns_)
     , file_iterator(file_iterator_)
     , download_thread_num(download_thread_num_)
     , create_reader_pool(1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
+    /// If user only need virtual columns, StorageS3Source does not use ReaderHolder and does not initialize ReadBufferFromS3.
+    if (only_need_virtual_columns)
+        return;
+
     reader = createReader();
     if (reader)
         reader_future = createReaderAsync();
@@ -683,6 +689,35 @@ String StorageS3Source::getName() const
 
 Chunk StorageS3Source::generate()
 {
+    auto add_virtual_columns = [&](Chunk & chunk, const String & file_path, UInt64 num_rows)
+    {
+        for (const auto & virtual_column : requested_virtual_columns)
+        {
+            if (virtual_column.name == "_path")
+            {
+                chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+            }
+            else if (virtual_column.name == "_file")
+            {
+                size_t last_slash_pos = file_path.find_last_of('/');
+                auto column = virtual_column.type->createColumnConst(num_rows, file_path.substr(last_slash_pos + 1));
+                chunk.addColumn(column->convertToFullColumnIfConst());
+            }
+        }
+    };
+
+    if (only_need_virtual_columns)
+    {
+        Chunk chunk;
+        auto current_key = (*file_iterator)().key;
+        if (!current_key.empty())
+        {
+            const auto & file_path = fs::path(bucket) / current_key;
+            add_virtual_columns(chunk, file_path, 1);
+        }
+        return chunk;
+    }
+
     while (true)
     {
         if (!reader || isCancelled())
@@ -701,20 +736,7 @@ Chunk StorageS3Source::generate()
                     *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
-            for (const auto & virtual_column : requested_virtual_columns)
-            {
-                if (virtual_column.name == "_path")
-                {
-                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
-                }
-                else if (virtual_column.name == "_file")
-                {
-                    size_t last_slash_pos = file_path.find_last_of('/');
-                    auto column = virtual_column.type->createColumnConst(num_rows, file_path.substr(last_slash_pos + 1));
-                    chunk.addColumn(column->convertToFullColumnIfConst());
-                }
-            }
-
+            add_virtual_columns(chunk, file_path, num_rows);
             return chunk;
         }
 
@@ -1035,6 +1057,10 @@ Pipe StorageS3::read(
             requested_virtual_columns.push_back(virtual_column);
     }
 
+    bool only_need_virtual_columns = true;
+    if (column_names_set.size() > requested_virtual_columns.size())
+        only_need_virtual_columns = false;
+
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(
         s3_configuration,
         keys,
@@ -1047,25 +1073,28 @@ Pipe StorageS3::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (supportsSubsetOfColumns())
+    if (!only_need_virtual_columns)
     {
-        auto fetch_columns = column_names;
-        const auto & virtuals = getVirtuals();
-        std::erase_if(
-            fetch_columns,
-            [&](const String & col)
-            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
+        if (supportsSubsetOfColumns())
+        {
+            auto fetch_columns = column_names;
+            const auto & virtuals = getVirtuals();
+            std::erase_if(
+                fetch_columns,
+                [&](const String & col)
+                { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
 
-        if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+            if (fetch_columns.empty())
+                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
-        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
+            columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
+            block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+        }
+        else
+        {
+            columns_description = storage_snapshot->metadata->getColumns();
+            block_for_format = storage_snapshot->metadata->getSampleBlock();
+        }
     }
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
@@ -1086,7 +1115,8 @@ Pipe StorageS3::read(
             s3_configuration.uri.bucket,
             s3_configuration.uri.version_id,
             iterator_wrapper,
-            max_download_threads));
+            max_download_threads,
+            only_need_virtual_columns));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -1196,10 +1226,8 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
-    if (upd.request_settings != settings.request_settings)
-        upd.request_settings = settings.request_settings;
-
-    upd.request_settings.updateFromSettingsIfEmpty(ctx->getSettings());
+    upd.request_settings = settings.request_settings;
+    upd.request_settings.updateFromSettings(ctx->getSettings());
 
     if (upd.client)
     {
@@ -1245,6 +1273,8 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
     std::string filename;
 
+    configuration.request_settings = S3Settings::RequestSettings(collection);
+
     for (const auto & key : collection)
     {
         if (key == "url")
@@ -1263,25 +1293,6 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
             configuration.structure = collection.get<String>(key);
         else if (key == "use_environment_credentials")
             configuration.auth_settings.use_environment_credentials = collection.get<UInt64>(key);
-        else if (key == "max_single_read_retries")
-            configuration.request_settings.max_single_read_retries = collection.get<UInt64>(key);
-        else if (key == "min_upload_part_size")
-            configuration.request_settings.min_upload_part_size = collection.get<UInt64>(key);
-        else if (key == "upload_part_size_multiply_factor")
-            configuration.request_settings.upload_part_size_multiply_factor = collection.get<UInt64>(key);
-        else if (key == "upload_part_size_multiply_parts_count_threshold")
-            configuration.request_settings.upload_part_size_multiply_parts_count_threshold = collection.get<UInt64>(key);
-        else if (key == "max_single_part_upload_size")
-            configuration.request_settings.max_single_part_upload_size = collection.get<UInt64>(key);
-        else if (key == "max_connections")
-            configuration.request_settings.max_connections = collection.get<UInt64>(key);
-        else
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Unknown configuration key `{}` for StorageS3, "
-                "expected: url, [access_key_id, secret_access_key], "
-                "name of used format and [compression_method].",
-                key);
     }
     if (!filename.empty())
         configuration.url = std::filesystem::path(configuration.url) / filename;
@@ -1310,7 +1321,7 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
                 "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto header_it = StorageURL::collectHeaders(engine_args, configuration, local_context);
+        auto * header_it = StorageURL::collectHeaders(engine_args, configuration, local_context);
         if (header_it != engine_args.end())
             engine_args.erase(header_it);
 
