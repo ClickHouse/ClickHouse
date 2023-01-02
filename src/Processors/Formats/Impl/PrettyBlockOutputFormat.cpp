@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -37,8 +38,8 @@ void PrettyBlockOutputFormat::calculateWidths(
 {
     size_t num_rows = std::min(chunk.getNumRows(), format_settings.pretty.max_rows);
 
-    /// len(num_rows) + len(". ")
-    row_number_width = static_cast<size_t>(std::floor(std::log10(num_rows))) + 3;
+    /// len(num_rows + total_rows) + len(". ")
+    row_number_width = static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3;
 
     size_t num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
@@ -296,6 +297,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         {
             // Write row number;
             auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
+            size_t black_width = row_number_width - row_num_string.size();
+            if (black_width > row_number_width)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "blak width overflow {}, {}, {}", black_width, row_num_string.size(), row_number_width);
             for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
             {
                 writeCString(" ", out);
