@@ -59,6 +59,11 @@ The cache exists once per ClickHouse server process but cache results are by def
 
 Query results are referenced in the cache by the [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of their query. This means that caching is agnostic to upper/lowercase, for example `SELECT 1` and `select 1` are treated as the same query.
 
+:::warning
+As of now, the query result cache does not properly handle exceptions during query execution. It will write a partial (incorrect) entry of
+the result up to the point where the exception occurred instead of not writing a result into the cache.
+:::
+
 ### Further Configuration Options:
 
 To configure the size of the query result cache, use setting [query_result_cache_size](server-configuration-parameters/settings.md#server_configuration_parameters_query-result-cache-size).
