@@ -1,3 +1,4 @@
+#include <string_view>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -23,14 +24,14 @@ class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisito
 
     static constexpr RedundancyVerdict makeNonRedundant() noexcept { return { .redundant = false, .done = true }; }
 
-    std::unordered_set<String> existing_keys;
+    std::unordered_set<std::string_view> existing_keys;
 
     RedundancyVerdict isRedundantExpression(FunctionNode * function)
     {
         if (function->getArguments().getNodes().empty())
             return makeNonRedundant();
-
-        if (!function->getFunction()->isDeterministicInScopeOfQuery())
+        const auto & function_base = function->getFunction();
+        if (!function_base || !function_base->isDeterministicInScopeOfQuery())
             return makeNonRedundant();
 
         // TODO: handle constants here
@@ -85,8 +86,8 @@ public:
                 return;
         }
 
-        QueryTreeNodes new_order_by;
-        new_order_by.reserve(order_by.getNodes().size());
+        QueryTreeNodes new_order_by_nodes;
+        new_order_by_nodes.reserve(order_by.getNodes().size());
 
         for (auto & elem : order_by.getNodes())
         {
@@ -101,12 +102,12 @@ public:
                 existing_keys.insert(column->getColumnName());
             }
 
-            new_order_by.push_back(elem);
+            new_order_by_nodes.push_back(elem);
         }
         existing_keys.clear();
 
-        if (new_order_by.size() < order_by.getNodes().size())
-            order_by.getNodes() = std::move(new_order_by);
+        if (new_order_by_nodes.size() < order_by.getNodes().size())
+            order_by.getNodes() = std::move(new_order_by_nodes);
     }
 };
 
