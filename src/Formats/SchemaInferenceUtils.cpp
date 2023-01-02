@@ -104,7 +104,8 @@ namespace
 
         for (auto & type : data_types)
         {
-            if (isInteger(type))
+            WhichDataType which(type);
+            if (which.isFloat64() || which.isInt64() || which.isUInt64())
                 type = std::make_shared<DataTypeFloat64>();
         }
 
@@ -631,7 +632,7 @@ namespace
                     return read_int ? std::make_shared<DataTypeInt64>() : nullptr;
 
                 char * int_end = buf.position();
-                /// We cam safely get back to the start of the number, because we read from a string and we didn't reach eof.
+                /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
                 buf.position() = number_start;
 
                 bool read_uint = false;
