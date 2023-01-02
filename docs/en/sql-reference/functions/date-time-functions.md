@@ -1085,6 +1085,8 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
+formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+
 **Syntax**
 
 ``` sql
@@ -1104,6 +1106,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded ( 1-31)                  | &nbsp; 2   |
+| %f       | fractional second from the fractional part of DateTime64 | 1234560   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
@@ -1142,6 +1145,78 @@ Result:
 │ 10                                         │
 └────────────────────────────────────────────┘
 ```
+
+Query:
+
+``` sql
+SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
+```
+
+Result:
+
+```
+┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
+│ 1234560                                                             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+-   [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
+
+
+## formatDateTimeInJodaSyntax
+
+Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
+
+
+**Replacement fields**
+
+Using replacement fields, you can define a pattern for the resulting string. 
+
+
+| Placeholder | Description | Presentation  | Examples |
+| ----------- | ----------- | ------------- | -------- |
+| G       | era                          | text          | AD | 
+| C       | century of era (>=0)         | number        | 20 | 
+| Y       | year of era (>=0)            | year          | 1996 | 
+| x       | weekyear(not supported yet)  | year          | 1996 | 
+| w       | week of weekyear(not supported yet) | number        | 27 | 
+| e       | day of week                  | number        | 2 | 
+| E       | day of week                  | text          | Tuesday; Tue | 
+| y       | year                         | year          | 1996 | 
+| D       | day of year                  | number        | 189 | 
+| M       | month of year                | month         | July; Jul; 07 | 
+| d       | day of month                 | number        | 10 | 
+| a       | halfday of day               | text          | PM | 
+| K       | hour of halfday (0~11)       | number        | 0 | 
+| h       | clockhour of halfday (1~12)  | number        | 12 | 
+| H       | hour of day (0~23)           | number        | 0 | 
+| k       | clockhour of day (1~24)      | number        | 24 | 
+| m       | minute of hour               | number        | 30 | 
+| s       | second of minute             | number        | 55 | 
+| S       | fraction of second(not supported yet) | number        | 978 | 
+| z       | time zone(short name not supported yet) | text          | Pacific Standard Time; PST | 
+| Z       | time zone offset/id(not supported yet) | zone          | -0800; -08:00; America/Los_Angeles | 
+| '       | escape for text              | delimiter|  | 
+| ''      | single quote                 | literal       | ' | 
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
+```
+
+Result:
+
+```
+┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
+│ 2010-01-04 12:34:56                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 
 ## dateName
 
@@ -1226,6 +1301,8 @@ Result:
 
 Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
 
+FROM_UNIXTIME uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+
 Alias: `fromUnixTimestamp`.
 
 **Example:**
@@ -1257,6 +1334,28 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 │ 2009-02-11 14:42:23 │
 └─────────────────────┘
 ```
+
+**See Also**
+
+-   [fromUnixTimestampInJodaSyntax](##fromUnixTimestampInJodaSyntax)
+
+
+## fromUnixTimestampInJodaSyntax
+Similar to FROM_UNIXTIME, except that it formats time in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
+
+**Example:**
+Query:
+``` sql
+SELECT fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC');
+```
+
+Result:
+```
+┌─fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC')─┐
+│ 2022-11-30 10:41:12                                                        │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
 
 ## toModifiedJulianDay
 

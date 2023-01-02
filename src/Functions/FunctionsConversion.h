@@ -2248,14 +2248,18 @@ struct ToNumberMonotonicity
         if constexpr (std::is_floating_point_v<T>)
             return { .is_monotonic = true, .is_always_monotonic = true };
 
-        /// If converting from Float, for monotonicity, arguments must fit in range of result type.
-        bool is_type_float = false;
-        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
-            is_type_float = WhichDataType(low_cardinality->getDictionaryType()).isFloat();
-        else
-            is_type_float = WhichDataType(type).isFloat();
+        const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
+        const IDataType * low_cardinality_dictionary_type = nullptr;
+        if (low_cardinality)
+            low_cardinality_dictionary_type = low_cardinality->getDictionaryType().get();
 
-        if (is_type_float)
+        WhichDataType which_type(type);
+        WhichDataType which_inner_type = low_cardinality
+            ? WhichDataType(low_cardinality_dictionary_type)
+            : WhichDataType(type);
+
+        /// If converting from Float, for monotonicity, arguments must fit in range of result type.
+        if (which_inner_type.isFloat())
         {
             if (left.isNull() || right.isNull())
                 return {};
@@ -2281,7 +2285,7 @@ struct ToNumberMonotonicity
         const size_t size_of_to = sizeof(T);
 
         /// Do not support 128 bit integers and decimals for now.
-        if (size_of_from > sizeof(Int64))
+        if (size_of_from > sizeof(Int64) || which_inner_type.isDecimal())
             return {};
 
         const bool left_in_first_half = left.isNull()
