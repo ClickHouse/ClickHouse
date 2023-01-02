@@ -180,8 +180,8 @@ try
         return res;
     };
 
-    auto result = std::make_shared<Chunk>(to_single_chunk(partial_results));
-    new_entry_size_in_bytes = result->allocatedBytes(); // updated because compression potentially affects the size of the single chunk vs the aggregate size of individual chunks
+    auto result = to_single_chunk(partial_results);
+    new_entry_size_in_bytes = result.allocatedBytes(); // updated because compression potentially affects the size of the single chunk vs the aggregate size of individual chunks
 
     std::lock_guard lock(mutex);
 
@@ -200,7 +200,7 @@ try
         for (auto it = cache.begin(); it != cache.end();)
             if (is_stale(it->first))
             {
-                cache_size_in_bytes -= it->second->allocatedBytes();
+                cache_size_in_bytes -= it->second.allocatedBytes();
                 it = cache.erase(it);
                 ++removed_items;
             }
@@ -212,13 +212,13 @@ try
     /// Insert or replace if enough space
     if (sufficient_space_in_cache())
     {
-        cache_size_in_bytes += result->allocatedBytes();
+        cache_size_in_bytes += result.allocatedBytes();
         if (auto it = cache.find(key); it != cache.end())
-            cache_size_in_bytes -= it->second->allocatedBytes(); /// key replacement
+            cache_size_in_bytes -= it->second.allocatedBytes(); /// key replacement
 
         /// cache[key] = result; /// does no replacement for unclear reasons
         cache.erase(key);
-        cache[key] = result;
+        cache[key] = std::move(result);
 
         LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Stored result of query {}", key.queryStringFromAst());
     }
@@ -260,14 +260,14 @@ QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t &
     if (it->first.expires_at < std::chrono::system_clock::now())
     {
         Cache & cache_rw = const_cast<Cache &>(cache_);
-        cache_size_in_bytes_ -= it->second->allocatedBytes();
+        cache_size_in_bytes_ -= it->second.allocatedBytes();
         cache_rw.erase(it);
         LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Stale entry found and removed for query {}", key.queryStringFromAst());
         return;
     }
 
     LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Entry found for query {}", key.queryStringFromAst());
-    pipe = Pipe(std::make_shared<SourceFromSingleChunk>(key.header, it->second->clone()));
+    pipe = Pipe(std::make_shared<SourceFromSingleChunk>(key.header, it->second.clone()));
 }
 
 bool QueryResultCache::Reader::hasCacheEntryForKey() const

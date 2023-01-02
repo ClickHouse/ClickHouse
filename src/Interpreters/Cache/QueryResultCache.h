@@ -66,10 +66,8 @@ private:
         size_t operator()(const Key & key) const;
     };
 
-    using Entry = std::shared_ptr<Chunk>;
-
     /// query --> query result
-    using Cache = std::unordered_map<Key, Entry, KeyHasher>;
+    using Cache = std::unordered_map<Key, Chunk, KeyHasher>;
 
     /// query --> query execution count
     using TimesExecutedMap = std::unordered_map<Key, size_t, KeyHasher>;
