@@ -82,6 +82,8 @@ public:
         bool compress_logs_ = true,
         uint64_t max_log_file_size = 0);
 
+    Changelog(Changelog &&) = delete;
+
     /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
     /// Truncate broken entries, remove files after broken entries.
     void readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep);
