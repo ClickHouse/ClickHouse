@@ -25,17 +25,15 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
     {
         const FunctionFactory & function_factory = FunctionFactory::instance();
         if (const FunctionOverloadResolverPtr resolver = function_factory.tryGet(function->name, context))
-        {
             if (!resolver->isDeterministic())
                 return true;
-        }
     }
 
-    bool has_non_cacheable_functions = false;
+    bool has_non_deterministic_functions = false;
     for (const auto & child : ast->children)
-        has_non_cacheable_functions |= astContainsNonDeterministicFunctions(child, context);
+        has_non_deterministic_functions |= astContainsNonDeterministicFunctions(child, context);
 
-    return has_non_cacheable_functions;
+    return has_non_deterministic_functions;
 }
 
 namespace
@@ -81,15 +79,15 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 ///       SET enable_experimental_query_result_cache = false;
 /// and
 ///   (2) SELECT expensiveComputation(...) SETTINGS max_threads = 64, enable_experimental_query_result_cache_passive_usage = true;
-/// The SELECT query in (1) and (2) is basically the same and the user expects to find the result in the query result cache. However, query
-/// results are indexed by the AST of their SELECT queries and no result will be found. Insert and retrieval behave overall more natural if
-/// settings related to the query result cache are erased from the AST key. Note that at this point the settings themselves have been parsed
-/// already, they are not lost or discarded.
+/// The SELECT queries in (1) and (2) are basically the same and the user expects that the second invocation is served from the query result
+/// cache. However, query results are indexed by their query ASTs and therefore no result will be found. Insert and retrieval behave overall
+/// more natural if settings related to the query result cache are erased from the AST key. Note that at this point the settings themselves
+/// have been parsed already, they are not lost or discarded.
 ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 {
     ASTPtr transformed_ast = ast->clone();
 
-    RemoveQueryResultCacheSettingsMatcher::Data visitor_data{};
+    RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
     RemoveQueryResultCacheSettingsVisitor visitor(visitor_data);
     visitor.visit(transformed_ast);
 
@@ -145,7 +143,7 @@ auto is_stale = [](const QueryResultCache::Key & key)
 
 QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
     size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
-    size_t max_entries_,
+    size_t max_cache_entries_,
     size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_duration_)
     : mutex(mutex_)
@@ -153,7 +151,7 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
     , key(key_)
     , cache_size_in_bytes(cache_size_in_bytes_)
     , max_cache_size_in_bytes(max_cache_size_in_bytes_)
-    , max_entries(max_entries_)
+    , max_cache_entries(max_cache_entries_)
     , new_entry_size_in_bytes(0)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , new_entry_size_in_rows(0)
@@ -163,7 +161,7 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
     , skip_insert(false)
 {
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
-        skip_insert = true; /// Do nothing if key exists in cache and it is not expired
+        skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
 }
 
 QueryResultCache::Writer::~Writer()
@@ -187,16 +185,16 @@ try
     };
 
     auto entry = std::make_shared<Chunk>(to_single_chunk(chunks));
-    new_entry_size_in_bytes = entry->allocatedBytes();
+    new_entry_size_in_bytes = entry->allocatedBytes(); // updated because compression potentially affects the size of the single chunk vs the aggregate size of individual chunks
 
     std::lock_guard lock(mutex);
 
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
-        return; /// same check as in ctor
+        return; /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
 
     auto sufficient_space_in_cache = [this]() TSA_REQUIRES(mutex)
     {
-        return (cache_size_in_bytes + new_entry_size_in_bytes <= max_cache_size_in_bytes) && (cache.size() + 1 <= max_entries);
+        return (cache_size_in_bytes + new_entry_size_in_bytes <= max_cache_size_in_bytes) && (cache.size() + 1 <= max_cache_entries);
     };
 
     if (!sufficient_space_in_cache())
@@ -327,6 +325,7 @@ size_t QueryResultCache::recordQueryRun(const Key & key)
 
     std::lock_guard times_executed_lock(mutex);
     size_t times = ++times_executed[key];
+    // Regularly drop times_executed to avoid DOS-by-unlimited-growth.
     if (times_executed.size() > TIMES_EXECUTED_MAX_SIZE)
         times_executed.clear();
     return times;

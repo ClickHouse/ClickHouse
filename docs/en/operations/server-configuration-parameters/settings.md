@@ -1276,7 +1276,7 @@ Default value: `1073741824` (ca. 1 GB.)
 
 ## query_result_cache_max_entries {#server_configuration_parameters_query-result-cache-max-entries}
 
-Maximum number of SELECT query results in the [query result cache](../query-result-cache.md).
+Maximum number of SELECT query results stored in the [query result cache](../query-result-cache.md).
 
 Possible values:
 
