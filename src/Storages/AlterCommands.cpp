@@ -30,6 +30,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
+
 namespace DB
 {
 
@@ -1023,7 +1024,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 command.ignore = true;
         }
     }
-
     prepared = true;
 }
 

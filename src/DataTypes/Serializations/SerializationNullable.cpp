@@ -150,7 +150,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
 }
 
 
-void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     if (field.isNull())
     {
@@ -159,17 +159,17 @@ void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & o
     else
     {
         writeBinary(false, ostr);
-        nested->serializeBinary(field, ostr, settings);
+        nested->serializeBinary(field, ostr);
     }
 }
 
-void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     bool is_null = false;
     readBinary(is_null, istr);
     if (!is_null)
     {
-        nested->deserializeBinary(field, istr, settings);
+        nested->deserializeBinary(field, istr);
     }
     else
     {
@@ -177,14 +177,14 @@ void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr, 
     }
 }
 
-void SerializationNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     bool is_null = col.isNullAt(row_num);
     writeBinary(is_null, ostr);
     if (!is_null)
-        nested->serializeBinary(col.getNestedColumn(), row_num, ostr, settings);
+        nested->serializeBinary(col.getNestedColumn(), row_num, ostr);
 }
 
 /// Deserialize value into ColumnNullable.
@@ -235,11 +235,11 @@ static ReturnType safeDeserialize(
 }
 
 
-void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     safeDeserialize(column, *nested,
         [&istr] { bool is_null = false; readBinary(is_null, istr); return is_null; },
-        [this, &istr, settings] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr, settings); });
+        [this, &istr] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr); });
 }
 
 

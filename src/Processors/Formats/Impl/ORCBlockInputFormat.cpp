@@ -198,7 +198,6 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatSupportsSubcolumns("ORC");
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 

@@ -3,8 +3,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Interpreters/Context.h>
-
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -58,7 +56,7 @@ public:
         auto & count_distinct_argument_column_typed = count_distinct_argument_column->as<ColumnNode &>();
 
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column
-        auto subquery = std::make_shared<QueryNode>(Context::createCopy(query_node->getContext()));
+        auto subquery = std::make_shared<QueryNode>();
         subquery->getJoinTree() = query_node->getJoinTree();
         subquery->getProjection().getNodes().push_back(count_distinct_argument_column);
         subquery->getGroupBy().getNodes().push_back(count_distinct_argument_column);

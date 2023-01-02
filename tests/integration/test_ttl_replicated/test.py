@@ -4,8 +4,6 @@ import helpers.client as client
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, exec_query_with_retry
-from helpers.wait_for_helpers import wait_for_delete_inactive_parts
-from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
@@ -422,8 +420,7 @@ def test_ttl_empty_parts(started_cluster):
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_empty_parts', '{replica}')
             ORDER BY id
             SETTINGS max_bytes_to_merge_at_min_space_in_pool = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
-                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, old_parts_lifetime = 1
-
+                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0
         """.format(
                 replica=node.name
             )
@@ -448,10 +445,7 @@ def test_ttl_empty_parts(started_cluster):
 
     assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "3000\n"
 
-    # Wait for cleanup thread
-    wait_for_delete_inactive_parts(node1, "test_ttl_empty_parts")
-    wait_for_delete_empty_parts(node1, "test_ttl_empty_parts")
-
+    time.sleep(3)  # Wait for cleanup thread
     assert (
         node1.query(
             "SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name"

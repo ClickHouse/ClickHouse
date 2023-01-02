@@ -9,10 +9,7 @@ After=time-sync.target network-online.target
 Wants=time-sync.target
 
 [Service]
-Type=notify
-
-# Switching off watchdog is very important for sd_notify to work correctly.
-Environment=CLICKHOUSE_WATCHDOG_ENABLE=0
+Type=simple
 User=clickhouse
 Group=clickhouse
 Restart=always

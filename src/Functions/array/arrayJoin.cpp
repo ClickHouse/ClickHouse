@@ -38,10 +38,7 @@ public:
     }
 
     /** It could return many different values for single argument. */
-    bool isDeterministic() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override
     {

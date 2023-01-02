@@ -65,27 +65,13 @@ struct HexImpl
         }
     }
 
-    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
+    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
-        if (!reverse_order)
+        while (pos < end)
         {
-            while (pos < end)
-            {
-                writeHexByteUppercase(*pos, out);
-                ++pos;
-                out += word_size;
-            }
-        }
-        else
-        {
-            const auto * start_pos = pos;
-            pos = end - 1;
-            while (pos >= start_pos)
-            {
-                writeHexByteUppercase(*pos, out);
-                --pos;
-                out += word_size;
-            }
+            writeHexByteUppercase(*pos, out);
+            ++pos;
+            out += word_size;
         }
         *out = '\0';
         ++out;
@@ -109,8 +95,7 @@ struct HexImpl
         for (size_t i = 0; i < size; ++i)
         {
             const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-            bool reverse_order = (std::endian::native == std::endian::big);
-            executeOneString(in_pos, in_pos + type_size_in_bytes, out, reverse_order);
+            executeOneString(in_pos, in_pos + type_size_in_bytes, out);
 
             pos += hex_length;
             out_offsets[i] = pos;
@@ -189,9 +174,7 @@ struct BinImpl
         for (size_t i = 0; i < size; ++i)
         {
             const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-
-            bool reverse_order = (std::endian::native == std::endian::big);
-            executeOneString(in_pos, in_pos + type_size_in_bytes, out, reverse_order);
+            executeOneString(in_pos, in_pos + type_size_in_bytes, out);
 
             pos += hex_length;
             out_offsets[i] = pos;
@@ -199,27 +182,13 @@ struct BinImpl
         col_res = std::move(col_str);
     }
 
-    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
+    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
-        if (!reverse_order)
+        while (pos < end)
         {
-            while (pos < end)
-            {
-                writeBinByte(*pos, out);
-                ++pos;
-                out += word_size;
-            }
-        }
-        else
-        {
-            const auto * start_pos = pos;
-            pos = end - 1;
-            while (pos >= start_pos)
-            {
-                writeBinByte(*pos, out);
-                --pos;
-                out += word_size;
-            }
+            writeBinByte(*pos, out);
+            ++pos;
+            out += word_size;
         }
         *out = '\0';
         ++out;
@@ -597,8 +566,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        WhichDataType which(arguments[0]);
-        if (!which.isStringOrFixedString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -634,39 +602,6 @@ public:
                 size_t new_offset = in_offsets[i];
 
                 Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset - 1]), pos);
-
-                out_offsets[i] = pos - begin;
-
-                prev_offset = new_offset;
-            }
-
-            out_vec.resize(pos - begin);
-
-            return col_res;
-        }
-        else if (const ColumnFixedString * col_fix_string = checkAndGetColumn<ColumnFixedString>(column.get()))
-        {
-            auto col_res = ColumnString::create();
-
-            ColumnString::Chars & out_vec = col_res->getChars();
-            ColumnString::Offsets & out_offsets = col_res->getOffsets();
-
-            const ColumnString::Chars & in_vec = col_fix_string->getChars();
-            size_t n = col_fix_string->getN();
-
-            size_t size = col_fix_string->size();
-            out_offsets.resize(size);
-            out_vec.resize(in_vec.size() / word_size + size);
-
-            char * begin = reinterpret_cast<char *>(out_vec.data());
-            char * pos = begin;
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                size_t new_offset = prev_offset + n;
-
-                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
 
                 out_offsets[i] = pos - begin;
 

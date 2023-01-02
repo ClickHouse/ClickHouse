@@ -1,6 +1,4 @@
-{% for join_algorithm in ['hash', 'parallel_hash', 'full_sorting_merge', 'grace_hash'] -%}
-
-SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}20K{% else %}0{% endif %}';
+{% for join_algorithm in ['hash', 'parallel_hash', 'full_sorting_merge'] -%}
 
 SELECT '--- {{ join_algorithm }} ---';
 
@@ -71,7 +69,7 @@ ORDER BY hits DESC
 LIMIT 10
 SETTINGS joined_subquery_requires_alias = 0;
 
-{% if join_algorithm not in ['full_sorting_merge', 'grace_hash'] -%}
+{% if join_algorithm != 'full_sorting_merge' -%}
 
 SELECT CounterID FROM test.visits ARRAY JOIN Goals.ID WHERE CounterID = 942285 ORDER BY CounterID;
 
@@ -213,6 +211,4 @@ ALL INNER JOIN
 ) AS b
 USING k ORDER BY joined;
 
-SET max_bytes_in_join = 0;
-
-{% endfor -%}
+{% endfor %}

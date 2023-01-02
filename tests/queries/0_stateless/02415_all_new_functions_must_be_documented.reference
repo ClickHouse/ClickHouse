@@ -82,7 +82,6 @@ addYears
 addressToLine
 addressToLineWithInlines
 addressToSymbol
-age
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -323,7 +322,7 @@ farmHash64
 file
 filesystemAvailable
 filesystemCapacity
-filesystemUnreserved
+filesystemFree
 finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC

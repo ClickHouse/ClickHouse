@@ -39,9 +39,6 @@ public:
     /// Name of the file that the iterator currently points to.
     virtual std::string name() const = 0;
 
-    /// Path of the file that the iterator currently points to.
-    virtual std::string path() const = 0;
-
     virtual ~IDataPartStorageIterator() = default;
 };
 

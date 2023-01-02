@@ -37,25 +37,25 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     Params params_,
     const FormatSettings & format_settings_,
     bool yield_strings_)
-    : IRowInputFormat(header_, in_, std::move(params_))
-    , format_settings(format_settings_)
-    , prev_positions(header_.columns())
-    , yield_strings(yield_strings_)
+    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns()), yield_strings(yield_strings_)
 {
-    name_map = getPort().getHeader().getNamesToIndexesMap();
-    if (format_settings_.import_nested_json)
+    size_t num_columns = getPort().getHeader().columns();
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        for (size_t i = 0; i != header_.columns(); ++i)
+        const String & column_name = columnName(i);
+        name_map[column_name] = i;        /// NOTE You could place names more cache-locally.
+        if (format_settings_.import_nested_json)
         {
-            const StringRef column_name = header_.getByPosition(i).name;
-            const auto split = Nested::splitName(column_name.toView());
+            const auto split = Nested::splitName(column_name);
             if (!split.second.empty())
             {
-                const StringRef table_name(column_name.data, split.first.size());
+                const StringRef table_name(column_name.data(), split.first.size());
                 name_map[table_name] = NESTED_FIELD;
             }
         }
     }
+
+    prev_positions.resize(num_columns);
 }
 
 const String & JSONEachRowRowInputFormat::columnName(size_t i) const
