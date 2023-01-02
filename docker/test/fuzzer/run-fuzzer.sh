@@ -390,12 +390,12 @@ th { cursor: pointer; }
 <tr>
   <td>AST Fuzzer</td>
   <td>$(cat status.txt)</td>
-  <td style="white-space: pre;">$(
+  <td>$(
     clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt
   )</td>
 </tr>
 <tr>
-  <td colspan="3" style="white-space: pre; overflow-x: scroll;">$(
+  <td colspan="3" style="white-space: pre-wrap;">$(
     clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < fatal.log || cat fatal.log
   )</td>
 </tr>
