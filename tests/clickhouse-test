@@ -1118,7 +1118,7 @@ class TestCase:
                     args, self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
-        except (ConnectionRefusedError, ConnectionResetError):
+        except (ConnectionError, http.client.ImproperConnectionState):
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -1544,7 +1544,7 @@ def check_server_started(args):
             print(" OK")
             sys.stdout.flush()
             return True
-        except (ConnectionRefusedError, ConnectionResetError):
+        except (ConnectionError, http.client.ImproperConnectionState):
             print(".", end="")
             sys.stdout.flush()
             retry_count -= 1
@@ -1554,7 +1554,7 @@ def check_server_started(args):
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
-            print("\nUexpected exception, will not retry: ", str(e))
+            print("\nUexpected exception, will not retry: ", type(e).__name__, ": ", str(e))
             break
 
     print("\nAll connection tries failed")
@@ -2280,7 +2280,7 @@ if __name__ == "__main__":
         if find_binary(args.binary + "-client"):
             args.client = args.binary + "-client"
 
-            print("Using " + args.client + " as client program (expecting split build)")
+            print("Using " + args.client + " as client program")
         elif find_binary(args.binary):
             args.client = args.binary + " client"
 

@@ -14,13 +14,14 @@ namespace DB
 class TSKVRowOutputFormat final : public TabSeparatedRowOutputFormat
 {
 public:
-    TSKVRowOutputFormat(WriteBuffer & out_, const Block & header, const RowOutputFormatParams & params_, const FormatSettings & format_settings);
+    TSKVRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings);
 
     String getName() const override { return "TSKVRowOutputFormat"; }
 
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeRowEndDelimiter() override;
+    void writeRowBetweenDelimiter() override;
 
     /// Disable totals and extremes, because they are enabled in TSV.
     bool supportTotals() const override { return false; }
