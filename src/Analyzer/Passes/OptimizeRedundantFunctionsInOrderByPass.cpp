@@ -15,24 +15,15 @@ namespace
 
 class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisitor<OptimizeRedundantFunctionsInOrderByVisitor>
 {
-
-    struct RedundancyVerdict
-    {
-        bool redundant = true;
-        bool done = false;
-    };
-
-    static constexpr RedundancyVerdict makeNonRedundant() noexcept { return { .redundant = false, .done = true }; }
-
     std::unordered_set<std::string_view> existing_keys;
 
-    RedundancyVerdict isRedundantExpression(FunctionNode * function)
+    bool isRedundantExpression(FunctionNode * function)
     {
         if (function->getArguments().getNodes().empty())
-            return makeNonRedundant();
+            return false;
         const auto & function_base = function->getFunction();
         if (!function_base || !function_base->isDeterministicInScopeOfQuery())
-            return makeNonRedundant();
+            return false;
 
         // TODO: handle constants here
         for (auto & arg : function->getArguments().getNodes())
@@ -41,24 +32,23 @@ class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisito
             {
                 case QueryTreeNodeType::FUNCTION:
                 {
-                    auto subresult = isRedundantExpression(arg->as<FunctionNode>());
-                    if (subresult.done)
-                        return subresult;
+                    if (!isRedundantExpression(arg->as<FunctionNode>()))
+                        return false;
                     break;
                 }
                 case QueryTreeNodeType::COLUMN:
                 {
                     auto * column = arg->as<ColumnNode>();
                     if (!existing_keys.contains(column->getColumnName()))
-                        return makeNonRedundant();
+                        return false;
                     break;
                 }
                 default:
-                    return makeNonRedundant();
+                    return false;
             }
         }
 
-        return {};
+        return true;
     }
 
 public:
@@ -94,7 +84,7 @@ public:
             auto & order_by_expr = elem->as<SortNode>()->getExpression();
             if (auto * expr = order_by_expr->as<FunctionNode>())
             {
-                if (isRedundantExpression(expr).redundant)
+                if (isRedundantExpression(expr))
                     continue;
             }
             else if (auto * column = order_by_expr->as<ColumnNode>())
