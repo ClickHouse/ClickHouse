@@ -301,7 +301,7 @@ quit
         echo "failure" > status.txt
         { rg --text -o "Found error:.*" fuzzer.log \
             || rg --text -ao "Exception:.*" fuzzer.log \
-            || rg "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
+            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi
 
