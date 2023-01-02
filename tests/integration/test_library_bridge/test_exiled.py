@@ -16,6 +16,7 @@ instance = cluster.add_instance(
     stay_alive=True,
 )
 
+
 @pytest.fixture(scope="module")
 def ch_cluster():
     try:

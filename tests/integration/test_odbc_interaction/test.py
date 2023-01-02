@@ -22,7 +22,7 @@ node1 = cluster.add_instance(
         "configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml",
         "configs/dictionaries/sqlite3_odbc_cached_dictionary.xml",
         "configs/dictionaries/postgres_odbc_hashed_dictionary.xml",
-    ]
+    ],
 )
 
 
