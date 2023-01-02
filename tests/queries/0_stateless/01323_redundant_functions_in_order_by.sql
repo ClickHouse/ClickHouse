@@ -29,6 +29,7 @@ EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, a, exp(key + a);
 EXPLAIN QUERY TREE run_passes=1 SELECT key, a FROM test ORDER BY key, a, exp(key + a);
 EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, exp(key + a);
 EXPLAIN QUERY TREE run_passes=1 SELECT key, a FROM test ORDER BY key, exp(key + a);
+EXPLAIN QUERY TREE run_passes=1 SELECT key FROM test GROUP BY key ORDER BY avg(a), key;
 
 set optimize_redundant_functions_in_order_by = 0;
 
