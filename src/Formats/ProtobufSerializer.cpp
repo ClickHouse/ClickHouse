@@ -2511,6 +2511,11 @@ namespace
             writer->endMessage(/*with_length_delimiter = */ true);
         }
 
+        void reset() override
+        {
+            first_call_of_write_row = true;
+        }
+
         void readRow(size_t row_num) override
         {
             if (first_call_of_read_row)
