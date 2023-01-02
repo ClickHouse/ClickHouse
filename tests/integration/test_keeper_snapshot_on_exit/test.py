@@ -35,18 +35,23 @@ def started_cluster():
 
 
 def test_snapshot_on_exit(started_cluster):
-    zk_conn = get_fake_zk(node1)
+    zk_conn = None
+    try:
+        zk_conn = get_fake_zk(node1)
+        zk_conn.create("/some_path", b"some_data")
 
-    zk_conn.create("/some_path", b"some_data")
+        node1.stop_clickhouse()
+        assert node1.contains_in_log("Created persistent snapshot")
 
-    node1.stop_clickhouse()
-    assert node1.contains_in_log("Created persistent snapshot")
+        node1.start_clickhouse()
+        assert node1.contains_in_log("Loaded snapshot")
 
-    node1.start_clickhouse()
-    assert node1.contains_in_log("Loaded snapshot")
+        node2.stop_clickhouse()
+        assert not node2.contains_in_log("Created persistent snapshot")
 
-    node2.stop_clickhouse()
-    assert not node2.contains_in_log("Created persistent snapshot")
-
-    node2.start_clickhouse()
-    assert node2.contains_in_log("No existing snapshots")
+        node2.start_clickhouse()
+        assert node2.contains_in_log("No existing snapshots")
+    finally:
+        if zk_conn:
+            zk_conn.stop()
+            zk_conn.close()
