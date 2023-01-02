@@ -138,7 +138,7 @@ namespace JSONUtils
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
-                skipComma(in);
+                assertChar(',', in);
             else
                 first = false;
 
@@ -166,7 +166,7 @@ namespace JSONUtils
         while (!in.eof() && *in.position() != ']')
         {
             if (!first)
-                skipComma(in);
+                assertChar(',', in);
             else
                 first = false;
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
