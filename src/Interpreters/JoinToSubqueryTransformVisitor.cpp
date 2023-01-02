@@ -88,15 +88,20 @@ public:
             ShouldAddColumnPredicate should_add_column_predicate = [](const String &) { return true; })
         {
             String name = table_name;
-            auto table_name_it = table_name_alias.find(table_name);
-            if (table_name_it != table_name_alias.end())
-            {
-                name = table_name_it->second;
-            }
-
             auto it = table_columns.find(name);
             if (it == table_columns.end())
-                throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+            {
+                auto table_name_it = table_name_alias.find(table_name);
+                if (table_name_it != table_name_alias.end())
+                {
+                    name = table_name_it->second;
+                    it = table_columns.find(table_name_it->second);
+                    if (it == table_columns.end())
+                        throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                }
+                else
+                    throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+            }
 
             for (const auto & column : it->second)
             {
