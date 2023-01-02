@@ -13,7 +13,7 @@ import time
 import zlib  # for crc32
 
 
-MAX_RETRY = 3
+MAX_RETRY = 1
 NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
