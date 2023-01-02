@@ -16,7 +16,7 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
 /// when data is inserted/deleted into/from tables referenced by queries in the cache. In such situations, incorrect results may be
-/// returned. In order to still obtain sufficiently up-to-date query results, a expiration time must be specified for each cache entry after
+/// returned. In order to still obtain sufficiently up-to-date query results, a expiry time must be specified for each cache entry after
 /// which it becomes stale and is ignored. Stale entries are removed opportunistically from the cache, they are only evicted when a new
 /// entry is inserted and the cache has insufficient capacity.
 class QueryResultCache
@@ -130,9 +130,12 @@ public:
 
 private:
     /// Implementation note: The query result implements a custom caching mechanism and doesn't make use of CacheBase, unlike many other
-    /// internal caches in ClickHouse. The main reason is that we don't need standard CacheBase (S)LRU eviction as the expiration times
-    /// associated with cache entries provide a "natural" eviction criterion. As a future TODO, we could make an expiration-based eviction
+    /// internal caches in ClickHouse. The main reason is that we don't need standard CacheBase (S)LRU eviction as the expiry times
+    /// associated with cache entries provide a "natural" eviction criterion. As a future TODO, we could make an expiry-based eviction
     /// policy and use that with CacheBase.
+    /// TODO To speed up removal of stale entries, we could also add another container sorted on expiry times which maps keys to iterators
+    /// into the cache. To insert an entry, add it to the cache + add the iterator to the sorted container. To remove stale entries, do a
+    /// binary search on the sorted container and erase all left of the found key.
     mutable std::mutex mutex;
     Cache cache TSA_GUARDED_BY(mutex);
     TimesExecutedMap times_executed TSA_GUARDED_BY(mutex);
