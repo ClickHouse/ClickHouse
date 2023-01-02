@@ -708,7 +708,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 auto query_result_cache = context->getQueryResultCache();
 
-                /// If enabled, ask query result cache to serve the query instead of computing it
+                /// Try to read query result from query result cache (if it is enabled)
+                bool read_result_from_query_result_cache = false; /// a query must not read from *and* write to the query result cache at the same time
                 if ((settings.enable_experimental_query_result_cache || settings.enable_experimental_query_result_cache_passive_usage)
                     && query_result_cache != nullptr && res.pipeline.pulling())
                 {
@@ -718,12 +719,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_ttl));
                     QueryResultCache::Reader reader = query_result_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
+                    {
                         res.pipeline = QueryPipeline(reader.getPipe());
+                        read_result_from_query_result_cache = true;
+                    }
                 }
 
-                /// If enabled, write query result into query result cache
-                if (settings.enable_experimental_query_result_cache && query_result_cache != nullptr && res.pipeline.pulling()
-                  && (settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions || !astContainsNonDeterministicFunctions(ast, context)))
+                /// Try to write query result into query result cache (if it is enabled)
+                if (!read_result_from_query_result_cache
+                    && settings.enable_experimental_query_result_cache
+                    && query_result_cache != nullptr && res.pipeline.pulling()
+                    && (settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions || !astContainsNonDeterministicFunctions(ast, context)))
                 {
                     QueryResultCache::Key key(
                         ast, settings.query_result_cache_partition_key, res.pipeline.getHeader(),
@@ -738,6 +744,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         res.pipeline.streamIntoQueryResultCache(stream_in_query_result_cache_transform);
                     }
                 }
+
             }
         }
 
