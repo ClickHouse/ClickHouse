@@ -95,7 +95,7 @@ public:
         const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction/destruction coincides with query start/end
         const std::chrono::milliseconds min_query_duration;
         Chunks chunks;
-        bool skip_insert = false;
+        std::atomic<bool> skip_insert = false;
 
         Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
             size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
