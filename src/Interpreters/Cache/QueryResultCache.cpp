@@ -180,8 +180,8 @@ try
         return res;
     };
 
-    auto entry = std::make_shared<Chunk>(to_single_chunk(chunks));
-    new_entry_size_in_bytes = entry->allocatedBytes(); // updated because compression potentially affects the size of the single chunk vs the aggregate size of individual chunks
+    auto result = std::make_shared<Chunk>(to_single_chunk(partial_results));
+    new_entry_size_in_bytes = result->allocatedBytes(); // updated because compression potentially affects the size of the single chunk vs the aggregate size of individual chunks
 
     std::lock_guard lock(mutex);
 
@@ -212,13 +212,13 @@ try
     /// Insert or replace if enough space
     if (sufficient_space_in_cache())
     {
-        cache_size_in_bytes += entry->allocatedBytes();
+        cache_size_in_bytes += result->allocatedBytes();
         if (auto it = cache.find(key); it != cache.end())
             cache_size_in_bytes -= it->second->allocatedBytes(); /// key replacement
 
-        /// cache[key] = entry; /// does no replacement for unclear reasons
+        /// cache[key] = result; /// does no replacement for unclear reasons
         cache.erase(key);
-        cache[key] = entry;
+        cache[key] = result;
 
         LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Stored result of query {}", key.queryStringFromAst());
     }
@@ -227,15 +227,15 @@ catch (const std::exception &)
 {
 }
 
-void QueryResultCache::Writer::buffer(Chunk && chunk)
+void QueryResultCache::Writer::buffer(Chunk && partial_result)
 {
     if (skip_insert)
         return;
 
-    chunks.emplace_back(std::move(chunk));
+    partial_results.emplace_back(std::move(partial_result));
 
-    new_entry_size_in_bytes += chunks.back().allocatedBytes();
-    new_entry_size_in_rows += chunks.back().getNumRows();
+    new_entry_size_in_bytes += partial_results.back().allocatedBytes();
+    new_entry_size_in_rows += partial_results.back().getNumRows();
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
         skip_insert = true;
