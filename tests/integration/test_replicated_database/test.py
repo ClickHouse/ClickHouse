@@ -856,12 +856,6 @@ def test_recover_staled_replica_many_mvs(started_cluster):
         pm.drop_instance_zk_connections(dummy_node)
         dummy_node.query_and_get_error("RENAME TABLE recover_mvs.t1 TO recover_mvs.m1")
 
-        # We create
-        # rmt1 -> mv1 -> cascade_mv1 -> double_cascade_mv1 -> final_boss
-        # rmt2 -> mv2 -> cascade_mv2 -> double_cascade_mv2 ->
-        # rmt3 -> mv3 -> cascade_mv3 -> double_cascade_mv3 ->
-        # rmt4 -> mv4 -> cascade_mv4 -> double_cascade_mv4 ->
-
         for identifier in ["1", "2", "3", "4"]:
             main_node.query(
                 f"CREATE TABLE recover_mvs.rmt{identifier} (n int) ENGINE=ReplicatedMergeTree ORDER BY n",
@@ -887,47 +881,56 @@ def test_recover_staled_replica_many_mvs(started_cluster):
         print("Created MVs")
 
         for identifier in ["1", "2", "3", "4"]:
-            main_node.query(
-                f"CREATE TABLE recover_mvs.cascade_mv_inner{identifier} (n int) ENGINE=ReplicatedMergeTree ORDER BY n",
+            main_node.query_with_retry(
+                f"""CREATE VIEW recover_mvs.view_from_mv{identifier}
+                    AS SELECT * FROM recover_mvs.mv{identifier}""",
                 settings=settings,
             )
+
+        print("Created Views on top of MVs")
 
         for identifier in ["1", "2", "3", "4"]:
             main_node.query_with_retry(
                 f"""CREATE MATERIALIZED VIEW recover_mvs.cascade_mv{identifier}
-                    TO recover_mvs.cascade_mv_inner{identifier}
-                    AS SELECT * FROM recover_mvs.mv_inner{identifier}""",
+                    ENGINE=MergeTree() ORDER BY tuple()
+                    POPULATE AS SELECT * FROM recover_mvs.mv_inner{identifier};""",
                 settings=settings,
             )
 
         print("Created cascade MVs")
 
         for identifier in ["1", "2", "3", "4"]:
-            main_node.query(
-                f"CREATE TABLE recover_mvs.double_cascade_mv_inner{identifier} (n int) ENGINE=ReplicatedMergeTree ORDER BY n",
+            main_node.query_with_retry(
+                f"""CREATE VIEW recover_mvs.view_from_cascade_mv{identifier}
+                    AS SELECT * FROM recover_mvs.cascade_mv{identifier}""",
                 settings=settings,
             )
+
+        print("Created Views on top of cascade MVs")
 
         for identifier in ["1", "2", "3", "4"]:
             main_node.query_with_retry(
                 f"""CREATE MATERIALIZED VIEW recover_mvs.double_cascade_mv{identifier}
-                    TO recover_mvs.double_cascade_mv_inner{identifier}
-                    AS SELECT * FROM recover_mvs.cascade_mv_inner{identifier}""",
+                    ENGINE=MergeTree() ORDER BY tuple()
+                    POPULATE AS SELECT * FROM recover_mvs.`.inner_id.{get_table_uuid("recover_mvs", f"cascade_mv{identifier}")}`""",
                 settings=settings,
             )
 
         print("Created double cascade MVs")
 
-        main_node.query(
-            f"CREATE TABLE recover_mvs.final_boss_inner (n int) ENGINE=ReplicatedMergeTree order by n",
-            settings=settings,
-        )
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query_with_retry(
+                f"""CREATE VIEW recover_mvs.view_from_double_cascade_mv{identifier}
+                    AS SELECT * FROM recover_mvs.double_cascade_mv{identifier}""",
+                settings=settings,
+            )
+
+        print("Created Views on top of double cascade MVs")
 
         # This weird table name is actually makes sence because it starts with letter `a` and may break some internal sorting
         main_node.query_with_retry(
             """
-            CREATE MATERIALIZED VIEW recover_mvs.anime
-            TO recover_mvs.final_boss_inner
+            CREATE VIEW recover_mvs.anime
             AS
             SELECT n
             FROM
@@ -939,12 +942,12 @@ def test_recover_staled_replica_many_mvs(started_cluster):
                     FROM
                     (
                         SELECT *
-                        FROM recover_mvs.double_cascade_mv_inner1 AS q1
-                        INNER JOIN recover_mvs.double_cascade_mv_inner2 AS q2 ON q1.n = q2.n
+                        FROM recover_mvs.mv_inner1 AS q1
+                        INNER JOIN recover_mvs.mv_inner2 AS q2 ON q1.n = q2.n
                     ) AS new_table_1
-                    INNER JOIN recover_mvs.double_cascade_mv_inner3 AS q3 ON new_table_1.n = q3.n
+                    INNER JOIN recover_mvs.mv_inner3 AS q3 ON new_table_1.n = q3.n
                 ) AS new_table_2
-                INNER JOIN recover_mvs.double_cascade_mv_inner4 AS q4 ON new_table_2.n = q4.n
+                INNER JOIN recover_mvs.mv_inner4 AS q4 ON new_table_2.n = q4.n
             )
             """,
             settings=settings,
@@ -952,22 +955,29 @@ def test_recover_staled_replica_many_mvs(started_cluster):
 
         print("Created final boss")
 
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query_with_retry(
+                f"""CREATE DICTIONARY recover_mvs.`11111d{identifier}` (n UInt64)
+                PRIMARY KEY n
+                SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'double_cascade_mv{identifier}' DB 'recover_mvs'))
+                LAYOUT(FLAT()) LIFETIME(1)""",
+                settings=settings,
+            )
+
+        print("Created dictionaries")
+
+        for identifier in ["1", "2", "3", "4"]:
+            main_node.query_with_retry(
+                f"""CREATE VIEW recover_mvs.`00000vd{identifier}`
+                AS SELECT * FROM recover_mvs.`11111d{identifier}`""",
+                settings=settings,
+            )
+
+        print("Created Views on top of dictionaries")
+
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_mvs")
     query = "SELECT name FROM system.tables WHERE database='recover_mvs' ORDER BY name"
     assert main_node.query(query) == dummy_node.query(query)
-
-    for table in ["rmt1", "rmt2", "rmt3", "rmt4"]:
-        dummy_node.query(f"INSERT INTO recover_mvs.{table} VALUES (42)")
-
-    for table in ["rmt1", "rmt2", "rmt3", "rmt4"]:
-        dummy_node.query(f"SYSTEM SYNC REPLICA recover_mvs.{table}")
-
-    # This is to make anime work reliably
-    dummy_node.query(
-        "INSERT INTO recover_mvs.rmt1 SELECT * FROM numbers(1000)",
-        settings={"max_block_size": 1},
-    )
-    assert dummy_node.query("SELECT * FROM recover_mvs.anime") == "42\n"
 
     main_node.query("DROP DATABASE IF EXISTS recover_mvs")
     dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
@@ -1166,10 +1176,10 @@ def test_recover_digest_mismatch(started_cluster):
     ]
 
     for command in ways_to_corrupt_metadata:
-        need_remove_is_active_node = "rm -f" in command
+        print(f"Corrupting data using `{command}`")
+        need_remove_is_active_node = "rm -rf" in command
         dummy_node.stop_clickhouse(kill=not need_remove_is_active_node)
         dummy_node.exec_in_container(["bash", "-c", command])
-        dummy_node.start_clickhouse()
 
         query = (
             "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover_digest_mismatch' AND name NOT LIKE '.inner_id.%' "
@@ -1177,14 +1187,18 @@ def test_recover_digest_mismatch(started_cluster):
         )
         expected = main_node.query(query)
 
-        if "rm -f" in command:
+        if need_remove_is_active_node:
             # NOTE Otherwise it fails to recreate ReplicatedMergeTree table due to "Replica already exists"
             main_node.query(
                 "SYSTEM DROP REPLICA '2' FROM DATABASE recover_digest_mismatch"
             )
 
-        dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
+        # There is a race condition between deleting active node and creating it on server startup
+        # So we start a server only after we deleted all table replicas from the Keeper
+        dummy_node.start_clickhouse()
         assert_eq_with_retry(dummy_node, query, expected)
 
     main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
     dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
+
+    print("Everything Okay")
