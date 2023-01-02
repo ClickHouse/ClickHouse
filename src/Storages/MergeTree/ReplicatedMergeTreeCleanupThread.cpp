@@ -417,7 +417,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & bloc
     auto not_cached_blocks = stat.numChildren - cached_block_stats.size();
     if (not_cached_blocks)
     {
-        LOG_TRACE(log, "Checking {} {} ({} are not cached){}", stat.numChildren, blocks_dir_name, not_cached_blocks, " to clear old ones from ZooKeeper.");
+        LOG_TRACE(log, "Checking {} {} ({} are not cached){}, path is {}", stat.numChildren, blocks_dir_name, not_cached_blocks, " to clear old ones from ZooKeeper.", storage.zookeeper_path + "/" + blocks_dir_name);
     }
 
     std::vector<std::string> exists_paths;
