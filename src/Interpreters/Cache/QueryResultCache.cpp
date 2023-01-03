@@ -161,7 +161,7 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
     size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
     size_t max_cache_entries_,
     size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
-    std::chrono::milliseconds min_query_duration_)
+    std::chrono::milliseconds min_query_runtime_)
     : mutex(mutex_)
     , cache(cache_)
     , key(key_)
@@ -170,7 +170,7 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
     , max_cache_entries(max_cache_entries_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
-    , min_query_duration(min_query_duration_)
+    , min_query_runtime(min_query_runtime_)
 {
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
@@ -182,7 +182,7 @@ try
     if (skip_insert)
         return;
 
-    if (auto query_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_duration < min_query_duration)
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
         return;
 
     auto to_single_chunk = [](const Chunks & chunks_) -> Chunk
@@ -273,11 +273,10 @@ QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t &
         return;
     }
 
-    if (it->first.expires_at < std::chrono::system_clock::now())
+    if (is_stale(it->first))
     {
-        Cache & cache_rw = const_cast<Cache &>(cache_);
         cache_size_in_bytes_ -= it->second.allocatedBytes();
-        cache_rw.erase(it);
+        const_cast<Cache &>(cache_).erase(it);
         LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Stale entry found and removed for query {}", key.queryStringFromAst());
         return;
     }
@@ -318,10 +317,10 @@ QueryResultCache::Reader QueryResultCache::createReader(const Key & key)
     return Reader(cache, key, cache_size_in_bytes);
 }
 
-QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, std::chrono::milliseconds min_query_duration)
+QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime)
 {
     std::lock_guard lock(mutex);
-    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_cache_entries, max_cache_entry_size_in_bytes, max_cache_entry_size_in_rows, min_query_duration);
+    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_cache_entries, max_cache_entry_size_in_bytes, max_cache_entry_size_in_rows, min_query_runtime);
 }
 
 void QueryResultCache::reset()

@@ -70,7 +70,7 @@ private:
     using Cache = std::unordered_map<Key, Chunk, KeyHasher>;
 
     /// query --> query execution count
-    using TimesExecutedMap = std::unordered_map<Key, size_t, KeyHasher>;
+    using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
 
 public:
     /// Buffers multiple result chunks and stores them during destruction as a cache entry.
@@ -91,7 +91,7 @@ public:
         size_t new_entry_size_in_rows = 0;
         const size_t max_entry_size_in_rows;
         const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction/destruction coincides with query start/end
-        const std::chrono::milliseconds min_query_duration;
+        const std::chrono::milliseconds min_query_runtime;
         Chunks partial_query_results;
         std::atomic<bool> skip_insert = false;
 
@@ -99,7 +99,7 @@ public:
             size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
             size_t max_cache_entries_,
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
-            std::chrono::milliseconds min_query_duration_);
+            std::chrono::milliseconds min_query_runtime_);
 
         friend class QueryResultCache; /// for createWriter()
     };
@@ -109,7 +109,7 @@ public:
     {
     public:
         bool hasCacheEntryForKey() const;
-        Pipe && getPipe();
+        Pipe && getPipe(); /// must be called only if hasCacheEntryForKey() returns true
     private:
         Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_);
         Pipe pipe;
@@ -119,7 +119,7 @@ public:
     QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_);
 
     Reader createReader(const Key & key);
-    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_duration);
+    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime);
 
     void reset();
 
@@ -136,7 +136,7 @@ private:
     /// binary search on the sorted container and erase all left of the found key.
     mutable std::mutex mutex;
     Cache cache TSA_GUARDED_BY(mutex);
-    TimesExecutedMap times_executed TSA_GUARDED_BY(mutex);
+    TimesExecuted times_executed TSA_GUARDED_BY(mutex);
 
     size_t cache_size_in_bytes TSA_GUARDED_BY(mutex) = 0; /// updated in each cache insert/delete
     const size_t max_cache_size_in_bytes;
