@@ -31,7 +31,6 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/DiskDecorator.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
@@ -763,13 +762,17 @@ try
     fs::directory_iterator dir_end;
     for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
-        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
+        if (it->is_regular_file())
         {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-            fs::remove(it->path());
+            if (startsWith(it->path().filename(), "tmp"))
+            {
+                LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+                fs::remove(it->path());
+            }
+            else
+                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
         }
-        else
-            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+        /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
     }
 }
 catch (...)
@@ -822,8 +825,6 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
         /// Check that underlying disk is local (can be wrapped in decorator)
         DiskPtr disk_ptr = disk;
-        if (const auto * disk_decorator = dynamic_cast<const DiskDecorator *>(disk_ptr.get()))
-            disk_ptr = disk_decorator->getNestedDisk();
 
         if (dynamic_cast<const DiskLocal *>(disk_ptr.get()) == nullptr)
         {

@@ -20,15 +20,15 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts);
 
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection);
 
-template <typename RequiredKeys = std::unordered_set<std::string_view>,
-          typename OptionalKeys = std::unordered_set<std::string_view>>
+template <typename RequiredKeys = std::unordered_set<std::string>,
+          typename OptionalKeys = std::unordered_set<std::string>>
 void validateNamedCollection(
     const NamedCollection & collection,
     const RequiredKeys & required_keys,
     const OptionalKeys & optional_keys,
     const std::vector<std::regex> & optional_regex_keys = {})
 {
-    const auto & keys = collection.getKeys();
+    NamedCollection::Keys keys = collection.getKeys();
     auto required_keys_copy = required_keys;
 
     for (const auto & key : keys)

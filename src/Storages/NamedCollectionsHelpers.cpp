@@ -72,6 +72,8 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
         auto value_override = getKeyValueFromAST(*it);
         if (!value_override && !(*it)->as<ASTFunction>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
+        if (!value_override)
+            continue;
 
         const auto & [key, value] = *value_override;
         collection_copy->setOrUpdate<String>(key, toString(value));
