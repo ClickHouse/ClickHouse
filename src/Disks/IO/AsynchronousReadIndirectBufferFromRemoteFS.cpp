@@ -171,13 +171,12 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     if (!hasPendingDataToRead())
         return false;
 
-    Stopwatch watch;
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
     size_t size, offset;
 
     if (prefetch_future.valid())
     {
         ElapsedUSProfileEventIncrement measure_time(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
         std::tie(size, offset) = prefetch_future.get();
         prefetch_future = {};
