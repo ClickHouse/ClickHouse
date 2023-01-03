@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 from os import path as p, makedirs
-from typing import List, Tuple
+from typing import List
 
 from github import Github
 
@@ -20,6 +20,7 @@ from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET, S3_DOW
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from git_helper import Git
 from pr_info import PRInfo
+from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
@@ -235,8 +236,8 @@ def build_and_push_image(
     os: str,
     tag: str,
     version: ClickHouseVersion,
-) -> List[Tuple[str, str]]:
-    result = []
+) -> TestResults:
+    result = []  # type: TestResults
     if os != "ubuntu":
         tag += f"-{os}"
     init_args = ["docker", "buildx", "build", "--build-arg BUILDKIT_INLINE_CACHE=1"]
@@ -270,9 +271,9 @@ def build_and_push_image(
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
         if retry_popen(cmd) != 0:
-            result.append((f"{image.repo}:{tag}-{arch}", "FAIL"))
+            result.append(TestResult(f"{image.repo}:{tag}-{arch}", "FAIL"))
             return result
-        result.append((f"{image.repo}:{tag}-{arch}", "OK"))
+        result.append(TestResult(f"{image.repo}:{tag}-{arch}", "OK"))
         with open(metadata_path, "rb") as m:
             metadata = json.load(m)
             digests.append(metadata["containerimage.digest"])
@@ -283,7 +284,7 @@ def build_and_push_image(
         )
         logging.info("Pushing merged %s:%s image: %s", image.repo, tag, cmd)
         if retry_popen(cmd) != 0:
-            result.append((f"{image.repo}:{tag}", "FAIL"))
+            result.append(TestResult(f"{image.repo}:{tag}", "FAIL"))
             return result
     else:
         logging.info(
@@ -323,7 +324,7 @@ def main():
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
     status = "success"
-    test_results = []  # type: List[Tuple[str, str]]
+    test_results = []  # type: TestResults
     for os in args.os:
         for tag in tags:
             test_results.extend(
@@ -331,7 +332,7 @@ def main():
                     image, args.push, args.bucket_prefix, os, tag, args.version
                 )
             )
-            if test_results[-1][1] != "OK":
+            if test_results[-1].status != "OK":
                 status = "failure"
 
     pr_info = pr_info or PRInfo()

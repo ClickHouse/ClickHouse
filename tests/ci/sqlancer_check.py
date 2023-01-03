@@ -4,27 +4,27 @@ import logging
 import subprocess
 import os
 import sys
-from typing import List, Tuple
+from typing import List
 
 from github import Github
 
+from build_download_helper import get_build_name_for_check, read_build_urls
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from commit_status_helper import post_commit_status
+from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
     REPORTS_PATH,
-    REPO_COPY,
     TEMP_PATH,
 )
-from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from build_download_helper import get_build_name_for_check, read_build_urls
-from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from upload_result_helper import upload_results
-from stopwatch import Stopwatch
+from report import TestResults, TestResult
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from stopwatch import Stopwatch
+from upload_result_helper import upload_results
 
 IMAGE_NAME = "clickhouse/sqlancer-test"
 
@@ -48,13 +48,12 @@ def get_commit(gh, commit_sha):
     return commit
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
 
     temp_path = TEMP_PATH
-    repo_path = REPO_COPY
     reports_path = REPORTS_PATH
 
     check_name = sys.argv[1]
@@ -108,11 +107,6 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    check_name_lower = (
-        check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
-    )
-    s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_lower}/"
-
     tests = [
         "TLPGroupBy",
         "TLPHaving",
@@ -138,7 +132,7 @@ if __name__ == "__main__":
     report_url = GITHUB_RUN_URL
 
     status = "success"
-    test_results = []  # type: List[Tuple[str, str]]
+    test_results = []  # type: TestResults
     # Try to get status message saved by the SQLancer
     try:
         # with open(
@@ -146,13 +140,13 @@ if __name__ == "__main__":
         # ) as status_f:
         #     status = status_f.readline().rstrip("\n")
         if os.path.exists(os.path.join(workspace_path, "server_crashed.log")):
-            test_results.append(("Server crashed", "FAIL"))
+            test_results.append(TestResult("Server crashed", "FAIL"))
         with open(
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:
             for line in summary_f:
                 l = line.rstrip("\n").split("\t")
-                test_results.append((l[0], l[1]))
+                test_results.append(TestResult(l[0], l[1]))
 
         with open(
             os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
@@ -169,7 +163,6 @@ if __name__ == "__main__":
         test_results,
         paths,
         check_name,
-        False,
     )
 
     post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
@@ -192,3 +185,7 @@ if __name__ == "__main__":
 
     print(f"::notice Result: '{status}', '{description}', '{report_url}'")
     post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
+
+
+if __name__ == "__main__":
+    main()
