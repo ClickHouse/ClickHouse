@@ -429,8 +429,7 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
 
 void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    IInputFormat::setReadBuffer(in_);
+    buf->setSubBuffer(in_);
 }
 
 MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
