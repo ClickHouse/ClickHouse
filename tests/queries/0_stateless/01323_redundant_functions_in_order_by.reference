@@ -279,6 +279,34 @@ QUERY id: 0
       SORT id: 10, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    t1.id UInt64
+    t2.id UInt64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+      COLUMN id: 4, column_name: id, result_type: UInt64, source_id: 5
+  JOIN TREE
+    JOIN id: 6, strictness: ALL, kind: INNER
+      LEFT TABLE EXPRESSION
+        TABLE id: 3, table_name: default.t1
+      RIGHT TABLE EXPRESSION
+        TABLE id: 5, table_name: default.t2
+      JOIN EXPRESSION
+        FUNCTION id: 7, function_name: equals, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 8, nodes: 2
+              COLUMN id: 9, column_name: id, result_type: UInt64, source_id: 3
+              COLUMN id: 10, column_name: id, result_type: UInt64, source_id: 5
+  ORDER BY
+    LIST id: 11, nodes: 2
+      SORT id: 12, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 13, column_name: id, result_type: UInt64, source_id: 3
+      SORT id: 14, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 15, column_name: id, result_type: UInt64, source_id: 5
 [0,1,2]
 [0,1,2]
 [0,1,2]

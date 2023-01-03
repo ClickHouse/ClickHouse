@@ -31,6 +31,13 @@ EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, exp(key + a);
 EXPLAIN QUERY TREE run_passes=1 SELECT key, a FROM test ORDER BY key, exp(key + a);
 EXPLAIN QUERY TREE run_passes=1 SELECT key FROM test GROUP BY key ORDER BY avg(a), key;
 
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+CREATE TABLE t1 (id UInt64) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE t2 (id UInt64) ENGINE = MergeTree() ORDER BY id;
+
+EXPLAIN QUERY TREE run_passes=1 SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id ORDER BY t1.id, t2.id;
+
 set optimize_redundant_functions_in_order_by = 0;
 
 SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(x));
@@ -46,4 +53,6 @@ EXPLAIN SYNTAX SELECT * FROM (SELECT number + 2 AS key FROM numbers(4)) s FULL J
 EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, a, exp(key + a);
 EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, exp(key + a);
 
+DROP TABLE t1;
+DROP TABLE t2;
 DROP TABLE test;
