@@ -95,7 +95,6 @@ public:
                 /// The second argument will be added when all patterns are known.
                 auto match_function = std::make_shared<FunctionNode>("multiMatchAny");
                 match_function->getArguments().getNodes().push_back(identifier);
-                match_function->resolveAsFunction(match_function_ref->build(match_function->getArgumentTypes()));
 
                 match_functions.push_back(match_function);
                 unique_elems.push_back(std::move(match_function));
@@ -109,6 +108,7 @@ public:
             auto & arguments = match_function->getArguments().getNodes();
             auto & patterns = identifier_to_patterns.at(arguments[0]);
             arguments.push_back(std::make_shared<ConstantNode>(Field{std::move(patterns)}));
+            match_function->resolveAsFunction(match_function_ref->build(match_function->getArgumentTypes()));
         }
 
         /// OR must have at least two arguments.
