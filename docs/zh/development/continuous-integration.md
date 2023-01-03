@@ -96,7 +96,6 @@ git push
     - `clickhouse`: Main built binary.
     - `clickhouse-odbc-bridge`
     - `unit_tests_dbms`: 带有 ClickHouse 单元测试的 GoogleTest 二进制文件.
-    - `shared_build.tgz`: 使用共享库构建.
     - `performance.tgz`: 用于性能测试的特殊包.
 
 ## 特殊构建检查 {#special-buildcheck}
