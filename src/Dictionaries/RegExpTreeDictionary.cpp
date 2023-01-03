@@ -22,7 +22,9 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/RegExpTreeDictionary.h>
+#include <Dictionaries/YAMLRegExpTreeDictionarySource.h>
 
 #include <re2_st/stringpiece.h>
 
@@ -520,7 +522,7 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
-                             ContextPtr,
+                             ContextPtr global_context,
                              bool) -> DictionaryPtr
     {
 
@@ -536,6 +538,10 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
             .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false), .lifetime = dict_lifetime};
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
+
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        if (!context->getSettings().regexp_dict_allow_other_sources && typeid_cast<YAMLRegExpTreeDictionarySource *>(source_ptr.get()) == nullptr)
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "regexp_tree dictionary doesn't accept sources other than yaml source. To active it, please set regexp_dict_allow_other_sources=true");
 
         return std::make_unique<RegExpTreeDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };

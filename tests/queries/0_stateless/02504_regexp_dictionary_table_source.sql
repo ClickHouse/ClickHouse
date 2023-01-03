@@ -31,7 +31,8 @@ create dictionary regexp_dict1
 PRIMARY KEY(regexp)
 SOURCE(CLICKHOUSE(QUERY concat('select * from ', currentDatabase() , '.regexp_dictionary_source_table')))
 LIFETIME(0)
-LAYOUT(regexp_tree);
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_other_sources = true);
 
 select dictGet('regexp_dict1', ('name', 'version', 'comment'), 'Linux/101.tlinux');
 select dictGet('regexp_dict1', ('name', 'version', 'comment'), '33/tclwebkit11.10x');

@@ -84,9 +84,36 @@ EOL
 $CLICKHOUSE_CLIENT -n --query="
 system reload dictionary regexp_dict1; -- { serverError 318 }
 "
+cat > "$yaml" <<EOL
+- regexp: '*'
+  col_bool: 'true'
+  col_uuid: '61f0c404-5cb3-11e7-907b-a6006ad3dba0'
+  col_date: '2023-01-01'
+  col_datetime: '2023-01-01 01:01:01'
+  col_enum: 'world'
+  col_json: {"a": 1, "b": { "c": 2, "d": [1, 2, 3] }}'
+EOL
+
+$CLICKHOUSE_CLIENT -n --query="
+create dictionary regexp_dict2
+(
+    regexp String,
+    col_bool Boolean,
+    col_uuid UUID,
+    col_date Date,
+    col_datetime DateTime
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+select dictGet('regexp_dict2', ('col_bool','col_uuid', 'col_date', 'col_datetime'), 'abc');
+"
 
 $CLICKHOUSE_CLIENT -n --query="
 drop dictionary regexp_dict1;
+drop dictionary regexp_dict2;
 "
 
 rm -rf "$USER_FILES_PATH/test_02504"
