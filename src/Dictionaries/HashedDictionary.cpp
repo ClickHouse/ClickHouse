@@ -120,6 +120,7 @@ private:
     ThreadPool pool;
     std::vector<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
     std::vector<UInt64> shards_slots;
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 
     void threadWorker(size_t shard)
     {
@@ -168,13 +169,13 @@ private:
         for (size_t i = 0; i < skip_keys_size_offset; ++i)
             key_columns.emplace_back(block.safeGetByPosition(i).column);
 
-        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
         DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, arena_holder.getComplexKeyArena());
         for (size_t i = 0; i < num_rows; ++i)
         {
             auto key = keys_extractor.extractCurrentKey();
             size_t shard = dictionary.getShard(key);
             selector[i] = slots[shard];
+            keys_extractor.rollbackCurrentKey();
         }
 
         return selector;
