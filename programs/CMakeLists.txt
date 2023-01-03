@@ -167,7 +167,7 @@ else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
 endif()
 
-if(NOT (USE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
+if(NOT USE_STATIC_LIBRARIES)
     set(CLICKHOUSE_ONE_SHARED ON)
 endif()
 
@@ -312,12 +312,6 @@ if (CLICKHOUSE_ONE_SHARED)
 endif()
 
 clickhouse_add_executable (clickhouse main.cpp)
-
-if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
-    # Shared split (dev) build: In CI, the server is run with custom LD_LIBRARY_PATH. This makes the harmful env check re-execute the
-    # process in a clean environment but as in CI the containing directory is not included in DT_RUNPATH/DT_RPATH, the server won't come up.
-    target_compile_definitions(clickhouse PRIVATE DISABLE_HARMFUL_ENV_VAR_CHECK)
-endif ()
 
 # A library that prevent usage of several functions from libc.
 if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)

@@ -129,7 +129,6 @@ Builds ClickHouse in various configurations for use in further steps. You have t
   - `clickhouse`: Main built binary.
   - `clickhouse-odbc-bridge`
   - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
-  - `shared_build.tgz`: build with shared libraries.
   - `performance.tgz`: Special package for performance tests.
 
 

@@ -103,15 +103,6 @@ CI_CONFIG = {
             "tidy": "enable",
             "with_coverage": False,
         },
-        "binary_shared": {
-            "compiler": "clang-15",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "binary",
-            "libraries": "shared",
-            "tidy": "disable",
-            "with_coverage": False,
-        },
         "binary_darwin": {
             "compiler": "clang-15-darwin",
             "build_type": "",
@@ -196,7 +187,6 @@ CI_CONFIG = {
         ],
         "ClickHouse special build check": [
             "binary_tidy",
-            "binary_shared",
             "binary_darwin",
             "binary_aarch64",
             "binary_aarch64_v80compat",
