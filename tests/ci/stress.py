@@ -38,7 +38,7 @@ def get_options(i, upgrade_check):
             client_options.append("join_algorithm='full_sorting_merge'")
         if join_alg_num % 4 == 3:
             client_options.append("join_algorithm='auto'")
-            client_options.append('max_rows_in_join=1000')
+            client_options.append("max_rows_in_join=1000")
 
     if i == 13:
         client_options.append("memory_tracker_fault_probability=0.001")
@@ -60,9 +60,7 @@ def run_func_test(
     global_time_limit,
     upgrade_check,
 ):
-    upgrade_check_option = (
-        "--upgrade-check" if upgrade_check else ""
-    )
+    upgrade_check_option = "--upgrade-check" if upgrade_check else ""
     global_time_limit_option = ""
     if global_time_limit:
         global_time_limit_option = "--global_time_limit={}".format(global_time_limit)
@@ -165,7 +163,7 @@ def prepare_for_hung_check(drop_databases):
                 for db in databases:
                     if db == "system":
                         continue
-                    command = make_query_command(f'DETACH DATABASE {db}')
+                    command = make_query_command(f"DETACH DATABASE {db}")
                     # we don't wait for drop
                     Popen(command, shell=True)
                 break
