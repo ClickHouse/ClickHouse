@@ -1185,6 +1185,9 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             dict_lifetime,
         };
 
+        if (source_ptr->hasUpdateField() && shards > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter does not supports for updatable source (UPDATE_FIELD)", full_name);
+
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
             if (sparse)
