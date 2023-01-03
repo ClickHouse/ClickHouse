@@ -23,9 +23,10 @@ namespace {
 
 struct HasNonDeterministicFunctionsMatcher
 {
-    struct Data {
+    struct Data
+    {
         ContextPtr context;
-        bool has_non_deterministic_functions;
+        bool has_non_deterministic_functions = false;
     };
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
@@ -50,9 +51,9 @@ using HasNonDeterministicFunctionsVisitor = InDepthNodeVisitor<HasNonDeterminist
 
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
-    HasNonDeterministicFunctionsMatcher::Data data{context, false};
-    HasNonDeterministicFunctionsVisitor(data).visit(ast);
-    return data.has_non_deterministic_functions;
+    HasNonDeterministicFunctionsMatcher::Data finder_data{context};
+    HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
+    return finder_data.has_non_deterministic_functions;
 }
 
 namespace
