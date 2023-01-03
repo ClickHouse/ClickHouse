@@ -237,7 +237,7 @@ void initDataVariantsWithSizeHint(
             {
                 const auto adjusted = std::max(lower_limit, hint->median_size);
                 /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
-                if (max_threads != 1 || adjusted >= 1'000'000)
+                if ((max_threads > 1 && hint->sum_of_sizes > 100'000) || (max_threads == 1 && hint->sum_of_sizes > 500'000))
                 {
                     if (worthConvertToTwoLevel(
                             params.group_by_two_level_threshold,
