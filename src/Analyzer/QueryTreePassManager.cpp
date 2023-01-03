@@ -3,6 +3,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
@@ -180,6 +181,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     if (settings.count_distinct_optimization)
         manager.addPass(std::make_unique<CountDistinctPass>());
+
+    if (settings.optimize_rewrite_aggregate_function_with_if)
+        manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
         manager.addPass(std::make_unique<SumIfToCountIfPass>());
