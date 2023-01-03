@@ -15,42 +15,6 @@ namespace
 
 class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisitor<OptimizeRedundantFunctionsInOrderByVisitor>
 {
-    std::unordered_set<std::string_view> existing_keys;
-
-    bool isRedundantExpression(FunctionNode * function)
-    {
-        if (function->getArguments().getNodes().empty())
-            return false;
-        const auto & function_base = function->getFunction();
-        if (!function_base || !function_base->isDeterministicInScopeOfQuery())
-            return false;
-
-        // TODO: handle constants here
-        for (auto & arg : function->getArguments().getNodes())
-        {
-            switch (arg->getNodeType())
-            {
-                case QueryTreeNodeType::FUNCTION:
-                {
-                    if (!isRedundantExpression(arg->as<FunctionNode>()))
-                        return false;
-                    break;
-                }
-                case QueryTreeNodeType::COLUMN:
-                {
-                    auto * column = arg->as<ColumnNode>();
-                    if (!existing_keys.contains(column->getColumnName()))
-                        return false;
-                    break;
-                }
-                default:
-                    return false;
-            }
-        }
-
-        return true;
-    }
-
 public:
     bool needChildVisit(QueryTreeNodePtr & node, QueryTreeNodePtr & /*parent*/)
     {
@@ -82,14 +46,22 @@ public:
         for (auto & elem : order_by.getNodes())
         {
             auto & order_by_expr = elem->as<SortNode>()->getExpression();
-            if (auto * expr = order_by_expr->as<FunctionNode>())
+            switch (order_by_expr->getNodeType())
             {
-                if (isRedundantExpression(expr))
-                    continue;
-            }
-            else if (auto * column = order_by_expr->as<ColumnNode>())
-            {
-                existing_keys.insert(column->getColumnName());
+                case QueryTreeNodeType::FUNCTION:
+                {
+                    if (isRedundantExpression(order_by_expr))
+                        continue;
+                    break;
+                }
+                case QueryTreeNodeType::COLUMN:
+                {
+                    auto * column = order_by_expr->as<ColumnNode>();
+                    existing_keys.insert(column->getColumnName());
+                    break;
+                }
+                default:
+                    break;
             }
 
             new_order_by_nodes.push_back(elem);
@@ -98,6 +70,49 @@ public:
 
         if (new_order_by_nodes.size() < order_by.getNodes().size())
             order_by.getNodes() = std::move(new_order_by_nodes);
+    }
+
+private:
+    std::unordered_set<std::string_view> existing_keys;
+
+    bool isRedundantExpression(QueryTreeNodePtr function)
+    {
+        QueryTreeNodes nodes_to_process{ function };
+        while (!nodes_to_process.empty())
+        {
+            auto node = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            // TODO: handle constants here
+            switch (node->getNodeType())
+            {
+                case QueryTreeNodeType::FUNCTION:
+                {
+                    auto * function_node = node->as<FunctionNode>();
+                    const auto & function_arguments = function_node->getArguments().getNodes();
+                    if (function_arguments.empty())
+                        return false;
+                    const auto & function_base = function_node->getFunction();
+                    if (!function_base || !function_base->isDeterministicInScopeOfQuery())
+                        return false;
+
+                    // Process arguments in order
+                    for (auto it = function_arguments.rbegin(); it != function_arguments.rend(); ++it)
+                        nodes_to_process.push_back(*it);
+                    break;
+                }
+                case QueryTreeNodeType::COLUMN:
+                {
+                    auto * column = node->as<ColumnNode>();
+                    if (!existing_keys.contains(column->getColumnName()))
+                        return false;
+                    break;
+                }
+                default:
+                    return false;
+            }
+        }
+        return true;
     }
 };
 
