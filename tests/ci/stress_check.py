@@ -187,5 +187,6 @@ def run_stress_test(docker_image_name):
     if state == "error":
         sys.exit(1)
 
+
 if __name__ == "__main__":
     run_stress_test("clickhouse/stress-test")
