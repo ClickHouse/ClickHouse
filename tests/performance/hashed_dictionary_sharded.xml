@@ -60,8 +60,8 @@
         LIFETIME(0)
     </create_query>
 
-    <fill_query>INSERT INTO simple_key_dictionary_source_table SELECT number, number FROM numbers(3e6)</fill_query>
-    <fill_query>INSERT INTO complex_key_dictionary_source_table SELECT number, toString(number), number FROM numbers(2e6)</fill_query>
+    <fill_query>INSERT INTO simple_key_dictionary_source_table SELECT number, number FROM numbers(3_000_000)</fill_query>
+    <fill_query>INSERT INTO complex_key_dictionary_source_table SELECT number, toString(number), number FROM numbers(2_000_000)</fill_query>
 
     <fill_query>SYSTEM RELOAD DICTIONARY simple_key_{layout_suffix}_dictionary_s{shards}</fill_query>
     <fill_query>SYSTEM RELOAD DICTIONARY complex_key_{layout_suffix}_dictionary_s{shards}</fill_query>
@@ -70,18 +70,16 @@
     <query>SYSTEM RELOAD DICTIONARY complex_key_{layout_suffix}_dictionary_s{shards}</query>
 
     <query>
-        WITH rand64() % toUInt64(5e6) as key
+        WITH rand64() % 3_000_000 as key
         SELECT dictHas('default.simple_key_{layout_suffix}_dictionary_s{shards}', key)
-        FROM system.numbers
-        LIMIT 3e6
+        FROM numbers(3_000_000)
         FORMAT Null
     </query>
 
     <query>
-        WITH (rand64() % toUInt64(2e6), toString(rand64() % toUInt64(2e6))) as key
+        WITH (rand64() % 2_000_000, toString(rand64() % 2_000_000)) as key
         SELECT dictHas('default.complex_key_{layout_suffix}_dictionary_s{shards}', key)
-        FROM system.numbers
-        LIMIT 2e6
+        FROM numbers(2_000_000)
         FORMAT Null
     </query>
 
