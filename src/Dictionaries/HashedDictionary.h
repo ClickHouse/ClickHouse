@@ -211,7 +211,7 @@ private:
 
     void createAttributes();
 
-    size_t blockToAttributes(const Block & block, UInt64 shard);
+    size_t blockToAttributes(const Block & block, DictionaryKeysArenaHolder<dictionary_key_type> & arena_holder, UInt64 shard);
 
     void updateData();
 
