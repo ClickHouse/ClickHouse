@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Common/Exception.h"
 #include <cstddef>
 #include <type_traits>
 
@@ -43,6 +42,7 @@
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -56,8 +56,6 @@
 #include <Interpreters/Context.h>
 #include <Common/HashTable/HashMap.h>
 #include <Core/Types.h>
-
-#include <Common/logger_useful.h>
 
 
 namespace DB
