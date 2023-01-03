@@ -5,9 +5,9 @@
 #include <Analyzer/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
+#include <Common/typeid_cast.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/IResolvedFunction.h>
-#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 
 namespace DB
