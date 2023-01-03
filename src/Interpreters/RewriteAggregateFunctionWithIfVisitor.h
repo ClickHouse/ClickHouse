@@ -1,11 +1,9 @@
 #pragma once
 
-
 #include <unordered_set>
 
 #include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-
 
 namespace DB
 {
