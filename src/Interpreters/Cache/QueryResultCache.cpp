@@ -19,21 +19,40 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace {
+
+struct HasNonDeterministicFunctionsMatcher
+{
+    struct Data {
+        ContextPtr context;
+        bool has_non_deterministic_functions;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.has_non_deterministic_functions)
+            return;
+
+        if (const auto * function = node->as<ASTFunction>())
+        {
+            const auto func = FunctionFactory::instance().tryGet(function->name, data.context);
+            if (func && !func->isDeterministic())
+                data.has_non_deterministic_functions = true;
+        }
+    }
+};
+
+using HasNonDeterministicFunctionsVisitor = InDepthNodeVisitor<HasNonDeterministicFunctionsMatcher, true>;
+
+}
+
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
-    if (const auto * function = ast->as<ASTFunction>())
-    {
-        const FunctionFactory & function_factory = FunctionFactory::instance();
-        if (const FunctionOverloadResolverPtr resolver = function_factory.tryGet(function->name, context))
-            if (!resolver->isDeterministic())
-                return true;
-    }
-
-    bool has_non_deterministic_functions = false;
-    for (const auto & child : ast->children)
-        has_non_deterministic_functions |= astContainsNonDeterministicFunctions(child, context);
-
-    return has_non_deterministic_functions;
+    HasNonDeterministicFunctionsMatcher::Data data{context, false};
+    HasNonDeterministicFunctionsVisitor(data).visit(ast);
+    return data.has_non_deterministic_functions;
 }
 
 namespace
@@ -46,23 +65,20 @@ public:
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
 
-    static void visit(ASTPtr & ast, Data & data)
+    static void visit(ASTPtr & ast, Data &)
     {
         if (auto * func = ast->as<ASTSetQuery>())
-            visit(*func, ast, data);
-    }
-
-    static void visit(ASTSetQuery & func, ASTPtr &, const Data &)
-    {
-        assert(!func.is_standalone);
-
-        auto is_query_result_cache_related_setting = [](const auto & change)
         {
-            return change.name.starts_with("enable_experimental_query_result_cache")
-                || change.name.starts_with("query_result_cache");
-        };
+            assert(!func->is_standalone);
 
-        std::erase_if(func.changes, is_query_result_cache_related_setting);
+            auto is_query_result_cache_related_setting = [](const auto & change)
+            {
+                return change.name.starts_with("enable_experimental_query_result_cache")
+                    || change.name.starts_with("query_result_cache");
+            };
+
+            std::erase_if(func->changes, is_query_result_cache_related_setting);
+        }
     }
 
     /// TODO further improve AST cleanup, e.g. remove SETTINGS clause completely if it is empty
@@ -88,8 +104,7 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
     ASTPtr transformed_ast = ast->clone();
 
     RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
-    RemoveQueryResultCacheSettingsVisitor visitor(visitor_data);
-    visitor.visit(transformed_ast);
+    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
 
     return transformed_ast;
 }
