@@ -125,12 +125,13 @@ private:
     void threadWorker(size_t shard)
     {
         Block block;
+        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
         auto & shard_queue = *shards_queues[shard];
 
         while (shard_queue.pop(block))
         {
             Stopwatch watch;
-            dictionary.blockToAttributes(block, shard);
+            dictionary.blockToAttributes(block, arena_holder, shard);
             UInt64 elapsed_ms = watch.elapsedMilliseconds();
             if (elapsed_ms > 1'000)
                 LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {}).", shard, elapsed_ms, block.rows());
@@ -690,12 +691,13 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
     if (update_field_loaded_block)
     {
         resize(update_field_loaded_block->rows());
-        blockToAttributes(*update_field_loaded_block.get(), /* shard= */ 0);
+        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+        blockToAttributes(*update_field_loaded_block.get(), arena_holder, /* shard= */ 0);
     }
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(const Block & block, UInt64 shard)
+size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(const Block & block, DictionaryKeysArenaHolder<dictionary_key_type> & arena_holder, UInt64 shard)
 {
     size_t skip_keys_size_offset = dict_struct.getKeysSize();
     size_t new_element_count = 0;
@@ -707,7 +709,6 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes
     for (size_t i = 0; i < skip_keys_size_offset; ++i)
         key_columns.emplace_back(block.safeGetByPosition(i).column);
 
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, arena_holder.getComplexKeyArena());
     const size_t keys_size = keys_extractor.getKeysSize();
 
@@ -896,6 +897,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 
         PullingPipelineExecutor executor(pipeline);
         Block block;
+        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 
         while (executor.pull(block))
         {
@@ -916,7 +918,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
             if (parallel_loader)
                 parallel_loader->addBlock(block);
             else
-                blockToAttributes(block, /* shard= */ 0);
+                blockToAttributes(block, arena_holder, /* shard= */ 0);
         }
 
         if (parallel_loader)
