@@ -637,8 +637,7 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
 {
     auto new_s3_settings = getSettings(config, config_prefix, context);
     auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
-    String endpoint = config.getString(config_prefix + ".endpoint");
-    endpoint = context->getMacros()->expand(endpoint);
+    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     return std::make_unique<S3ObjectStorage>(
         std::move(new_client), std::move(new_s3_settings),
         version_id, s3_capabilities, new_namespace,

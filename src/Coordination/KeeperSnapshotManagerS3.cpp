@@ -65,8 +65,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
 
-        String endpoint = config.getString(config_prefix + ".endpoint");
-        endpoint = macros->expand(endpoint);
+        String endpoint = macros->expand(config.getString(config_prefix + ".endpoint"));
         auto new_uri = S3::URI{endpoint};
 
         {

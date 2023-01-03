@@ -23,10 +23,12 @@ class KeeperSnapshotManagerS3
 public:
     KeeperSnapshotManagerS3();
 
+    /// 'macros' are used to substitute macros in endpoint of disks
     void updateS3Configuration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
     void uploadSnapshot(const std::string & path, bool async_upload = true);
 
-    void startup(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macro);
+    /// 'macros' are used to substitute macros in endpoint of disks
+    void startup(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
     void shutdown();
 private:
     using SnapshotS3Queue = ConcurrentBoundedQueue<std::string>;

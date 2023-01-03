@@ -23,8 +23,7 @@ void registerDiskHDFS(DiskFactory & factory, bool global_skip_access_check)
         ContextPtr context,
         const DisksMap & /*map*/) -> DiskPtr
     {
-        String endpoint = config.getString(config_prefix + ".endpoint");
-        endpoint = context->getMacros()->expand(endpoint);
+        String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         String uri{endpoint};
         checkHDFSURL(uri);
 

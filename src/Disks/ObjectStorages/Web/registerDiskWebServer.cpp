@@ -26,8 +26,7 @@ void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check)
         ContextPtr context,
         const DisksMap & /*map*/) -> DiskPtr
     {
-        String endpoint = config.getString(config_prefix + ".endpoint");
-        endpoint = context->getMacros()->expand(endpoint);
+        String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         String uri{endpoint};
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
 
