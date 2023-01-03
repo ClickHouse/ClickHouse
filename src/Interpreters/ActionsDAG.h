@@ -358,8 +358,6 @@ private:
         std::string result_name,
         bool all_const);
 
-    static std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const NodeRawConstPtrs & children);
-
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif

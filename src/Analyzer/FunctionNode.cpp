@@ -43,7 +43,7 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
         argument.type = arg->getResultType();
         if (auto * constant = arg->as<ConstantNode>())
             argument.column = argument.type->createColumnConst(1, constant->getValue());
-        argument_columns.push_back(argument);
+        argument_columns.push_back(std::move(argument));
     }
     return argument_columns;
 }
