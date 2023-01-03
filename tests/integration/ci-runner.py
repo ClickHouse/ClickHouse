@@ -316,7 +316,7 @@ class ClickhouseIntegrationTestsRunner:
             except subprocess.CalledProcessError as err:
                 logging.info("docker-compose pull failed: " + str(err))
             return
-        logging.error("Pulling %s failed for 5 attempts. Will fail the worker.", image)
+        logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
         exit(1)
 
     def _can_run_with(self, path, opt):
