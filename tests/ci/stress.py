@@ -11,7 +11,7 @@ import time
 def get_options(i, upgrade_check):
     options = []
     client_options = []
-    if 0 < i:
+    if i > 0:
         options.append("--order=random")
 
     if i % 3 == 2 and not upgrade_check:
@@ -72,8 +72,8 @@ def run_func_test(
         for i in range(num_processes)
     ]
     pipes = []
-    for i in range(0, len(output_paths)):
-        f = open(output_paths[i], "w")
+    for i, path in enumerate(output_paths):
+        f = open(path, "w")
         full_command = "{} {} {} {} {} --stress".format(
             cmd,
             get_options(i, upgrade_check),
@@ -295,7 +295,7 @@ if __name__ == "__main__":
         res = call(cmd, shell=True, stderr=STDOUT)
         hung_check_status = "No queries hung\tOK\n"
         if res != 0 and have_long_running_queries:
-            logging.info("Hung check failed with exit code {}".format(res))
+            logging.info("Hung check failed with exit code %d", res)
             hung_check_status = "Hung check failed\tFAIL\n"
         with open(
             os.path.join(args.output_folder, "test_results.tsv"), "w+"
