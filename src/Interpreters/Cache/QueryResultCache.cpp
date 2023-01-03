@@ -19,7 +19,8 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace {
+namespace
+{
 
 struct HasNonDeterministicFunctionsMatcher
 {
