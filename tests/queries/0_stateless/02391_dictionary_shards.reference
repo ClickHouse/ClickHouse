@@ -27,14 +27,8 @@ create dictionary dict_10_string (key String, value UInt16) primary key key sour
 show create dict_10_string;
 CREATE DICTIONARY default.dict_10_string\n(\n    `key` String,\n    `value` UInt16\n)\nPRIMARY KEY key\nSOURCE(CLICKHOUSE(TABLE data_string))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(SPARSE_HASHED(SHARDS 10))
 system reload dictionary dict_10_string; -- { serverError CANNOT_PARSE_TEXT }
-create dictionary dict_10_incremental (key UInt64, value UInt16) primary key key source(clickhouse(table data_last_access update_field last_access)) layout(sparse_hashed(shards 10)) lifetime(min 5 max 5);
-show create dict_10_incremental;
-CREATE DICTIONARY default.dict_10_incremental\n(\n    `key` UInt64,\n    `value` UInt16\n)\nPRIMARY KEY key\nSOURCE(CLICKHOUSE(TABLE data_last_access UPDATE_FIELD last_access))\nLIFETIME(MIN 5 MAX 5)\nLAYOUT(SPARSE_HASHED(SHARDS 10))
-system reload dictionary dict_10_incremental;
-select element_count from system.dictionaries where database = currentDatabase() and name = 'dict_10_incremental';
-100000
-select count() from data where dictGetUInt16('dict_10_incremental', 'value', key) != value;
-0
+create dictionary dict_10_incremental (key UInt64, value UInt16) primary key key source(clickhouse(table data_last_access update_field last_access)) layout(sparse_hashed(shards 10)) lifetime(0);
+system reload dictionary dict_10_incremental; -- { serverError BAD_ARGUMENTS }
 create dictionary complex_dict_10 (k1 UInt64, k2 UInt64, value UInt16) primary key k1, k2 source(clickhouse(table complex_data)) layout(complex_key_sparse_hashed(shards 10)) lifetime(0);
 system reload dictionary complex_dict_10;
 select element_count from system.dictionaries where database = currentDatabase() and name = 'complex_dict_10';
