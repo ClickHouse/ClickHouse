@@ -206,6 +206,7 @@ def check_kafka_is_available(kafka_id, kafka_port):
     p.communicate()
     return p.returncode == 0
 
+
 def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         ("docker", "exec", "-i", postgresql_java_client_id, "java", "-version"),
@@ -213,6 +214,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     )
     p.communicate()
     return p.returncode == 0
+
 
 def check_rabbitmq_is_available(rabbitmq_id):
     p = subprocess.Popen(
@@ -526,7 +528,9 @@ class ClickHouseCluster:
 
         # available when with_postgresql_java_client = True
         self.postgresql_java_client_host = "java"
-        self.postgresql_java_client_docker_id = self.get_instance_docker_id(self.postgresql_java_client_host)
+        self.postgresql_java_client_docker_id = self.get_instance_docker_id(
+            self.postgresql_java_client_host
+        )
 
         # available when with_mysql_client == True
         self.mysql_client_host = "mysql_client"
@@ -981,7 +985,9 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             [
                 "--file",
-                p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"
+                ),
             ]
         )
         self.base_postgresql_java_client_cmd = [
@@ -1366,7 +1372,7 @@ class ClickHouseCluster:
         with_odbc_drivers=False,
         with_postgres=False,
         with_postgres_cluster=False,
-        with_postgresql_java_client = False,
+        with_postgresql_java_client=False,
         with_hdfs=False,
         with_kerberized_hdfs=False,
         with_mongo=False,
@@ -2058,7 +2064,9 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                if check_postgresql_java_client_is_available(self.postgresql_java_client_docker_id):
+                if check_postgresql_java_client_is_available(
+                    self.postgresql_java_client_docker_id
+                ):
                     logging.debug("PostgreSQL Java Client is available")
                     return True
                 time.sleep(0.5)
@@ -2369,7 +2377,9 @@ class ClickHouseCluster:
         if not os.path.exists(self.instances_dir):
             os.mkdir(self.instances_dir)
         else:
-            logging.warning("Instance directory already exists. Did you call cluster.start() for second time?")
+            logging.warning(
+                "Instance directory already exists. Did you call cluster.start() for second time?"
+            )
         logging.debug(f"Cluster start called. is_up={self.is_up}")
         self.print_all_docker_pieces()
 
@@ -2515,9 +2525,14 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_postgres_cluster_to_start()
 
-            if self.with_postgresql_java_client and self.base_postgresql_java_client_cmd:
+            if (
+                self.with_postgresql_java_client
+                and self.base_postgresql_java_client_cmd
+            ):
                 logging.debug("Setup Postgres Java Client")
-                subprocess_check_call(self.base_postgresql_java_client_cmd + common_opts)
+                subprocess_check_call(
+                    self.base_postgresql_java_client_cmd + common_opts
+                )
                 self.up_called = True
                 self.wait_postgresql_java_client()
 

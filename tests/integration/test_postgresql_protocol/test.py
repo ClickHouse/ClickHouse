@@ -35,6 +35,7 @@ cluster.add_instance(
 
 server_port = 5433
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -47,43 +48,65 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_psql_client(started_cluster):
     node = cluster.instances["node"]
 
-    for query_file in ['query1.sql', 'query2.sql', 'query3.sql', 'query4.sql']:
-        started_cluster.copy_file_to_container(started_cluster.postgres_id, os.path.join(SCRIPT_DIR, 'queries', query_file), f'/{query_file}')
-    cmd_prefix = ['/usr/bin/psql', f"sslmode=require host={node.hostname} port={server_port} user=default dbname=default password=123"]
+    for query_file in ["query1.sql", "query2.sql", "query3.sql", "query4.sql"]:
+        started_cluster.copy_file_to_container(
+            started_cluster.postgres_id,
+            os.path.join(SCRIPT_DIR, "queries", query_file),
+            f"/{query_file}",
+        )
+    cmd_prefix = [
+        "/usr/bin/psql",
+        f"sslmode=require host={node.hostname} port={server_port} user=default dbname=default password=123",
+    ]
     cmd_prefix += ["--no-align", "--field-separator=' '"]
 
-    res = started_cluster.exec_in_container(started_cluster.postgres_id,
-        cmd_prefix + ['-f', '/query1.sql'],
-        shell=True
+    res = started_cluster.exec_in_container(
+        started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
     )
     logging.debug(res)
     assert res == "\n".join(["a", "1", "(1 row)", ""])
 
-    res = started_cluster.exec_in_container(started_cluster.postgres_id,
-        cmd_prefix + ['-f', '/query2.sql'],
-         shell=True
+    res = started_cluster.exec_in_container(
+        started_cluster.postgres_id, cmd_prefix + ["-f", "/query2.sql"], shell=True
     )
     logging.debug(res)
     assert res == "\n".join(["a", "колонка", "(1 row)", ""])
 
-    res = started_cluster.exec_in_container(started_cluster.postgres_id,
-        cmd_prefix + ['-f', '/query3.sql'],
-        shell=True
+    res = started_cluster.exec_in_container(
+        started_cluster.postgres_id, cmd_prefix + ["-f", "/query3.sql"], shell=True
     )
     logging.debug(res)
     assert res == "\n".join(
-        ["SELECT 0","SELECT 0","SELECT 0","INSERT 0 0", "INSERT 0 0", "column", "0", "0", "1", "1", "5", "5", "(6 rows)", "SELECT 0\n"]
+        [
+            "SELECT 0",
+            "SELECT 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "INSERT 0 0",
+            "column",
+            "0",
+            "0",
+            "1",
+            "1",
+            "5",
+            "5",
+            "(6 rows)",
+            "SELECT 0\n",
+        ]
     )
 
-    res = started_cluster.exec_in_container(started_cluster.postgres_id,
-        cmd_prefix + ['-f', '/query4.sql'],
-        shell=True
+    res = started_cluster.exec_in_container(
+        started_cluster.postgres_id, cmd_prefix + ["-f", "/query4.sql"], shell=True
     )
     logging.debug(res)
-    assert res == "\n".join(["SELECT 0","INSERT 0 0","tmp_column", "0", "1", "(2 rows)", "SELECT 0\n"])
+    assert res == "\n".join(
+        ["SELECT 0", "INSERT 0 0", "tmp_column", "0", "1", "(2 rows)", "SELECT 0\n"]
+    )
+
 
 def test_python_client(started_cluster):
     node = cluster.instances["node"]
@@ -134,9 +157,7 @@ def test_python_client(started_cluster):
         decimal.Decimal("0.3333330000"),
         uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
     )
-    cur.execute(
-        "DROP DATABASE x"
-    )
+    cur.execute("DROP DATABASE x")
 
 
 def test_java_client(started_cluster):
@@ -147,13 +168,26 @@ def test_java_client(started_cluster):
 
     # database not exists exception.
     with pytest.raises(Exception) as exc:
-        res = started_cluster.exec_in_container(started_cluster.postgresql_java_client_docker_id,
-            ["bash", "-c", f"java JavaConnectorTest --host {node.hostname} --port {server_port} --user default --database abc"],
-            )
-        assert 'org.postgresql.util.PSQLException: ERROR: Invalid user or password' in str(exc.value)
+        res = started_cluster.exec_in_container(
+            started_cluster.postgresql_java_client_docker_id,
+            [
+                "bash",
+                "-c",
+                f"java JavaConnectorTest --host {node.hostname} --port {server_port} --user default --database abc",
+            ],
+        )
+        assert (
+            "org.postgresql.util.PSQLException: ERROR: Invalid user or password"
+            in str(exc.value)
+        )
 
     # non-empty password passed.
-    res= started_cluster.exec_in_container(started_cluster.postgresql_java_client_docker_id,
-         ["bash", "-c", f"java JavaConnectorTest --host {node.hostname} --port {server_port} --user default --password 123 --database default"]
+    res = started_cluster.exec_in_container(
+        started_cluster.postgresql_java_client_docker_id,
+        [
+            "bash",
+            "-c",
+            f"java JavaConnectorTest --host {node.hostname} --port {server_port} --user default --password 123 --database default",
+        ],
     )
     assert res == reference
