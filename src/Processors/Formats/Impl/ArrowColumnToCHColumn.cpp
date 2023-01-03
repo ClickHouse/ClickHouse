@@ -162,7 +162,7 @@ static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::Ch
         for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
             column_data.emplace_back(chunk.Value(bool_i));
     }
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
