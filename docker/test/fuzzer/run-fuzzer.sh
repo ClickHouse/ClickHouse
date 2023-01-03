@@ -267,7 +267,7 @@ quit
             echo "Lost connection to server. See the logs." > description.txt
         fi
 
-        if grep -F --text 'Sanitizer: out-of-memory' description.txt
+        if grep -E --text 'Sanitizer: (out-of-memory|failed to allocate)' description.txt
         then
             # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
             task_exit_code=0
