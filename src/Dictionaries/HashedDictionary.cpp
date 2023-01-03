@@ -1,22 +1,25 @@
-#include "HashedDictionary.h"
-
-#include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
-#include <Functions/FunctionHelpers.h>
-
-#include <Dictionaries//DictionarySource.h>
-#include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/HierarchyDictionariesUtils.h>
+#include <numeric>
+#include <boost/noncopyable.hpp>
 
 #include <Common/ArenaUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Common/ConcurrentBoundedQueue.h>
+
 #include <Core/Defines.h>
 
-#include <boost/noncopyable.hpp>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Functions/FunctionHelpers.h>
+
+#include <Dictionaries//DictionarySource.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/HierarchyDictionariesUtils.h>
+
+#include "HashedDictionary.h"
+
 
 namespace
 {
@@ -51,7 +54,6 @@ template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 class ParallelDictionaryLoader : public boost::noncopyable
 {
     using HashedDictionary = HashedDictionary<dictionary_key_type, sparse, sharded>;
-    using Queue = ConcurrentBoundedQueue<Block>;
 
 public:
     explicit ParallelDictionaryLoader(HashedDictionary & dictionary_)
@@ -65,7 +67,7 @@ public:
         LOG_TRACE(dictionary.log, "Will load the dictionary using {} threads (with {} backlog)", shards, backlog);
 
         shards_slots.resize(shards);
-        std::generate(shards_slots.begin(), shards_slots.end(), [n = 0]() mutable { return n++; });
+        std::iota(shards_slots.begin(), shards_slots.end(), 0);
 
         for (size_t shard = 0; shard < shards; ++shard)
         {
@@ -83,12 +85,8 @@ public:
 
     void addBlock(Block block)
     {
-        Blocks shards_blocks(shards);
-        for (size_t shard = 0; shard < shards; ++shard)
-            shards_blocks[shard] = block.cloneEmpty();
-
         IColumn::Selector selector = createShardSelector(block, shards_slots);
-        splitBlock(selector, block, shards_blocks);
+        Blocks shards_blocks = splitBlock(selector, block);
 
         for (size_t shard = 0; shard < shards; ++shard)
         {
@@ -104,8 +102,8 @@ public:
 
         Stopwatch watch;
         pool.wait();
-        UInt64 elapsed_us = watch.elapsedMicroseconds();
-        LOG_TRACE(dictionary.log, "Processing the tail took {}ms", elapsed_us);
+        UInt64 elapsed_ms = watch.elapsedMilliseconds();
+        LOG_TRACE(dictionary.log, "Processing the tail took {}ms", elapsed_ms);
     }
 
     ~ParallelDictionaryLoader()
@@ -120,7 +118,7 @@ private:
     const size_t shards;
     bool simple_key;
     ThreadPool pool;
-    std::vector<std::optional<Queue>> shards_queues;
+    std::vector<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
     std::vector<UInt64> shards_slots;
 
     void threadWorker(size_t shard)
@@ -132,9 +130,9 @@ private:
         {
             Stopwatch watch;
             dictionary.blockToAttributes(block, shard);
-            UInt64 elapsed_us = watch.elapsedMicroseconds();
-            if (elapsed_us > 1'000'000)
-                LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {}).", shard, elapsed_us, block.rows());
+            UInt64 elapsed_ms = watch.elapsedMilliseconds();
+            if (elapsed_ms > 1'000)
+                LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {}).", shard, elapsed_ms, block.rows());
         }
 
         if (!shard_queue.isFinished())
@@ -142,15 +140,21 @@ private:
     }
 
     /// Split block to shards smaller block, using 'selector'.
-    void splitBlock(const IColumn::Selector & selector, const Block & block, Blocks & splitted_blocks)
+    Blocks splitBlock(const IColumn::Selector & selector, const Block & block)
     {
+        Blocks out_blocks(shards);
+        for (size_t shard = 0; shard < shards; ++shard)
+            out_blocks[shard] = block.cloneEmpty();
+
         size_t columns = block.columns();
         for (size_t col = 0; col < columns; ++col)
         {
             MutableColumns splitted_columns = block.getByPosition(col).column->scatter(shards, selector);
             for (size_t shard = 0; shard < shards; ++shard)
-                splitted_blocks[shard].getByPosition(col).column = std::move(splitted_columns[shard]);
+                out_blocks[shard].getByPosition(col).column = std::move(splitted_columns[shard]);
         }
+
+        return out_blocks;
     }
 
     IColumn::Selector createShardSelector(const Block & block, const std::vector<UInt64> & slots)
@@ -797,7 +801,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::resize(size_t added
         return;
 
     /// In multi shards configuration it is pointless.
-    if (configuration.shards > 1)
+    if constexpr (sharded)
         return;
 
     size_t attributes_size = attributes.size();
@@ -878,7 +882,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
     if (!source_ptr->hasUpdateField())
     {
         std::optional<ParallelDictionaryLoader<dictionary_key_type, sparse, sharded>> parallel_loader;
-        if (configuration.shards > 1)
+        if constexpr (sharded)
             parallel_loader.emplace(*this);
 
         std::atomic<size_t> new_size = 0;
@@ -1026,9 +1030,8 @@ Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(const Names & 
             {
                 keys.reserve(container.size());
 
-                for (const auto & [key, value] : container)
+                for (const auto & [key, _] : container)
                 {
-                    (void)(value);
                     keys.emplace_back(key);
                 }
 
