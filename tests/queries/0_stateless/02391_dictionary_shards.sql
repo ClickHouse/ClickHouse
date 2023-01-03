@@ -2,12 +2,15 @@ drop dictionary if exists dict;
 drop dictionary if exists dict_10;
 drop dictionary if exists dict_10_uint8;
 drop dictionary if exists dict_10_string;
+drop dictionary if exists dict_10_incremental;
 drop dictionary if exists complex_dict_10;
 drop table if exists data;
+drop table if exists data_last_access;
 drop table if exists data_string;
 drop table if exists complex_data;
 
 create table data (key UInt64, value UInt16) engine=Memory() as select number, number from numbers(1e5);
+create table data_last_access (key UInt64, value UInt16, last_access DateTime) engine=Memory() as select number, number, now() from numbers(1e5);
 create table data_string (key String, value UInt16) engine=Memory() as select 'foo' || number::String, number from numbers(1e5);
 create table complex_data (k1 UInt64, k2 UInt64, value UInt16) engine=Memory() as select number, number, number from numbers(1e5);
 
@@ -33,6 +36,12 @@ select count() from data where dictGetUInt16('dict_10_uint8', 'value', key) != v
 create dictionary dict_10_string (key String, value UInt16) primary key key source(clickhouse(table data_string)) layout(sparse_hashed(shards 10)) lifetime(0);
 show create dict_10_string;
 system reload dictionary dict_10_string; -- { serverError CANNOT_PARSE_TEXT }
+
+create dictionary dict_10_incremental (key UInt64, value UInt16) primary key key source(clickhouse(table data_last_access update_field last_access)) layout(sparse_hashed(shards 10)) lifetime(min 5 max 5);
+show create dict_10_incremental;
+system reload dictionary dict_10_incremental;
+select element_count from system.dictionaries where database = currentDatabase() and name = 'dict_10_incremental';
+select count() from data where dictGetUInt16('dict_10_incremental', 'value', key) != value;
 
 create dictionary complex_dict_10 (k1 UInt64, k2 UInt64, value UInt16) primary key k1, k2 source(clickhouse(table complex_data)) layout(complex_key_sparse_hashed(shards 10)) lifetime(0);
 system reload dictionary complex_dict_10;
