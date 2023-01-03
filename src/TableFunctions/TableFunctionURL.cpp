@@ -52,7 +52,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
     }
     else
     {
-        auto headers_it = StorageURL::collectHeaders(url_function_args, configuration.headers, context);
+        auto * headers_it = StorageURL::collectHeaders(url_function_args, configuration.headers, context);
         /// ITableFunctionFileLike cannot parse headers argument, so remove it.
         if (headers_it != url_function_args.end())
             url_function_args.erase(headers_it);

@@ -332,6 +332,12 @@ macro (dbms_target_link_libraries)
     endforeach ()
 endmacro ()
 
+macro (dbms_target_include_directories)
+    foreach (module ${all_modules})
+        target_include_directories (${module} ${ARGN})
+    endforeach ()
+endmacro ()
+
 dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
@@ -344,7 +350,7 @@ set_source_files_properties(
         Common/Elf.cpp
         Common/Dwarf.cpp
         Common/SymbolIndex.cpp
-        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
+        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
@@ -390,6 +396,7 @@ if (TARGET ch_contrib::cpuid)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
@@ -587,6 +594,11 @@ dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::annoy)
     dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
+endif()
+
+if (TARGET ch_rust::skim)
+    # Add only -I, library is needed only for clickhouse-client/clickhouse-local
+    dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")

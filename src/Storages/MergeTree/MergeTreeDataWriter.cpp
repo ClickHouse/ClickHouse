@@ -322,8 +322,19 @@ Block MergeTreeDataWriter::mergeBlock(
     return block.cloneWithColumns(status.chunk.getColumns());
 }
 
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
-    BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+{
+    return writeTempPartImpl(block, metadata_snapshot, context, data.insert_increment.get(), /*need_tmp_prefix = */true);
+}
+
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context)
+{
+    return writeTempPartImpl(block, metadata_snapshot, context, block_number, /*need_tmp_prefix = */false);
+}
+
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
+    BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, int64_t block_number, bool need_tmp_prefix)
 {
     TemporaryPart temp_part;
     Block & block = block_with_partition.block;
@@ -334,17 +345,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
         if (column.type->hasDynamicSubcolumns())
             column.type = block.getByName(column.name).type;
 
-    static const String TMP_PREFIX = "tmp_insert_";
-
-    /// This will generate unique name in scope of current server process.
-    Int64 temp_index = data.insert_increment.get();
-
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
-    MergeTreePartition partition(std::move(block_with_partition.partition));
+    MergeTreePartition partition(block_with_partition.partition);
 
-    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), temp_index, temp_index, 0);
+    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), block_number, block_number, 0);
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -364,7 +370,19 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     else
         part_name = new_part_info.getPartName();
 
-    String part_dir = TMP_PREFIX + part_name;
+    std::string part_dir;
+    if (need_tmp_prefix)
+    {
+        std::string temp_prefix = "tmp_insert_";
+        const auto & temp_postfix = data.getPostfixForTempInsertName();
+        if (!temp_postfix.empty())
+            temp_prefix += temp_postfix + "_";
+        part_dir = temp_prefix + part_name;
+    }
+    else
+    {
+        part_dir = part_name;
+    }
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     /// If we need to calculate some columns to sort.
@@ -419,7 +437,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
         data_part_volume,
         data.relative_data_path,
-        TMP_PREFIX + part_name);
+        part_dir);
 
     data_part_storage->beginTransaction();
 
@@ -549,7 +567,10 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     }
 
     auto relative_path = part_name + (is_temp ? ".tmp_proj" : ".proj");
-    auto projection_part_storage = parent_part->getDataPartStorage().getProjection(relative_path);
+    auto projection_part_storage = parent_part->getDataPartStorage().getProjection(relative_path, !is_temp);
+    if (is_temp)
+        projection_part_storage->beginTransaction();
+
     auto new_data_part = data.createPart(
         part_name,
         part_type,

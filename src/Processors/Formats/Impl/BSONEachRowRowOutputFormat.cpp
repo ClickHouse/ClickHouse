@@ -43,8 +43,8 @@ static String toValidUTF8String(const String & name)
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_, params_), settings(settings_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_), settings(settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     fields.reserve(sample.columns());
@@ -519,8 +519,8 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "BSONEachRow",
-        [](WriteBuffer & buf, const Block & sample, const RowOutputFormatParams & params, const FormatSettings & _format_settings)
-        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, params, _format_settings); });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
+        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
 }
 

@@ -299,7 +299,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             }
 
             // QualifiedAsterisk's transformers start to appear at child 1
-            for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+            for (const auto * it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
             {
                 IASTColumnsTransformer::transform(*it, columns);
             }

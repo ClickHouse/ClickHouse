@@ -214,10 +214,9 @@ def clear_ip_tables_and_restart_daemons():
             subprocess.check_output("sudo iptables -D DOCKER-USER 1", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info(
-            "All iptables rules cleared, "
-            + str(iptables_iter)
-            + "iterations, last error: "
-            + str(err)
+            "All iptables rules cleared, %s iterations, last error: %s",
+            iptables_iter,
+            str(err),
         )
 
 
@@ -327,7 +326,7 @@ class ClickhouseIntegrationTestsRunner:
                     break
             else:
                 raise Exception("Package with {} not found".format(package))
-        logging.info("Unstripping binary")
+        # logging.info("Unstripping binary")
         # logging.info(
         #     "Unstring %s",
         #     subprocess.check_output(
@@ -358,10 +357,15 @@ class ClickhouseIntegrationTestsRunner:
         subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
             "sync", shell=True
         )
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+        retcode = subprocess.call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
             "tar czf {} -C {} {}".format(result_path, dir, " ".join(relpaths)),
             shell=True,
         )
+        # tar return 1 when the files are changed on compressing, we ignore it
+        if retcode in (0, 1):
+            return
+        # but even on the fatal errors it's better to retry
+        logging.error("Fatal error on compressing %s: %s", result_path, retcode)
 
     def _get_runner_opts(self):
         result = []
@@ -589,10 +593,7 @@ class ClickhouseIntegrationTestsRunner:
             test_names = set([])
             for test_name in tests_in_group:
                 if test_name not in counters["PASSED"]:
-                    if "[" in test_name:
-                        test_names.add(test_name[: test_name.find("[")])
-                    else:
-                        test_names.add(test_name)
+                    test_names.add(test_name)
 
             if i == 0:
                 test_data_dirs = self._find_test_data_dirs(repo_path, test_names)
@@ -624,13 +625,8 @@ class ClickhouseIntegrationTestsRunner:
             log_path = os.path.join(repo_path, "tests/integration", log_basename)
             with open(log_path, "w") as log:
                 logging.info("Executing cmd: %s", cmd)
-                retcode = subprocess.Popen(
-                    cmd, shell=True, stderr=log, stdout=log
-                ).wait()
-                if retcode == 0:
-                    logging.info("Run %s group successfully", test_group)
-                else:
-                    logging.info("Some tests failed")
+                # ignore retcode, since it meaningful due to pipe to tee
+                subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
@@ -978,8 +974,21 @@ if __name__ == "__main__":
     runner = ClickhouseIntegrationTestsRunner(result_path, params)
 
     logging.info("Running tests")
+
+    # Avoid overlaps with previous runs
+    logging.info("Clearing dmesg before run")
+    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+        "dmesg --clear", shell=True
+    )
+
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
+
+    # Dump dmesg (to capture possible OOMs)
+    logging.info("Dumping dmesg")
+    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+        "dmesg -T", shell=True
+    )
 
     status = (state, description)
     out_results_file = os.path.join(str(runner.path()), "test_results.tsv")
