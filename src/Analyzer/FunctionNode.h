@@ -116,6 +116,7 @@ public:
         return children[arguments_child_index];
     }
 
+    const DataTypes & getExpectedArgumentTypes() const;
     ColumnsWithTypeAndName getArgumentTypes() const;
 
     /// Returns true if function node has window, false otherwise

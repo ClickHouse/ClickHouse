@@ -2,6 +2,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/IDataType.h>
 #include <Analyzer/ConstantNode.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -29,6 +30,15 @@ FunctionNode::FunctionNode(String function_name_)
 {
     children[parameters_child_index] = std::make_shared<ListNode>();
     children[arguments_child_index] = std::make_shared<ListNode>();
+}
+
+const DataTypes & FunctionNode::getExpectedArgumentTypes() const
+{
+    if (!function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Trying to get expected argument types of function {} when IResolvedFunction is not set",
+        function_name);
+    return function->getArgumentTypes();
 }
 
 ColumnsWithTypeAndName FunctionNode::getArgumentTypes() const
