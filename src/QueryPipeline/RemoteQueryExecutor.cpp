@@ -411,11 +411,11 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
             break;
 
         case Protocol::Server::Totals:
-            totals = packet.block;
+            totals = adaptBlockStructure(packet.block, header);
             break;
 
         case Protocol::Server::Extremes:
-            extremes = packet.block;
+            extremes = adaptBlockStructure(packet.block, header);
             break;
 
         case Protocol::Server::Log:
