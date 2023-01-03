@@ -4307,6 +4307,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    const auto & settings = scope.context->getSettingsRef();
+
     if (function_node.isWindowFunction())
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
@@ -4324,8 +4326,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Window function '{}' does not support lambda arguments",
                 function_name);
 
+        bool need_add_or_null = settings.aggregate_functions_null_for_empty && !function_name.ends_with("OrNull");
+
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+        auto aggregate_function = need_add_or_null
+            ? AggregateFunctionFactory::instance().get(function_name + "OrNull", argument_types, parameters, properties)
+            : AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
 
         function_node.resolveAsWindowFunction(std::move(aggregate_function));
 
@@ -4384,8 +4390,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Aggregate function '{}' does not support lambda arguments",
                 function_name);
 
+        bool need_add_or_null = settings.aggregate_functions_null_for_empty && !function_name.ends_with("OrNull");
+
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+        auto aggregate_function = need_add_or_null
+            ? AggregateFunctionFactory::instance().get(function_name + "OrNull", argument_types, parameters, properties)
+            : AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
         return result_projection_names;
     }

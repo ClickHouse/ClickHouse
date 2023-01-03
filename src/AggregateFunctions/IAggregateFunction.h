@@ -345,6 +345,14 @@ public:
         return nullptr;
     }
 
+    /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
+    /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
+    /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.
+    virtual std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const
+    {
+        return {};
+    }
+
     /** Return the nested function if this is an Aggregate Function Combinator.
       * Otherwise return nullptr.
       */
@@ -828,6 +836,9 @@ struct AggregateFunctionProperties
       * Some may also name this property as "non-commutative".
       */
     bool is_order_dependent = false;
+
+    /// Indicates if it's actually window function.
+    bool is_window_function = false;
 };
 
 

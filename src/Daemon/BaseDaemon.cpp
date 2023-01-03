@@ -4,6 +4,7 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
 
 #include <sys/stat.h>
@@ -178,12 +179,9 @@ __attribute__((__weak__)) void collectCrashLog(
 class SignalListener : public Poco::Runnable
 {
 public:
-    enum Signals : int
-    {
-        StdTerminate = -1,
-        StopThread = -2,
-        SanitizerTrap = -3,
-    };
+    static constexpr int StdTerminate = -1;
+    static constexpr int StopThread = -2;
+    static constexpr int SanitizerTrap = -3;
 
     explicit SignalListener(BaseDaemon & daemon_)
         : log(&Poco::Logger::get("BaseDaemon"))
@@ -208,7 +206,7 @@ public:
             // Don't use strsignal here, because it's not thread-safe.
             LOG_TRACE(log, "Received signal {}", sig);
 
-            if (sig == Signals::StopThread)
+            if (sig == StopThread)
             {
                 LOG_INFO(log, "Stop SignalListener thread");
                 break;
@@ -219,7 +217,7 @@ public:
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
                 LOG_INFO(log, "Opened new log file after received signal.");
             }
-            else if (sig == Signals::StdTerminate)
+            else if (sig == StdTerminate)
             {
                 UInt32 thread_num;
                 std::string message;
@@ -306,7 +304,7 @@ private:
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
-                query = thread_group->one_line_query;
+                query = DB::toOneLineQuery(thread_group->query);
             }
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
@@ -909,7 +907,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
+    logger().information("Starting " + std::string{VERSION_FULL}
         + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
         + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
@@ -958,7 +956,6 @@ void BaseDaemon::handleSignal(int signal_id)
         std::lock_guard lock(signal_handler_mutex);
         {
             ++terminate_signals_counter;
-            sigint_signals_counter += signal_id == SIGINT;
             signal_event.notify_all();
         }
 
@@ -973,9 +970,9 @@ void BaseDaemon::onInterruptSignals(int signal_id)
     is_cancelled = true;
     LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
-    if (sigint_signals_counter >= 2)
+    if (terminate_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
+        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
         call_default_signal_handler(signal_id);
         /// If the above did not help.
         _exit(128 + signal_id);
