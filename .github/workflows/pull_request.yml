@@ -2639,7 +2639,7 @@ jobs:
             python3 functional_test_check.py "Stateless $CHECK_NAME" "$KILL_TIMEOUT" \
               --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
 
-          python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/post_commit_status.tsv" "${TEMP_PATH}/integration/post_commit_status.tsv"
+          python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/functional_commit_status.tsv" "${TEMP_PATH}/integration/integration_commit_status.tsv"
       - name: Cleanup
         if: always()
         run: |

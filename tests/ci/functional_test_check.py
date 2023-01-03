@@ -203,6 +203,7 @@ if __name__ == "__main__":
     temp_path = TEMP_PATH
     repo_path = REPO_COPY
     reports_path = REPORTS_PATH
+    post_commit_path = os.path.join(temp_path, "functional_commit_status.tsv")
 
     args = parse_args()
     check_name = args.check_name
@@ -227,7 +228,7 @@ if __name__ == "__main__":
     if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
-                os.path.join(temp_path, "post_commit_status.tsv"),
+                post_commit_path,
                 f"Skipped (no pr-bugfix in {pr_info.labels})",
                 "success",
                 "null",
@@ -264,9 +265,11 @@ if __name__ == "__main__":
                     state=state,
                 )
             elif args.post_commit_status == "file":
-                fpath = os.path.join(temp_path, "post_commit_status.tsv")
                 post_commit_status_to_file(
-                    fpath, description=NO_CHANGES_MSG, state=state, report_url="null"
+                    post_commit_path,
+                    description=NO_CHANGES_MSG,
+                    state=state,
+                    report_url="null",
                 )
             sys.exit(0)
 
@@ -348,7 +351,7 @@ if __name__ == "__main__":
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(
-            os.path.join(temp_path, "post_commit_status.tsv"),
+            post_commit_path,
             description,
             state,
             report_url,
