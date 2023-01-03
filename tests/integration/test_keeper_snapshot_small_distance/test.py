@@ -29,6 +29,8 @@ def start_zookeeper(node):
 
 def stop_zookeeper(node):
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
+    while node.get_process_pid("zookeeper") != None:
+        time.sleep(0.2)
 
 
 def clear_zookeeper(node):
