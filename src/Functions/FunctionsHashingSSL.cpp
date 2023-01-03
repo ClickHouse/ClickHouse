@@ -5,6 +5,8 @@
 #include "FunctionsHashing.h"
 #include <Functions/FunctionFactory.h>
 
+/// SSL functions are located in the separate FunctionsHashingSSL.cpp file
+///  to lower the compilation time of FunctionsHashing.cpp
 
 namespace DB
 {
