@@ -229,6 +229,7 @@ private:
         /// it used for the HashMap/sparse_hash_map.
         return intHashCRC32(key) % configuration.shards;
     }
+
     UInt64 getShard(StringRef key) const
     {
         if constexpr (!sharded)
