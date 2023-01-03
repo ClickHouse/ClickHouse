@@ -293,7 +293,7 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/postgresql-java-client",
         ]
 
-    def _pre_pull_images():
+    def _pre_pull_images(self):
         cmd = (
             "cd {repo_path}/tests/integration && "
             "timeout -s 9 1h ./runner {runner_opts} {image_cmd} {command} ".format(
