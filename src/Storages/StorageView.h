@@ -44,6 +44,8 @@ public:
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, const bool parameterized_view);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
+    static String replaceQueryParameterWithValue (const String & column_name, const NameToNameMap & parameter_values, const NameToNameMap & parameter_types);
+    static String replaceValueWithQueryParameter (const String & column_name, const NameToNameMap & parameter_values);
 
     void setParameterValues (NameToNameMap parameter_values_)
     {

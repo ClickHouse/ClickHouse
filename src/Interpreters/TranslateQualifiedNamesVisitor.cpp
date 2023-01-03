@@ -20,6 +20,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
+#include <Storages/StorageView.h>
 
 
 namespace DB
@@ -251,20 +252,13 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                         if (first_table || !data.join_using_columns.contains(column.name))
                         {
                             std::string column_name = column.name;
-                            std::string::size_type pos = 0u;
-                            for (const auto & parameter : data.parameter_values)
-                            {
-                                if ((pos = column_name.find(parameter.first)) != std::string::npos)
-                                {
-                                    auto parameter_datatype_iterator = data.parameter_types.find(parameter.first);
-                                    if (parameter_datatype_iterator != data.parameter_types.end())
-                                    {
-                                        String parameter_name("_CAST(" + parameter.second + ", '" + parameter_datatype_iterator->second + "')");
-                                        column_name.replace(pos, parameter.first.size(), parameter_name);
-                                        break;
-                                    }
-                                }
-                            }
+
+                            /// replaceQueryParameterWithValue is used for parameterized view (which are created using query parameters
+                            /// and SELECT is used with substitution of these query parameters )
+                            if (!data.parameter_values.empty())
+                                column_name
+                                    = StorageView::replaceQueryParameterWithValue(column_name, data.parameter_values, data.parameter_types);
+
                             addIdentifier(columns, table.table, column_name);
                         }
                     }

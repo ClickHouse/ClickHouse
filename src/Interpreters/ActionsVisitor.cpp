@@ -538,7 +538,8 @@ ActionsMatcher::Data::Data(
     bool only_consts_,
     bool create_source_for_in_,
     AggregationKeysInfo aggregation_keys_info_,
-    bool build_expression_with_window_functions_)
+    bool build_expression_with_window_functions_,
+    bool is_create_parameterized_view_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -552,6 +553,7 @@ ActionsMatcher::Data::Data(
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
     , build_expression_with_window_functions(build_expression_with_window_functions_)
+    , is_create_parameterized_view(is_create_parameterized_view_)
     , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
 }
@@ -1205,7 +1207,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 argument_types.push_back(column.type);
                 argument_names.push_back(column.name);
             }
-            else if (query_parameter)
+            else if (data.is_create_parameterized_view && query_parameter)
             {
                 const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
                 ColumnWithTypeAndName column(data_type,query_parameter->getColumnName());

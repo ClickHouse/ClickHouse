@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string>
 #include <Core/Names.h>
 #include <Parsers/IAST_fwd.h>
 
