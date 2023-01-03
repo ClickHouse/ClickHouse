@@ -188,7 +188,7 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark)
             right_mark = *it;
         }
 
-        /// This is a good scenario. The compressed block is finished witin the right mark,
+        /// This is a good scenario. The compressed block is finished within the right mark,
         /// and previous mark was different.
         if (marks_loader.getMark(right_mark).offset_in_decompressed_block == 0
             && marks_loader.getMark(right_mark) != marks_loader.getMark(right_mark - 1))
