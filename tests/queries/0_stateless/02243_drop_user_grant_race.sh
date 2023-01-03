@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-fasttest, no-parallel, no-backward-compatibility-check
+# Tags: race, no-fasttest, no-parallel, no-upgrade-check
 
 set -e
 

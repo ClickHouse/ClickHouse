@@ -1,5 +1,5 @@
 # rebuild in #33610
-# docker build -t clickhouse/stress-test .
+# docker build -t clickhouse/upgrade-check .
 ARG FROM_TAG=latest
 FROM clickhouse/stateful-test:$FROM_TAG
 
@@ -26,8 +26,6 @@ RUN apt-get update -y \
 
 COPY run.sh /
 
-ENV DATASETS="hits visits"
-ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
 CMD ["/bin/bash", "/run.sh"]
