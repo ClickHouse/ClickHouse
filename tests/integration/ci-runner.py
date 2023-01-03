@@ -293,7 +293,9 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/postgresql-java-client",
         ]
 
-    def _pre_pull_images(self):
+    def _pre_pull_images(self, repo_path):
+        image_cmd = self._get_runner_image_cmd(repo_path)
+
         cmd = (
             "cd {repo_path}/tests/integration && "
             "timeout -s 9 1h ./runner {runner_opts} {image_cmd} {command} ".format(
@@ -1007,7 +1009,7 @@ if __name__ == "__main__":
     runner = ClickhouseIntegrationTestsRunner(result_path, params)
 
     logging.info("Pulling images")
-    runner._pre_pull_images()
+    runner._pre_pull_images(repo_path)
 
     logging.info("Running tests")
 
