@@ -86,7 +86,7 @@ def main(args):
         gh,
         pr_info.sha,
         check_name_with_group,
-        "" if is_ok else "Changed tests doesn't reproduce the bug",
+        "" if is_ok else "Changed tests don't reproduce the bug",
         "success" if is_ok else "error",
         report_url,
     )

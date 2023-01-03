@@ -437,7 +437,7 @@ public:
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
-        this->c_end += this->byte_size(1);
+        this->c_end += sizeof(T);
     }
 
     /** This method doesn't allow to pass parameters for Allocator,
@@ -450,12 +450,12 @@ public:
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
-        this->c_end += this->byte_size(1);
+        this->c_end += sizeof(T);
     }
 
     void pop_back() /// NOLINT
     {
-        this->c_end -= this->byte_size(1);
+        this->c_end -= sizeof(T);
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.

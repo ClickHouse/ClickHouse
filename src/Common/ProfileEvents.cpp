@@ -531,6 +531,11 @@ void increment(Event event, Count amount)
     DB::CurrentThread::getProfileEvents().increment(event, amount);
 }
 
+void incrementNoTrace(Event event, Count amount)
+{
+    DB::CurrentThread::getProfileEvents().incrementNoTrace(event, amount);
+}
+
 void Counters::increment(Event event, Count amount)
 {
     Counters * current = this;
@@ -545,6 +550,16 @@ void Counters::increment(Event event, Count amount)
 
     if (unlikely(send_to_trace_log))
         DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
+}
+
+void Counters::incrementNoTrace(Event event, Count amount)
+{
+    Counters * current = this;
+    do
+    {
+        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current = current->parent;
+    } while (current != nullptr);
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)

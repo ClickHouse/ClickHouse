@@ -136,7 +136,6 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
             return;
 
         S3Settings::RequestSettings request_settings_1;
-        request_settings_1.upload_part_size_multiply_parts_count_threshold = 10000;
 
         const auto create_writer = [&](const auto & key)
         {
@@ -149,31 +148,13 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
             };
         };
 
-        const auto file_exists = [&](const auto & key)
-        {
-            Aws::S3::Model::HeadObjectRequest request;
-            request.SetBucket(s3_client->uri.bucket);
-            request.SetKey(key);
-            auto outcome = s3_client->client->HeadObject(request);
-
-            if (outcome.IsSuccess())
-                return true;
-
-            const auto & error = outcome.GetError();
-            if (error.GetErrorType() != Aws::S3::S3Errors::NO_SUCH_KEY && error.GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
-                throw S3Exception(error.GetErrorType(), "Failed to verify existence of lock file: {}", error.GetMessage());
-
-            return false;
-        };
-
-
         LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_path);
         ReadBufferFromFile snapshot_file(snapshot_path);
 
         auto snapshot_name = fs::path(snapshot_path).filename().string();
         auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
 
-        if (file_exists(snapshot_name))
+        if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, snapshot_name))
         {
             LOG_ERROR(log, "Snapshot {} already exists", snapshot_name);
             return;
@@ -181,7 +162,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
 
         // First we need to verify that there isn't already a lock file for the snapshot we want to upload
         // Only leader uploads a snapshot, but there can be a rare case where we have 2 leaders in NuRaft
-        if (file_exists(lock_file))
+        if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, lock_file))
         {
             LOG_ERROR(log, "Lock file for {} already, exists. Probably a different node is already uploading the snapshot", snapshot_name);
             return;

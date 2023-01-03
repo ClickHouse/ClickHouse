@@ -32,8 +32,6 @@ from version_helper import (
 
 RELEASE_READY_STATUS = "Ready for release"
 
-git = Git()
-
 
 class Repo:
     VALID = ("ssh", "https", "origin")
@@ -79,7 +77,7 @@ class Release:
         self.release_commit = release_commit
         assert release_type in self.BIG + self.SMALL
         self.release_type = release_type
-        self._git = git
+        self._git = Git()
         self._version = get_version_from_repo(git=self._git)
         self._release_branch = ""
         self._rollback_stack = []  # type: List[str]
@@ -388,7 +386,8 @@ class Release:
             body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
             self.run(
                 f"gh pr create --repo {self.repo} --title 'Update version after "
-                f"release' --head {helper_branch} --body-file '{body_file}'"
+                f"release' --head {helper_branch} --body-file '{body_file}' "
+                "--label 'do not test' --assignee @me"
             )
             # Here the testing part is done
             yield

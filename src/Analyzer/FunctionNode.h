@@ -1,14 +1,26 @@
 #pragma once
 
+#include <memory>
+#include <Core/IResolvedFunction.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/ConstantValue.h>
+#include <Common/typeid_cast.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+
+class IFunctionBase;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 class IAggregateFunction;
 using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
@@ -33,6 +45,14 @@ using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
   */
 class FunctionNode;
 using FunctionNodePtr = std::shared_ptr<FunctionNode>;
+
+enum class FunctionKind
+{
+    UNKNOWN,
+    ORDINARY,
+    AGGREGATE,
+    WINDOW,
+};
 
 class FunctionNode final : public IQueryTreeNode
 {
@@ -96,6 +116,8 @@ public:
         return children[arguments_child_index];
     }
 
+    ColumnsWithTypeAndName getArgumentTypes() const;
+
     /// Returns true if function node has window, false otherwise
     bool hasWindow() const
     {
@@ -124,42 +146,46 @@ public:
     /** Get non aggregate function.
       * If function is not resolved nullptr returned.
       */
-    const FunctionOverloadResolverPtr & getFunction() const
+    FunctionBasePtr getFunction() const
     {
-        return function;
+        if (kind != FunctionKind::ORDINARY)
+            return {};
+        return std::reinterpret_pointer_cast<const IFunctionBase>(function);
     }
 
     /** Get aggregate function.
       * If function is not resolved nullptr returned.
       * If function is resolved as non aggregate function nullptr returned.
       */
-    const AggregateFunctionPtr & getAggregateFunction() const
+    AggregateFunctionPtr getAggregateFunction() const
     {
-        return aggregate_function;
+        if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
+            return {};
+        return std::reinterpret_pointer_cast<const IAggregateFunction>(function);
     }
 
     /// Is function node resolved
     bool isResolved() const
     {
-        return result_type != nullptr && (function != nullptr || aggregate_function != nullptr);
+        return function != nullptr;
     }
 
     /// Is function node window function
     bool isWindowFunction() const
     {
-        return getWindowNode() != nullptr;
+        return hasWindow();
     }
 
     /// Is function node aggregate function
     bool isAggregateFunction() const
     {
-        return aggregate_function != nullptr && !isWindowFunction();
+        return kind == FunctionKind::AGGREGATE;
     }
 
     /// Is function node ordinary function
     bool isOrdinaryFunction() const
     {
-        return function != nullptr;
+        return kind == FunctionKind::ORDINARY;
     }
 
     /** Resolve function node as non aggregate function.
@@ -168,19 +194,19 @@ public:
       * Assume we have `multiIf` function with single condition, it can be converted to `if` function.
       * Function name must be updated accordingly.
       */
-    void resolveAsFunction(FunctionOverloadResolverPtr function_value, DataTypePtr result_type_value);
+    void resolveAsFunction(FunctionBasePtr function_value);
 
     /** Resolve function node as aggregate function.
       * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
       */
-    void resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value, DataTypePtr result_type_value);
+    void resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value);
 
     /** Resolve function node as window function.
       * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
       */
-    void resolveAsWindowFunction(AggregateFunctionPtr window_function_value, DataTypePtr result_type_value);
+    void resolveAsWindowFunction(AggregateFunctionPtr window_function_value);
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -189,7 +215,11 @@ public:
 
     DataTypePtr getResultType() const override
     {
-        return result_type;
+        if (!function)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Function node with name '{}' is not resolved",
+                function_name);
+        return function->getResultType();
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
@@ -205,9 +235,8 @@ protected:
 
 private:
     String function_name;
-    FunctionOverloadResolverPtr function;
-    AggregateFunctionPtr aggregate_function;
-    DataTypePtr result_type;
+    FunctionKind kind = FunctionKind::UNKNOWN;
+    IResolvedFunctionPtr function;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;

@@ -66,12 +66,6 @@ namespace ErrorCodes
 namespace
 {
 
-bool isNotFoundError(Aws::S3::S3Errors error)
-{
-    return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND
-        || error == Aws::S3::S3Errors::NO_SUCH_KEY;
-}
-
 template <typename Result, typename Error>
 void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
 {
@@ -89,7 +83,7 @@ void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response,
     /// the log will be polluted with error messages from aws sdk.
     /// Looks like there is no way to suppress them.
 
-    if (!response.IsSuccess() && (!if_exists || !isNotFoundError(response.GetError().GetErrorType())))
+    if (!response.IsSuccess() && (!if_exists || !S3::isNotFoundError(response.GetError().GetErrorType())))
     {
         const auto & err = response.GetError();
         throw S3Exception(err.GetErrorType(), "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
@@ -130,28 +124,12 @@ std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
 {
-    auto client_ptr = client.get();
-
-    ProfileEvents::increment(ProfileEvents::S3HeadObject);
-    ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
-    Aws::S3::Model::HeadObjectRequest request;
-    request.SetBucket(bucket_from);
-    request.SetKey(key);
-
-    return client_ptr->HeadObject(request);
+    return S3::headObject(*client.get(), bucket_from, key, "", true);
 }
 
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
-    auto object_head = requestObjectHeadData(bucket, object.absolute_path);
-    if (!object_head.IsSuccess())
-    {
-        if (object_head.GetError().GetErrorType() == Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
-            return false;
-
-        throwIfError(object_head);
-    }
-    return true;
+    return S3::objectExists(*client.get(), bucket, object.absolute_path, "", true);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
@@ -534,7 +512,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
     std::vector<String> part_tags;
 
-    size_t upload_part_size = settings_ptr->request_settings.min_upload_part_size;
+    size_t upload_part_size = settings_ptr->request_settings.getUploadSettings().min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
         ProfileEvents::increment(ProfileEvents::S3UploadPartCopy);

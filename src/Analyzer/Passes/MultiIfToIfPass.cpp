@@ -27,7 +27,7 @@ public:
             return;
 
         auto result_type = function_node->getResultType();
-        function_node->resolveAsFunction(if_function_ptr, std::move(result_type));
+        function_node->resolveAsFunction(if_function_ptr->build(function_node->getArgumentTypes()));
     }
 
 private:

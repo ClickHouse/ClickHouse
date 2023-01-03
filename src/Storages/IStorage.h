@@ -241,6 +241,10 @@ public:
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 
+    /// Return true if storage can execute 'DELETE FROM' mutations. This is different from lightweight delete
+    /// because those are internally translated into 'ALTER UDPATE' mutations.
+    virtual bool supportsDelete() const { return false; }
+
 private:
 
     StorageID storage_id;
@@ -617,12 +621,12 @@ public:
 
     /// Number of rows INSERTed since server start.
     ///
-    /// Does not takes underlying Storage (if any) into account.
+    /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeRows() const { return {}; }
 
     /// Number of bytes INSERTed since server start.
     ///
-    /// Does not takes underlying Storage (if any) into account.
+    /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
     /// Creates a storage snapshot from given metadata.
