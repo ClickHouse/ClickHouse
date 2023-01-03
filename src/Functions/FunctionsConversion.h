@@ -57,6 +57,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Core/Types.h>
 
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -2177,17 +2179,18 @@ struct ToNumberMonotonicity
 
         /// Integer cases.
 
+        /// Only support types represented by native integers.
+        /// It can be extended to big integers, decimals and DateTime64 later.
+        /// By the way, NULLs are representing unbounded ranges.
+        if (!((left.isNull() || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
+            && (right.isNull() || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
+            return {};
+
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
         const bool to_is_unsigned = is_unsigned_v<T>;
 
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
-
-        /// Only support types represented by native integers.
-        /// It can be extended to big integers, decimals and DateTime64 later.
-        if (!((left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
-            && (right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
-            return {};
 
         const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
