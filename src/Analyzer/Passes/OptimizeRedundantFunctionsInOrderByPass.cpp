@@ -1,7 +1,7 @@
-#include <string_view>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
@@ -56,8 +56,7 @@ public:
                 }
                 case QueryTreeNodeType::COLUMN:
                 {
-                    auto * column = order_by_expr->as<ColumnNode>();
-                    existing_keys.insert(column->getColumnName());
+                    existing_keys.insert(order_by_expr);
                     break;
                 }
                 default:
@@ -73,7 +72,7 @@ public:
     }
 
 private:
-    std::unordered_set<std::string_view> existing_keys;
+    QueryTreeNodePtrWithHashSet existing_keys;
 
     bool isRedundantExpression(QueryTreeNodePtr function)
     {
@@ -103,8 +102,7 @@ private:
                 }
                 case QueryTreeNodeType::COLUMN:
                 {
-                    auto * column = node->as<ColumnNode>();
-                    if (!existing_keys.contains(column->getColumnName()))
+                    if (!existing_keys.contains(node))
                         return false;
                     break;
                 }
