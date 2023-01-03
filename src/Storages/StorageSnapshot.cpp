@@ -3,6 +3,7 @@
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
+#include <Storages/StorageView.h>
 #include <sparsehash/dense_hash_set>
 
 namespace DB
@@ -112,25 +113,19 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
     return *column;
 }
 
-Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names,const NameToNameMap & parameter_values) const
+Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names, const NameToNameMap & parameter_values) const
 {
     Block res;
 
     const auto & columns = getMetadataForQuery()->getColumns();
     for (const auto & column_name : column_names)
     {
+        std::string substituted_column_name = column_name;
+
         /// substituted_column_name is used for parameterized view (which are created using query parameters
         /// and SELECT is used with substitution of these query parameters )
-        std::string substituted_column_name = column_name;
-        std::string::size_type pos = 0u;
-        for (const auto & parameter : parameter_values)
-        {
-            if ((pos = substituted_column_name.find("_CAST(" + parameter.second)) != std::string::npos)
-            {
-                substituted_column_name = substituted_column_name.substr(0,pos) + parameter.first + ")";
-                break;
-            }
-        }
+        if (!parameter_values.empty())
+            substituted_column_name = StorageView::replaceValueWithQueryParameter(column_name, parameter_values);
 
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);
         auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);

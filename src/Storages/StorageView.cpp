@@ -252,6 +252,43 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
             child = view_query;
 }
 
+String StorageView::replaceQueryParameterWithValue(const String & column_name, const NameToNameMap & parameter_values, const NameToNameMap & parameter_types)
+{
+    std::string name = column_name;
+    std::string::size_type pos = 0u;
+    for (const auto & parameter : parameter_values)
+    {
+        if ((pos = name.find(parameter.first)) != std::string::npos)
+        {
+            auto parameter_datatype_iterator = parameter_types.find(parameter.first);
+            if (parameter_datatype_iterator != parameter_types.end())
+            {
+                String parameter_name("_CAST(" + parameter.second + ", '" + parameter_datatype_iterator->second + "')");
+                name.replace(pos, parameter.first.size(), parameter_name);
+                break;
+            }
+            else
+                throw Exception("Datatype not found for query parameter " + parameter.first, ErrorCodes::LOGICAL_ERROR);
+        }
+    }
+    return name;
+}
+
+String StorageView::replaceValueWithQueryParameter(const String & column_name, const NameToNameMap & parameter_values)
+{
+    String name = column_name;
+    std::string::size_type pos = 0u;
+    for (const auto & parameter : parameter_values)
+    {
+        if ((pos = name.find("_CAST(" + parameter.second)) != std::string::npos)
+        {
+            name = name.substr(0,pos) + parameter.first + ")";
+            break;
+        }
+    }
+    return name;
+}
+
 ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name)
 {
     ASTTableExpression * table_expression = getFirstTableExpression(select_query);

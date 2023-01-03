@@ -53,6 +53,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
+#include <Storages/StorageView.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -1395,26 +1396,13 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
 
+    /// replaceQueryParameterWithValue is used for parameterized view (which are created using query parameters
+    /// and SELECT is used with substitution of these query parameters )
+    /// the replaced column names will be used in the next steps
     if (is_parameterized_view)
     {
         for (auto & column : result.source_columns)
-        {
-            std::string column_name = column.name;
-            std::string::size_type pos = 0u;
-            for (auto & parameter : parameter_values)
-            {
-                if ((pos = column_name.find(parameter.first)) != std::string::npos)
-                {
-                    auto parameter_datatype_iterator = parameter_types.find(parameter.first);
-                    if (parameter_datatype_iterator != parameter_types.end())
-                    {
-                        String parameter_name("_CAST(" + parameter.second + ", '" + parameter_datatype_iterator->second + "')");
-                        column.name.replace(pos, parameter.first.size(), parameter_name);
-                        break;
-                    }
-                }
-            }
-        }
+            column.name = StorageView::replaceQueryParameterWithValue(column.name, parameter_values, parameter_types);
     }
 
     result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);

@@ -9,9 +9,9 @@ SELECT
 FROM
 (
     SELECT *
-    FROM default.Catalog
+    FROM default.test_02428_Catalog
     WHERE Price = _CAST(10, \'UInt64\')
-) AS pv1
+) AS test_02428_pv1
 50
 10
 20
