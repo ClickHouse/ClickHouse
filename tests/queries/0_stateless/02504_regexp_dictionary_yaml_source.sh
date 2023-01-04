@@ -85,13 +85,11 @@ $CLICKHOUSE_CLIENT -n --query="
 system reload dictionary regexp_dict1; -- { serverError 318 }
 "
 cat > "$yaml" <<EOL
-- regexp: '*'
+- regexp: 'abc'
   col_bool: 'true'
   col_uuid: '61f0c404-5cb3-11e7-907b-a6006ad3dba0'
   col_date: '2023-01-01'
   col_datetime: '2023-01-01 01:01:01'
-  col_enum: 'world'
-  col_json: {"a": 1, "b": { "c": 2, "d": [1, 2, 3] }}'
 EOL
 
 $CLICKHOUSE_CLIENT -n --query="

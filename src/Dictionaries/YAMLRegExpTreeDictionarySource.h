@@ -4,8 +4,6 @@
 
 #include "config.h"
 
-#if USE_YAML_CPP
-
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -26,6 +24,7 @@ namespace ErrorCodes
 
 class YAMLRegExpTreeDictionarySource : public IDictionarySource
 {
+#if USE_YAML_CPP
 public:
     YAMLRegExpTreeDictionarySource(const String & filepath_, const DictionaryStructure & dict_struct_, ContextPtr context_, bool created_from_ddl);
 
@@ -69,8 +68,8 @@ private:
     Poco::Timestamp last_modification;
 
     Poco::Timestamp getLastModification() const;
+#endif
 };
 
 }
 
-#endif
