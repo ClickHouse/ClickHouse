@@ -1464,4 +1464,8 @@
          I don't recommend to change this setting.
     <show_addresses_in_stack_traces>false</show_addresses_in_stack_traces>
     -->
+
+    <!-- On Linux systems this can control the behavior of OOM killer.
+    <oom_score>-1000</oom_score>
+    -->
 </clickhouse>

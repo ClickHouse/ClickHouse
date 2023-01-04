@@ -1011,6 +1011,12 @@ The default value is 7500.
 
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
 
+## stream_poll_timeout_ms {#stream_poll_timeout_ms}
+
+Timeout for polling data from/to streaming storages.
+
+Default value: 500.
+
 ## load_balancing {#settings-load_balancing}
 
 Specifies the algorithm of replicas selection that is used for distributed query processing.
