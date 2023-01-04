@@ -43,7 +43,7 @@ DataSourceDescription CachedObjectStorage::getDataSourceDescription() const
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
-    return cache->hash(path);
+    return cache->createKeyForPath(path);
 }
 
 String CachedObjectStorage::getCachePath(const std::string & path) const
@@ -62,7 +62,7 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
 
-    if (FileCache::isReadOnly())
+    if (!canUseReadThroughCache())
         modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
     return IObjectStorage::patchSettings(modified_settings);
@@ -306,6 +306,13 @@ void CachedObjectStorage::applyNewSettings(
 String CachedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();
+}
+
+bool CachedObjectStorage::canUseReadThroughCache()
+{
+    return CurrentThread::isInitialized()
+        && CurrentThread::get().getQueryContext()
+        && !CurrentThread::getQueryId().empty();
 }
 
 }

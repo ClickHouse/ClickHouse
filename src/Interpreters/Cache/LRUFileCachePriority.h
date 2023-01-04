@@ -2,6 +2,7 @@
 
 #include <list>
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -19,17 +20,20 @@ private:
 public:
     LRUFileCachePriority() = default;
 
-    WriteIterator add(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> &) override;
+    Iterator add(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        KeyTransactionCreatorPtr key_transaction_creator,
+        const CachePriorityQueueGuard::Lock &) override;
 
-    bool contains(const Key & key, size_t offset, std::lock_guard<std::mutex> &) override;
+    bool contains(const Key & key, size_t offset, const CachePriorityQueueGuard::Lock &) override;
 
-    void removeAll(std::lock_guard<std::mutex> &) override;
+    void removeAll(const CachePriorityQueueGuard::Lock &) override;
 
-    ReadIterator getLowestPriorityReadIterator(std::lock_guard<std::mutex> &) override;
+    Iterator getLowestPriorityIterator(const CachePriorityQueueGuard::Lock &) override;
 
-    WriteIterator getLowestPriorityWriteIterator(std::lock_guard<std::mutex> &) override;
-
-    size_t getElementsNum(std::lock_guard<std::mutex> &) const override;
+    size_t getElementsNum(const CachePriorityQueueGuard::Lock &) const override;
 
 private:
     LRUQueue queue;
@@ -39,11 +43,13 @@ private:
 class LRUFileCachePriority::LRUFileCacheIterator : public IFileCachePriority::IIterator
 {
 public:
-    LRUFileCacheIterator(LRUFileCachePriority * cache_priority_, LRUFileCachePriority::LRUQueueIterator queue_iter_);
+    LRUFileCacheIterator(
+        LRUFileCachePriority * cache_priority_,
+        LRUFileCachePriority::LRUQueueIterator queue_iter_);
 
-    void next() const override { queue_iter++; }
+    void next(const CachePriorityQueueGuard::Lock &) const override { queue_iter++; }
 
-    bool valid() const override { return queue_iter != cache_priority->queue.end(); }
+    bool valid(const CachePriorityQueueGuard::Lock &) const override { return queue_iter != cache_priority->queue.end(); }
 
     const Key & key() const override { return queue_iter->key; }
 
@@ -53,11 +59,13 @@ public:
 
     size_t hits() const override { return queue_iter->hits; }
 
-    void removeAndGetNext(std::lock_guard<std::mutex> &) override;
+    KeyTransactionPtr createKeyTransaction(const CachePriorityQueueGuard::Lock &) override;
 
-    void incrementSize(size_t size_increment, std::lock_guard<std::mutex> &) override;
+    Iterator remove(const CachePriorityQueueGuard::Lock &) override;
 
-    void use(std::lock_guard<std::mutex> &) override;
+    void incrementSize(ssize_t size_increment, const CachePriorityQueueGuard::Lock &) override;
+
+    size_t use(const CachePriorityQueueGuard::Lock &) override;
 
 private:
     LRUFileCachePriority * cache_priority;

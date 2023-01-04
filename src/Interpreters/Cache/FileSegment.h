@@ -2,11 +2,13 @@
 
 #include <boost/noncopyable.hpp>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/Guards.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
 #include <list>
 #include <queue>
@@ -28,7 +30,10 @@ class ReadBufferFromFileBase;
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
-
+struct KeyTransaction;
+using KeyTransactionPtr = std::unique_ptr<KeyTransaction>;
+struct KeyTransactionCreator;
+using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
 
 struct CreateFileSegmentSettings
 {
@@ -42,6 +47,7 @@ friend class FileCache;
 friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 friend class StorageSystemFilesystemCache;
+friend struct KeyTransaction;
 
 public:
     using Key = FileCacheKey;
@@ -88,11 +94,10 @@ public:
         size_t offset_,
         size_t size_,
         const Key & key_,
+        KeyTransactionCreatorPtr key_transaction_creator,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
-
-    ~FileSegment();
 
     State state() const;
 
@@ -132,7 +137,7 @@ public:
     using UniqueId = std::pair<FileCacheKey, size_t>;
     UniqueId getUniqueId() const { return std::pair(key(), offset()); }
 
-    String getPathInLocalCache() const;
+    String getPathInLocalCache() const { return file_path; }
 
     /**
      * ========== Methods for _any_ file segment's owner ========================
@@ -161,6 +166,12 @@ public:
 
     size_t getDownloadedSize() const;
 
+    OpenedFileCache::OpenedFilePtr getFile() const;
+    int getFD() const;
+
+    OpenedFileCache::OpenedFilePtr file;
+    int fd;
+
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
     ///    && it does not need this segment anymore
@@ -175,13 +186,13 @@ public:
     /// 2. Detached file segment can still be hold by some cache users, but it's state became
     /// immutable at the point it was detached, any non-const / stateful method will throw an
     /// exception.
-    void detach(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
+    void detach(const FileSegmentGuard::Lock &, const KeyTransaction &);
 
-    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
+    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment);
 
     bool isDetached() const;
 
-    bool isCompleted() const;
+    bool isCompleted() const { return is_completed; }
 
     void assertCorrectness() const;
 
@@ -201,10 +212,9 @@ public:
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
 
-    /// Complete file segment with a certain state.
-    void completeWithState(State state);
+    void setBroken();
 
-    void completeWithoutState();
+    void complete();
 
     /// Complete file segment's part which was last written.
     void completePartAndResetDownloader();
@@ -219,46 +229,53 @@ public:
 
     void resetRemoteFileReader();
 
+    FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
+
 private:
-    size_t getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
-    size_t getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
-    size_t getDownloadedSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    size_t getFirstNonDownloadedOffsetUnlocked(const FileSegmentGuard::Lock & lock) const;
+    size_t getCurrentWriteOffsetUnlocked(const FileSegmentGuard::Lock & lock) const;
+    size_t getDownloadedSizeUnlocked(const FileSegmentGuard::Lock & lock) const;
 
-    String getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    String getInfoForLogUnlocked(const FileSegmentGuard::Lock & lock) const;
 
-    String getDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
-    void resetDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock);
-    void resetDownloadingStateUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    String getDownloaderUnlocked(const FileSegmentGuard::Lock & lock) const;
+    void resetDownloaderUnlocked(const FileSegmentGuard::Lock & lock);
+    void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock);
 
-    void setDownloadState(State state);
+    void setDownloadState(State state, const FileSegmentGuard::Lock & lock);
 
-    void setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock);
-    void setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    void setDownloadedUnlocked(const FileSegmentGuard::Lock & lock);
+    void setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock);
 
-    bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    /// Finalized state is such a state that does not need to be completed (with complete()).
+    bool hasFinalizedStateUnlocked(const FileSegmentGuard::Lock & lock) const;
 
-    bool isDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
 
-    bool isDetached(std::unique_lock<std::mutex> & /* segment_lock */) const { return is_detached; }
-    void detachAssumeStateFinalized(std::unique_lock<std::mutex> & segment_lock);
-    [[noreturn]] void throwIfDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    bool isDetached(const FileSegmentGuard::Lock &) const { return is_detached; }
+    void detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock);
+    [[noreturn]] void throwIfDetachedUnlocked(const FileSegmentGuard::Lock & lock) const;
 
-    void assertDetachedStatus(std::unique_lock<std::mutex> & segment_lock) const;
+    void assertDetachedStatus(const FileSegmentGuard::Lock & lock) const;
     void assertNotDetached() const;
-    void assertNotDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
-    void assertIsDownloaderUnlocked(const std::string & operation, std::unique_lock<std::mutex> & segment_lock) const;
-    void assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    void assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock) const;
+    void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock & lock) const;
+    void assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock) const;
+
+    KeyTransactionPtr createKeyTransaction(bool assert_exists = true) const;
 
     /// complete() without any completion state is called from destructor of
     /// FileSegmentsHolder. complete() might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void completeWithoutStateUnlocked(std::lock_guard<std::mutex> & cache_lock);
-    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
+    void completeUnlocked(KeyTransaction & key_transaction);
 
-    void completePartAndResetDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
 
-    void wrapWithCacheInfo(Exception & e, const String & message, std::unique_lock<std::mutex> & segment_lock) const;
+    void wrapWithCacheInfo(
+        Exception & e, const String & message, const FileSegmentGuard::Lock & segment_lock) const;
+
+    bool isLastHolder(const KeyTransaction & key_transaction) const;
 
     Range segment_range;
 
@@ -277,7 +294,8 @@ private:
     /// 1. cache lock
     /// 2. segment lock
 
-    mutable std::mutex mutex;
+    mutable FileSegmentGuard segment_guard;
+    KeyTransactionCreatorPtr key_transaction_creator;
     std::condition_variable cv;
 
     /// Protects downloaded_size access with actual write into fs.
@@ -289,6 +307,7 @@ private:
     mutable std::mutex download_mutex;
 
     Key file_key;
+    const std::string file_path;
     FileCache * cache;
 
     Poco::Logger * log;
@@ -296,7 +315,7 @@ private:
     /// "detached" file segment means that it is not owned by cache ("detached" from cache).
     /// In general case, all file segments are owned by cache.
     bool is_detached = false;
-    bool is_completed = false;
+    std::atomic<bool> is_completed = false;
 
     bool is_downloaded{false};
 
@@ -314,13 +333,35 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
 
-    FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
-
     ~FileSegmentsHolder();
+
+    bool empty() const { return file_segments.empty(); }
+
+    size_t size() const { return file_segments.size(); }
 
     String toString();
 
+    void popFront() { completeAndPopFrontImpl(); }
+
+    FileSegment & front() { return *file_segments.front(); }
+
+    FileSegment & back() { return *file_segments.back(); }
+
+    FileSegment & add(FileSegmentPtr && file_segment)
+    {
+        file_segments.push_back(file_segment);
+        return *file_segments.back();
+    }
+
+    FileSegments::iterator begin() { return file_segments.begin(); }
+    FileSegments::iterator end() { return file_segments.end(); }
+
+private:
     FileSegments file_segments{};
+
+    FileSegments::iterator completeAndPopFrontImpl();
 };
+
+using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
 
 }

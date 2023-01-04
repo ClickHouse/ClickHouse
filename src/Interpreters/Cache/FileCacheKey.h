@@ -1,21 +1,32 @@
 #pragma once
 #include <Core/Types.h>
-#include <Common/hex.h>
 
 namespace DB
 {
 
 struct FileCacheKey
 {
+    /// Hash of the path.
     UInt128 key;
+    /// Prefix of the path.
+    std::string key_prefix;
 
-    String toString() const { return getHexUIntLowercase(key); }
+    std::string toString() const;
 
-    FileCacheKey() = default;
+    explicit FileCacheKey(const std::string & path);
 
-    explicit FileCacheKey(const UInt128 & key_) : key(key_) { }
+    explicit FileCacheKey(const UInt128 & path);
 
     bool operator==(const FileCacheKey & other) const { return key == other.key; }
+};
+
+using FileCacheKeyAndOffset = std::pair<FileCacheKey, size_t>;
+struct FileCacheKeyAndOffsetHash
+{
+    std::size_t operator()(const FileCacheKeyAndOffset & key) const
+    {
+        return std::hash<UInt128>()(key.first.key) ^ std::hash<UInt64>()(key.second);
+    }
 };
 
 }
