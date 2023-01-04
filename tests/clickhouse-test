@@ -1118,7 +1118,7 @@ class TestCase:
                     args, self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
-        except (ConnectionRefusedError, ConnectionResetError):
+        except (ConnectionError, http.client.ImproperConnectionState):
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -1544,7 +1544,7 @@ def check_server_started(args):
             print(" OK")
             sys.stdout.flush()
             return True
-        except (ConnectionRefusedError, ConnectionResetError):
+        except (ConnectionError, http.client.ImproperConnectionState):
             print(".", end="")
             sys.stdout.flush()
             retry_count -= 1
@@ -1554,7 +1554,7 @@ def check_server_started(args):
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
-            print("\nUexpected exception, will not retry: ", str(e))
+            print("\nUexpected exception, will not retry: ", type(e).__name__, ": ", str(e))
             break
 
     print("\nAll connection tries failed")
@@ -1820,8 +1820,7 @@ def main(args):
     global restarted_tests
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot execute 'SELECT 1' query. \
-            If you are using split build, you have to specify -c option."
+        msg = "Server is not responding. Cannot execute 'SELECT 1' query."
         if args.hung_check:
             print(msg)
             pid = get_server_pid()
@@ -2006,14 +2005,14 @@ if __name__ == "__main__":
         "-b",
         "--binary",
         default="clickhouse",
-        help="Path to clickhouse (if monolithic build, clickhouse-server otherwise) "
+        help="Path to clickhouse"
         "binary or name of binary in PATH",
     )
 
     parser.add_argument(
         "-c",
         "--client",
-        help="Path to clickhouse-client (if split build, useless otherwise) binary of "
+        help="Path to clickhouse-client, this option is useless"
         "name of binary in PATH",
     )
 
@@ -2280,7 +2279,7 @@ if __name__ == "__main__":
         if find_binary(args.binary + "-client"):
             args.client = args.binary + "-client"
 
-            print("Using " + args.client + " as client program (expecting split build)")
+            print("Using " + args.client + " as client program")
         elif find_binary(args.binary):
             args.client = args.binary + " client"
 
