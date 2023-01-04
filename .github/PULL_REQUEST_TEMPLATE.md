@@ -18,5 +18,11 @@ tests/ci/run_check.py
 ### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
 ...
 
+### Documentation entry (a user-readable short description of the changes that goes to docs.clickhouse.com):
+Motivation: Why is this function, tabe engine, etc. useful to ClickHouse users?
+
+Parameters: If the feature being added takes arguments, please list the arguments and options.
+
+Example use: A query or command.
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
