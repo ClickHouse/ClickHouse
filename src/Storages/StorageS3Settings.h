@@ -11,6 +11,7 @@
 #include <Storages/HeaderCollection.h>
 
 #include <IO/S3Common.h>
+
 namespace Poco::Util
 {
 class AbstractConfiguration;
