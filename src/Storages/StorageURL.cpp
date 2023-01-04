@@ -440,7 +440,7 @@ StorageURLSink::StorageURLSink(
         std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, timeouts),
         compression_method,
         3);
-    writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, {} /* write callback */, format_settings);
+    writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
 }
 
 
