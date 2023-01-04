@@ -24,6 +24,8 @@ class RabbitMQConnection
 public:
     RabbitMQConnection(const RabbitMQConfiguration & configuration_, Poco::Logger * log_);
 
+    ~RabbitMQConnection();
+
     bool isConnected();
 
     bool connect();
