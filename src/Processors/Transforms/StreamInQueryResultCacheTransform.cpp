@@ -15,4 +15,9 @@ void StreamInQueryResultCacheTransform::transform(Chunk & chunk)
     cache_writer.buffer(chunk.clone());
 }
 
+void StreamInQueryResultCacheTransform::finalizeWriteInQueryResultCache()
+{
+    cache_writer.finalizeWrite();
+}
+
 };
