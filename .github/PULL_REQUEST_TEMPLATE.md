@@ -18,13 +18,15 @@ tests/ci/run_check.py
 ### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
 ...
 
-### Documentation entry (a user-readable short description of the changes that goes to docs.clickhouse.com):
-Motivation: Why is this function, tabe engine, etc. useful to ClickHouse users?
+### Documentation entry for user-facing changes
+
+Directly edit documentation source files in the "docs" folder with the same pull-request as code changes or add a user-readable short description of the changes that should be added to docs.clickhouse.com.  At a minimum, the following information should be added (but add more as needed).
+
+Motivation: Why is this function, table engine, etc. useful to ClickHouse users?
 
 Parameters: If the feature being added takes arguments, options or is influenced by settings, please list them below with a brief explanation.
 
 Example use: A query or command.
 
-Alternatively, you can directly edit documentation source files in the "docs" folder with the same pull-request as code changes.
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
