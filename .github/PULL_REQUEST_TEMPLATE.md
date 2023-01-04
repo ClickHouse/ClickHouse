@@ -25,4 +25,6 @@ Parameters: If the feature being added takes arguments, please list the argument
 
 Example use: A query or command.
 
+Alternatively, you can directly edit documentation source files in the "docs" folder with the same pull-request as code changes.
+
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
