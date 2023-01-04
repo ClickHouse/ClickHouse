@@ -252,4 +252,7 @@ private:
     Arena string_arena;
 };
 
+extern template class RangeHashedDictionary<DictionaryKeyType::Simple>;
+extern template class RangeHashedDictionary<DictionaryKeyType::Complex>;
+
 }
