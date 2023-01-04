@@ -33,6 +33,7 @@ public:
 
     FileCachePtr getOrCreate(const std::string & cache_base_path, const FileCacheSettings & file_cache_settings, const std::string & name);
 
+    FileCachePtr tryGet(const std::string & cache_base_path);
     FileCachePtr get(const std::string & cache_base_path);
 
     CacheByBasePath getAll();

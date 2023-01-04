@@ -243,6 +243,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--no-random", action="store", dest="no_random", help="Disable tests order randomization"
+    )
+
+    parser.add_argument(
         "-t",
         "--tests_list",
         action="store",
@@ -293,6 +297,11 @@ if __name__ == "__main__":
     if args.parallel:
         parallel_args += "--dist=loadfile"
         parallel_args += " -n {}".format(args.parallel)
+
+    rand_args = ""
+    if not args.no_random:
+        rand_args += f"--random-seed={os.getpid()}"
+
 
     net = ""
     if args.network:
@@ -383,7 +392,7 @@ if __name__ == "__main__":
         {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
         -e XTABLES_LOCKFILE=/run/host/xtables.lock \
         -e PYTHONUNBUFFERED=1 \
-        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} -vvv' {img} {command}".format(
+        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} {rand} -vvv' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
@@ -395,6 +404,7 @@ if __name__ == "__main__":
         env_tags=env_tags,
         env_cleanup=env_cleanup,
         parallel=parallel_args,
+        rand=rand_args,
         opts=" ".join(args.pytest_args).replace("'", "\\'"),
         tests_list=" ".join(args.tests_list),
         dockerd_internal_volume=dockerd_internal_volume,
