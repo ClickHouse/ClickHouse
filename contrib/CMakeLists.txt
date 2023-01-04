@@ -170,6 +170,8 @@ add_contrib (annoy-cmake annoy)
 
 add_contrib (xxHash-cmake xxHash)
 
+add_contrib (libbcrypt-cmake libbcrypt)
+
 add_contrib (google-benchmark-cmake google-benchmark)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.

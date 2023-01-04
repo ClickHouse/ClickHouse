@@ -22,6 +22,9 @@ enum class AuthenticationType
     /// This kind of hash is used by the `mysql_native_password` authentication plugin.
     DOUBLE_SHA1_PASSWORD,
 
+    /// Password is encrypted in bcrypt hash.
+    BCRYPT_PASSWORD,
+
     /// Password is checked by a [remote] LDAP server. Connection will be made at each authentication attempt.
     LDAP,
 
@@ -102,6 +105,8 @@ public:
         static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
         static Digest encodeDoubleSHA1(std::string_view text) { return encodeSHA1(encodeSHA1(text)); }
         static Digest encodeDoubleSHA1(const Digest & text) { return encodeSHA1(encodeSHA1(text)); }
+        static Digest encodeBcrypt(std::string_view text);
+        static bool checkPasswordBcrypt(std::string_view password, const Digest & password_bcrypt);
     };
 
 private:

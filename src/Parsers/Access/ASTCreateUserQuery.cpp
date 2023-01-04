@@ -64,6 +64,13 @@ namespace
                 password = auth_data.getPasswordHashHex();
                 break;
             }
+            case AuthenticationType::BCRYPT_PASSWORD:
+            {
+                auth_type_name = "bcrypt_hash";
+                prefix = "BY";
+                password = auth_data.getPasswordHashHex();
+                break;
+            }
             case AuthenticationType::LDAP:
             {
                 prefix = "SERVER";
