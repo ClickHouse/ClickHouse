@@ -73,8 +73,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
 /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
 static const std::vector<std::regex> optional_regex_keys = {
-    std::regex("headers.header\\[[\\d]*\\].name"),
-    std::regex("headers.header\\[[\\d]*\\].value"),
+    std::regex(R"(headers.header\[[\d]*\].name)"),
+    std::regex(R"(headers.header\[[\d]*\].value)"),
 };
 
 static bool urlWithGlobs(const String & uri)

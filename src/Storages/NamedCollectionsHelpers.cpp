@@ -67,7 +67,7 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
 
     auto collection_copy = collection->duplicate();
 
-    for (auto it = std::next(asts.begin()); it != asts.end(); ++it)
+    for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
         auto value_override = getKeyValueFromAST(*it);
         if (!value_override && !(*it)->as<ASTFunction>())
