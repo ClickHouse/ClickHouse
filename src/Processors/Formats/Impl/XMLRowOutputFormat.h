@@ -24,7 +24,6 @@ private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
-    void writeRowBetweenDelimiter() override;
     void writePrefix() override;
     void writeSuffix() override;
     void finalizeImpl() override;

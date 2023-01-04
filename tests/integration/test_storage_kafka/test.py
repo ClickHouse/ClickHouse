@@ -2271,7 +2271,11 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     )
 
     topic_name = "insert3"
-    kafka_create_topic(admin_client, topic_name)
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        "retention.ms": "-1",
+    }
+    kafka_create_topic(admin_client, topic_name, config=topic_config)
 
     instance.query(
         """
