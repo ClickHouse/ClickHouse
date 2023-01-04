@@ -298,11 +298,11 @@ class ClickhouseIntegrationTestsRunner:
 
         cmd = (
             "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} {command} ".format(
+            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} --command '{command}' ".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
                 image_cmd=image_cmd,
-                command=r""" find /compose -name 'docker_compose_*.yml' -exec docker-compose -f '{}' pull \; """,
+                command=r""" find /compose -name docker_compose_*.yml -exec docker-compose -f {} pull \; """,
             )
         )
 
@@ -313,9 +313,10 @@ class ClickhouseIntegrationTestsRunner:
                     cmd,
                     shell=True,
                 )
+                return
             except subprocess.CalledProcessError as err:
                 logging.info("docker-compose pull failed: " + str(err))
-            return
+                continue
         logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
         exit(1)
 
