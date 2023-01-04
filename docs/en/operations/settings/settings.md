@@ -1011,6 +1011,12 @@ The default value is 7500.
 
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
 
+## stream_poll_timeout_ms {#stream_poll_timeout_ms}
+
+Timeout for polling data from/to streaming storages.
+
+Default value: 500.
+
 ## load_balancing {#settings-load_balancing}
 
 Specifies the algorithm of replicas selection that is used for distributed query processing.
@@ -3625,7 +3631,7 @@ z	IPv4
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
 If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
 
-Default value: `false`.
+Default value: `true`.
 
 ## input_format_try_infer_integers {#input_format_try_infer_integers}
 

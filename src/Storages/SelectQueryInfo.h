@@ -163,6 +163,9 @@ struct ProjectionCandidate
     SortDescription group_by_elements_order_descr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
+
+    /// Because projection analysis uses a separate interpreter.
+    ContextPtr context;
 };
 
 /** Query along with some additional data,
