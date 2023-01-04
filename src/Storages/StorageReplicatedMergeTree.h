@@ -531,7 +531,7 @@ private:
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
-    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
+    void getRemovePartFromZooKeeperOps(const String & part_name, Coordination::Requests & ops, bool has_children);
 
     /// Just removes part from ZooKeeper using previous method
     void removePartFromZooKeeper(const String & part_name);
