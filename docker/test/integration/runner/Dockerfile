@@ -83,6 +83,7 @@ RUN python3 -m pip install \
     pytest \
     pytest-order==1.0.0 \
     pytest-timeout \
+    pytest-random \
     pytest-xdist \
     pytest-repeat \
     pytz \

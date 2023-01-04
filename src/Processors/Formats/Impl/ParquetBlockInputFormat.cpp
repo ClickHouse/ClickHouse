@@ -70,7 +70,7 @@ Chunk ParquetBlockInputFormat::generate()
 
     ++row_group_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, table->num_rows());
 
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
@@ -187,7 +187,9 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, "Parquet", format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference);
-    return getNamesAndRecursivelyNullableTypes(header);
+    if (format_settings.schema_inference_make_columns_nullable)
+        return getNamesAndRecursivelyNullableTypes(header);
+    return header.getNamesAndTypesList();
 }
 
 void registerInputFormatParquet(FormatFactory & factory)
@@ -214,6 +216,11 @@ void registerParquetSchemaReader(FormatFactory & factory)
             return std::make_shared<ParquetSchemaReader>(buf, settings);
         }
         );
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("Parquet", [](const FormatSettings & settings)
+    {
+        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+    });
 }
 
 }
