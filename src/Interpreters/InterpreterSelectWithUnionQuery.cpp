@@ -165,7 +165,9 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 0; query_num < num_children; ++query_num)
         {
             headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
-            const auto & current_required_result_column_names = required_result_column_names_for_other_selects[query_num];
+            const auto & current_required_result_column_names = (query_num == 0 && !require_full_header)
+                ? required_result_column_names
+                : required_result_column_names_for_other_selects[query_num];
             if (!current_required_result_column_names.empty())
             {
                 const auto & header_columns = headers[query_num].getNames();
