@@ -3528,7 +3528,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 '0,"BAD","AM",0.5,1\n',
             ],
-            "expected": """{"raw_message":"0,\\"BAD\\",\\"AM\\",0.5,1\\n","error":"Cannot parse input: expected '\\"' before: 'BAD\\",\\"AM\\",0.5,1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"0,\\"BAD\\",\\"AM\\",0.5,1\\n","error":"Cannot parse input: expected '\\"' before: 'BAD\\",\\"AM\\",0.5,1\\\\n'"}""",
             "printable": True,
             "supports_empty_value": True,
         },
@@ -3540,7 +3540,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "0\tBAD\tAM\t0.5\t1\n",
             ],
-            "expected": """{"raw_message":"0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n'"}""",
             "supports_empty_value": True,
             "printable": True,
         },
@@ -3552,7 +3552,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 '"id","blockNo","val1","val2","val3"\n0,"BAD","AM",0.5,1\n',
             ],
-            "expected": """{"raw_message":"\\"id\\",\\"blockNo\\",\\"val1\\",\\"val2\\",\\"val3\\"\\n0,\\"BAD\\",\\"AM\\",0.5,1\\n","error":"Cannot parse input: expected '\\"' before: 'BAD\\",\\"AM\\",0.5,1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"\\"id\\",\\"blockNo\\",\\"val1\\",\\"val2\\",\\"val3\\"\\n0,\\"BAD\\",\\"AM\\",0.5,1\\n","error":"Cannot parse input: expected '\\"' before: 'BAD\\",\\"AM\\",0.5,1\\\\n'"}""",
             "printable": True,
         },
         "Values": {
@@ -3575,7 +3575,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "id\tblockNo\tval1\tval2\tval3\n0\tBAD\tAM\t0.5\t1\n",
             ],
-            "expected": """{"raw_message":"id\\tblockNo\\tval1\\tval2\\tval3\\n0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"id\\tblockNo\\tval1\\tval2\\tval3\\n0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n"}""",
             "supports_empty_value": True,
             "printable": True,
         },
@@ -3587,7 +3587,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "id\tblockNo\tval1\tval2\tval3\nInt64\tUInt16\tString\tFloat32\tUInt8\n0\tBAD\tAM\t0.5\t1\n",
             ],
-            "expected": """{"raw_message":"id\\tblockNo\\tval1\\tval2\\tval3\\nInt64\\tUInt16\\tString\\tFloat32\\tUInt8\\n0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"id\\tblockNo\\tval1\\tval2\\tval3\\nInt64\\tUInt16\\tString\\tFloat32\\tUInt8\\n0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n'"}""",
             "printable": True,
         },
         "Native": {
@@ -4125,6 +4125,315 @@ def test_num_consumers_limit(kafka_cluster):
     )
 
     instance.query("DROP TABLE test.kafka")
+
+
+def test_format_with_prefix_and_suffix(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    kafka_create_topic(admin_client, "custom")
+
+    instance.query(
+        """
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'custom',
+                     kafka_group_name = 'custom',
+                     kafka_format = 'CustomSeparated';
+    """
+    )
+
+    instance.query(
+        "INSERT INTO test.kafka select number*10 as key, number*100 as value from numbers(2) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
+    )
+
+    messages = []
+
+    attempt = 0
+    while attempt < 100:
+        messages.extend(kafka_consume(kafka_cluster, "custom"))
+        if len(messages) == 2:
+            break
+        attempt += 1
+
+    assert len(messages) == 2
+
+    assert (
+        "".join(messages) == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
+    )
+
+    kafka_delete_topic(admin_client, "custom")
+
+
+def test_max_rows_per_message(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "custom_max_rows_per_message"
+
+    kafka_create_topic(admin_client, topic)
+
+    num_rows = 5
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'CustomSeparated',
+                     format_custom_result_before_delimiter = '<prefix>\n',
+                     format_custom_result_after_delimiter = '<suffix>\n',
+                     kafka_max_rows_per_message = 3;
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value FROM test.kafka;
+    """
+    )
+
+    instance.query(
+        f"INSERT INTO test.kafka select number*10 as key, number*100 as value from numbers({num_rows}) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
+    )
+
+    messages = []
+
+    attempt = 0
+    while attempt < 500:
+        messages.extend(kafka_consume(kafka_cluster, topic))
+        if len(messages) == 2:
+            break
+        attempt += 1
+
+    assert len(messages) == 2
+
+    assert (
+        "".join(messages)
+        == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
+    )
+
+    attempt = 0
+    rows = 0
+    while attempt < 500:
+        rows = int(instance.query("SELECT count() FROM test.view"))
+        if rows == num_rows:
+            break
+        attempt += 1
+
+    assert rows == num_rows
+
+    result = instance.query("SELECT * FROM test.view")
+    assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
+
+    kafka_delete_topic(admin_client, topic)
+
+
+def test_row_based_formats(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    for format_name in [
+        "TSV",
+        "TSVWithNamesAndTypes",
+        "TSKV",
+        "CSV",
+        "CSVWithNamesAndTypes",
+        "CustomSeparatedWithNamesAndTypes",
+        "Values",
+        "JSON",
+        "JSONEachRow",
+        "JSONCompactEachRow",
+        "JSONCompactEachRowWithNamesAndTypes",
+        "JSONObjectEachRow",
+        "Avro",
+        "RowBinary",
+        "RowBinaryWithNamesAndTypes",
+        "MsgPack",
+    ]:
+
+        print(format_name)
+
+        kafka_create_topic(admin_client, format_name)
+
+        num_rows = 10
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.kafka;
+    
+            CREATE TABLE test.kafka (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{format_name}',
+                         kafka_group_name = '{format_name}',
+                         kafka_format = '{format_name}',
+                         kafka_max_rows_per_message = 5;
+    
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                SELECT key, value FROM test.kafka;
+                
+            INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
+        """
+        )
+
+        messages = []
+
+        attempt = 0
+        while attempt < 500:
+            messages.extend(kafka_consume(kafka_cluster, format_name, needDecode=False))
+            if len(messages) == 2:
+                break
+            attempt += 1
+
+        assert len(messages) == 2
+
+        attempt = 0
+        rows = 0
+        while attempt < 500:
+            rows = int(instance.query("SELECT count() FROM test.view"))
+            if rows == num_rows:
+                break
+            attempt += 1
+
+        assert rows == num_rows
+
+        result = instance.query("SELECT * FROM test.view")
+        expected = ""
+        for i in range(num_rows):
+            expected += str(i * 10) + "\t" + str(i * 100) + "\n"
+        assert result == expected
+
+        kafka_delete_topic(admin_client, format_name)
+
+
+def test_block_based_formats_1(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "pretty_space"
+    kafka_create_topic(admin_client, topic)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'PrettySpace';
+
+        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;
+    """
+    )
+
+    messages = []
+
+    attempt = 0
+    while attempt < 500:
+        messages.extend(kafka_consume(kafka_cluster, topic))
+        if len(messages) == 3:
+            break
+        attempt += 1
+
+    assert len(messages) == 3
+
+    data = []
+    for message in messages:
+        splitted = message.split("\n")
+        assert splitted[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
+        assert splitted[1] == ""
+        assert splitted[-1] == ""
+        data += [line.split() for line in splitted[2:-1]]
+
+    assert data == [
+        ["0", "0"],
+        ["10", "100"],
+        ["20", "200"],
+        ["30", "300"],
+        ["40", "400"],
+    ]
+
+    kafka_delete_topic(admin_client, topic)
+
+
+def test_block_based_formats_2(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    num_rows = 100
+
+    for format_name in [
+        "JSONColumns",
+        "Native",
+        "Arrow",
+        "Parquet",
+        "ORC",
+        "JSONCompactColumns",
+    ]:
+
+        kafka_create_topic(admin_client, format_name)
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.kafka;
+    
+            CREATE TABLE test.kafka (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{format_name}',
+                         kafka_group_name = '{format_name}',
+                         kafka_format = '{format_name}';
+    
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                SELECT key, value FROM test.kafka;
+                
+            INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
+        """
+        )
+
+        messages = []
+
+        attempt = 0
+        while attempt < 500:
+            messages.extend(kafka_consume(kafka_cluster, format_name, needDecode=False))
+            if len(messages) == 9:
+                break
+            attempt += 1
+
+        assert len(messages) == 9
+
+        attempt = 0
+        rows = 0
+        while attempt < 500:
+            rows = int(instance.query("SELECT count() FROM test.view"))
+            if rows == num_rows:
+                break
+            attempt += 1
+
+        assert rows == num_rows
+
+        result = instance.query("SELECT * FROM test.view ORDER by key")
+        expected = ""
+        for i in range(num_rows):
+            expected += str(i * 10) + "\t" + str(i * 100) + "\n"
+        assert result == expected
+
+        kafka_delete_topic(admin_client, format_name)
 
 
 if __name__ == "__main__":

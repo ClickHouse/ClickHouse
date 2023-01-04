@@ -317,6 +317,9 @@ static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr
         auto current_progress = element_id->getProgressIn();
         Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
         format->onProgress(read_progress);
+
+        /// Update the start of the statistics to use the start of the query, and not the creation of the format class
+        format->setStartTime(element_id->getQueryCPUStartTime(), true);
     }
 }
 
@@ -325,7 +328,6 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     WriteBuffer & buf,
     const Block & sample,
     ContextPtr context,
-    WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_creator;
@@ -339,9 +341,9 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
         && !settings.output_format_json_array_of_rows)
     {
-        auto formatter_creator = [output_getter, sample, callback, format_settings] (WriteBuffer & output) -> OutputFormatPtr
+        auto formatter_creator = [output_getter, sample, format_settings] (WriteBuffer & output) -> OutputFormatPtr
         {
-            return output_getter(output, sample, {callback}, format_settings);
+            return output_getter(output, sample, format_settings);
         };
 
         ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
@@ -354,7 +356,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         return format;
     }
 
-    return getOutputFormat(name, buf, sample, context, callback, _format_settings);
+    return getOutputFormat(name, buf, sample, context, _format_settings);
 }
 
 
@@ -363,7 +365,6 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     WriteBuffer & buf,
     const Block & sample,
     ContextPtr context,
-    WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_creator;
@@ -373,15 +374,12 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     if (context->hasQueryContext() && context->getSettingsRef().log_queries)
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
-    RowOutputFormatParams params;
-    params.callback = std::move(callback);
-
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    auto format = output_getter(buf, sample, params, format_settings);
+    auto format = output_getter(buf, sample, format_settings);
 
     /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
     if (format_settings.enable_streaming)
@@ -408,9 +406,8 @@ String FormatFactory::getContentType(
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
     Block empty_block;
-    RowOutputFormatParams empty_params;
     WriteBufferFromOwnString empty_buffer;
-    auto format = output_getter(empty_buffer, empty_block, empty_params, format_settings);
+    auto format = output_getter(empty_buffer, empty_block, format_settings);
 
     return format->getContentType();
 }
