@@ -706,12 +706,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 res = interpreter->execute();
 
+                /// Try to read (SELECT) query result from query result cache (if it is enabled)
                 auto query_result_cache = context->getQueryResultCache();
-
-                /// Try to read query result from query result cache (if it is enabled)
                 bool read_result_from_query_result_cache = false; /// a query must not read from *and* write to the query result cache at the same time
-                if ((settings.enable_experimental_query_result_cache || settings.enable_experimental_query_result_cache_passive_usage)
-                    && query_result_cache != nullptr && res.pipeline.pulling())
+                if (query_result_cache != nullptr
+                    && (settings.enable_experimental_query_result_cache || settings.enable_experimental_query_result_cache_passive_usage)
+                    && res.pipeline.pulling())
                 {
                     QueryResultCache::Key key(
                         ast, settings.query_result_cache_partition_key, res.pipeline.getHeader(),
@@ -725,11 +725,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                /// Try to write query result into query result cache (if it is enabled)
+                /// Try to write (SELECT) query result into query result cache (if it is enabled)
                 if (!read_result_from_query_result_cache
+                    && query_result_cache != nullptr
                     && settings.enable_experimental_query_result_cache
-                    && query_result_cache != nullptr && res.pipeline.pulling()
-                    && (settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions || !astContainsNonDeterministicFunctions(ast, context)))
+                    && res.pipeline.pulling()
+                    && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     QueryResultCache::Key key(
                         ast, settings.query_result_cache_partition_key, res.pipeline.getHeader(),
