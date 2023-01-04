@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP VIEW IF EXISTS test_02428_pv1;
 DROP VIEW IF EXISTS test_02428_pv2;
 DROP VIEW IF EXISTS test_02428_pv3;
