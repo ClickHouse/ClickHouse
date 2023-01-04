@@ -1,4 +1,4 @@
-#include "ArrowFormatUtil.h"
+#include "ArrowFieldIndexUtil.h"
 #if USE_PARQUET || USE_ORC
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 /// Count the number of indices for types.
 /// For orc format, nested_type_has_index is true, a complex type takes one index.
-size_t ArrowFormatUtil::countIndicesForType(std::shared_ptr<arrow::DataType> type)
+size_t ArrowFieldIndexUtil::countIndicesForType(std::shared_ptr<arrow::DataType> type)
 {
     if (type->id() == arrow::Type::LIST)
     {
@@ -56,24 +56,24 @@ size_t ArrowFormatUtil::countIndicesForType(std::shared_ptr<arrow::DataType> typ
 /// - y.i: (1, 1)
 /// - y.j: (2, 1)
 std::map<std::string, std::pair<int, int>>
-ArrowFormatUtil::calculateFieldIndices(const arrow::Schema & schema)
+ArrowFieldIndexUtil::calculateFieldIndices(const arrow::Schema & schema)
 {
     std::map<std::string, std::pair<int, int>> result;
     int index_start = nested_type_has_index ? 1 : 0;
     for (int i = 0; i < schema.num_fields(); ++i)
     {
         const auto & field = schema.field(i);
-        calculateFieldIndices(*field, index_start, result);
+        calculateFieldIndices(*field, field->name(), index_start, result);
     }
     return result;
 }
 
-void ArrowFormatUtil::calculateFieldIndices(const arrow::Field & field,
+void ArrowFieldIndexUtil::calculateFieldIndices(const arrow::Field & field,
+    std::string field_name,
     int & current_start_index,
     std::map<std::string, std::pair<int, int>> & result,
     const std::string & name_prefix)
 {
-    std::string field_name = field.name();
     const auto & field_type = field.type();
     if (field_name.empty())
     {
@@ -97,8 +97,23 @@ void ArrowFormatUtil::calculateFieldIndices(const arrow::Field & field,
         for (int i = 0, n = struct_type->num_fields(); i < n ; ++i)
         {
             const auto & sub_field = struct_type->field(i);
-            calculateFieldIndices(*sub_field, current_start_index, result, full_path_name);
+            calculateFieldIndices(*sub_field, sub_field->name(), current_start_index, result, full_path_name);
         }
+    }
+    else if (
+        field_type->id() == arrow::Type::LIST
+        && static_cast<arrow::ListType *>(field_type.get())->value_type()->id() == arrow::Type::STRUCT)
+    {
+        // It is a nested table.
+        const auto * list_type = static_cast<arrow::ListType *>(field_type.get());
+        const auto  value_field = list_type->value_field();
+        auto index_snapshot = current_start_index;
+        if (nested_type_has_index)
+            current_start_index += 1;
+        calculateFieldIndices(*value_field, field_name, current_start_index, result, name_prefix);
+        // The nested struct field has the same name as this list field.
+        // rewrite it back to the original value.
+        index_info.first = index_snapshot;
     }
     else
     {
@@ -109,7 +124,7 @@ void ArrowFormatUtil::calculateFieldIndices(const arrow::Field & field,
 
 /// Only collect the required fields' indices. Eg. when just read a field of a struct,
 /// don't need to collect the whole indices in this struct.
-std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
+std::vector<int> ArrowFieldIndexUtil::findRequiredIndices(const Block & header,
     const arrow::Schema & schema)
 {
     std::vector<int> required_indices;
@@ -123,23 +138,14 @@ std::vector<int> ArrowFormatUtil::findRequiredIndices(const Block & header,
         std::string col_name = named_col.name;
         if (ignore_case)
             boost::to_lower(col_name);
-        /// Since all named fields are flatten into a map, we should found the column by name
+        /// Since all named fields are flatten into a map, we should find the column by name
         /// in this map.
         auto it = fields_indices.find(col_name);
-        /// It may be a nested table, not a named struct but a list field.
-        if (it == fields_indices.end() && import_nested)
-        {
-            col_name = Nested::splitName(col_name).first;
-            if (added_nested_table.contains(col_name))
-                continue;
-            added_nested_table.insert(col_name);
-            it = fields_indices.find(col_name);
-        }
 
         if (it == fields_indices.end())
         {
             if (!allow_missing_columns)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found field({}) in arrow schema:{}", named_col.name, schema.ToString());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found field({}) in arrow schema:{}.", named_col.name, schema.ToString());
             else
                 continue;
         }
