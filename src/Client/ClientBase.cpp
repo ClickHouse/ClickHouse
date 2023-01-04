@@ -1116,6 +1116,8 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    if (output_format)
+        output_format->finalize();
     output_format.reset();
     logs_out_stream.reset();
 

@@ -42,5 +42,10 @@ for i in $(seq 1 $NUM_REPLICAS); do
 done
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS r$i SYNC;"
+    # We filter out 'Removing temporary directory' on table DROP because in this test
+    # we constantly DETACH and ATTACH tables. So some replica can start fetching some part
+    # and other replica can be DETACHed during fetch. We will get unfinished tmp directory
+    # which should be removed in background, but it's async operation so the tmp directory can
+    # left on disk until table DROP.
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS r$i SYNC;" 2>&1 | grep -v 'Removing temporary directory' ||:
 done
