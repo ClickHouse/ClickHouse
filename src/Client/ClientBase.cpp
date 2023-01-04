@@ -805,8 +805,13 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// But for asynchronous inserts we don't extract data, because it's needed
     /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
     const auto * insert = parsed_query->as<ASTInsertQuery>();
+    /// In the case of a CREATE USER query, we should serialize the parsed AST to send
+    /// the hash of the password, if applicable, to the server instead of the actual password.
+    const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>();
     if (insert && isSyncInsertWithData(*insert, global_context))
         query_to_execute = full_query.substr(0, insert->data - full_query.data());
+    else if (create_user_query)
+        query_to_execute = serializeAST(*parsed_query);
     else
         query_to_execute = full_query;
 
@@ -1786,7 +1791,12 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
     }
 
-    query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), query_to_execute_end - this_query_begin);
+    /// In the case of a CREATE USER query, we should serialize the parsed AST to send
+    /// the hash of the password, if applicable, to the server instead of the actual password.
+    if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
+        query_to_execute = serializeAST(*parsed_query);
+    else
+        query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), query_to_execute_end - this_query_begin);
 
     // Try to include the trailing comment with test hints. It is just
     // a guess for now, because we don't yet know where the query ends

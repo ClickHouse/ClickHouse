@@ -157,7 +157,10 @@ namespace
                 temporary_password = value;
 
             if (!type)
+            {
+                auth_data = AuthenticationData{AuthenticationType::NO_PASSWORD};
                 return true;
+            }
 
             if (expect_password)
             {
