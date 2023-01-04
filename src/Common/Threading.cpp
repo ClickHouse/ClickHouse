@@ -1,6 +1,14 @@
 #include <Common/Threading.h>
 #include <Common/Exception.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int THREAD_WAS_CANCELLED;
+}
+}
+
 #ifdef OS_LINUX /// Because of futex
 
 #include <base/getThreadId.h>
@@ -14,11 +22,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int THREAD_WAS_CANCELLED;
-}
 
 namespace
 {
@@ -482,11 +485,6 @@ void FastSharedMutex::unlock_shared()
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int THREAD_WAS_CANCELLED;
-}
 
 void CancelToken::raise()
 {
