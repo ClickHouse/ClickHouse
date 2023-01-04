@@ -21,7 +21,7 @@ tests/ci/run_check.py
 ### Documentation entry (a user-readable short description of the changes that goes to docs.clickhouse.com):
 Motivation: Why is this function, tabe engine, etc. useful to ClickHouse users?
 
-Parameters: If the feature being added takes arguments, please list the arguments and options.
+Parameters: If the feature being added takes arguments, options or is influenced by settings, please list them below with a brief explanation.
 
 Example use: A query or command.
 
