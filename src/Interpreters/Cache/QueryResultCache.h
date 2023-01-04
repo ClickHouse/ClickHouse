@@ -130,7 +130,7 @@ private:
     /// Implementation note: The query result implements a custom caching mechanism and doesn't make use of CacheBase, unlike many other
     /// internal caches in ClickHouse. The main reason is that we don't need standard CacheBase (S)LRU eviction as the expiry times
     /// associated with cache entries provide a "natural" eviction criterion. As a future TODO, we could make an expiry-based eviction
-    /// policy and use that with CacheBase.
+    /// policy and use that with CacheBase (e.g. see #23706)
     /// TODO To speed up removal of stale entries, we could also add another container sorted on expiry times which maps keys to iterators
     /// into the cache. To insert an entry, add it to the cache + add the iterator to the sorted container. To remove stale entries, do a
     /// binary search on the sorted container and erase all left of the found key.
