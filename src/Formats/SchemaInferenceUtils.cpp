@@ -98,14 +98,14 @@ namespace
     void transformIntegersAndFloatsToFloats(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
         bool have_floats = type_indexes.contains(TypeIndex::Float64);
-        bool have_integers = type_indexes.contains(TypeIndex::Int64) ||  type_indexes.contains(TypeIndex::UInt64);
+        bool have_integers = type_indexes.contains(TypeIndex::Int64) || type_indexes.contains(TypeIndex::UInt64);
         if (!have_integers || !have_floats)
             return;
 
         for (auto & type : data_types)
         {
             WhichDataType which(type);
-            if (which.isFloat64() || which.isInt64() || which.isUInt64())
+            if (which.isInt64() || which.isUInt64())
                 type = std::make_shared<DataTypeFloat64>();
         }
 
