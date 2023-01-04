@@ -296,7 +296,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     return true;
 }
 
-void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async)
+void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
@@ -307,7 +307,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    snapshot_s3.startup(config);
+    snapshot_s3.startup(config, macros);
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3);
 
@@ -687,7 +687,7 @@ bool KeeperDispatcher::isServerActive() const
     return checkInit() && hasLeader() && !server->isRecovering();
 }
 
-void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
+void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
 {
     auto diff = server->getConfigurationDiff(config);
     if (diff.empty())
@@ -704,7 +704,7 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
     }
 
-    snapshot_s3.updateS3Configuration(config);
+    snapshot_s3.updateS3Configuration(config, macros);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)

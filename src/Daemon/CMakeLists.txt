@@ -7,10 +7,6 @@ add_library (daemon
     GitHash.generated.cpp
 )
 
-if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
-    target_link_libraries (daemon PUBLIC -Wl,-undefined,dynamic_lookup)
-endif()
-
 target_link_libraries (daemon PUBLIC loggers common PRIVATE clickhouse_parsers clickhouse_common_io clickhouse_common_config)
 
 if (TARGET ch_contrib::sentry)
