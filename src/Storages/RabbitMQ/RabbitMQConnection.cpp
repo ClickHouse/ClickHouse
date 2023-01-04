@@ -132,7 +132,8 @@ RabbitMQConnection::~RabbitMQConnection()
     try
     {
         /// Try to always close the connection gracefully (run the loop to see the closing callbacks)
-        /// to make sure that the associated callbacks and pending events are removed.
+        /// to make sure that the associated callbacks and pending events are removed
+        /// before handler and loop are destructed.
         disconnectImpl();
     }
     catch (...)
