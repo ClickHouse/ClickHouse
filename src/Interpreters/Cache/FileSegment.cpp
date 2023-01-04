@@ -41,7 +41,7 @@ FileSegment::FileSegment(
     , download_state(download_state_)
     , key_transaction_creator(std::move(key_transaction_creator_))
     , file_key(key_)
-    , file_path(cache_->getPathInLocalCache(key(), offset(), settings.is_persistent))
+    , file_path(cache_->getPathInLocalCache(key(), offset(), settings.kind))
     , cache(cache_)
 #ifndef NDEBUG
     , log(&Poco::Logger::get(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
@@ -139,11 +139,11 @@ size_t FileSegment::getDownloadedSizeUnlocked(const FileSegmentGuard::Lock &) co
 
 void FileSegment::setDownloadedSize(size_t delta)
 {
-    std::unique_lock download_lock(download_mutex);
-    setDownloadedSizeUnlocked(download_lock, delta);
+    auto lock = segment_guard.lock();
+    setDownloadedSizeUnlocked(delta, lock);
 }
 
-void FileSegment::setDownloadedSizeUnlocked(std::unique_lock<std::mutex> & /* download_lock */, size_t delta)
+void FileSegment::setDownloadedSizeUnlocked(size_t delta, const FileSegmentGuard::Lock &)
 {
     downloaded_size += delta;
     assert(downloaded_size == std::filesystem::file_size(getPathInLocalCache()));
@@ -313,15 +313,14 @@ void FileSegment::resetRemoteFileReader()
 
 std::unique_ptr<WriteBufferFromFile> FileSegment::detachWriter()
 {
-    std::unique_lock segment_lock(mutex);
+    auto lock = segment_guard.lock();
 
     if (!cache_writer)
     {
         if (detached_writer)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Writer is already detached");
 
-        auto download_path = getPathInLocalCache();
-        cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
+        cache_writer = std::make_unique<WriteBufferFromFile>(file_path);
     }
     detached_writer = true;
     return std::move(cache_writer);
@@ -496,6 +495,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
         {
             auto lock = segment_guard.lock();
             reserved_size += size_to_reserve;
+        }
     }
 
     return reserved;
@@ -640,8 +640,8 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction)
     if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
     {
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
-        detach(cache_lock, segment_lock);
-        setDownloadState(State::SKIP_CACHE);
+        detach(segment_lock, key_transaction);
+        setDownloadState(State::SKIP_CACHE, segment_lock);
         key_transaction.remove(key(), offset(), segment_lock);
         return;
     }
@@ -851,7 +851,6 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const KeyTransacti
     else
         setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, lock);
 
-    key_transaction_creator = nullptr;
     resetDownloaderUnlocked(lock);
     detachAssumeStateFinalized(lock);
 }
@@ -860,6 +859,7 @@ void FileSegment::detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock
 {
     is_detached = true;
     is_completed = true;
+    key_transaction_creator = nullptr;
     //CurrentMetrics::add(CurrentMetrics::CacheDetachedFileSegments);
     LOG_TEST(log, "Detached file segment: {}", getInfoForLogUnlocked(lock));
 }

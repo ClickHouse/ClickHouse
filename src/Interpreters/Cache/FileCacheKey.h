@@ -17,7 +17,7 @@ struct FileCacheKey
 
     explicit FileCacheKey(const UInt128 & path);
 
-    static FileCacheKey random() { return FileCacheKey(UUIDHelpers::generateV4().toUnderType()); }
+    static FileCacheKey random();
 
     bool operator==(const FileCacheKey & other) const { return key == other.key; }
 };

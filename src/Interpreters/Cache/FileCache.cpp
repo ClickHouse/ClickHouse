@@ -414,26 +414,25 @@ KeyTransactionPtr FileCache::createKeyTransaction(const Key & key, KeyNotFoundPo
     return std::make_unique<KeyTransaction>(lock_it->second, it->second);
 }
 
-FileSegmentsHolder FileCache::set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
+FileSegmentsHolderPtr FileCache::set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
 {
     auto key_transaction = createKeyTransaction(key, KeyNotFoundPolicy::CREATE_EMPTY);
-
     FileSegment::Range range(offset, offset + size - 1);
+
     auto file_segments = getImpl(key, range, *key_transaction);
     if (!file_segments.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Having intersection iwth already existing cache");
 
-    FileSegments file_segments;
     if (settings.unbounded)
     {
         /// If the file is unbounded, we can create a single cell for it.
-        const auto * cell_it = addCell(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock);
-        file_segments = {cell_it->second->file_segment};
+        auto cell_it = addCell(key, offset, size, FileSegment::State::EMPTY, settings, *key_transaction);
+        file_segments = {cell_it->second.file_segment};
     }
     else
-        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock);
+        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, settings, *key_transaction);
 
-    return FileSegmentsHolder();
+    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
 FileSegmentsHolderPtr FileCache::getOrSet(
