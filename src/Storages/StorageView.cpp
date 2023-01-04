@@ -267,8 +267,6 @@ String StorageView::replaceQueryParameterWithValue(const String & column_name, c
                 name.replace(pos, parameter.first.size(), parameter_name);
                 break;
             }
-            else
-                throw Exception("Datatype not found for query parameter " + parameter.first, ErrorCodes::LOGICAL_ERROR);
         }
     }
     return name;
