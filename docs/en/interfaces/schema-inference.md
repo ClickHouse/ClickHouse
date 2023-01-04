@@ -407,7 +407,7 @@ DESC format(JSONEachRow, $$
                               {"tuple" : [1, null, null]}
                               {"tuple" : [null, "Hello, World!", []]}
                               {"tuple" : [null, null, [1, 2, 3]]}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -435,7 +435,7 @@ DESC format(JSONEachRow, $$
                             {"obj" : {"key1" : 42}}
                             {"obj" : {"key2" : "Hello, World!"}}
                             {"obj" : {"key1" : 24, "key3" : {"a" : 42, "b" : null}}}
-                        $$)
+                         $$)
 ```
 ```response
 ┌─name─┬─type─────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -520,7 +520,7 @@ SET input_format_json_read_numbers_as_strings = 1;
 DESC format(JSONEachRow, $$
                                 {"value" : 1055}
                                 {"value" : "unknown"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -541,7 +541,7 @@ SET input_format_json_read_bools_as_numbers = 1;
 DESC format(JSONEachRow, $$
                                 {"value" : true}
                                 {"value" : 42}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1050,18 +1050,18 @@ SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(St
 ### schema_inference_make_columns_nullable
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference.
+If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference.
 
 Enabled by default.
 
 **Examples**
 
 ```sql
-SET schema_inference_make_columns_nullable = 0
+SET schema_inference_make_columns_nullable = 1
 DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1071,12 +1071,15 @@ DESC format(JSONEachRow, $$
 │ status  │ Nullable(String)        │              │                    │         │                  │                │
 │ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
+```
+```sql
 SET schema_inference_make_columns_nullable = 0
 DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
-                            $$)
+                         $$)
+```
+```response
 
 ┌─name────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Int64            │              │                    │         │                  │                │
@@ -1102,7 +1105,7 @@ SET input_format_try_infer_integers = 0
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1114,7 +1117,7 @@ SET input_format_try_infer_integers = 1
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name───┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1125,7 +1128,7 @@ DESC format(JSONEachRow, $$
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 18446744073709551615}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name───┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1136,7 +1139,7 @@ DESC format(JSONEachRow, $$
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2.2}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1159,7 +1162,7 @@ SET input_format_try_infer_datetimes = 0
 DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "2022-01-01 00:00:00.000"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1171,7 +1174,7 @@ SET input_format_try_infer_datetimes = 1
 DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "2022-01-01 00:00:00.000"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1182,7 +1185,7 @@ DESC format(JSONEachRow, $$
 DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "unknown"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1207,7 +1210,7 @@ SET input_format_try_infer_datetimes = 0, input_format_try_infer_dates = 0
 DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "2022-01-01"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1219,7 +1222,7 @@ SET input_format_try_infer_dates = 1
 DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "2022-01-01"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1230,7 +1233,7 @@ DESC format(JSONEachRow, $$
 DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "unknown"}
-                            $$)
+                         $$)
 ```
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐

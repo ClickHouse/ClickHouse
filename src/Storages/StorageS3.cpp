@@ -186,7 +186,7 @@ public:
 
     size_t getTotalSize() const
     {
-        return total_size;
+        return total_size.load(std::memory_order_relaxed);
     }
 
     ~Impl()
@@ -283,7 +283,7 @@ private:
             buffer.reserve(block.rows());
             for (UInt64 idx : idxs.getData())
             {
-                total_size += temp_buffer[idx].info->size;
+                total_size.fetch_add(temp_buffer[idx].info->size, std::memory_order_relaxed);
                 buffer.emplace_back(std::move(temp_buffer[idx]));
             }
         }
@@ -291,7 +291,7 @@ private:
         {
             buffer = std::move(temp_buffer);
             for (const auto & [_, info] : buffer)
-                total_size += info->size;
+                total_size.fetch_add(info->size, std::memory_order_relaxed);
         }
 
         /// Set iterator only after the whole batch is processed
@@ -357,7 +357,7 @@ private:
     ThreadPool list_objects_pool;
     ThreadPoolCallbackRunner<ListObjectsOutcome> list_objects_scheduler;
     std::future<ListObjectsOutcome> outcome_future;
-    size_t total_size = 0;
+    std::atomic<size_t> total_size = 0;
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
@@ -787,7 +787,7 @@ public:
             compression_method,
             3);
         writer
-            = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
+            = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, format_settings);
     }
 
     String getName() const override { return "StorageS3Sink"; }
