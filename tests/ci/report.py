@@ -232,6 +232,18 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
     return results
 
 
+@dataclass
+class BuildResult:
+    compiler: str
+    build_type: str
+    sanitizer: str
+    status: str
+    elapsed_seconds: int
+
+
+BuildResults = List[BuildResult]
+
+
 class ReportColorTheme:
     class ReportColor:
         yellow = "#FFB400"
@@ -447,15 +459,15 @@ LINK_TEMPLATE = '<a href="{url}">{text}</a>'
 
 
 def create_build_html_report(
-    header,
-    build_results,
-    build_logs_urls,
-    artifact_urls_list,
-    task_url,
-    branch_url,
-    branch_name,
-    commit_url,
-):
+    header: str,
+    build_results: BuildResults,
+    build_logs_urls: List[str],
+    artifact_urls_list: List[List[str]],
+    task_url: str,
+    branch_url: str,
+    branch_name: str,
+    commit_url: str,
+) -> str:
     rows = ""
     for (build_result, build_log_url, artifact_urls) in zip(
         build_results, build_logs_urls, artifact_urls_list
