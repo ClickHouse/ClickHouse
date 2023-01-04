@@ -187,7 +187,7 @@ class TestResult:
         self.raw_logs = raw_logs
 
     def set_log_files(self, log_files_literal: str) -> None:
-        self.log_files = []
+        self.log_files = []  # type: Optional[List[Path]]
         log_paths = literal_eval(log_files_literal)
         if not isinstance(log_paths, list):
             raise ValueError(
