@@ -7,8 +7,8 @@
 namespace DB
 {
 
-XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(true, header_, out_, params_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : RowOutputFormatWithUTF8ValidationAdaptor(true, header_, out_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     field_tag_names.resize(sample.columns());
@@ -89,16 +89,20 @@ void XMLRowOutputFormat::writeRowStartDelimiter()
 
 void XMLRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("\t\t</row>\n", *ostr);
+    writeCString("\t\t</row>", *ostr);
     field_number = 0;
     ++row_count;
+}
+
+void XMLRowOutputFormat::writeRowBetweenDelimiter()
+{
+    writeChar('\n', *ostr);
 }
 
 
 void XMLRowOutputFormat::writeSuffix()
 {
-    writeCString("\t</data>\n", *ostr);
-
+    writeCString("\n\t</data>\n", *ostr);
 }
 
 
@@ -148,7 +152,7 @@ void XMLRowOutputFormat::writeMaxExtreme(const Columns & columns, size_t row_num
 
 void XMLRowOutputFormat::writeAfterExtremes()
 {
-    writeCString("\t</extremes>\n", *ostr);
+    writeCString("\n\t</extremes>\n", *ostr);
 }
 
 void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
@@ -175,7 +179,7 @@ void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns 
 
     writeCString("\t\t</", *ostr);
     writeCString(title, *ostr);
-    writeCString(">\n", *ostr);
+    writeCString(">", *ostr);
 }
 
 
@@ -198,6 +202,13 @@ void XMLRowOutputFormat::finalizeImpl()
 
     writeCString("</result>\n", *ostr);
     ostr->next();
+}
+
+void XMLRowOutputFormat::resetFormatterImpl()
+{
+    RowOutputFormatWithUTF8ValidationAdaptor::resetFormatterImpl();
+    row_count = 0;
+    statistics = Statistics();
 }
 
 void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
@@ -231,10 +242,9 @@ void registerOutputFormatXML(FormatFactory & factory)
     factory.registerOutputFormat("XML", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<XMLRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<XMLRowOutputFormat>(buf, sample, settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("XML");

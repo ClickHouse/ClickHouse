@@ -4,7 +4,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
 from multiprocessing.dummy import Pool
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient, KazooRetry
+from kazoo.handlers.threading import KazooTimeoutError
 import random
 import string
 import os
@@ -28,6 +29,11 @@ def start_zookeeper(node):
 
 def stop_zookeeper(node):
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
+    timeout = time.time() + 60
+    while node.get_process_pid("zookeeper") != None:
+        if time.time() > timeout:
+            raise Exception("Failed to stop ZooKeeper in 60 secs")
+        time.sleep(0.2)
 
 
 def clear_zookeeper(node):
@@ -37,6 +43,11 @@ def clear_zookeeper(node):
 def restart_and_clear_zookeeper(node):
     stop_zookeeper(node)
     clear_zookeeper(node)
+    start_zookeeper(node)
+
+
+def restart_zookeeper(node):
+    stop_zookeeper(node)
     start_zookeeper(node)
 
 
@@ -104,11 +115,25 @@ def get_fake_zk(node, timeout=30.0):
 
 
 def get_genuine_zk(node, timeout=30.0):
-    _genuine_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(node.name) + ":2181", timeout=timeout
-    )
-    _genuine_zk_instance.start()
-    return _genuine_zk_instance
+    CONNECTION_RETRIES = 100
+    for i in range(CONNECTION_RETRIES):
+        try:
+            _genuine_zk_instance = KazooClient(
+                hosts=cluster.get_instance_ip(node.name) + ":2181",
+                timeout=timeout,
+                connection_retry=KazooRetry(max_tries=20),
+            )
+            _genuine_zk_instance.start()
+            return _genuine_zk_instance
+        except KazooTimeoutError:
+            if i == CONNECTION_RETRIES - 1:
+                raise
+
+            print(
+                "Failed to connect to ZK cluster because of timeout. Restarting cluster and trying again."
+            )
+            time.sleep(0.2)
+            restart_zookeeper(node)
 
 
 def test_snapshot_and_load(started_cluster):
