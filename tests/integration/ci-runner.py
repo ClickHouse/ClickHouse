@@ -307,7 +307,7 @@ class ClickhouseIntegrationTestsRunner:
         )
 
         for i in range(5):
-            logging.info("Pulling images before running tests. Attempt %s", image, i)
+            logging.info("Pulling images before running tests. Attempt %s", i)
             try:
                 subprocess.check_output(
                     cmd,
