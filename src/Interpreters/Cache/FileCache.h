@@ -63,6 +63,8 @@ public:
      */
     FileSegmentsHolderPtr getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
+    FileSegmentsHolder set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
+
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
      * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
@@ -82,7 +84,7 @@ public:
 
     static Key createKeyForPath(const String & path);
 
-    String getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const;
+    String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
 
     String getPathInLocalCache(const Key & key) const;
 

@@ -35,9 +35,39 @@ using KeyTransactionPtr = std::unique_ptr<KeyTransaction>;
 struct KeyTransactionCreator;
 using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
 
+/*
+ * FileSegmentKind is used to specify the eviction policy for file segments.
+ */
+enum class FileSegmentKind
+{
+    /* `Regular` file segment is still in cache after usage, and can be evicted
+     * (unless there're some holders).
+     */
+    Regular,
+
+    /* `Persistent` file segment can't be evicted from cache,
+     * it should be removed manually.
+     */
+    Persistent,
+
+    /* `Temporary` file segment is removed right after releasing.
+     * Also corresponding files are removed during cache loading (if any).
+     */
+    Temporary,
+};
+
+String toString(FileSegmentKind kind);
+
 struct CreateFileSegmentSettings
 {
-    bool is_persistent = false;
+    FileSegmentKind kind = FileSegmentKind::Regular;
+    bool unbounded = false;
+
+    CreateFileSegmentSettings() = default;
+
+    explicit CreateFileSegmentSettings(FileSegmentKind kind_, bool unbounded_ = false)
+        : kind(kind_), unbounded(unbounded_)
+    {}
 };
 
 class FileSegment : private boost::noncopyable, public std::enable_shared_from_this<FileSegment>
@@ -132,7 +162,8 @@ public:
 
     size_t offset() const { return range().left; }
 
-    bool isPersistent() const { return is_persistent; }
+    FileSegmentKind getKind() const { return segment_kind; }
+    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
 
     using UniqueId = std::pair<FileCacheKey, size_t>;
     UniqueId getUniqueId() const { return std::pair(key(), offset()); }
@@ -197,17 +228,17 @@ public:
     void assertCorrectness() const;
 
     /**
-     * ========== Methods for _only_ file segment's `writer` ======================
-     */
-
-    void synchronousWrite(const char * from, size_t size, size_t offset);
-
-    /**
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
     /// Try to reserve exactly `size` bytes.
+    /// Returns true if reservation was successful, false otherwise.
     bool reserve(size_t size_to_reserve);
+
+    /// Try to reserve at max `size_to_reserve` bytes.
+    /// Returns actual size reserved. It can be less than size_to_reserve in non strict mode.
+    /// In strict mode throws an error on attempt to reserve space too much space.
+    size_t tryReserve(size_t size_to_reserve, bool strict = false);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
@@ -230,6 +261,10 @@ public:
     void resetRemoteFileReader();
 
     FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
+
+    void setDownloadedSize(size_t delta);
+
+    LocalCacheWriterPtr detachWriter();
 
 private:
     size_t getFirstNonDownloadedOffsetUnlocked(const FileSegmentGuard::Lock & lock) const;
@@ -264,9 +299,9 @@ private:
 
     KeyTransactionPtr createKeyTransaction(bool assert_exists = true) const;
 
-    /// complete() without any completion state is called from destructor of
-    /// FileSegmentsHolder. complete() might check if the caller of the method
-    /// is the last alive holder of the segment. Therefore, complete() and destruction
+    /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
+    /// Function might check if the caller of the method
+    /// is the last alive holder of the segment. Therefore, completion and destruction
     /// of the file segment pointer must be done under the same cache mutex.
     void completeUnlocked(KeyTransaction & key_transaction);
 
@@ -286,7 +321,9 @@ private:
 
     RemoteFileReaderPtr remote_file_reader;
     LocalCacheWriterPtr cache_writer;
+    bool detached_writer = false;
 
+    /// downloaded_size should always be less or equal to reserved_size
     size_t downloaded_size = 0;
     size_t reserved_size = 0;
 
@@ -317,12 +354,15 @@ private:
     bool is_detached = false;
     std::atomic<bool> is_completed = false;
 
-    bool is_downloaded{false};
+    bool is_downloaded = false;
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    bool is_persistent;
+    FileSegmentKind segment_kind;
+
+    /// Size of the segment is not known until it is downloaded and can be bigger than max_file_segment_size.
+    bool is_unbound = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
@@ -355,6 +395,8 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegments::iterator begin() { return file_segments.begin(); }
     FileSegments::iterator end() { return file_segments.end(); }
+
+    void reset();
 
 private:
     FileSegments file_segments{};

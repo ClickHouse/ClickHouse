@@ -275,7 +275,6 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Compiler</th>
 <th>Build type</th>
 <th>Sanitizer</th>
-<th>Libraries</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -318,8 +317,6 @@ def create_build_html_report(
             row += f"<td>{build_result.sanitizer}</td>"
         else:
             row += "<td>none</td>"
-
-        row += f"<td>{build_result.libraries}</td>"
 
         if build_result.status:
             style = _get_status_style(build_result.status)

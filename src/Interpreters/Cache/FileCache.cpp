@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <Disks/IO/ElapsedTimeProfileEventIncrement.h>
 
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -60,13 +61,27 @@ FileCache::Key FileCache::createKeyForPath(const String & path)
     return Key(path);
 }
 
-String FileCache::getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const
+String FileCache::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
 {
+    String file_suffix;
+    switch (segment_kind)
+    {
+        case FileSegmentKind::Persistent:
+            file_suffix = "_persistent";
+            break;
+        case FileSegmentKind::Temporary:
+            file_suffix = "_temporary";
+            break;
+        case FileSegmentKind::Regular:
+            file_suffix = "";
+            break;
+    }
+
     auto key_str = key.toString();
     return fs::path(cache_base_path)
         / key_str.substr(0, 3)
         / key_str
-        / (std::to_string(offset) + (is_persistent ? "_persistent" : ""));
+        / (std::to_string(offset) + file_suffix);
 }
 
 String FileCache::getPathInLocalCache(const Key & key) const
@@ -399,6 +414,28 @@ KeyTransactionPtr FileCache::createKeyTransaction(const Key & key, KeyNotFoundPo
     return std::make_unique<KeyTransaction>(lock_it->second, it->second);
 }
 
+FileSegmentsHolder FileCache::set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
+{
+    auto key_transaction = createKeyTransaction(key, KeyNotFoundPolicy::CREATE_EMPTY);
+
+    FileSegment::Range range(offset, offset + size - 1);
+    auto file_segments = getImpl(key, range, *key_transaction);
+    if (!file_segments.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Having intersection iwth already existing cache");
+
+    FileSegments file_segments;
+    if (settings.unbounded)
+    {
+        /// If the file is unbounded, we can create a single cell for it.
+        const auto * cell_it = addCell(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock);
+        file_segments = {cell_it->second->file_segment};
+    }
+    else
+        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock);
+
+    return FileSegmentsHolder();
+}
+
 FileSegmentsHolderPtr FileCache::getOrSet(
     const Key & key,
     size_t offset,
@@ -527,7 +564,7 @@ FileSegmentPtr FileCache::createFileSegmentForDownload(
     size_t size,
     const CreateFileSegmentSettings & settings)
 {
-    if (size > max_file_segment_size)
+    if (!settings.unbounded && size > max_file_segment_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Requested size exceeds max file segment size");
 
     auto key_transaction = createKeyTransaction(key, KeyNotFoundPolicy::CREATE_EMPTY);
@@ -1035,14 +1072,20 @@ void FileCache::loadCacheInfoIntoMemory()
                 auto offset_with_suffix = offset_it->path().filename().string();
                 auto delim_pos = offset_with_suffix.find('_');
                 bool parsed;
-                bool is_persistent = false;
+                FileSegmentKind segment_kind = FileSegmentKind::Regular;
 
                 if (delim_pos == std::string::npos)
                     parsed = tryParse<UInt64>(offset, offset_with_suffix);
                 else
                 {
                     parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
-                    is_persistent = offset_with_suffix.substr(delim_pos+1) == "persistent";
+                    if (offset_with_suffix.substr(delim_pos+1) == "persistent")
+                        segment_kind = FileSegmentKind::Persistent;
+                    if (offset_with_suffix.substr(delim_pos+1) == "temporary")
+                    {
+                        fs::remove(offset_it->path());
+                        continue;
+                    }
                 }
 
                 if (!parsed)
@@ -1066,7 +1109,7 @@ void FileCache::loadCacheInfoIntoMemory()
                 {
                     auto cell_it = addCell(
                         key, offset, size, FileSegment::State::DOWNLOADED,
-                        CreateFileSegmentSettings{ .is_persistent = is_persistent }, *key_transaction);
+                        CreateFileSegmentSettings(segment_kind), *key_transaction);
 
                     queue_entries.emplace_back(cell_it->second.queue_iterator, cell_it->second.file_segment);
                 }
@@ -1125,7 +1168,6 @@ void KeyTransaction::reduceSizeToDownloaded(const Key & key, size_t offset, cons
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    CreateFileSegmentSettings create_settings{ .is_persistent = file_segment->is_persistent };
     assert(file_segment->downloaded_size <= file_segment->reserved_size);
     assert(cell->queue_iterator->size() == file_segment->reserved_size);
     assert(cell->queue_iterator->size() >= file_segment->downloaded_size);
@@ -1136,6 +1178,7 @@ void KeyTransaction::reduceSizeToDownloaded(const Key & key, size_t offset, cons
         cell->queue_iterator->incrementSize(-extra_size, getQueueLock());
     }
 
+    CreateFileSegmentSettings create_settings(file_segment->getKind());
     cell->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, getCreator(), file_segment->cache,
         FileSegment::State::DOWNLOADED, create_settings);
@@ -1168,7 +1211,7 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
     for (const auto & [offset, cell] : *cells_by_offset)
     {
         if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
-            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->isPersistent()));
+            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->getKind()));
     }
     return cache_paths;
 }

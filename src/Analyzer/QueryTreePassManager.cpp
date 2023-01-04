@@ -21,6 +21,7 @@
 
 #include <Interpreters/Context.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/Exception.h>
 
@@ -44,6 +45,23 @@ namespace
 class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
 {
     String pass_name;
+
+    void visitColumn(ColumnNode * column) const
+    {
+        if (column->getColumnSourceOrNull() == nullptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} {} query tree node does not have valid source node after running {} pass",
+                column->getColumnName(), column->getColumnType(), pass_name);
+    }
+
+    void visitFunction(FunctionNode * function) const
+    {
+        if (!function->isResolved())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Function {} is not resolved after running {} pass",
+            function->dumpTree(), pass_name);
+    }
+
 public:
     explicit ValidationChecker(String pass_name_)
         : pass_name(std::move(pass_name_))
@@ -51,13 +69,10 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
-        auto * column = node->as<ColumnNode>();
-        if (!column)
-            return;
-        if (column->getColumnSourceOrNull() == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column {} {} query tree node does not have valid source node after running {} pass",
-                column->getColumnName(), column->getColumnType(), pass_name);
+        if (auto * column = node->as<ColumnNode>())
+            return visitColumn(column);
+        else if (auto * function = node->as<FunctionNode>())
+            return visitFunction(function);
     }
 };
 #endif

@@ -101,9 +101,7 @@ FileSegmentsHolderPtr CachedOnDiskReadBufferFromFile::getFileSegments(size_t off
         return cache->get(cache_key, offset, size);
     }
 
-    CreateFileSegmentSettings create_settings{
-        .is_persistent = is_persistent
-    };
+    CreateFileSegmentSettings create_settings(is_persistent ? FileSegmentKind::Persistent : FileSegmentKind::Regular);
 
     return cache->getOrSet(cache_key, offset, size, create_settings);
 }
@@ -985,7 +983,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             }
             else
             {
-                LOG_TRACE(log, "No space left in cache, will continue without cache download");
+                LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
             }
 
             if (!success)
