@@ -62,25 +62,25 @@ public:
     };
 
 private:
-    void initialize(size_t offset, size_t size);
+    /**
+     * Return a list of file segments ordered in ascending order. This list represents
+     * a full contiguous interval (without holes).
+     */
+    FileSegmentsHolderPtr getFileSegments(size_t offset, size_t size) const;
 
-    ImplementationBufferPtr getImplementationBuffer(FileSegmentPtr & file_segment);
+    ImplementationBufferPtr getImplementationBuffer(FileSegment & file_segment);
 
-    ImplementationBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
+    ImplementationBufferPtr getReadBufferForFileSegment(FileSegment & file_segment);
 
-    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment) const;
+    ImplementationBufferPtr getCacheReadBuffer(FileSegment & file_segment) const;
 
-    std::optional<size_t> getLastNonDownloadedOffset() const;
+    ImplementationBufferPtr getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_);
 
     bool updateImplementationBufferIfNeeded();
 
-    void predownload(FileSegmentPtr & file_segment);
+    void predownload(FileSegment & file_segment);
 
     bool nextImplStep();
-
-    void assertCorrectness() const;
-
-    std::shared_ptr<ReadBufferFromFileBase> getRemoteFSReadBuffer(FileSegment & file_segment, ReadType read_type_);
 
     size_t getTotalSizeToRead();
 
@@ -108,8 +108,7 @@ private:
     /// Remote read buffer, which can only be owned by current buffer.
     FileSegment::RemoteFileReaderPtr remote_file_reader;
 
-    std::optional<FileSegmentsHolder> file_segments_holder;
-    FileSegments::iterator current_file_segment_it;
+    FileSegmentsHolderPtr file_segments;
 
     ImplementationBufferPtr implementation_buffer;
     bool initialized = false;
@@ -131,8 +130,6 @@ private:
     }
 
     size_t first_offset = 0;
-    String nextimpl_step_log_info;
-    String last_caller_id;
 
     String query_id;
     bool enable_logging = false;

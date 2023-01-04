@@ -88,13 +88,9 @@ public:
         int flags = -1,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        std::optional<size_t> file_size_ = std::nullopt)
-        : ReadBufferFromFileDescriptorPRead(-1, buf_size, existing_memory, alignment, file_size_)
-        , file_name(file_name_)
-    {
-        file = OpenedFileCache::instance().get(file_name, flags);
-        fd = file->getFD();
-    }
+        std::optional<size_t> file_size_ = std::nullopt,
+        OpenedFileCache::OpenedFilePtr file_ = nullptr,
+        int fd = 0);
 
     std::string getFileName() const override
     {

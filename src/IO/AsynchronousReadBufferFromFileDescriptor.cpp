@@ -108,6 +108,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     else
     {
         /// No pending request. Do synchronous read.
+        Stopwatch watch;
+        ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
 
         auto [size, offset] = asyncReadInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;

@@ -3,6 +3,7 @@
 #include <IO/SeekableReadBuffer.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Common/logger_useful.h>
 #include <iostream>
 #include <Common/hex.h>
@@ -35,7 +36,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
 
     with_cache = settings.remote_fs_cache
         && settings.enable_filesystem_cache
-        && (!FileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
+        && (CachedObjectStorage::canUseReadThroughCache() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
 }
 
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const String & path, size_t file_size)
@@ -54,7 +55,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
     if (with_cache)
     {
-        auto cache_key = settings.remote_fs_cache->hash(path);
+        auto cache_key = settings.remote_fs_cache->createKeyForPath(path);
         return std::make_shared<CachedOnDiskReadBufferFromFile>(
             path,
             cache_key,

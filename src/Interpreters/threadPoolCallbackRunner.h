@@ -4,7 +4,15 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Disks/IO/ElapsedTimeProfileEventIncrement.h>
 #include <future>
+
+namespace ProfileEvents
+{
+    extern const Event ThreadpoolRun;
+    extern const Event ThreadpoolRun2;
+    extern const Event ThreadpoolRun3;
+}
 
 namespace DB
 {
@@ -15,11 +23,14 @@ using ThreadPoolCallbackRunner = std::function<std::future<Result>(std::function
 
 /// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrow()'.
 template <typename Result>
-ThreadPoolCallbackRunner<Result> threadPoolCallbackRunner(ThreadPool & pool, const std::string & thread_name)
+ThreadPoolCallbackRunner<Result> threadPoolCallbackRunner(ThreadPool & pool, std::string && thread_name)
 {
-    return [pool = &pool, thread_group = CurrentThread::getGroup(), thread_name](std::function<Result()> && callback, size_t priority) mutable -> std::future<Result>
+    return [pool = &pool, thread_group = CurrentThread::getGroup(), thread_name = std::move(thread_name)]
+        (std::function<Result()> && callback, size_t priority) mutable -> std::future<Result>
     {
-        auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, callback = std::move(callback)]() -> Result
+        ElapsedUSProfileEventIncrement measure_time(ProfileEvents::ThreadpoolRun);
+        auto task = std::make_shared<std::packaged_task<Result()>>(
+            [thread_group, thread_name, callback = std::move(callback)]() -> Result
         {
             if (thread_group)
                 CurrentThread::attachTo(thread_group);
@@ -37,7 +48,7 @@ ThreadPoolCallbackRunner<Result> threadPoolCallbackRunner(ThreadPool & pool, con
         auto future = task->get_future();
 
         /// ThreadPool is using "bigger is higher priority" instead of "smaller is more priority".
-        pool->scheduleOrThrow([task]{ (*task)(); }, -priority);
+        pool->scheduleOrThrow([task = std::move(task)]{ (*task)(); }, -priority);
 
         return future;
     };
