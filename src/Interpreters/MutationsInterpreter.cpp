@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -861,7 +862,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         {
             if (!actions_chain.steps.empty())
                 actions_chain.addStep();
-            stage.analyzer->appendExpression(actions_chain, ast, dry_run, true /* disallow_arrayJoin */);
+            stage.analyzer->appendExpression(actions_chain, ast, dry_run);
             stage.filter_column_names.push_back(ast->getColumnName());
         }
 
@@ -871,7 +872,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
                 actions_chain.addStep();
 
             for (const auto & kv : stage.column_to_updated)
-                stage.analyzer->appendExpression(actions_chain, kv.second, dry_run, true /* disallow_arrayJoin */);
+                stage.analyzer->appendExpression(actions_chain, kv.second, dry_run);
 
             auto & actions = actions_chain.getLastStep().actions();
 
@@ -883,7 +884,6 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
                 actions->addOrReplaceInOutputs(alias);
             }
         }
-
 
         /// Remove all intermediate columns.
         actions_chain.addStep();
@@ -942,6 +942,8 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];
+            if (step->actions()->hasArrayJoin())
+                throw Exception("arrayJoin is not allowed in mutations", ErrorCodes::UNEXPECTED_EXPRESSION);
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
