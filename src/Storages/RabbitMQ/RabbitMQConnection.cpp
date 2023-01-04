@@ -122,4 +122,23 @@ void RabbitMQConnection::disconnectImpl(bool immediately)
         event_handler.iterateLoop();
 }
 
+RabbitMQConnection::~RabbitMQConnection()
+{
+    std::lock_guard lock(mutex);
+
+    if (!connection)
+        return;
+
+    try
+    {
+        /// Try to always close the connection gracefully (run the loop to see the closing callbacks)
+        /// to make sure that the associated callbacks and pending events are removed.
+        disconnectImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 }
