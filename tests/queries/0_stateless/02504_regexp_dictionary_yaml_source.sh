@@ -90,6 +90,7 @@ cat > "$yaml" <<EOL
   col_uuid: '61f0c404-5cb3-11e7-907b-a6006ad3dba0'
   col_date: '2023-01-01'
   col_datetime: '2023-01-01 01:01:01'
+  col_array: '[1,2,3,-1,-2,-3]'
 EOL
 
 $CLICKHOUSE_CLIENT -n --query="
@@ -99,14 +100,15 @@ create dictionary regexp_dict2
     col_bool Boolean,
     col_uuid UUID,
     col_date Date,
-    col_datetime DateTime
+    col_datetime DateTime,
+    col_array Array(Int64)
 )
 PRIMARY KEY(regexp)
 SOURCE(YAMLRegExpTree(PATH '$yaml'))
 LIFETIME(0)
 LAYOUT(regexp_tree);
 
-select dictGet('regexp_dict2', ('col_bool','col_uuid', 'col_date', 'col_datetime'), 'abc');
+select dictGet('regexp_dict2', ('col_bool','col_uuid', 'col_date', 'col_datetime', 'col_array'), 'abc');
 "
 
 $CLICKHOUSE_CLIENT -n --query="
