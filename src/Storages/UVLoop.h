@@ -40,13 +40,9 @@ public:
                 uv_walk(loop_ptr.get(), onUVWalkClosingCallback, nullptr);
 
                 /// Run the loop until there are no pending callbacks.
-                while (true)
+                while ((res = uv_run(loop_ptr.get(), UV_RUN_ONCE)) != 0)
                 {
-                    res = uv_run(loop_ptr.get(), UV_RUN_ONCE);
-                    if (res)
-                        LOG_DEBUG(log, "Waiting for pending callbacks to finish ({})", res);
-                    else
-                        break;
+                    LOG_DEBUG(log, "Waiting for pending callbacks to finish ({})", res);
                 }
 
                 res = uv_loop_close(loop_ptr.get());
