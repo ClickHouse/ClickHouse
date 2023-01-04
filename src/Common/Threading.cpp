@@ -1,7 +1,7 @@
 #include <Common/Threading.h>
 #include <Common/Exception.h>
 
-#ifdef OS_LINUX /// Because of 'sigqueue' functions, RT signals and futex.
+#ifdef OS_LINUX /// Because of futex
 
 #include <base/getThreadId.h>
 

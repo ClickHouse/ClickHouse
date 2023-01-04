@@ -63,15 +63,15 @@ public:
     //   WARNING: `address` must be 2-byte aligned and `value` highest bit must be zero.
     // Return value:
     //   true - woken by either notify or spurious wakeup;
-    //   false - iff cancelation signal has been received.
+    //   false - iff cancellation signal has been received.
     // Implementation details:
     //   It registers `address` inside token's `state` to allow other threads to wake this thread and deliver cancellation signal.
-    //   Highest bit of `*address` is used for guarantied delivery of the signal, but is guaranteed to be zero on return due to cancellation.
-    // Intented to be called only by thread associated with this token.
+    //   Highest bit of `*address` is used for guaranteed delivery of the signal, but is guaranteed to be zero on return due to cancellation.
+    // Intended to be called only by thread associated with this token.
     bool wait(UInt32 * address, UInt32 value);
 
     // Throws `DB::Exception` received from `signal()`. Call it if `wait()` returned false.
-    // Intented to be called only by thread associated with this token.
+    // Intended to be called only by thread associated with this token.
     [[noreturn]] void raise();
 
     // Regular wake by address (futex word). It does not interact with token in any way. We have it here to complement `wait()`.
@@ -86,7 +86,7 @@ public:
     static void signal(UInt64 tid, int code, const String & message);
 
     // Flag used to deliver cancellation into memory address to wake a thread.
-    // Note that most significat bit at `addresses` to be used with `wait()` is reserved.
+    // Note that most significant bit at `addresses` to be used with `wait()` is reserved.
     static constexpr UInt32 signaled = 1u << 31u;
 
 private:
@@ -94,14 +94,14 @@ private:
     friend struct NotCancellable;
 
     // Restores initial state for token to be reused. See `Cancellable` struct.
-    // Intented to be called only by thread associated with this token.
+    // Intended to be called only by thread associated with this token.
     void reset()
     {
         state.store(0);
     }
 
     // Enable thread cancellation. See `NotCancellable` struct.
-    // Intented to be called only by thread associated with this token.
+    // Intended to be called only by thread associated with this token.
     void enable()
     {
         chassert((state.load() & disabled) == disabled);
@@ -109,7 +109,7 @@ private:
     }
 
     // Disable thread cancellation. See `NotCancellable` struct.
-    // Intented to be called only by thread associated with this token.
+    // Intended to be called only by thread associated with this token.
     void disable()
     {
         chassert((state.load() & disabled) == 0);
@@ -233,11 +233,6 @@ private:
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int THREAD_WAS_CANCELLED;
-}
 
 struct Cancellable
 {
