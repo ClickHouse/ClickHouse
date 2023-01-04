@@ -24,7 +24,7 @@ public:
 
     ~PeekableReadBuffer() override;
 
-    void prefetch() override { sub_buf.prefetch(); }
+    void prefetch() override { sub_buf->prefetch(); }
 
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()
@@ -71,13 +71,17 @@ public:
     // without recreating the buffer.
     void reset();
 
+    void setSubBuffer(ReadBuffer & sub_buf_);
+
 private:
     bool nextImpl() override;
+
+    void resetImpl();
 
     bool peekNext();
 
     inline bool useSubbufferOnly() const { return !peeked_size; }
-    inline bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf.buffer().begin(); }
+    inline bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf->buffer().begin(); }
     inline bool checkpointInOwnMemory() const { return checkpoint_in_own_memory; }
 
     void checkStateCorrect() const;
@@ -90,7 +94,7 @@ private:
     const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
 
 
-    ReadBuffer & sub_buf;
+    ReadBuffer * sub_buf;
     size_t peeked_size = 0;
     std::optional<Position> checkpoint = std::nullopt;
     bool checkpoint_in_own_memory = false;
