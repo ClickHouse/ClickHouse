@@ -16,7 +16,7 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from build_download_helper import download_all_deb_packages
-from download_release_packets import download_last_release
+from download_release_packages import download_last_release
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import (
@@ -203,6 +203,7 @@ if __name__ == "__main__":
     temp_path = TEMP_PATH
     repo_path = REPO_COPY
     reports_path = REPORTS_PATH
+    post_commit_path = os.path.join(temp_path, "functional_commit_status.tsv")
 
     args = parse_args()
     check_name = args.check_name
@@ -227,7 +228,7 @@ if __name__ == "__main__":
     if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
-                os.path.join(temp_path, "post_commit_status.tsv"),
+                post_commit_path,
                 f"Skipped (no pr-bugfix in {pr_info.labels})",
                 "success",
                 "null",
@@ -264,9 +265,11 @@ if __name__ == "__main__":
                     state=state,
                 )
             elif args.post_commit_status == "file":
-                fpath = os.path.join(temp_path, "post_commit_status.tsv")
                 post_commit_status_to_file(
-                    fpath, description=NO_CHANGES_MSG, state=state, report_url="null"
+                    post_commit_path,
+                    description=NO_CHANGES_MSG,
+                    state=state,
+                    report_url="null",
                 )
             sys.exit(0)
 
@@ -348,7 +351,7 @@ if __name__ == "__main__":
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(
-            os.path.join(temp_path, "post_commit_status.tsv"),
+            post_commit_path,
             description,
             state,
             report_url,
