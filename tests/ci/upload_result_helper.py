@@ -1,4 +1,5 @@
-from typing import List
+from pathlib import Path
+from typing import Dict, List
 import os
 import logging
 
@@ -20,7 +21,7 @@ def process_logs(
 ) -> List[str]:
     logging.info("Upload files to s3 %s", additional_logs)
 
-    processed_logs = {}  # type: ignore
+    processed_logs = {}  # type: Dict[Path, str]
     # Firstly convert paths of logs from test_results to urls to s3.
     for test_result in test_results:
         if test_result.log_files is None:
@@ -29,7 +30,7 @@ def process_logs(
         # Convert from string repr of list to list.
         test_result.log_urls = []
         for path in test_result.log_files:
-            if path.as_posix() in processed_logs:
+            if path in processed_logs:
                 test_result.log_urls.append(processed_logs[path])
             elif path:
                 url = s3_client.upload_test_report_to_s3(
