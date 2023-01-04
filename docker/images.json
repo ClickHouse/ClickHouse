@@ -55,6 +55,10 @@
         "name": "clickhouse/stress-test",
         "dependent": []
     },
+    "docker/test/upgrade": {
+        "name": "clickhouse/upgrade-check",
+        "dependent": []
+    },
     "docker/test/split_build_smoke_test": {
         "name": "clickhouse/split-build-smoke-test",
         "dependent": []
