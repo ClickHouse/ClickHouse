@@ -22,7 +22,8 @@ RUN apt-get update -y \
             netcat-openbsd \
             telnet \
             llvm-9 \
-            brotli
+            brotli \
+    && apt-get clean
 
 COPY run.sh /
 
