@@ -30,6 +30,7 @@ function configure()
     /usr/share/clickhouse-test/config/install.sh
 
     # we mount tests folder from repo to /usr/share
+    ln -s /usr/share/clickhouse-test/ci/stress.py /usr/bin/stress
     ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
     ln -s /usr/share/clickhouse-test/ci/download_release_packages.py /usr/bin/download_release_packages
     ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
