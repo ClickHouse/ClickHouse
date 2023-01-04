@@ -206,6 +206,13 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
 {
+    /// Do a regular sequential destroy in case of non sharded dictionary
+    ///
+    /// Note, that even in non-sharded dictionaries you can have multiple hash
+    /// tables, since each attribute is stored in a separate hash table.
+    if constexpr (!sharded)
+        return;
+
     size_t shards = std::max<size_t>(configuration.shards, 1);
     size_t attributes_tables = std::max<size_t>(attributes.size(), 1 /* no_attributes_containers */);
     ThreadPool pool(shards * attributes_tables);
