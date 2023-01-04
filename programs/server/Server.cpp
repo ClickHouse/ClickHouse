@@ -420,6 +420,33 @@ void Server::createServer(
     }
 }
 
+
+#if defined(OS_LINUX)
+namespace
+{
+
+void setOOMScore(int value, Poco::Logger * log)
+{
+    try
+    {
+        std::string value_string = std::to_string(value);
+        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(value_string.c_str(), value_string.size());
+        buf.next();
+        buf.close();
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_WARNING(log, "Failed to adjust OOM score: '{}'.", e.displayText());
+        return;
+    }
+    LOG_INFO(log, "Set OOM score adjustment to {}", value);
+}
+
+}
+#endif
+
+
 void Server::uninitialize()
 {
     logger().information("shutting down");
@@ -881,6 +908,21 @@ try
             }
         }
     }
+
+    int default_oom_score = 0;
+
+#if !defined(NDEBUG)
+    /// In debug version on Linux, increase oom score so that clickhouse is killed
+    /// first, instead of some service. Use a carefully chosen random score of 555:
+    /// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+    /// whatever errors that occur, because it's just a debugging aid and we don't
+    /// care if it breaks.
+    default_oom_score = 555;
+#endif
+
+    int oom_score = config().getInt("oom_score", default_oom_score);
+    if (oom_score)
+        setOOMScore(oom_score, log);
 #endif
 
     global_context->setRemoteHostFilter(config());
