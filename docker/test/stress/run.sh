@@ -11,31 +11,6 @@ set -x
 # core.COMM.PID-TID
 sysctl kernel.core_pattern='core.%e.%p-%P'
 
-# Thread Fuzzer allows to check more permutations of possible thread scheduling
-# and find more potential issues.
-# Temporarily disable ThreadFuzzer with tsan because of https://github.com/google/sanitizers/issues/1540
-is_tsan_build=$(clickhouse local -q "select value like '% -fsanitize=thread %' from system.build_options where name='CXX_FLAGS'")
-if [ "$is_tsan_build" -eq "0" ]; then
-    export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-    export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-    export THREAD_FUZZER_SLEEP_TIME_US=100000
-
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
-
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
-
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
-fi
-
 
 function install_packages()
 {
@@ -54,7 +29,7 @@ function configure()
 
     # we mount tests folder from repo to /usr/share
     ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
-    ln -s /usr/share/clickhouse-test/ci/download_release_packets.py /usr/bin/download_release_packets
+    ln -s /usr/share/clickhouse-test/ci/download_release_packages.py /usr/bin/download_release_packages
     ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
     # avoid too slow startup
@@ -78,6 +53,7 @@ function configure()
     local total_mem
     total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
     total_mem=$(( total_mem*1024 )) # bytes
+
     # Set maximum memory usage as half of total memory (less chance of OOM).
     #
     # But not via max_server_memory_usage but via max_memory_usage_for_user,
@@ -90,16 +66,17 @@ function configure()
     # max_server_memory_usage will be hard limit, and queries that should be
     # executed regardless memory limits will use max_memory_usage_for_user=0,
     # instead of relying on max_untracked_memory
-    local max_server_mem
-    max_server_mem=$((total_mem*75/100)) # 75%
-    echo "Setting max_server_memory_usage=$max_server_mem"
+
+    max_server_memory_usage_to_ram_ratio=0.5
+    echo "Setting max_server_memory_usage_to_ram_ratio to ${max_server_memory_usage_to_ram_ratio}"
     cat > /etc/clickhouse-server/config.d/max_server_memory_usage.xml <<EOL
 <clickhouse>
-    <max_server_memory_usage>${max_server_mem}</max_server_memory_usage>
+    <max_server_memory_usage_to_ram_ratio>${max_server_memory_usage_to_ram_ratio}</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 EOL
+
     local max_users_mem
-    max_users_mem=$((total_mem*50/100)) # 50%
+    max_users_mem=$((total_mem*30/100)) # 30%
     echo "Setting max_memory_usage_for_user=$max_users_mem"
     cat > /etc/clickhouse-server/users.d/max_memory_usage_for_user.xml <<EOL
 <clickhouse>
@@ -123,6 +100,29 @@ EOL
     <core_path>$PWD</core_path>
 </clickhouse>
 EOL
+
+    # Let OOM killer terminate other processes before clickhouse-server:
+    cat > /etc/clickhouse-server/config.d/oom_score.xml <<EOL
+<clickhouse>
+    <oom_score>-1000</oom_score>
+</clickhouse>
+EOL
+
+    # Analyzer is not yet ready for testing
+    cat > /etc/clickhouse-server/users.d/no_analyzer.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <constraints>
+                <allow_experimental_analyzer>
+                    <readonly/>
+                </allow_experimental_analyzer>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+
 }
 
 function stop()
@@ -209,6 +209,31 @@ quit
 }
 
 install_packages package_folder
+
+# Thread Fuzzer allows to check more permutations of possible thread scheduling
+# and find more potential issues.
+# Temporarily disable ThreadFuzzer with tsan because of https://github.com/google/sanitizers/issues/1540
+is_tsan_build=$(clickhouse local -q "select value like '% -fsanitize=thread %' from system.build_options where name='CXX_FLAGS'")
+if [ "$is_tsan_build" -eq "0" ]; then
+    export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
+    export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+    export THREAD_FUZZER_SLEEP_TIME_US=100000
+
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
+
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
+
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+fi
 
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
@@ -344,10 +369,10 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
     echo "Clone previous release repository"
     git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
-    echo "Download previous release server"
+    echo "Download clickhouse-server from the previous release"
     mkdir previous_release_package_folder
 
-    echo $previous_release_tag | download_release_packets && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
+    echo $previous_release_tag | download_release_packages && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
         || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
@@ -364,10 +389,10 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         echo -e "Backward compatibility check: Failed to clone previous release tests\tFAIL" >> /test_output/test_results.tsv
     elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
     then
-        echo -e "Backward compatibility check: Failed to download previous release packets\tFAIL" >> /test_output/test_results.tsv
+        echo -e "Backward compatibility check: Failed to download previous release packages\tFAIL" >> /test_output/test_results.tsv
     else
         echo -e "Successfully cloned previous release tests\tOK" >> /test_output/test_results.tsv
-        echo -e "Successfully downloaded previous release packets\tOK" >> /test_output/test_results.tsv
+        echo -e "Successfully downloaded previous release packages\tOK" >> /test_output/test_results.tsv
 
         # Uninstall current packages
         dpkg --remove clickhouse-client
@@ -431,7 +456,13 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
             || echo -e 'Backward compatibility check: Test script failed\tFAIL' >> /test_output/test_results.tsv
         rm -rf tmp_stress_output
 
-        clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
+        # We experienced deadlocks in this command in very rare cases. Let's debug it:
+        timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables" ||
+        (
+            echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
+            timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+            clickhouse stop --force
+        )
 
         stop 1
         mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
@@ -439,7 +470,8 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         # Start new server
         mv package_folder/clickhouse /usr/bin/
         mv package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
-        export ZOOKEEPER_FAULT_INJECTION=1
+        # Disable fault injections on start (we don't test them here, and it can lead to tons of requests in case of huge number of tables).
+        export ZOOKEEPER_FAULT_INJECTION=0
         configure
         start 500
         clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
@@ -452,7 +484,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         sleep 60
 
         stop
-        mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.clean.log
+        mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.dirty.log
 
         # Error messages (we should ignore some errors)
         # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
@@ -500,7 +532,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "MutateFromLogEntryTask" \
                    -e "No connection to ZooKeeper, cannot get shared table ID" \
                    -e "Session expired" \
-            /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
+            /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
             && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 

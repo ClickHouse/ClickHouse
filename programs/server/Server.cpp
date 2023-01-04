@@ -420,6 +420,33 @@ void Server::createServer(
     }
 }
 
+
+#if defined(OS_LINUX)
+namespace
+{
+
+void setOOMScore(int value, Poco::Logger * log)
+{
+    try
+    {
+        std::string value_string = std::to_string(value);
+        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(value_string.c_str(), value_string.size());
+        buf.next();
+        buf.close();
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_WARNING(log, "Failed to adjust OOM score: '{}'.", e.displayText());
+        return;
+    }
+    LOG_INFO(log, "Set OOM score adjustment to {}", value);
+}
+
+}
+#endif
+
+
 void Server::uninitialize()
 {
     logger().information("shutting down");
@@ -703,6 +730,13 @@ try
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+    const auto memory_amount = getMemoryAmount();
+
+    LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+        formatReadableSizeWithBinarySuffix(memory_amount),
+        getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
+        std::thread::hardware_concurrency());
+
     sanityChecks(*this);
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
@@ -775,8 +809,6 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
-
-    const auto memory_amount = getMemoryAmount();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -876,6 +908,21 @@ try
             }
         }
     }
+
+    int default_oom_score = 0;
+
+#if !defined(NDEBUG)
+    /// In debug version on Linux, increase oom score so that clickhouse is killed
+    /// first, instead of some service. Use a carefully chosen random score of 555:
+    /// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+    /// whatever errors that occur, because it's just a debugging aid and we don't
+    /// care if it breaks.
+    default_oom_score = 555;
+#endif
+
+    int oom_score = config().getInt("oom_score", default_oom_score);
+    if (oom_score)
+        setOOMScore(oom_score, log);
 #endif
 
     global_context->setRemoteHostFilter(config());
@@ -1044,8 +1091,8 @@ try
         bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
         try
         {
-            LOG_DEBUG(
-                log, "Initializing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+            LOG_DEBUG(log, "Initializing MergeTree metadata cache, lru_cache_size: {} continue_if_corrupted: {}",
+                ReadableSize(size), continue_if_corrupted);
             global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
         }
         catch (...)
@@ -1717,13 +1764,6 @@ try
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
-
-        {
-            LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
-                formatReadableSizeWithBinarySuffix(memory_amount),
-                getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
-                std::thread::hardware_concurrency());
-        }
 
         /// try to load dictionaries immediately, throw on error and die
         try
