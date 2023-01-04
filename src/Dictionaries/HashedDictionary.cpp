@@ -205,6 +205,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
+try
 {
     /// Do a regular sequential destroy in case of non sharded dictionary
     ///
@@ -218,12 +219,12 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
     ThreadPool pool(shards * attributes_tables);
 
     size_t hash_tables_count = 0;
-    auto schedule_destroy = [this, &hash_tables_count, &pool](auto & container)
+    auto schedule_destroy = [&hash_tables_count, &pool](auto & container)
     {
         if (container.empty())
             return;
 
-        bool scheduled = pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
+        pool.scheduleOrThrowOnError([&container, thread_group = CurrentThread::getGroup()]
         {
             if (thread_group)
                 CurrentThread::attachToIfDetached(thread_group);
@@ -233,10 +234,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
                 container.clear();
             else
                 container.clearAndShrink();
-        }, /* priority = */ 0, /* wait_microseconds= */ std::numeric_limits<UInt64>::max());
-
-        if (!scheduled)
-            LOG_TRACE(log, "Cannot allocate thread for parallel destroy of #{} hashtable, will do it sequentially", hash_tables_count);
+        });
 
         ++hash_tables_count;
     };
@@ -265,6 +263,10 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
     LOG_TRACE(log, "Destroying {} non empty hash tables (using {} threads)", hash_tables_count, pool.getMaxThreads());
     pool.wait();
     LOG_TRACE(log, "Hash tables destroyed");
+}
+catch (...)
+{
+    tryLogCurrentException("HashedDictionary", "Error while destroying dictionary in parallel, will do a sequential destroy.");
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
