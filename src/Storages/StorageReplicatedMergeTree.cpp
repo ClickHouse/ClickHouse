@@ -3539,8 +3539,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             LOG_TRACE(log, "Log updated, cannot create fetch entry for part {}, will retry.", part_name);
             continue;
         }
-        else
-            zkutil::KeeperMultiException::check(rc, ops, results);
+
+        zkutil::KeeperMultiException::check(rc, ops, results);
 
         String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
         log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
