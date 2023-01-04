@@ -6,6 +6,11 @@
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 
+#include "config.h"
+
+#if USE_BCRYPT
+#     include <bcrypt.h>
+#endif
 
 namespace DB
 {
@@ -49,6 +54,11 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             static const auto info = make_info("DOUBLE_SHA1_PASSWORD");
             return info;
         }
+        case AuthenticationType::BCRYPT_PASSWORD:
+        {
+            static const auto info = make_info("BCRYPT_PASSWORD");
+            return info;
+        }
         case AuthenticationType::LDAP:
         {
             static const auto info = make_info("LDAP");
@@ -85,6 +95,40 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
 #endif
 }
 
+AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_view text [[maybe_unused]])
+{
+#if USE_BCRYPT
+    char salt[BCRYPT_HASHSIZE];
+    Digest hash;
+    hash.resize(64);
+    int ret = bcrypt_gensalt(12, salt);
+    if (ret != 0)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
+    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));
+    if (ret != 0)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
+    return hash;
+#else
+    throw DB::Exception(
+        "bcrypt passwords support is disabled, because ClickHouse was built without bcrypt library",
+        DB::ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+}
+
+bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
+{
+#if USE_BCRYPT
+    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));
+    if (ret == -1)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_checkpw returned {}", ret);
+    return (ret == 0);
+#else
+    throw DB::Exception(
+        "bcrypt passwords support is disabled, because ClickHouse was built without bcrypt library",
+        DB::ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+}
+
 
 AuthenticationData::Digest AuthenticationData::Util::encodeSHA1(std::string_view text)
 {
@@ -114,6 +158,9 @@ void AuthenticationData::setPassword(const String & password_)
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             return setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
+
+        case AuthenticationType::BCRYPT_PASSWORD:
+            return setPasswordHashBinary(Util::encodeBcrypt(password_));
 
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
@@ -194,6 +241,12 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
                     "Password hash for the 'DOUBLE_SHA1_PASSWORD' authentication type has length " + std::to_string(hash.size())
                         + " but must be exactly 20 bytes.",
                     ErrorCodes::BAD_ARGUMENTS);
+            password_hash = hash;
+            return;
+        }
+
+        case AuthenticationType::BCRYPT_PASSWORD:
+        {
             password_hash = hash;
             return;
         }

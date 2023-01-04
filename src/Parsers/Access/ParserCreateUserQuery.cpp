@@ -104,6 +104,11 @@ namespace
                         type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
                         expect_hash = true;
                     }
+                    else if (ParserKeyword{"BCRYPT_HASH"}.ignore(pos, expected))
+                    {
+                        type = AuthenticationType::BCRYPT_PASSWORD;
+                        expect_hash = true;
+                    }
                     else
                         return false;
                 }
