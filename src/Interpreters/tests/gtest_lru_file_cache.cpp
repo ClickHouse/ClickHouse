@@ -98,8 +98,7 @@ void complete(const std::string & cache_base_path, const DB::FileSegmentsHolderP
     for (auto it = holder->begin(); it != holder->end(); ++it)
     {
         ASSERT_TRUE((*it)->getOrSetDownloader() == DB::FileSegment::getCallerId());
-        prepareAndDownload(*it);
-        prepareAndDownload(cache_base_path, file_segment);
+        prepareAndDownload(cache_base_path, *it);
         (*it)->complete();
     }
 }
@@ -590,10 +589,10 @@ TEST_F(FileCacheTest, writeBuffer)
         segment_settings.kind = FileSegmentKind::Temporary;
         segment_settings.unbounded = true;
 
-        auto holder = cache.set(cache.hash(key), 0, 3, segment_settings);
-        EXPECT_EQ(holder.file_segments.size(), 1);
-        auto & segment = holder.file_segments.front();
-        WriteBufferToFileSegment out(segment.get());
+        auto holder = cache.set(cache.createKeyForPath(key), 0, 3, segment_settings);
+        EXPECT_EQ(holder->size(), 1);
+        auto & segment = holder->front();
+        WriteBufferToFileSegment out(&segment);
         for (const auto & s : data)
             out.write(s.data(), s.size());
         return holder;
@@ -602,18 +601,18 @@ TEST_F(FileCacheTest, writeBuffer)
     std::vector<fs::path> file_segment_paths;
     {
         auto holder = write_to_cache("key1", {"abc", "defg"});
-        file_segment_paths.emplace_back(holder.file_segments.front()->getPathInLocalCache());
+        file_segment_paths.emplace_back(holder->front().getPathInLocalCache());
 
         ASSERT_EQ(fs::file_size(file_segment_paths.back()), 7);
-        ASSERT_TRUE(holder.file_segments.front()->range() == FileSegment::Range(0, 7));
+        ASSERT_TRUE(holder->front().range() == FileSegment::Range(0, 7));
         ASSERT_EQ(cache.getUsedCacheSize(), 7);
 
         {
             auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"});
-            file_segment_paths.emplace_back(holder2.file_segments.front()->getPathInLocalCache());
+            file_segment_paths.emplace_back(holder2->front().getPathInLocalCache());
 
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);
-            ASSERT_TRUE(holder2.file_segments.front()->range() == FileSegment::Range(0, 15));
+            ASSERT_TRUE(holder2->front().range() == FileSegment::Range(0, 15));
             ASSERT_EQ(cache.getUsedCacheSize(), 22);
         }
         ASSERT_FALSE(fs::exists(file_segment_paths.back()));
@@ -669,17 +668,16 @@ TEST_F(FileCacheTest, temporaryData)
 
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
 
-    auto some_data_holder = file_cache.getOrSet(file_cache.hash("some_data"), 0, 5_KiB, CreateFileSegmentSettings{});
+    auto some_data_holder = file_cache.getOrSet(file_cache.createKeyForPath("some_data"), 0, 5_KiB, CreateFileSegmentSettings{});
 
     {
-        auto segments = fromHolder(some_data_holder);
-        ASSERT_EQ(segments.size(), 5);
-        for (auto & segment : segments)
+        ASSERT_EQ(some_data_holder->size(), 5);
+        for (auto & segment : *some_data_holder)
         {
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
             ASSERT_TRUE(segment->reserve(segment->range().size()));
             download(cache_base_path, segment);
-            segment->completeWithoutState();
+            segment->complete();
         }
     }
 

@@ -278,14 +278,13 @@ private:
     void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock);
 
     void setDownloadState(State state, const FileSegmentGuard::Lock & lock);
+    void setDownloadedSizeUnlocked(size_t delta, const FileSegmentGuard::Lock &);
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock & lock);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock);
 
     /// Finalized state is such a state that does not need to be completed (with complete()).
     bool hasFinalizedStateUnlocked(const FileSegmentGuard::Lock & lock) const;
-
-    bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
 
     bool isDetached(const FileSegmentGuard::Lock &) const { return is_detached; }
     void detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock);
@@ -306,6 +305,7 @@ private:
     void completeUnlocked(KeyTransaction & key_transaction);
 
     void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
+    bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
 
     void wrapWithCacheInfo(
         Exception & e, const String & message, const FileSegmentGuard::Lock & segment_lock) const;

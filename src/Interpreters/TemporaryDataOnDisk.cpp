@@ -218,15 +218,14 @@ TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const 
 {
 }
 
-TemporaryFileStream::TemporaryFileStream(FileSegmentsHolder && segments_, const Block & header_, TemporaryDataOnDisk * parent_)
+TemporaryFileStream::TemporaryFileStream(FileSegmentsHolderPtr segments_, const Block & header_, TemporaryDataOnDisk * parent_)
     : parent(parent_)
     , header(header_)
     , segment_holder(std::move(segments_))
 {
-    if (segment_holder.file_segments.size() != 1)
+    if (segment_holder->size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream can be created only from single segment");
-    auto & segment = segment_holder.file_segments.front();
-    auto out_buf = std::make_unique<WriteBufferToFileSegment>(segment.get());
+    auto out_buf = std::make_unique<WriteBufferToFileSegment>(&segment_holder->front());
     out_writer = std::make_unique<OutputWriter>(std::move(out_buf), header);
 }
 
@@ -315,7 +314,7 @@ void TemporaryFileStream::updateAllocAndCheck()
 
 bool TemporaryFileStream::isEof() const
 {
-    return file == nullptr && segment_holder.empty();
+    return file == nullptr && segment_holder->empty();
 }
 
 void TemporaryFileStream::release()
@@ -335,16 +334,16 @@ void TemporaryFileStream::release()
         parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
     }
 
-    if (!segment_holder.empty())
-        segment_holder.reset();
+    if (!segment_holder->empty())
+        segment_holder->reset();
 }
 
 String TemporaryFileStream::getPath() const
 {
     if (file)
         return file->getPath();
-    if (!segment_holder.file_segments.empty())
-        return segment_holder.file_segments.front()->getPathInLocalCache();
+    if (!segment_holder->empty())
+        return segment_holder->front().getPathInLocalCache();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream has no file");
 }
