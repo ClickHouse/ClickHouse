@@ -192,8 +192,9 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
+    auto function_base = function->build(arguments);
     return addFunctionImpl(
-        function->build(arguments),
+        function_base,
         std::move(children),
         std::move(arguments),
         std::move(result_name),
