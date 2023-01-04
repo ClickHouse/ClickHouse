@@ -410,35 +410,35 @@ Converts a date with time to a certain fixed date, while preserving the time.
 
 ## toRelativeYearNum
 
-Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.
+Converts a date or date with time to the number of the year, starting from a certain fixed point in the past.
 
 ## toRelativeQuarterNum
 
-Converts a date with time or date to the number of the quarter, starting from a certain fixed point in the past.
+Converts a date or date with time to the number of the quarter, starting from a certain fixed point in the past.
 
 ## toRelativeMonthNum
 
-Converts a date with time or date to the number of the month, starting from a certain fixed point in the past.
+Converts a date or date with time to the number of the month, starting from a certain fixed point in the past.
 
 ## toRelativeWeekNum
 
-Converts a date with time or date to the number of the week, starting from a certain fixed point in the past.
+Converts a date or date with time to the number of the week, starting from a certain fixed point in the past.
 
 ## toRelativeDayNum
 
-Converts a date with time or date to the number of the day, starting from a certain fixed point in the past.
+Converts a date or date with time to the number of the day, starting from a certain fixed point in the past.
 
 ## toRelativeHourNum
 
-Converts a date with time or date to the number of the hour, starting from a certain fixed point in the past.
+Converts a date or date with time to the number of the hour, starting from a certain fixed point in the past.
 
 ## toRelativeMinuteNum
 
-Converts a date with time or date to the number of the minute, starting from a certain fixed point in the past.
+Converts a date or date with time to the number of the minute, starting from a certain fixed point in the past.
 
 ## toRelativeSecondNum
 
-Converts a date with time or date to the number of the second, starting from a certain fixed point in the past.
+Converts a date or date with time to the number of the second, starting from a certain fixed point in the past.
 
 ## toISOYear
 
@@ -515,6 +515,154 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 ┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
 │ 2016-12-27 │    201652 │    201652 │    201701 │
 └────────────┴───────────┴───────────┴───────────┘
+```
+
+## age
+
+Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 second.
+E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
+
+
+**Syntax**
+
+``` sql
+age('unit', startdate, enddate, [timezone])
+```
+
+**Arguments**
+
+-   `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
+    Possible values:
+
+    - `second` (possible abbreviations: `ss`, `s`)
+    - `minute` (possible abbreviations: `mi`, `n`)
+    - `hour` (possible abbreviations: `hh`, `h`)
+    - `day` (possible abbreviations: `dd`, `d`)
+    - `week` (possible abbreviations: `wk`, `ww`)
+    - `month` (possible abbreviations: `mm`, `m`)
+    - `quarter` (possible abbreviations: `qq`, `q`)
+    - `year` (possible abbreviations: `yyyy`, `yy`)
+
+-   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+-   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+Difference between `enddate` and `startdate` expressed in `unit`.
+
+Type: [Int](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'));
+```
+
+Result:
+
+``` text
+┌─age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                24 │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT
+    toDate('2022-01-01') AS e,
+    toDate('2021-12-29') AS s,
+    age('day', s, e) AS day_age,
+    age('month', s, e) AS month__age,
+    age('year', s, e) AS year_age;
+```
+
+Result:
+
+``` text
+┌──────────e─┬──────────s─┬─day_age─┬─month__age─┬─year_age─┐
+│ 2022-01-01 │ 2021-12-29 │       3 │          0 │        0 │
+└────────────┴────────────┴─────────┴────────────┴──────────┘
+```
+
+
+## date\_diff
+
+Returns the count of the specified `unit` boundaries crossed between the `startdate` and `enddate`.
+The difference is calculated using relative units, e.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for day unit (see [toRelativeDayNum](#torelativedaynum)), 1 month for month unit (see [toRelativeMonthNum](#torelativemonthnum)), 1 year for year unit (see [toRelativeYearNum](#torelativeyearnum)).
+
+**Syntax**
+
+``` sql
+date_diff('unit', startdate, enddate, [timezone])
+```
+
+Aliases: `dateDiff`, `DATE_DIFF`.
+
+**Arguments**
+
+-   `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
+    Possible values:
+
+    - `second` (possible abbreviations: `ss`, `s`)
+    - `minute` (possible abbreviations: `mi`, `n`)
+    - `hour` (possible abbreviations: `hh`, `h`)
+    - `day` (possible abbreviations: `dd`, `d`)
+    - `week` (possible abbreviations: `wk`, `ww`)
+    - `month` (possible abbreviations: `mm`, `m`)
+    - `quarter` (possible abbreviations: `qq`, `q`)
+    - `year` (possible abbreviations: `yyyy`, `yy`)
+
+-   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+-   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+Difference between `enddate` and `startdate` expressed in `unit`.
+
+Type: [Int](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
+```
+
+Result:
+
+``` text
+┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                     25 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT
+    toDate('2022-01-01') AS e,
+    toDate('2021-12-29') AS s,
+    dateDiff('day', s, e) AS day_diff,
+    dateDiff('month', s, e) AS month__diff,
+    dateDiff('year', s, e) AS year_diff;
+```
+
+Result:
+
+``` text
+┌──────────e─┬──────────s─┬─day_diff─┬─month__diff─┬─year_diff─┐
+│ 2022-01-01 │ 2021-12-29 │        3 │           1 │         1 │
+└────────────┴────────────┴──────────┴─────────────┴───────────┘
 ```
 
 ## date\_trunc
@@ -635,80 +783,6 @@ Result:
 ┌─plus(toDate('2018-01-01'), toIntervalYear(3))─┐
 │                                    2021-01-01 │
 └───────────────────────────────────────────────┘
-```
-
-## date\_diff
-
-Returns the difference between two dates or dates with time values.
-The difference is calculated using relative units, e.g. the difference between `2022-01-01` and `2021-12-29` is 3 days for day unit (see [toRelativeDayNum](#torelativedaynum)), 1 month for month unit (see [toRelativeMonthNum](#torelativemonthnum)), 1 year for year unit (see [toRelativeYearNum](#torelativeyearnum)).
-
-**Syntax**
-
-``` sql
-date_diff('unit', startdate, enddate, [timezone])
-```
-
-Aliases: `dateDiff`, `DATE_DIFF`.
-
-**Arguments**
-
--   `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
-    Possible values:
-
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
-
--   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
-Difference between `enddate` and `startdate` expressed in `unit`.
-
-Type: [Int](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
-```
-
-Result:
-
-``` text
-┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
-│                                                                                     25 │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT
-    toDate('2022-01-01') AS e,
-    toDate('2021-12-29') AS s,
-    dateDiff('day', s, e) AS day_diff,
-    dateDiff('month', s, e) AS month__diff,
-    dateDiff('year', s, e) AS year_diff;
-```
-
-Result:
-
-``` text
-┌──────────e─┬──────────s─┬─day_diff─┬─month__diff─┬─year_diff─┐
-│ 2022-01-01 │ 2021-12-29 │        3 │           1 │         1 │
-└────────────┴────────────┴──────────┴─────────────┴───────────┘
 ```
 
 ## date\_sub
@@ -1085,6 +1159,8 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
+formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+
 **Syntax**
 
 ``` sql
@@ -1157,6 +1233,64 @@ Result:
 │ 1234560                                                             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+**See Also**
+
+-   [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
+
+
+## formatDateTimeInJodaSyntax
+
+Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
+
+
+**Replacement fields**
+
+Using replacement fields, you can define a pattern for the resulting string. 
+
+
+| Placeholder | Description | Presentation  | Examples |
+| ----------- | ----------- | ------------- | -------- |
+| G       | era                          | text          | AD | 
+| C       | century of era (>=0)         | number        | 20 | 
+| Y       | year of era (>=0)            | year          | 1996 | 
+| x       | weekyear(not supported yet)  | year          | 1996 | 
+| w       | week of weekyear(not supported yet) | number        | 27 | 
+| e       | day of week                  | number        | 2 | 
+| E       | day of week                  | text          | Tuesday; Tue | 
+| y       | year                         | year          | 1996 | 
+| D       | day of year                  | number        | 189 | 
+| M       | month of year                | month         | July; Jul; 07 | 
+| d       | day of month                 | number        | 10 | 
+| a       | halfday of day               | text          | PM | 
+| K       | hour of halfday (0~11)       | number        | 0 | 
+| h       | clockhour of halfday (1~12)  | number        | 12 | 
+| H       | hour of day (0~23)           | number        | 0 | 
+| k       | clockhour of day (1~24)      | number        | 24 | 
+| m       | minute of hour               | number        | 30 | 
+| s       | second of minute             | number        | 55 | 
+| S       | fraction of second(not supported yet) | number        | 978 | 
+| z       | time zone(short name not supported yet) | text          | Pacific Standard Time; PST | 
+| Z       | time zone offset/id(not supported yet) | zone          | -0800; -08:00; America/Los_Angeles | 
+| '       | escape for text              | delimiter|  | 
+| ''      | single quote                 | literal       | ' | 
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
+```
+
+Result:
+
+```
+┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
+│ 2010-01-04 12:34:56                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 
 ## dateName
 
@@ -1241,6 +1375,8 @@ Result:
 
 Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
 
+FROM_UNIXTIME uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+
 Alias: `fromUnixTimestamp`.
 
 **Example:**
@@ -1272,6 +1408,28 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 │ 2009-02-11 14:42:23 │
 └─────────────────────┘
 ```
+
+**See Also**
+
+-   [fromUnixTimestampInJodaSyntax](##fromUnixTimestampInJodaSyntax)
+
+
+## fromUnixTimestampInJodaSyntax
+Similar to FROM_UNIXTIME, except that it formats time in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
+
+**Example:**
+Query:
+``` sql
+SELECT fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC');
+```
+
+Result:
+```
+┌─fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC')─┐
+│ 2022-11-30 10:41:12                                                        │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
 
 ## toModifiedJulianDay
 

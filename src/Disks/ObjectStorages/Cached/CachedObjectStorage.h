@@ -115,6 +115,8 @@ public:
 
     static bool canUseReadThroughCache();
 
+    FileCachePtr getCache() const { return cache; }
+
 private:
     FileCache::Key getCacheKey(const std::string & path) const;
 

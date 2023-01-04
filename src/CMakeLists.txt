@@ -11,11 +11,7 @@ if(COMPILER_PIPE)
 else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
-if(USE_STATIC_LIBRARIES)
-    set(MAX_LINKER_MEMORY 3500)
-else()
-    set(MAX_LINKER_MEMORY 2500)
-endif()
+set(MAX_LINKER_MEMORY 3500)
 include(../cmake/limit_jobs.cmake)
 
 include (../cmake/version.cmake)
@@ -200,10 +196,6 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
-if (SPLIT_SHARED_LIBRARIES)
-    target_compile_definitions(clickhouse_common_io PRIVATE SPLIT_SHARED_LIBRARIES)
-endif ()
-
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
@@ -227,18 +219,7 @@ add_subdirectory(Common/Config)
 
 set (all_modules)
 macro(add_object_library name common_path)
-    if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
-        add_headers_and_sources(dbms ${common_path})
-    else ()
-        list (APPEND all_modules ${name})
-        add_headers_and_sources(${name} ${common_path})
-        add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
-        if (OS_DARWIN)
-            target_link_libraries (${name} PRIVATE -Wl,-undefined,dynamic_lookup)
-        else()
-            target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
-        endif()
-    endif ()
+    add_headers_and_sources(dbms ${common_path})
 endmacro()
 
 add_object_library(clickhouse_access Access)
@@ -297,28 +278,12 @@ if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
 endif()
 
-if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
-    add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
-    if (TARGET ch_contrib::jemalloc)
-        target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
-    endif()
-    set (all_modules dbms)
-else()
-    add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PUBLIC ${all_modules})
-    target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::libdivide)
-    if (TARGET ch_contrib::jemalloc)
-        target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::jemalloc)
-    endif()
-    list (APPEND all_modules dbms)
-    # force all split libs to be linked
-    if (OS_DARWIN)
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-undefined,error")
-    else()
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
-    endif()
-endif ()
+add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
+target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
+if (TARGET ch_contrib::jemalloc)
+    target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
+endif()
+set (all_modules dbms)
 
 macro (dbms_target_include_directories)
     foreach (module ${all_modules})
@@ -329,6 +294,12 @@ endmacro ()
 macro (dbms_target_link_libraries)
     foreach (module ${all_modules})
         target_link_libraries (${module} ${ARGN})
+    endforeach ()
+endmacro ()
+
+macro (dbms_target_include_directories)
+    foreach (module ${all_modules})
+        target_include_directories (${module} ${ARGN})
     endforeach ()
 endmacro ()
 
@@ -344,7 +315,7 @@ set_source_files_properties(
         Common/Elf.cpp
         Common/Dwarf.cpp
         Common/SymbolIndex.cpp
-        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
+        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
@@ -390,6 +361,7 @@ if (TARGET ch_contrib::cpuid)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
@@ -587,6 +559,11 @@ dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::annoy)
     dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
+endif()
+
+if (TARGET ch_rust::skim)
+    # Add only -I, library is needed only for clickhouse-client/clickhouse-local
+    dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
