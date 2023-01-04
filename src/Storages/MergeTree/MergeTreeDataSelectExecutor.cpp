@@ -466,6 +466,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name),
         query_info.storage_limits);
     plan->addStep(std::move(step));
+    plan->addInterpreterContext(query_info.projection->context);
     return plan;
 }
 

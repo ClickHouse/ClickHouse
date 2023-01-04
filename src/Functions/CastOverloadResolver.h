@@ -1,5 +1,6 @@
 #pragma once
 #include <Functions/FunctionsConversion.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 namespace DB
 {
@@ -32,10 +33,11 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    explicit CastOverloadResolverImpl(ContextPtr context_, std::optional<Diagnostic> diagnostic_, bool keep_nullable_)
+    explicit CastOverloadResolverImpl(ContextPtr context_, std::optional<Diagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
         : context(context_)
         , diagnostic(std::move(diagnostic_))
         , keep_nullable(keep_nullable_)
+        , data_type_validation_settings(data_type_validation_settings_)
     {
     }
 
@@ -46,19 +48,19 @@ public:
         if constexpr (internal)
             return createImpl(context, {}, false /*keep_nullable*/);
 
-        return createImpl(context, {}, settings_ref.cast_keep_nullable);
+        return createImpl(context, {}, settings_ref.cast_keep_nullable, DataTypeValidationSettings(settings_ref));
     }
 
-    static FunctionOverloadResolverPtr createImpl(ContextPtr context, std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false)
+    static FunctionOverloadResolverPtr createImpl(ContextPtr context, std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, const DataTypeValidationSettings & data_type_validation_settings = {})
     {
         assert(!internal || !keep_nullable);
-        return std::make_unique<CastOverloadResolverImpl>(context, std::move(diagnostic), keep_nullable);
+        return std::make_unique<CastOverloadResolverImpl>(context, std::move(diagnostic), keep_nullable, data_type_validation_settings);
     }
 
-    static FunctionOverloadResolverPtr createImpl(std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false)
+    static FunctionOverloadResolverPtr createImpl(std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, const DataTypeValidationSettings & data_type_validation_settings = {})
     {
         assert(!internal || !keep_nullable);
-        return std::make_unique<CastOverloadResolverImpl>(ContextPtr(), std::move(diagnostic), keep_nullable);
+        return std::make_unique<CastOverloadResolverImpl>(ContextPtr(), std::move(diagnostic), keep_nullable, data_type_validation_settings);
     }
 
 protected:
@@ -89,6 +91,7 @@ protected:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        validateDataType(type, data_type_validation_settings);
 
         if constexpr (cast_type == CastType::accurateOrNull)
             return makeNullable(type);
@@ -110,6 +113,7 @@ private:
     ContextPtr context;
     std::optional<Diagnostic> diagnostic;
     bool keep_nullable;
+    DataTypeValidationSettings data_type_validation_settings;
 };
 
 

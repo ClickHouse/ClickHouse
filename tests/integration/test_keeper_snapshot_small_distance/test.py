@@ -29,6 +29,11 @@ def start_zookeeper(node):
 
 def stop_zookeeper(node):
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
+    timeout = time.time() + 60
+    while node.get_process_pid("zookeeper") != None:
+        if time.time() > timeout:
+            raise Exception("Failed to stop ZooKeeper in 60 secs")
+        time.sleep(0.2)
 
 
 def clear_zookeeper(node):
@@ -57,6 +62,13 @@ def clear_clickhouse_data(node):
 
 
 def convert_zookeeper_data(node):
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "tar -cvzf /var/lib/clickhouse/zk-data.tar.gz /zookeeper/version-2",
+        ]
+    )
     cmd = "/usr/bin/clickhouse keeper-converter --zookeeper-logs-dir /zookeeper/version-2/ --zookeeper-snapshots-dir  /zookeeper/version-2/ --output-dir /var/lib/clickhouse/coordination/snapshots"
     node.exec_in_container(["bash", "-c", cmd])
     return os.path.join(
