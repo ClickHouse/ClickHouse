@@ -527,16 +527,22 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
 
 void QueryPipeline::streamIntoQueryResultCache(std::shared_ptr<StreamInQueryResultCacheTransform> transform)
 {
-    if (!pulling())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "It is possible to stream into query result cache only for pulling QueryPipeline");
+    assert(pulling());
 
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
     processors->emplace_back(transform);
 }
 
+void QueryPipeline::finalizeWriteInQueryResultCache()
+{
+    auto it = std::find_if(
+        processors->begin(), processors->end(),
+        [](ProcessorPtr processor){ return processor->getName() == "StreamInQueryResultCacheTransform"; });
+
+    if(it != processors->end())
+        dynamic_cast<StreamInQueryResultCacheTransform &>(**it).finalizeWriteInQueryResultCache();
+}
 
 void QueryPipeline::addStorageHolder(StoragePtr storage)
 {

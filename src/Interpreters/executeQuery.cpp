@@ -893,6 +893,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
+                                    enable_experimental_query_result_cache = settings.enable_experimental_query_result_cache,
                                     log_queries,
                                     log_queries_min_type = settings.log_queries_min_type,
                                     log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
@@ -902,6 +903,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
+                /// Write query result into query result cache (if enabled)
+                auto query_result_cache = context->getQueryResultCache();
+                if (query_result_cache != nullptr
+                    && pulling_pipeline
+                    && enable_experimental_query_result_cache)
+                {
+                    query_pipeline.finalizeWriteInQueryResultCache();
+                }
+
                 QueryStatusPtr process_list_elem = context->getProcessListElement();
 
                 if (process_list_elem)

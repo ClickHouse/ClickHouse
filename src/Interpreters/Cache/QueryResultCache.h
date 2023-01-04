@@ -73,12 +73,20 @@ private:
     using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
 
 public:
-    /// Buffers multiple result chunks and stores them during destruction as a cache entry.
+    /// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
+    ///
+    /// Implementation note: Queries may throw exceptions during runtime, e.g. out-of-memory errors. In this case, no query result must be
+    /// written into the query result cache. Unfortunately, neither the Writer nor the special transform added on top of the query pipeline
+    /// which holds the Writer know whether they are destroyed because the query ended successfully or because of an exception (otherwise,
+    /// we could simply implement a check in their destructors). To handle exceptions correctly nevertheless, we do the actual insert in
+    /// finalize() (as opposed to the Writer destructor). This function is then called only for successful queries (in finish_callback()
+    /// which runs before the transform and the Writer are destroyed), whereas for unsuccessful queries we do nothing (the Writer is
+    /// destroyed w/o inserting anything).
     class Writer
     {
     public:
-        ~Writer();
         void buffer(Chunk && partial_query_result);
+        void finalizeWrite();
     private:
         std::mutex & mutex;
         Cache & cache TSA_GUARDED_BY(mutex);
