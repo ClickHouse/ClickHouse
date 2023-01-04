@@ -1,0 +1,13 @@
+initial parts
+all_1_1_0
+all_2_2_0
+all_3_3_0
+parts with gap
+all_1_1_0	1
+all_2_2_1	0
+all_3_3_0	1
+parts after optimize
+all_1_1_0	0
+all_1_3_1	1
+all_2_2_1	0
+all_3_3_0	0
