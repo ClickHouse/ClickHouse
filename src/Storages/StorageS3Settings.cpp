@@ -145,11 +145,11 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
             "Setting upload_part_size_multiply_factor is too big ({}). Multiplication to max_upload_part_size ({}) will cause integer overflow",
             ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
 
-    std::unordered_set<String> storage_class_names {"NOT_SET", "STANDARD", "INTELLIGENT_TIERING"};
-    if (!storage_class_names.contains(storage_class_name))
+    std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    if (!storage_class_name.empty() && !storage_class_names.contains(storage_class_name))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting storage_class has invalid value {} which only supports NOT_SET, STANDARD and INTELLIGENT_TIERING",
+            "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
             storage_class_name);
 
     /// TODO: it's possible to set too small limits. We can check that max possible object size is not too small.
