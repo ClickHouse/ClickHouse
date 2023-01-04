@@ -1791,8 +1791,7 @@ def main(args):
     global restarted_tests
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot execute 'SELECT 1' query. \
-            If you are using split build, you have to specify -c option."
+        msg = "Server is not responding. Cannot execute 'SELECT 1' query."
         if args.hung_check:
             print(msg)
             pid = get_server_pid()
@@ -1977,14 +1976,14 @@ if __name__ == "__main__":
         "-b",
         "--binary",
         default="clickhouse",
-        help="Path to clickhouse (if monolithic build, clickhouse-server otherwise) "
+        help="Path to clickhouse"
         "binary or name of binary in PATH",
     )
 
     parser.add_argument(
         "-c",
         "--client",
-        help="Path to clickhouse-client (if split build, useless otherwise) binary of "
+        help="Path to clickhouse-client, this option is useless"
         "name of binary in PATH",
     )
 
