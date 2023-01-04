@@ -188,7 +188,6 @@ bool CancelToken::wait(UInt32 * address, UInt32 value)
     UInt64 s = state.load();
     while (true)
     {
-        DBG("s={}", s);
         if (s & disabled)
         {
             // Start non-cancellable wait on futex. Spurious wake-up is possible.
@@ -202,14 +201,12 @@ bool CancelToken::wait(UInt32 * address, UInt32 value)
     }
 
     // Start cancellable wait. Spurious wake-up is possible.
-    DBG("start cancellable wait address={} value={}", static_cast<void*>(address), value);
     futexWait(address, value);
 
     // "Release" futex and check for cancellation
     s = state.load();
     while (true)
     {
-        DBG("finish cancellable wait, s={}", s);
         chassert((s & disabled) != disabled); // `disable()` must not be called from another thread
         if (s & canceled)
         {
@@ -233,7 +230,6 @@ bool CancelToken::wait(UInt32 * address, UInt32 value)
 void CancelToken::raise()
 {
     std::unique_lock<std::mutex> lock(signal_mutex);
-    DBG("raise code={} msg={}", exception_code, exception_message);
     if (exception_code != 0)
         throw DB::Exception(
             std::exchange(exception_code, 0),
@@ -267,21 +263,18 @@ void CancelToken::signalImpl(int code, const String & message)
     UInt64 s = state.load();
     while (true)
     {
-        DBG("s={}", s);
         if (s & canceled)
             return; // Already cancelled - don't signal twice
         if (state.compare_exchange_strong(s, s | canceled))
             break; // It is the cancelling thread - should deliver signal if necessary
     }
 
-    DBG("cancel tid={} code={} msg={}", thread_id, code, message);
     exception_code = code;
     exception_message = message;
 
     if ((s & disabled) == disabled)
         return; // Cancellation is disabled - just signal token for later, but don't wake
     std::atomic<UInt32> * address = reinterpret_cast<std::atomic<UInt32> *>(s & disabled);
-    DBG("address={}", static_cast<void*>(address));
     if (address == nullptr)
         return; // Thread is currently not waiting on futex - wake-up not required
 
@@ -297,7 +290,6 @@ void CancelToken::signalImpl(int code, const String & message)
 
     // Wake all threads waiting on `address`, one of them will be cancelled and others will get spurious wake-ups
     // Woken canceled thread will reset signaled bit
-    DBG("wake");
     futexWake(address, INT_MAX);
 
     // Signaling thread must remove address from state to notify canceled thread that `futexWake()` is done, thus `wake()` can return.
@@ -335,7 +327,6 @@ void CancellableSharedMutex::lock()
     UInt64 value = state.load();
     while (true)
     {
-        DBG("#A r={} w={} rs={} ws={}", value & readers, (value & writers) != 0, (value & readers_signaled) != 0, (value & writers_signaled) != 0);
         if (value & writers)
         {
             waiters++;
@@ -354,7 +345,6 @@ void CancellableSharedMutex::lock()
     value |= writers;
     while (value & readers)
     {
-        DBG("#B r={} w={} rs={} ws={}", value & readers, (value & writers) != 0, (value & readers_signaled) != 0, (value & writers_signaled) != 0);
         if (!cancellableWaitLowerFetch(state, value))
         {
             state.fetch_and(~writers);
@@ -374,8 +364,7 @@ bool CancellableSharedMutex::try_lock()
 
 void CancellableSharedMutex::unlock()
 {
-    UInt64 value = state.fetch_and(~writers);
-    DBG("r={} w={} rs={} ws={}", value & readers, (value & writers) != 0, (value & readers_signaled) != 0, (value & writers_signaled) != 0);
+    state.fetch_and(~writers);
     if (waiters)
         wakeUpperAll(state);
 }
@@ -385,7 +374,6 @@ void CancellableSharedMutex::lock_shared()
     UInt64 value = state.load();
     while (true)
     {
-        DBG("r={} w={} rs={} ws={}", value & readers, (value & writers) != 0, (value & readers_signaled) != 0, (value & writers_signaled) != 0);
         if (value & writers)
         {
             waiters++;
@@ -413,7 +401,6 @@ bool CancellableSharedMutex::try_lock_shared()
 void CancellableSharedMutex::unlock_shared()
 {
     UInt64 value = state.fetch_sub(1) - 1;
-    DBG("r={} w={} rs={} ws={}", value & readers, (value & writers) != 0, (value & readers_signaled) != 0, (value & writers_signaled) != 0);
     if ((value & (writers | readers)) == writers) // If writer is waiting and no more readers
         wakeLowerOne(state); // Wake writer
 }
