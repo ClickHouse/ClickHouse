@@ -1595,7 +1595,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 /// (Only files on the first level of nesting are considered).
 static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_path, time_t threshold)
 {
-    if (disk->getLastModified(directory_path).epochTime() >= threshold)
+    if (!disk->isDirectory(directory_path) || disk->getLastModified(directory_path).epochTime() >= threshold)
         return false;
 
     for (auto it = disk->iterateDirectory(directory_path); it->isValid(); it->next())
@@ -1645,7 +1645,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
             try
             {
-                if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
+                if (isOldPartDirectory(disk, it->path(), deadline))
                 {
                     if (temporary_parts.contains(basename))
                     {
@@ -1672,16 +1672,6 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
                         ++cleared_count;
                     }
                 }
-            }
-            /// see getModificationTime()
-            catch (const ErrnoException & e)
-            {
-                if (e.getErrno() == ENOENT)
-                {
-                    /// If the file is already deleted, do nothing.
-                }
-                else
-                    throw;
             }
             catch (const fs::filesystem_error & e)
             {

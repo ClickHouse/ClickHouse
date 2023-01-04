@@ -148,6 +148,7 @@ if __name__ == "__main__":
     stopwatch = Stopwatch()
 
     temp_path = TEMP_PATH
+    post_commit_path = os.path.join(temp_path, "integration_commit_status.tsv")
     repo_path = REPO_COPY
     reports_path = REPORTS_PATH
 
@@ -180,7 +181,7 @@ if __name__ == "__main__":
     if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
-                os.path.join(temp_path, "post_commit_status.tsv"),
+                post_commit_path,
                 f"Skipped (no pr-bugfix in {pr_info.labels})",
                 "success",
                 "null",
@@ -275,7 +276,7 @@ if __name__ == "__main__":
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(
-            os.path.join(temp_path, "post_commit_status.tsv"),
+            post_commit_path,
             description,
             state,
             report_url,

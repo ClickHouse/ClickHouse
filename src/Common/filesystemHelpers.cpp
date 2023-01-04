@@ -352,7 +352,8 @@ time_t getModificationTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
-    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+    std::error_code m_ec(errno, std::generic_category());
+    throw fs::filesystem_error("Cannot check modification time for file", path, m_ec);
 }
 
 time_t getChangeTime(const std::string & path)
@@ -360,7 +361,8 @@ time_t getChangeTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_ctime;
-    DB::throwFromErrnoWithPath("Cannot check change time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+    std::error_code m_ec(errno, std::generic_category());
+    throw fs::filesystem_error("Cannot check change time for file", path, m_ec);
 }
 
 Poco::Timestamp getModificationTimestamp(const std::string & path)
