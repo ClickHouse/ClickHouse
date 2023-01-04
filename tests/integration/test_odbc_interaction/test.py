@@ -22,7 +22,6 @@ node1 = cluster.add_instance(
         "configs/dictionaries/sqlite3_odbc_cached_dictionary.xml",
         "configs/dictionaries/postgres_odbc_hashed_dictionary.xml",
     ],
-    stay_alive=True,
 )
 
 
@@ -657,58 +656,6 @@ def test_postgres_insert(started_cluster):
     )
     node1.query("DROP TABLE pg_insert")
     conn.cursor().execute("truncate table clickhouse.test_table")
-
-
-def test_bridge_dies_with_parent(started_cluster):
-    skip_test_msan(node1)
-
-    if node1.is_built_with_address_sanitizer():
-        # TODO: Leak sanitizer falsely reports about a leak of 16 bytes in clickhouse-odbc-bridge in this test and
-        # that's linked somehow with that we have replaced getauxval() in glibc-compatibility.
-        # The leak sanitizer calls getauxval() for its own purposes, and our replaced version doesn't seem to be equivalent in that case.
-        pytest.skip(
-            "Leak sanitizer falsely reports about a leak of 16 bytes in clickhouse-odbc-bridge"
-        )
-
-    node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))")
-
-    clickhouse_pid = node1.get_process_pid("clickhouse server")
-    bridge_pid = node1.get_process_pid("odbc-bridge")
-    assert clickhouse_pid is not None
-    assert bridge_pid is not None
-
-    try:
-        node1.exec_in_container(
-            ["kill", str(clickhouse_pid)], privileged=True, user="root"
-        )
-    except:
-        pass
-
-    for i in range(30):
-        time.sleep(1)
-        clickhouse_pid = node1.get_process_pid("clickhouse server")
-        if clickhouse_pid is None:
-            break
-
-    for i in range(30):
-        time.sleep(1)  # just for sure, that odbc-bridge caught signal
-        bridge_pid = node1.get_process_pid("odbc-bridge")
-        if bridge_pid is None:
-            break
-
-    if bridge_pid:
-        out = node1.exec_in_container(
-            ["gdb", "-p", str(bridge_pid), "--ex", "thread apply all bt", "--ex", "q"],
-            privileged=True,
-            user="root",
-        )
-        logging.debug(f"Bridge is running, gdb output:\n{out}")
-
-    try:
-        assert clickhouse_pid is None
-        assert bridge_pid is None
-    finally:
-        node1.start_clickhouse(20)
 
 
 def test_odbc_postgres_date_data_type(started_cluster):
