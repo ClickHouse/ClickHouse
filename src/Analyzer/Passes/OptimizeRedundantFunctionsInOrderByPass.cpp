@@ -16,7 +16,7 @@ namespace
 class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisitor<OptimizeRedundantFunctionsInOrderByVisitor>
 {
 public:
-    bool needChildVisit(QueryTreeNodePtr & node, QueryTreeNodePtr & /*parent*/)
+    static bool needChildVisit(QueryTreeNodePtr & node, QueryTreeNodePtr & /*parent*/)
     {
         if (node->as<FunctionNode>())
             return false;
