@@ -160,6 +160,15 @@ clickhouse-client --query="INSERT INTO infile_globs FROM INFILE 'input_*.csv' FO
 clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
 ```
 
+:::tip
+In addition to selecting multiple files with `*`, you can use ranges (`{1,2}` or `{1..9}`) and other [glob substitutions](/docs/en/sql-reference/table-functions/file.md/#globs-in-path). These three all would work with the above example:
+```sql
+INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
+INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
+INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
+```
+:::
+
 ## Inserting into Table Function
 
 Data can be inserted into tables referenced by [table functions](../../sql-reference/table-functions/index.md).
