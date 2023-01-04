@@ -150,7 +150,7 @@ void TestSharedMutexCancelReader()
             for (UInt64 tid : tids_to_cancel)
                 DB::CancelToken::signal(tid, DB::ErrorCodes::THREAD_WAS_CANCELLED, "test");
 
-            // This sync is crutial. It is needed to hold `lock` long enough.
+            // This sync is crucial. It is needed to hold `lock` long enough.
             // It guarantees that every cancelled thread will find `sm` blocked by writer, and thus will begin to wait.
             // Wait() call is required for cancellation. Otherwise, fastpath acquire w/o wait will not generate exception.
             // And this is the desired behaviour.
@@ -202,7 +202,7 @@ void TestSharedMutexCancelWriter()
                         DB::CancelToken::signal(tid, DB::ErrorCodes::THREAD_WAS_CANCELLED, "test");
                 }
 
-                // This sync is crutial. It is needed to hold `lock` long enough.
+                // This sync is crucial. It is needed to hold `lock` long enough.
                 // It guarantees that every cancelled thread will find `sm` blocked, and thus will begin to wait.
                 // Wait() call is required for cancellation. Otherwise, fastpath acquire w/o wait will not generate exception.
                 // And this is the desired behaviour.
@@ -278,7 +278,7 @@ void PerfTestSharedMutexWritersOnly()
                 std::unique_lock lock(sm);
                 ASSERT_TRUE(counter % 2 == 0);
                 counter++;
-                std::atomic_signal_fence(std::memory_order::seq_cst); // force complier to generate two separate increment instructions
+                std::atomic_signal_fence(std::memory_order::seq_cst); // force compiler to generate two separate increment instructions
                 counter++;
             }
         };
@@ -321,7 +321,7 @@ void PerfTestSharedMutexRW()
                     std::unique_lock lock(sm);
                     ASSERT_TRUE(counter % 2 == 0);
                     counter++;
-                    std::atomic_signal_fence(std::memory_order::seq_cst); // force complier to generate two separate increment instructions
+                    std::atomic_signal_fence(std::memory_order::seq_cst); // force compiler to generate two separate increment instructions
                     counter++;
                 }
             }
