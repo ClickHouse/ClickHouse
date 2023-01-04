@@ -833,6 +833,10 @@ class ClickhouseIntegrationTestsRunner:
             )
 
         self._install_clickhouse(build_path)
+
+        logging.info("Pulling images")
+        runner._pre_pull_images(repo_path)
+
         logging.info(
             "Dump iptables before run %s",
             subprocess.check_output("sudo iptables -nvL", shell=True),
@@ -999,9 +1003,6 @@ if __name__ == "__main__":
 
     params = json.loads(open(params_path, "r").read())
     runner = ClickhouseIntegrationTestsRunner(result_path, params)
-
-    logging.info("Pulling images")
-    runner._pre_pull_images(repo_path)
 
     logging.info("Running tests")
 
