@@ -37,11 +37,7 @@ public:
             if (res == UV_EBUSY)
             {
                 LOG_DEBUG(log, "Closing pending handles");
-                uv_walk(loop_ptr.get(), [](uv_handle_t * handle, void *)
-                {
-                    if (!uv_is_closing(handle))
-                        uv_close(handle, [](uv_handle_t *){});
-                }, nullptr);
+                uv_walk(loop_ptr.get(), onUVWalkClosingCallback, nullptr);
 
                 /// Run the loop until there are no pending callbacks.
                 while (true)
@@ -72,6 +68,14 @@ public:
 private:
     std::unique_ptr<uv_loop_t> loop_ptr;
     Poco::Logger * log = &Poco::Logger::get("UVLoop");
+
+    static void onUVWalkClosingCallback(uv_handle_t * handle, void *)
+    {
+        if (!uv_is_closing(handle))
+            uv_close(handle, onUVCloseCallback);
+    }
+
+    static void onUVCloseCallback(uv_handle_t *) {}
 };
 
 }
