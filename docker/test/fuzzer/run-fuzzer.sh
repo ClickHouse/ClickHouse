@@ -157,7 +157,7 @@ function fuzz
     mkdir -p /var/run/clickhouse-server
 
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db  2>&1 | pigz > server.log.gz &
+    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > server.log 2>&1 &
     server_pid=$!
 
     kill -0 $server_pid
@@ -262,12 +262,12 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! zgrep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log.gz > description.txt
+        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
 
-        if grep -F --text 'Sanitizer: out-of-memory' description.txt
+        if grep -E --text 'Sanitizer: (out-of-memory|failed to allocate)' description.txt
         then
             # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
             task_exit_code=0
@@ -342,24 +342,28 @@ case "$stage" in
     time fuzz
     ;&
 "report")
+
 CORE_LINK=''
 if [ -f core.gz ]; then
     CORE_LINK='<a href="core.gz">core.gz</a>'
 fi
+
+grep --text -F '<Fatal>' server.log > fatal.log ||:
+
+pigz server.log
+
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
 <html lang="en">
   <style>
 body { font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: #EEE; }
 h1 { margin-left: 10px; }
-th, td { border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
-td { white-space: pre; font-family: Monospace, Courier New; }
-border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }
+th, td { border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF; }
+td { white-space: pre; font-family: Monospace, Courier New; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }
 a { color: #06F; text-decoration: none; }
 a:hover, a:active { color: #F40; text-decoration: underline; }
 table { border: 0; }
 p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }
-th { cursor: pointer; }
 
   </style>
   <title>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</title>
@@ -384,7 +388,14 @@ th { cursor: pointer; }
 <tr>
   <td>AST Fuzzer</td>
   <td>$(cat status.txt)</td>
-  <td style="white-space: pre;">$(clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt)</td>
+  <td>$(
+    clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt
+  )</td>
+</tr>
+<tr>
+  <td colspan="3" style="white-space: pre-wrap;">$(
+    clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < fatal.log || cat fatal.log
+  )</td>
 </tr>
 </table>
 </body>
