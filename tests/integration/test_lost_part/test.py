@@ -39,7 +39,6 @@ def test_lost_part_same_replica(start_cluster):
     node1.query("DROP TABLE IF EXISTS mt0 SYNC")
     node2.query("DROP TABLE IF EXISTS mt0 SYNC")
 
-
     for node in [node1, node2]:
         node.query(
             f"CREATE TABLE mt0 (id UInt64, date Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/t', '{node.name}') ORDER BY tuple() PARTITION BY date "
@@ -193,7 +192,9 @@ def test_lost_part_mutation(start_cluster):
     )
 
     for i in range(20):
-        parts_to_mutate = node1.query("SELECT count() FROM system.replication_queue WHERE table='mt2'")
+        parts_to_mutate = node1.query(
+            "SELECT count() FROM system.replication_queue WHERE table='mt2'"
+        )
         # two mutations for both replicas
         if int(parts_to_mutate) == 4:
             break
@@ -263,7 +264,9 @@ def test_lost_last_part(start_cluster):
     node1.query("SYSTEM START MERGES mt3")
 
     for i in range(10):
-        result = node1.query("SELECT count() FROM system.replication_queue WHERE table='mt3'")
+        result = node1.query(
+            "SELECT count() FROM system.replication_queue WHERE table='mt3'"
+        )
         assert int(result) <= 2, "Have a lot of entries in queue {}".format(
             node1.query("SELECT * FROM system.replication_queue FORMAT Vertical")
         )
