@@ -108,11 +108,6 @@ mv ./programs/clickhouse* /output
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 
-# Exclude cargo build directory since it may have some shared libraries
-# (even though they are not required for the clickhouse binary)
-find . -name '*.so' -not -path '*/cargo/*' -print -exec mv '{}' /output \;
-find . -name '*.so.*' -not -path '*/cargo/*' -print -exec mv '{}' /output \;
-
 prepare_combined_output () {
     local OUTPUT
     OUTPUT="$1"
@@ -168,7 +163,7 @@ then
     )
 fi
 
-# May be set for split build or for performance test.
+# May be set for performance test.
 if [ "" != "$COMBINED_OUTPUT" ]
 then
     prepare_combined_output /output
