@@ -35,15 +35,7 @@ add_custom_command(OUTPUT ${ffi_binding_final_path}
     DEPENDS cargo-build__ch_rust_skim_rust)
 
 add_library(_ch_rust_skim_ffi ${ffi_binding_final_path})
-if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
-    # static
-else()
-    if (OS_DARWIN)
-        target_link_libraries(_ch_rust_skim_ffi PRIVATE -Wl,-undefined,dynamic_lookup)
-    else()
-        target_link_libraries(_ch_rust_skim_ffi PRIVATE -Wl,--unresolved-symbols=ignore-all)
-    endif()
-endif()
+
 # cxx bridge compiles such bindings
 set_target_properties(_ch_rust_skim_ffi PROPERTIES COMPILE_FLAGS "${CXXBRIDGE_CXXFLAGS}")
 
