@@ -1,5 +1,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/Impl/BinaryRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
@@ -60,6 +61,13 @@ std::vector<String> BinaryFormatReader::readTypes()
 bool BinaryFormatReader::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
 {
     serialization->deserializeBinary(column, *in, format_settings);
+    return true;
+}
+
+bool BinaryFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, const String & /*column_name*/)
+{
+    ReadBufferFromString buf(field);
+    serialization->deserializeBinary(column, buf, format_settings);
     return true;
 }
 

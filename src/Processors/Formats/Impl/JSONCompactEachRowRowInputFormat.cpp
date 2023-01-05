@@ -2,6 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/JSONUtils.h>
@@ -111,6 +112,12 @@ bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypeP
     return JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, yield_strings);
 }
 
+bool JSONCompactEachRowFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name)
+{
+    ReadBufferFromString buf(field);
+    return JSONUtils::readField(buf, column, type, serialization, column_name, format_settings, yield_strings);
+}
+
 bool JSONCompactEachRowFormatReader::parseRowStartWithDiagnosticInfo(WriteBuffer & out)
 {
     skipWhitespaceIfAny(*in);
@@ -186,7 +193,7 @@ JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(
 {
 }
 
-DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
+DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypesImpl()
 {
     if (first_row)
         first_row = false;

@@ -36,7 +36,8 @@ protected:
         bool with_names_,
         bool with_types_,
         const FormatSettings & format_settings_,
-        std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
+        std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_,
+        bool try_detect_header_ = false);
 
     void resetParser() override;
     bool isGarbageAfterField(size_t index, ReadBuffer::Position pos) override;
@@ -53,10 +54,15 @@ private:
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
+    void tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names);
+
     bool is_binary;
     bool with_names;
     bool with_types;
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
+    bool try_detect_header;
+    bool is_header_detected = false;
+    std::vector<String> buffered_row;
 
 protected:
     Block::NameMap column_indexes_by_names;
@@ -71,6 +77,7 @@ public:
 
     /// Read single field from input. Return false if there was no real value and we inserted default value.
     virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
+    virtual bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) = 0;
 
     /// Methods for parsing with diagnostic info.
     virtual void checkNullValueForNonNullable(DataTypePtr) {}
@@ -85,6 +92,10 @@ public:
     virtual std::vector<String> readNames() = 0;
     /// Read row with types and return the list of them.
     virtual std::vector<String> readTypes() = 0;
+
+    /// Read row and return parsed column fields and inferred data types.
+    /// Used for header detection.
+    virtual std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() = 0;
 
     /// Skip single field, it's used to skip unknown columns.
     virtual void skipField(size_t file_column) = 0;
@@ -129,18 +140,26 @@ public:
         bool with_names_,
         bool with_types_,
         FormatWithNamesAndTypesReader * format_reader_,
-        DataTypePtr default_type_ = nullptr);
+        DataTypePtr default_type_ = nullptr,
+        bool try_detect_header_ = false);
 
     NamesAndTypesList readSchema() override;
 
 protected:
-    virtual DataTypes readRowAndGetDataTypes() override = 0;
+    virtual DataTypes readRowAndGetDataTypes() override;
+    virtual DataTypes readRowAndGetDataTypesImpl() = 0;
+    /// Return column fields with inferred types. In case of no more rows, return empty vectors.
+    virtual std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() = 0;
 
     bool with_names;
     bool with_types;
 
 private:
+    void tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names);
+
     FormatWithNamesAndTypesReader * format_reader;
+    bool try_detect_header;
+    DataTypes buffered_types;
 };
 
 }

@@ -45,6 +45,7 @@ public:
     using EscapingRule = FormatSettings::EscapingRule;
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
@@ -71,6 +72,8 @@ public:
     std::vector<String> readHeaderRow() {return readRowImpl<true>(); }
 
     std::vector<String> readRow() { return readRowImpl<false>(); }
+
+    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override;
 
     bool checkEndOfRow();
     bool checkForSuffixImpl(bool check_eof);
@@ -99,7 +102,9 @@ public:
     CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypesImpl() override;
+
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
@@ -107,6 +112,7 @@ private:
     CustomSeparatedFormatReader reader;
     bool first_row = true;
     JSONInferenceInfo json_inference_info;
+    bool no_more_data = false;
 };
 
 }
