@@ -35,16 +35,10 @@ void CSVRowOutputFormat::writePrefix()
     const auto & sample = getPort(PortKind::Main).getHeader();
 
     if (with_names)
-    {
         writeLine(sample.getNames());
-        writeRowBetweenDelimiter();
-    }
 
     if (with_types)
-    {
         writeLine(sample.getDataTypeNames());
-        writeRowBetweenDelimiter();
-    }
 }
 
 
@@ -60,38 +54,21 @@ void CSVRowOutputFormat::writeFieldDelimiter()
 }
 
 
-void CSVRowOutputFormat::writeRowBetweenDelimiter()
+void CSVRowOutputFormat::writeRowEndDelimiter()
 {
     if (format_settings.csv.crlf_end_of_line)
         writeChar('\r', out);
     writeChar('\n', out);
 }
 
-void CSVRowOutputFormat::writeSuffix()
-{
-    /// Write '\n' after data if we had any data.
-    if (haveWrittenData())
-        writeRowBetweenDelimiter();
-}
-
 void CSVRowOutputFormat::writeBeforeTotals()
 {
-    writeRowBetweenDelimiter();
+    writeChar('\n', out);
 }
 
 void CSVRowOutputFormat::writeBeforeExtremes()
 {
-    writeRowBetweenDelimiter();
-}
-
-void CSVRowOutputFormat::writeAfterTotals()
-{
-    writeRowBetweenDelimiter();
-}
-
-void CSVRowOutputFormat::writeAfterExtremes()
-{
-    writeRowBetweenDelimiter();
+    writeChar('\n', out);
 }
 
 

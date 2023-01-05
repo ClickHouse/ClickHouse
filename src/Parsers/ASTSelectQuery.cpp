@@ -115,6 +115,8 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (group_by_with_grouping_sets)
     {
+        if (!groupBy()) /// sanity check, issue 43049
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupt AST");
         auto nested_frame = frame;
         nested_frame.surround_each_list_element_with_parens = true;
         nested_frame.expression_list_prepend_whitespace = false;
