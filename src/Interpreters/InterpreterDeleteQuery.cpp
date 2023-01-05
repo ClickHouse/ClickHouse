@@ -112,7 +112,7 @@ BlockIO InterpreterDeleteQuery::execute()
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
     }
 }
 
