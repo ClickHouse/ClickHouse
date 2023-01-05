@@ -1,13 +1,14 @@
 #include <algorithm>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <numeric>
 #include <queue>
 #include <stdexcept>
 #include <IO/Operators.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -30,13 +31,31 @@
 #include <Storages/MergeTree/MergeTreeInOrderSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
+#include <Common/logger_useful.h>
+
+namespace
+{
+size_t countPartitions(DB::RangesInDataParts & parts_with_ranges)
+{
+    std::string cur_partition_id = parts_with_ranges[0].data_part->info.partition_id;
+    size_t unique_partitions = 1;
+    for (size_t i = 1; i < parts_with_ranges.size(); ++i)
+    {
+        if (parts_with_ranges[i].data_part->info.partition_id != cur_partition_id)
+        {
+            ++unique_partitions;
+            cur_partition_id = parts_with_ranges[i].data_part->info.partition_id;
+        }
+    }
+    return unique_partitions;
+}
+}
 
 namespace ProfileEvents
 {
@@ -242,7 +261,6 @@ Pipe ReadFromMergeTree::readFromPool(
         if (i == 0 && !client_info.collaborate_with_initiator)
             source->addTotalRowsApprox(total_rows);
 
-
         pipes.emplace_back(std::move(source));
     }
 
@@ -335,8 +353,12 @@ Pipe ReadFromMergeTree::read(
     size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache)
 {
     if (read_type == ReadType::Default && max_streams > 1)
-        return readFromPool(parts_with_range, required_columns, max_streams,
-                            min_marks_for_concurrent_read, use_uncompressed_cache);
+    {
+        Pipe pipe = readFromPool(parts_with_range, required_columns, max_streams, min_marks_for_concurrent_read, use_uncompressed_cache);
+        if (output_each_partition_through_separate_port)
+            pipe.resize(1);
+        return pipe;
+    }
 
     auto pipe = readInOrder(parts_with_range, required_columns, read_type, use_uncompressed_cache, 0);
 
@@ -418,9 +440,8 @@ struct PartRangesReadInfo
 
 }
 
-Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
-    RangesInDataParts && parts_with_ranges,
-    const Names & column_names)
+Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsImpl(
+    RangesInDataParts && parts_with_ranges, const Names & column_names, size_t num_streams)
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
@@ -430,16 +451,67 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     if (0 == info.sum_marks)
         return {};
 
-    size_t num_streams = requested_num_streams;
     if (num_streams > 1)
     {
         /// Reduce the number of num_streams if the data is small.
         if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
-            num_streams = std::max((info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
+            num_streams = std::max(
+                (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
     }
 
-    return read(std::move(parts_with_ranges), column_names, ReadType::Default,
-                num_streams, info.min_marks_for_concurrent_read, info.use_uncompressed_cache);
+    return read(
+        std::move(parts_with_ranges),
+        column_names,
+        ReadType::Default,
+        num_streams,
+        info.min_marks_for_concurrent_read,
+        info.use_uncompressed_cache);
+}
+
+Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
+    RangesInDataParts && parts_with_ranges,
+    const Names & column_names)
+{
+    if (parts_with_ranges.empty())
+        return {};
+
+    size_t num_streams = requested_num_streams;
+
+    if (!output_each_partition_through_separate_port)
+    {
+        return spreadMarkRangesAmongStreamsImpl(std::move(parts_with_ranges), column_names, num_streams);
+    }
+    else
+    {
+        num_streams = std::max<size_t>(1, num_streams / countPartitions(parts_with_ranges));
+
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "spreadMarkRangesAmongStreams {} {} {}",
+            parts_with_ranges.size(),
+            requested_num_streams,
+            countPartitions(parts_with_ranges));
+
+        Pipes pipes;
+        for (auto begin = parts_with_ranges.begin(); begin != parts_with_ranges.end();)
+        {
+            const auto end = std::find_if(
+                begin,
+                parts_with_ranges.end(),
+                [&begin](auto & part) { return begin->data_part->info.partition_id != part.data_part->info.partition_id; });
+
+            LOG_DEBUG(&Poco::Logger::get("debug"), "spreadMarkRangesAmongStreams {} {}", begin->data_part->info.partition_id, end - begin);
+
+            RangesInDataParts partition_parts;
+            partition_parts.insert(partition_parts.end(), std::make_move_iterator(begin), std::make_move_iterator(end));
+
+            pipes.emplace_back(spreadMarkRangesAmongStreamsImpl(std::move(partition_parts), column_names, num_streams));
+
+            begin = end;
+        }
+
+        return Pipe::unitePipes(std::move(pipes));
+    }
 }
 
 static ActionsDAGPtr createProjection(const Block & header)
@@ -1197,6 +1269,18 @@ void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         output_stream->sort_description = std::move(sort_description);
         output_stream->sort_scope = DataStream::SortScope::Stream;
     }
+
+    /// Not supported currently. Disable optimisation.
+    output_each_partition_through_separate_port = false;
+}
+
+bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
+{
+    if (isQueryWithFinal() || query_info.getInputOrderInfo())
+        return false;
+
+    output_each_partition_through_separate_port = true;
+    return true;
 }
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
@@ -1206,6 +1290,15 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
         std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
 
     return std::get<ReadFromMergeTree::AnalysisResult>(result_ptr->result);
+}
+
+bool ReadFromMergeTree::isQueryWithFinal() const
+{
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    if (query_info.table_expression_modifiers)
+        return query_info.table_expression_modifiers->hasFinal();
+    else
+        return select.final();
 }
 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -1243,12 +1336,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     ActionsDAGPtr result_projection;
 
     Names column_names_to_read = std::move(result.column_names_to_read);
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    bool final = false;
-    if (query_info.table_expression_modifiers)
-        final = query_info.table_expression_modifiers->hasFinal();
-    else
-        final = select.final();
+    bool final = isQueryWithFinal();
 
     if (!final && result.sampling.use_sampling)
     {
@@ -1267,6 +1355,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (final)
     {
+        if (output_each_partition_through_separate_port)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
+
         /// Add columns needed to calculate the sorting expression and the sign.
         std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
@@ -1286,6 +1377,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     }
     else if (input_order_info)
     {
+        if (output_each_partition_through_separate_port)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used when reading in order is used");
+
         pipe = spreadMarkRangesAmongStreamsWithOrder(
             std::move(result.parts_with_ranges),
             column_names_to_read,

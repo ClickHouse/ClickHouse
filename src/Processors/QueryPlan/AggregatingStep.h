@@ -59,6 +59,7 @@ public:
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     bool memoryBoundMergingWillBeUsed() const;
+    void skipMerging() { skip_merging = true; }
 
 private:
     void updateOutputStream() override;
@@ -70,6 +71,7 @@ private:
     size_t aggregation_in_order_max_block_bytes;
     size_t merge_threads;
     size_t temporary_data_merge_threads;
+    bool skip_merging = false; // if we aggregate partitioned data merging is not needed
 
     bool storage_has_evenly_distributed_read;
     bool group_by_use_nulls;

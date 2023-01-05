@@ -154,6 +154,10 @@ public:
 
     void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
+    /// Returns true if the optimisation is applicable (and applies it then).
+    bool requestOutputEachPartitionThroughSeparatePort();
+    bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
+
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
@@ -167,6 +171,8 @@ private:
         const Names & real_column_names,
         bool sample_factor_column_queried,
         Poco::Logger * log);
+
+    bool isQueryWithFinal() const;
 
     int getSortDirection() const
     {
@@ -203,6 +209,9 @@ private:
     const size_t preferred_max_column_in_block_size_bytes;
     const bool sample_factor_column_queried;
 
+    /// Used for aggregation optimisation (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
+    bool output_each_partition_through_separate_port = false;
+
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
 
     Poco::Logger * log;
@@ -220,6 +229,8 @@ private:
     Pipe spreadMarkRangesAmongStreams(
         RangesInDataParts && parts_with_ranges,
         const Names & column_names);
+
+    Pipe spreadMarkRangesAmongStreamsImpl(RangesInDataParts && parts_with_ranges, const Names & column_names, size_t num_streams);
 
     Pipe spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts_with_ranges,
