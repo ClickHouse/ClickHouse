@@ -204,3 +204,58 @@ SELECT read_rows==256 from system.query_log
             and endsWith(trimRight(query), 'SELECT s FROM simple5 WHERE hasToken(s, \'6969696969898240\');') 
             and type='QueryFinish' 
             and result_rows==1 limit 1;
+
+DROP TABLE IF EXISTS simple6;
+-- create inverted index with density==1
+CREATE TABLE simple6(k UInt64,s String,INDEX af(s) TYPE inverted(0, 1.0) GRANULARITY 1)
+                     Engine=MergeTree
+                          ORDER BY (k)
+                          SETTINGS max_digestion_size_per_segment = 1, index_granularity = 512
+                          AS
+                          SELECT number, if(number%2, format('happy {}', hex(number)), format('birthday {}', hex(number)))
+                          FROM numbers(1024);
+-- check inverted index was created
+SELECT name, type FROM system.data_skipping_indices where (table =='simple6') limit 1;
+-- search inverted index, no row has 'happy birthday'
+SELECT count()==0 FROM simple6 WHERE s=='happy birthday';
+SYSTEM FLUSH LOGS;
+-- check the query only skip all granules (0 row total; each granule has 512 rows)
+SELECT read_rows==0 from system.query_log 
+        where query_kind ='Select'
+            and current_database = currentDatabase()
+            and endsWith(trimRight(query), 'SELECT count()==0 FROM simple6 WHERE s==\'happy birthday\';')
+            and type='QueryFinish' 
+            and result_rows==1 limit 1;
+
+DROP TABLE IF EXISTS simple7;
+-- create inverted index with density==0.1
+CREATE TABLE simple7(k UInt64,s String,INDEX af(s) TYPE inverted(0, 0.1) GRANULARITY 1)
+                    Engine=MergeTree
+                        ORDER BY (k)
+                        SETTINGS max_digestion_size_per_segment = 1, index_granularity = 512
+                        AS
+                        SELECT number, if(number==1023, 'happy new year', if(number%2, format('happy {}', hex(number)), format('birthday {}', hex(number))))
+                        FROM numbers(1024);
+-- check inverted index was created
+SELECT name, type FROM system.data_skipping_indices where (table =='simple7') limit 1;
+-- search inverted index, no row has 'happy birthday'
+SELECT count()==0 FROM simple7 WHERE s=='happy birthday';
+SYSTEM FLUSH LOGS;
+-- check the query does not skip any of the 2 granules(1024 rows total; each granule has 512 rows)
+SELECT read_rows==1024 from system.query_log 
+        where query_kind ='Select'
+            and current_database = currentDatabase()
+            and endsWith(trimRight(query), 'SELECT count()==0 FROM simple7 WHERE s==\'happy birthday\';')
+            and type='QueryFinish' 
+            and result_rows==1 limit 1;
+-- search inverted index, no row has 'happy new year'
+SELECT count()==1 FROM simple7 WHERE s=='happy new year';
+SYSTEM FLUSH LOGS;
+-- check the query only read 1 granule because of density (1024 rows total; each granule has 512 rows)
+SELECT read_rows==512 from system.query_log 
+        where query_kind ='Select'
+            and current_database = currentDatabase()
+            and endsWith(trimRight(query), 'SELECT count()==1 FROM simple7 WHERE s==\'happy new year\';')
+            and type='QueryFinish' 
+            and result_rows==1 limit 1;
+
