@@ -44,8 +44,8 @@ void TestSharedMutex()
         {
             [[maybe_unused]] Status status;
             std::shared_lock lock(sm);
-            test++;
             sync.arrive_and_wait();
+            test++;
         };
 
         for (int i = 0; i < readers; i++)
@@ -94,8 +94,8 @@ void TestSharedMutex()
 template <class T, class Status = NoCancel>
 void TestSharedMutexCancelReader()
 {
-    constexpr int readers = 8;
-    constexpr int tasks_per_reader = 32;
+    static constexpr int readers = 8;
+    static constexpr int tasks_per_reader = 32;
 
     T sm;
     std::atomic<int> successes(0);
@@ -168,8 +168,8 @@ void TestSharedMutexCancelReader()
 template <class T, class Status = NoCancel>
 void TestSharedMutexCancelWriter()
 {
-    constexpr int writers = 8;
-    constexpr int tasks_per_writer = 32;
+    static constexpr int writers = 8;
+    static constexpr int tasks_per_writer = 32;
 
     T sm;
     std::atomic<int> successes(0);

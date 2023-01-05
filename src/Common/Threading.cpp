@@ -53,12 +53,12 @@ namespace
 
     inline constexpr UInt32 lowerValue(UInt64 value)
     {
-        return UInt32(value & 0xffffffffull);
+        return static_cast<UInt32>(value & 0xffffffffull);
     }
 
     inline constexpr UInt32 upperValue(UInt64 value)
     {
-        return UInt32(value >> 32ull);
+        return static_cast<UInt32>(value >> 32ull);
     }
 
     inline UInt32 * lowerAddress(void * address)
@@ -300,12 +300,12 @@ Cancellable::~Cancellable()
     CancelToken::local().disable();
 }
 
-NotCancellable::NotCancellable()
+NonCancellable::NonCancellable()
 {
     CancelToken::local().disable();
 }
 
-NotCancellable::~NotCancellable()
+NonCancellable::~NonCancellable()
 {
     CancelToken::local().enable();
 }
