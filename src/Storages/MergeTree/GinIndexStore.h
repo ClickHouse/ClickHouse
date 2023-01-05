@@ -161,7 +161,7 @@ private:
     void initFileStreams();
 
     String name;
-    DataPartStoragePtr storage;    
+    DataPartStoragePtr storage;
     MutableDataPartStoragePtr data_part_storage_builder;
 
     UInt32 cached_segment_num = 0;
