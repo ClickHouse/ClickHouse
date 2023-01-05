@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Common/Exception.h"
 #include <cstddef>
 #include <type_traits>
 
@@ -43,6 +42,7 @@
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -2147,14 +2147,18 @@ struct ToNumberMonotonicity
         if constexpr (std::is_floating_point_v<T>)
             return { .is_monotonic = true, .is_always_monotonic = true };
 
-        /// If converting from Float, for monotonicity, arguments must fit in range of result type.
-        bool is_type_float = false;
-        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
-            is_type_float = WhichDataType(low_cardinality->getDictionaryType()).isFloat();
-        else
-            is_type_float = WhichDataType(type).isFloat();
+        const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
+        const IDataType * low_cardinality_dictionary_type = nullptr;
+        if (low_cardinality)
+            low_cardinality_dictionary_type = low_cardinality->getDictionaryType().get();
 
-        if (is_type_float)
+        WhichDataType which_type(type);
+        WhichDataType which_inner_type = low_cardinality
+            ? WhichDataType(low_cardinality_dictionary_type)
+            : WhichDataType(type);
+
+        /// If converting from Float, for monotonicity, arguments must fit in range of result type.
+        if (which_inner_type.isFloat())
         {
             if (left.isNull() || right.isNull())
                 return {};
@@ -2173,15 +2177,18 @@ struct ToNumberMonotonicity
 
         /// Integer cases.
 
+        /// Only support types represented by native integers.
+        /// It can be extended to big integers, decimals and DateTime64 later.
+        /// By the way, NULLs are representing unbounded ranges.
+        if (!((left.isNull() || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
+            && (right.isNull() || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
+            return {};
+
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
         const bool to_is_unsigned = is_unsigned_v<T>;
 
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
-
-        /// Do not support 128 bit integers and decimals for now.
-        if (size_of_from > sizeof(Int64))
-            return {};
 
         const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
