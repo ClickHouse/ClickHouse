@@ -165,6 +165,10 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 0; query_num < num_children; ++query_num)
         {
             headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
+            /// Here whe check that, in case if required_result_column_names were specified,
+            /// nested interpreter returns exaclty it. Except if query requires full header.
+            /// The code aboew is written in a way that for 0th query required_result_column_names_for_other_selects[0]
+            /// is an empty list, and we should use required_result_column_names instead.
             const auto & current_required_result_column_names = (query_num == 0 && !require_full_header)
                 ? required_result_column_names
                 : required_result_column_names_for_other_selects[query_num];
