@@ -208,7 +208,7 @@ void TestSharedMutexCancelWriter()
                 // And this is the desired behaviour.
                 sync.arrive_and_wait(); // (B) wait for cancellation to finish, before unlock.
             }
-            catch(DB::Exception & e)
+            catch (DB::Exception & e)
             {
                 ASSERT_EQ(e.code(), DB::ErrorCodes::THREAD_WAS_CANCELLED);
                 ASSERT_EQ(e.message(), "test");
