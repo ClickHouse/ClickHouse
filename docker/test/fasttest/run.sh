@@ -4,6 +4,7 @@ set -o pipefail
 trap "exit" INT TERM
 trap 'kill $(jobs -pr) ||:' EXIT
 
+# Test
 
 # This script is separated into two stages, cloning and everything else, so
 # that we can run the "everything else" stage from the cloned source.
