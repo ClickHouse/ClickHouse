@@ -156,14 +156,14 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     * File segment capacity will equal `max_file_segment_size`, but actual size is 0.
     */
 
-    CreateFileSegmentSettings create_settings(segment_kind);
+    CreateFileSegmentSettings create_settings(segment_kind, true);
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
-    auto file_segment = cache->createFileSegmentForDownload(
-        key, offset, cache->max_file_segment_size, create_settings);
-
-    return file_segments.add(std::move(file_segment));
+    auto holder = cache->set(key, offset, cache->max_file_segment_size, create_settings);
+    chassert(holder->size() == 1);
+    holder->move(file_segments);
+    return file_segments.back();
 }
 
 void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_segment)

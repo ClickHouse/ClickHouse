@@ -608,10 +608,6 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction)
     const bool is_last_holder = isLastHolder(key_transaction);
     const size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
 
-    auto queue_iter = key_transaction.getOffsets().get(offset())->queue_iterator;
-    if (queue_iter)
-        queue_iter->use(key_transaction.getQueueLock());
-
     SCOPE_EXIT({
         if (is_downloader)
         {
@@ -816,15 +812,18 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
         file_segment->range().size(),
         file_segment->key(),
         nullptr,
-        nullptr,
+        file_segment->cache,
         State::EMPTY,
         CreateFileSegmentSettings{});
 
     snapshot->hits_count = file_segment->getHitsCount();
-    snapshot->ref_count = file_segment.use_count();
     snapshot->downloaded_size = file_segment->getDownloadedSizeUnlocked(lock);
     snapshot->download_state = file_segment->download_state;
     snapshot->segment_kind = file_segment->getKind();
+
+    snapshot->ref_count = file_segment.use_count();
+    snapshot->is_detached = true;
+    snapshot->is_completed = true;
 
     return snapshot;
 }
@@ -846,11 +845,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const KeyTransacti
     if (is_detached)
         return;
 
-    if (download_state == State::DOWNLOADING)
-        resetDownloadingStateUnlocked(lock);
-    else
-        setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, lock);
-
+    setDownloadState(State::SKIP_CACHE, lock);
     resetDownloaderUnlocked(lock);
     detachAssumeStateFinalized(lock);
 }
@@ -866,18 +861,25 @@ void FileSegment::detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock
 
 FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
 {
-    if (file_segments.front()->isCompleted())
+    auto & file_segment = front();
+    if (file_segment.isDetached())
     {
         return file_segments.erase(file_segments.begin());
     }
 
-    auto lock = file_segments.front()->cache->main_priority->lockShared();
+    auto lock = file_segment.cache->main_priority->lock();
     /// File segment pointer must be reset right after calling complete() and
     /// under the same mutex, because complete() checks for segment pointers.
-    auto key_transaction = file_segments.front()->createKeyTransaction(/* assert_exists */false);
-    key_transaction->queue_lock = lock;
+    auto key_transaction = file_segment.createKeyTransaction(/* assert_exists */false);
     if (key_transaction)
-        file_segments.front()->completeUnlocked(*key_transaction);
+    {
+        auto queue_iter = key_transaction->getOffsets().tryGet(file_segment.offset())->queue_iterator;
+        if (queue_iter)
+            queue_iter->use(lock);
+
+        if (!file_segment.isCompleted())
+            file_segment.completeUnlocked(*key_transaction);
+    }
 
     return file_segments.erase(file_segments.begin());
 }

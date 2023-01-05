@@ -13,7 +13,7 @@ namespace DB
 class IFileCachePriority;
 using FileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
 struct KeyTransaction;
-using KeyTransactionPtr = std::unique_ptr<KeyTransaction>;
+using KeyTransactionPtr = std::shared_ptr<KeyTransaction>;
 struct KeyTransactionCreator;
 using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
 
@@ -28,17 +28,18 @@ public:
     using ConstIterator = std::shared_ptr<const IIterator>;
     using Lock = CachePriorityQueueGuard::Lock;
 
-    struct FileCacheRecord
+    struct Entry
     {
         Key key;
         size_t offset;
         size_t size;
         size_t hits = 0;
-        KeyTransactionCreatorPtr key_transaction_creator;
+        mutable KeyTransactionCreatorPtr key_transaction_creator;
 
-        FileCacheRecord(
-            const Key & key_, size_t offset_, size_t size_, KeyTransactionCreatorPtr key_transaction_creator_)
-            : key(key_), offset(offset_), size(size_), key_transaction_creator(std::move(key_transaction_creator_)) { }
+        KeyTransactionPtr createKeyTransaction() const;
+
+        Entry(const Key & key_, size_t offset_, size_t size_,
+              KeyTransactionCreatorPtr key_transaction_creator_);
     };
 
     /// It provides an iterator to traverse the cache priority. Under normal circumstances,
@@ -50,33 +51,25 @@ public:
     public:
         virtual ~IIterator() = default;
 
-        virtual const Key & key() const = 0;
-
-        virtual size_t offset() const = 0;
-
-        virtual size_t size() const = 0;
-
-        virtual size_t hits() const = 0;
-
-        virtual KeyTransactionPtr createKeyTransaction(const CachePriorityQueueGuard::Lock &) = 0;
-
-        /// Point the iterator to the next higher priority cache record.
-        virtual void next(const CachePriorityQueueGuard::Lock &) const = 0;
-
-        virtual bool valid(const CachePriorityQueueGuard::Lock &) const = 0;
+        virtual Entry & operator *() = 0;
+        virtual const Entry & operator *() const = 0;
 
         /// Mark a cache record as recently used, it will update the priority
         /// of the cache record according to different cache algorithms.
         /// Return result hits count.
         virtual size_t use(const CachePriorityQueueGuard::Lock &) = 0;
 
-        /// Deletes an existing cached record. Return iterator to the next value.
-        virtual Iterator remove(const CachePriorityQueueGuard::Lock &) = 0;
-
         virtual void incrementSize(ssize_t, const CachePriorityQueueGuard::Lock &) = 0;
+
+        /// Remove current cached record. Return iterator to the next value.
+        virtual Iterator remove(const CachePriorityQueueGuard::Lock &) = 0;
     };
 
     virtual ~IFileCachePriority() = default;
+
+    size_t getCacheSize(const CachePriorityQueueGuard::Lock &) const { return cache_size; }
+
+    virtual size_t getElementsNum(const CachePriorityQueueGuard::Lock &) const = 0;
 
     /// Lock current priority queue. All methods must be called under this lock.
     CachePriorityQueueGuard::Lock lock() { return guard.lock(); }
@@ -91,18 +84,18 @@ public:
         KeyTransactionCreatorPtr key_transaction_creator,
         const CachePriorityQueueGuard::Lock &) = 0;
 
-    /// This method is used for assertions in debug mode. So we do not care about complexity here.
-    /// Query whether a cache record exists. If it exists, return true. If not, return false.
-    virtual bool contains(const Key & key, size_t offset, const CachePriorityQueueGuard::Lock &) = 0;
-
     virtual void removeAll(const CachePriorityQueueGuard::Lock &) = 0;
 
-    /// The same as getLowestPriorityReadIterator(), but it is writeable.
-    virtual Iterator getLowestPriorityIterator(const CachePriorityQueueGuard::Lock &) = 0;
 
-    virtual size_t getElementsNum(const CachePriorityQueueGuard::Lock &) const = 0;
+    enum class IterationResult
+    {
+        BREAK,
+        CONTINUE,
+        REMOVE_AND_CONTINUE,
+    };
+    using IterateFunc = std::function<IterationResult(const Entry &)>;
+    virtual void iterate(IterateFunc && func, const CachePriorityQueueGuard::Lock &) = 0;
 
-    size_t getCacheSize(const CachePriorityQueueGuard::Lock &) const { return cache_size; }
 
 protected:
     CachePriorityQueueGuard guard;
