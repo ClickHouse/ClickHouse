@@ -174,7 +174,7 @@ private:
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
     /// If not force, then take merges selector and check that part is not participating in background operations.
-    MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force);
+    MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout = true);
     ActionLock stopMergesAndWait();
 
     /// Allocate block number for new mutation, write mutation to disk
@@ -212,6 +212,10 @@ private:
     UInt64 getCurrentMutationVersion(
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+
+    UInt32 getMaxLevelInBetween(
+        const DataPartPtr & left,
+        const DataPartPtr & right) const;
 
     size_t clearOldMutations(bool truncate = false);
 
