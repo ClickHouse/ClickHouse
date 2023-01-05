@@ -44,7 +44,7 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
     }
     if (useRoaring())
     {
-        if (rowid_bitmap.cardinality() == size_limit )
+        if (rowid_bitmap.cardinality() == size_limit)
         {
             //reset the postings list with MATCH ALWAYS;
             lst_length = 1; //makes sure useRoaring() returns false;

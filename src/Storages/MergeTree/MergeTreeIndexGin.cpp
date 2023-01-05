@@ -653,7 +653,7 @@ bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
         {
             auto key = header.getPositionByName(lhs.getColumnName());
             key_tuple_mapping.emplace_back(0, key);
-            data_types.push_back(header.getByPosition(key).type);            
+            data_types.push_back(header.getByPosition(key).type);
         }
     }
 

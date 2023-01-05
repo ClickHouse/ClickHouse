@@ -24,7 +24,7 @@ GinFilterParameters::GinFilterParameters(size_t ngrams_, Float64 density_)
 {
     if (ngrams > 8)
         throw Exception("The size of gin filter cannot be greater than 8", ErrorCodes::BAD_ARGUMENTS);
-    if (density <= 0 || density > 1 )
+    if (density <= 0 || density > 1)
         throw Exception("The density of gin filter must be between 0 and 1", ErrorCodes::BAD_ARGUMENTS);
 }
 
@@ -110,7 +110,7 @@ bool GinFilter::matchInRange(const PostingsCachePtr& postings_cache, UInt32 segm
         auto min_in_container = container_it->second->minimum();
         auto max_in_container = container_it->second->maximum();
 
-        //check if the postings list has always match flag        
+        //check if the postings list has always match flag
         if (container_it->second->cardinality() == 1 && UINT32_MAX == min_in_container)
         {
             continue; //always match
