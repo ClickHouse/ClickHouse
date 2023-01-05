@@ -230,6 +230,12 @@ void IOUringReader::monitorRing()
             break;
         }
 
+        if (!cqe)
+        {
+            LOG_ERROR(log, "Unexpectedly got a null CQE, continuing");
+            continue;
+        }
+
         // it is safe to re-submit events once we take the lock here
         std::unique_lock lock{mutex};
 
