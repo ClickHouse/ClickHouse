@@ -19,19 +19,21 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-GinFilterParameters::GinFilterParameters(size_t ngrams_)
-    : ngrams(ngrams_)
+GinFilterParameters::GinFilterParameters(size_t ngrams_, Float64 density_)
+    : ngrams(ngrams_), density(density_)
 {
     if (ngrams > 8)
         throw Exception("The size of gin filter cannot be greater than 8", ErrorCodes::BAD_ARGUMENTS);
+    if (density <= 0 || density > 1 )
+        throw Exception("The density of gin filter must be between 0 and 1", ErrorCodes::BAD_ARGUMENTS);
 }
 
-GinFilter::GinFilter(const GinFilterParameters & params)
-    : ngrams(params.ngrams)
+GinFilter::GinFilter(const GinFilterParameters & params_)
+    : params(params_)
 {
 }
 
-void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store)
+void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store, UInt64 limit)
 {
     if (len > FST::MAX_TERM_LENGTH)
         return;
@@ -46,7 +48,8 @@ void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr
     }
     else
     {
-        GinIndexPostingsBuilderPtr builder = std::make_shared<GinIndexPostingsBuilder>();
+        UInt64 threshold = std::lround(limit * params.density);
+        GinIndexPostingsBuilderPtr builder = std::make_shared<GinIndexPostingsBuilder>(threshold);
         builder->add(rowID);
 
         store->getPostings()[token] = builder;
@@ -106,6 +109,13 @@ bool GinFilter::matchInRange(const PostingsCachePtr& postings_cache, UInt32 segm
         }
         auto min_in_container = container_it->second->minimum();
         auto max_in_container = container_it->second->maximum();
+
+        //check if the postings list has always match flag        
+        if (container_it->second->cardinality() == 1 && UINT32_MAX == min_in_container)
+        {
+            continue; //always match
+        }
+
         if (range_start > max_in_container ||  min_in_container > range_end)
         {
             return false;

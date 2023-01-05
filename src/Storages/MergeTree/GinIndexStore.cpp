@@ -24,6 +24,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
+GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit) : size_limit(limit)
+{}
+
 bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
 {
     if (useRoaring())
@@ -35,9 +38,22 @@ bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
 
 void GinIndexPostingsBuilder::add(UInt32 row_id)
 {
+    if (containsAllRows())
+    {
+        return;
+    }
     if (useRoaring())
     {
-        rowid_bitmap.add(row_id);
+        if (rowid_bitmap.cardinality() == size_limit )
+        {
+            //reset the postings list with MATCH ALWAYS;
+            lst_length = 1; //makes sure useRoaring() returns false;
+            lst[0] = UINT32_MAX; //set CONTAINS ALL flag;
+        }
+        else
+        {
+            rowid_bitmap.add(row_id);
+        }
         return;
     }
     assert(lst_length < MIN_SIZE_FOR_ROARING_ENCODING);
@@ -55,6 +71,11 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
 bool GinIndexPostingsBuilder::useRoaring() const
 {
     return lst_length == UsesBitMap;
+}
+
+bool GinIndexPostingsBuilder::containsAllRows() const
+{
+    return lst[0] == UINT32_MAX;
 }
 
 UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer &buffer) const

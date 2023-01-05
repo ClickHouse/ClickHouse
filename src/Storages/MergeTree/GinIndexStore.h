@@ -43,6 +43,8 @@ using GinIndexPostingsListPtr = std::shared_ptr<roaring::Roaring>;
 class GinIndexPostingsBuilder
 {
 public:
+    GinIndexPostingsBuilder(UInt64 limit);
+
     /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'lst' is used
     std::array<UInt32, MIN_SIZE_FOR_ROARING_ENCODING> lst;
 
@@ -61,6 +63,9 @@ public:
     /// Check whether the builder is using roaring bitmap
     bool useRoaring() const;
 
+    /// Check whether the postings list has been flagged to contain all row ids
+    bool containsAllRows() const;
+
     /// Serialize the content of builder to given WriteBuffer, returns the bytes of serialized data
     UInt64 serialize(WriteBuffer &buffer) const;
 
@@ -68,6 +73,8 @@ public:
     static GinIndexPostingsListPtr deserialize(ReadBuffer &buffer);
 private:
     static constexpr UInt8 UsesBitMap = 0xFF;
+    /// Clear the postings list and reset it with MATCHALL flags when the size of the postings list is beyond the limit
+    UInt64 size_limit;
 };
 
 using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;

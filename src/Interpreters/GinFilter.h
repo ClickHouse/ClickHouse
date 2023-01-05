@@ -7,9 +7,10 @@ namespace DB
 {
 struct GinFilterParameters
 {
-    explicit GinFilterParameters(size_t ngrams_);
+    explicit GinFilterParameters(size_t ngrams_, Float64 density_);
 
     size_t ngrams;
+    Float64 density;
 };
 
 struct RowIDRange
@@ -29,9 +30,9 @@ class GinFilter
 public:
     using RowIDRangeContainer = std::vector<RowIDRange>;
 
-    explicit GinFilter(const GinFilterParameters& params);
+    explicit GinFilter(const GinFilterParameters& params_);
 
-    void add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store);
+    void add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store, UInt64 limit);
 
     void addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt32 rowIDEnd);
 
@@ -67,7 +68,7 @@ public:
 
     static constexpr auto FilterName = "inverted";
 private:
-    [[maybe_unused]] size_t ngrams;
+    const GinFilterParameters& params;
 
     String query_string;
 

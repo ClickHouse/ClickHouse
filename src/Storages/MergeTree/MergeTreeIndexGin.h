@@ -50,7 +50,7 @@ struct MergeTreeIndexAggregatorGinFilter final : IMergeTreeIndexAggregator
 
     void update(const Block & block, size_t * pos, size_t limit) override;
 
-    void addToGinFilter(UInt32 rowID, const char* data, size_t length, GinFilter& gin_filter);
+    void addToGinFilter(UInt32 rowID, const char* data, size_t length, GinFilter& gin_filter, UInt64 limit);
 
     GinIndexStorePtr store;
     Names index_columns;

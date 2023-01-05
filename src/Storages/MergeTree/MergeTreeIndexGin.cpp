@@ -112,7 +112,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGinFilter::getGranuleAndReset()
     return new_granule;
 }
 
-void MergeTreeIndexAggregatorGinFilter::addToGinFilter(UInt32 rowID, const char* data, size_t length, GinFilter& gin_filter)
+void MergeTreeIndexAggregatorGinFilter::addToGinFilter(UInt32 rowID, const char* data, size_t length, GinFilter& gin_filter, UInt64 limit)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -120,7 +120,7 @@ void MergeTreeIndexAggregatorGinFilter::addToGinFilter(UInt32 rowID, const char*
 
     while (cur < length && token_extractor->nextInStringPadded(data, length, &cur, &token_start, &token_len))
     {
-        gin_filter.add(data + token_start, token_len, rowID, store);
+        gin_filter.add(data + token_start, token_len, rowID, store, limit);
     }
 }
 
@@ -156,7 +156,7 @@ void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
+                    addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col], rows_read);
                     store->addSize(ref.size);
                 }
                 current_position += 1;
@@ -171,7 +171,7 @@ void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
+                addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col], rows_read);
                 store->addSize(ref.size);
                 row_id++;
                 if (store->needToWrite())
@@ -728,7 +728,8 @@ MergeTreeIndexPtr ginIndexCreator(
     if (index.type == GinFilter::getName())
     {
         size_t n = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
-        GinFilterParameters params(n);
+        Float64 density = index.arguments.size() < 2 ? 1.0f : index.arguments[1].get<Float64>();
+        GinFilterParameters params(n, density);
 
         /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
         if (n > 0)
@@ -766,22 +767,26 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
 
         if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception("Gin filter index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception("Inverted index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
     }
 
     if (index.type != GinFilter::getName())
         throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
 
-    if (index.arguments.size() > 1)
-        throw Exception("Gin index must have zero or one argument.", ErrorCodes::INCORRECT_QUERY);
+    if (index.arguments.size() > 2)
+        throw Exception("Inverted index must have less than two arguments.", ErrorCodes::INCORRECT_QUERY);
 
-    if (index.arguments.size() == 1 && index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception("Gin index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
+    if (index.arguments.size() >= 1 && index.arguments[0].getType() != Field::Types::UInt64)
+        throw Exception("The first Inverted index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
+
+    if (index.arguments.size() == 2 && (index.arguments[1].getType() != Field::Types::Float64 || index.arguments[1].get<Float64>() <= 0 || index.arguments[1].get<Float64>() > 1))
+        throw Exception("The second Inverted index argument must be a float between 0 and 1.", ErrorCodes::INCORRECT_QUERY);
 
     size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
+    Float64 density = index.arguments.size() < 2 ? 1.0f : index.arguments[1].get<Float64>();
 
     /// Just validate
-    GinFilterParameters params(ngrams);
+    GinFilterParameters params(ngrams, density);
 }
 
 }
