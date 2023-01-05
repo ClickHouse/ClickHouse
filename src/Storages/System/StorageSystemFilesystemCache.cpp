@@ -43,7 +43,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
         const auto & cache = cache_data->cache;
         auto file_segments = cache->getSnapshot();
 
-        for (const auto & file_segment : file_segments)
+        for (const auto & file_segment : *file_segments)
         {
             res_columns[0]->insert(cache_base_path);
 

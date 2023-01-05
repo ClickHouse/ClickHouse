@@ -140,7 +140,7 @@ private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
     ProfileEvents::Counters current_file_segment_counters;
 
-    FileCache::QueryContextHolder query_context_holder;
+    FileCache::QueryContextHolderPtr query_context_holder;
 
     bool is_persistent;
 };

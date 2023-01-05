@@ -34,7 +34,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
     }
 #endif
 
-    auto iter = queue.insert(queue.end(), FileCacheRecord(key, offset, size, std::move(key_transaction_creator)));
+    auto iter = queue.insert(queue.end(), Entry(key, offset, size, std::move(key_transaction_creator)));
     cache_size += size;
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
@@ -43,21 +43,6 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
     LOG_TRACE(log, "Added entry into LRU queue, key: {}, offset: {}", key.toString(), offset);
 
     return std::make_shared<LRUFileCacheIterator>(this, iter);
-}
-
-KeyTransactionPtr LRUFileCachePriority::LRUFileCacheIterator::createKeyTransaction(const CachePriorityQueueGuard::Lock &)
-{
-    return queue_iter->key_transaction_creator->create();
-}
-
-bool LRUFileCachePriority::contains(const Key & key, size_t offset, const CachePriorityQueueGuard::Lock &)
-{
-    for (const auto & record : queue)
-    {
-        if (key == record.key && offset == record.offset)
-            return true;
-    }
-    return false;
 }
 
 void LRUFileCachePriority::removeAll(const CachePriorityQueueGuard::Lock &)
@@ -71,13 +56,16 @@ void LRUFileCachePriority::removeAll(const CachePriorityQueueGuard::Lock &)
     cache_size = 0;
 }
 
-// LRUFileCachePriority::KeyAndOffset LRUFileCachePriority::pop(const CachePriorityQueueGuard::Lock & lock)
-// {
-//     auto remove_it = getLowestPriorityIterator(lock);
-//     KeyAndOffset result(remove_it->key(), remove_it->offset());
-//     remove_it->removeAndGetNext(lock);
-//     return result;
-// }
+LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIterator it)
+{
+    cache_size -= it->size;
+
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, it->size);
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
+
+    LOG_TRACE(log, "Removed entry from LRU queue, key: {}, offset: {}", it->key.toString(), it->offset);
+    return queue.erase(it);
+}
 
 LRUFileCachePriority::LRUFileCacheIterator::LRUFileCacheIterator(
     LRUFileCachePriority * cache_priority_, LRUFileCachePriority::LRUQueueIterator queue_iter_)
@@ -85,35 +73,41 @@ LRUFileCachePriority::LRUFileCacheIterator::LRUFileCacheIterator(
 {
 }
 
-IFileCachePriority::Iterator LRUFileCachePriority::getLowestPriorityIterator(const CachePriorityQueueGuard::Lock &)
+void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityQueueGuard::Lock &)
 {
-    return std::make_shared<LRUFileCacheIterator>(this, queue.begin());
-}
-
-size_t LRUFileCachePriority::getElementsNum(const CachePriorityQueueGuard::Lock &) const
-{
-    return queue.size();
+    for (auto it = queue.begin(); it != queue.end();)
+    {
+        auto result = func(*it);
+        switch (result)
+        {
+            case IterationResult::BREAK:
+            {
+                return;
+            }
+            case IterationResult::CONTINUE:
+            {
+                ++it;
+                break;
+            }
+            case IterationResult::REMOVE_AND_CONTINUE:
+            {
+                it = remove(it);
+                break;
+            }
+        }
+    }
 }
 
 LRUFileCachePriority::Iterator LRUFileCachePriority::LRUFileCacheIterator::remove(const CachePriorityQueueGuard::Lock &)
 {
-    cache_priority->cache_size -= queue_iter->size;
-
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, queue_iter->size);
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
-
-    LOG_TRACE(cache_priority->log, "Removed entry from LRU queue, key: {}, offset: {}", queue_iter->key.toString(), queue_iter->offset);
-
-    auto next = std::make_shared<LRUFileCacheIterator>(cache_priority, cache_priority->queue.erase(queue_iter));
-    queue_iter = cache_priority->queue.end();
-    return next;
+    return std::make_shared<LRUFileCacheIterator>(cache_priority, cache_priority->remove(queue_iter));
 }
 
-void LRUFileCachePriority::LRUFileCacheIterator::incrementSize(ssize_t size_increment, const CachePriorityQueueGuard::Lock &)
+void LRUFileCachePriority::LRUFileCacheIterator::incrementSize(ssize_t size, const CachePriorityQueueGuard::Lock &)
 {
-    cache_priority->cache_size += size_increment;
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size_increment);
-    queue_iter->size += size_increment;
+    cache_priority->cache_size += size;
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
+    queue_iter->size += size;
 }
 
 size_t LRUFileCachePriority::LRUFileCacheIterator::use(const CachePriorityQueueGuard::Lock &)

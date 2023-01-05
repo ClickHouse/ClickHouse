@@ -31,7 +31,7 @@ class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 struct KeyTransaction;
-using KeyTransactionPtr = std::unique_ptr<KeyTransaction>;
+using KeyTransactionPtr = std::shared_ptr<KeyTransaction>;
 struct KeyTransactionCreator;
 using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
 
@@ -396,7 +396,16 @@ struct FileSegmentsHolder : private boost::noncopyable
     FileSegments::iterator begin() { return file_segments.begin(); }
     FileSegments::iterator end() { return file_segments.end(); }
 
+    FileSegments::const_iterator begin() const { return file_segments.begin(); }
+    FileSegments::const_iterator end() const { return file_segments.end(); }
+
     void reset();
+
+    void move(FileSegmentsHolder & holder)
+    {
+        holder.file_segments.insert(holder.file_segments.end(), file_segments.begin(), file_segments.end());
+        file_segments.clear();
+    }
 
 private:
     FileSegments file_segments{};

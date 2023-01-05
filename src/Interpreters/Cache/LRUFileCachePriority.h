@@ -14,7 +14,7 @@ class LRUFileCachePriority : public IFileCachePriority
 {
 private:
     class LRUFileCacheIterator;
-    using LRUQueue = std::list<FileCacheRecord>;
+    using LRUQueue = std::list<Entry>;
     using LRUQueueIterator = typename LRUQueue::iterator;
 
 public:
@@ -27,17 +27,17 @@ public:
         KeyTransactionCreatorPtr key_transaction_creator,
         const CachePriorityQueueGuard::Lock &) override;
 
-    bool contains(const Key & key, size_t offset, const CachePriorityQueueGuard::Lock &) override;
-
     void removeAll(const CachePriorityQueueGuard::Lock &) override;
 
-    Iterator getLowestPriorityIterator(const CachePriorityQueueGuard::Lock &) override;
+    void iterate(IterateFunc && func, const CachePriorityQueueGuard::Lock &) override;
 
-    size_t getElementsNum(const CachePriorityQueueGuard::Lock &) const override;
+    size_t getElementsNum(const CachePriorityQueueGuard::Lock &) const override { return queue.size(); }
 
 private:
     LRUQueue queue;
     Poco::Logger * log = &Poco::Logger::get("LRUFileCachePriority");
+
+    LRUQueueIterator remove(LRUQueueIterator it);
 };
 
 class LRUFileCachePriority::LRUFileCacheIterator : public IFileCachePriority::IIterator
@@ -47,25 +47,14 @@ public:
         LRUFileCachePriority * cache_priority_,
         LRUFileCachePriority::LRUQueueIterator queue_iter_);
 
-    void next(const CachePriorityQueueGuard::Lock &) const override { queue_iter++; }
+    Entry & operator *() override { return *queue_iter; }
+    const Entry & operator *() const override { return *queue_iter; }
 
-    bool valid(const CachePriorityQueueGuard::Lock &) const override { return queue_iter != cache_priority->queue.end(); }
-
-    const Key & key() const override { return queue_iter->key; }
-
-    size_t offset() const override { return queue_iter->offset; }
-
-    size_t size() const override { return queue_iter->size; }
-
-    size_t hits() const override { return queue_iter->hits; }
-
-    KeyTransactionPtr createKeyTransaction(const CachePriorityQueueGuard::Lock &) override;
+    size_t use(const CachePriorityQueueGuard::Lock &) override;
 
     Iterator remove(const CachePriorityQueueGuard::Lock &) override;
 
-    void incrementSize(ssize_t size_increment, const CachePriorityQueueGuard::Lock &) override;
-
-    size_t use(const CachePriorityQueueGuard::Lock &) override;
+    void incrementSize(ssize_t size, const CachePriorityQueueGuard::Lock &) override;
 
 private:
     LRUFileCachePriority * cache_priority;
