@@ -155,11 +155,29 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
     *pos += rows_read;
 }
 
+namespace
+{
+
+KeyCondition buildCondition(const IndexDescription & index, const SelectQueryInfo & query_info, ContextPtr context)
+{
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        NameSet array_join_name_set;
+        if (query_info.syntax_analyzer_result)
+            array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
+
+        return KeyCondition{query_info.filter_actions_dag, context, index.column_names, index.expression, array_join_name_set};
+    }
+
+    return KeyCondition{query_info, context, index.column_names, index.expression};
+}
+
+}
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const SelectQueryInfo & query, ContextPtr context)
+    const IndexDescription & index, const SelectQueryInfo & query_info, ContextPtr context)
     : index_data_types(index.data_types)
-    , condition(query, context, index.column_names, index.expression)
+    , condition(buildCondition(index, query_info, context))
 {
 }
 

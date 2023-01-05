@@ -3,8 +3,6 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
-#include <Core/NamesAndTypes.h>
-
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -18,8 +16,11 @@
 #include <Parsers/ASTFunction.h>
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/NamesAndTypes.h>
 
 #include <DataTypes/getLeastSupertype.h>
+
+#include <Interpreters/Context.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
@@ -33,8 +34,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-UnionNode::UnionNode(SelectUnionMode union_mode_)
+UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
     : IQueryTreeNode(children_size)
+    , context(std::move(context_))
     , union_mode(union_mode_)
 {
     if (union_mode == SelectUnionMode::UNION_DEFAULT ||
@@ -129,7 +131,7 @@ void UnionNode::updateTreeHashImpl(HashState & state) const
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
 {
-    auto result_union_node = std::make_shared<UnionNode>(union_mode);
+    auto result_union_node = std::make_shared<UnionNode>(context, union_mode);
 
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;

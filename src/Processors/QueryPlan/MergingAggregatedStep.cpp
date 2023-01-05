@@ -19,7 +19,7 @@ static bool memoryBoundMergingWillBeUsed(
         && input_stream.sort_scope >= DataStream::SortScope::Stream && input_stream.sort_description.hasPrefix(group_by_sort_description);
 }
 
-static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number, bool memory_bound_merging_will_be_used)
+static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
 {
     return ITransformingStep::Traits
     {
@@ -28,7 +28,6 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
             .returns_single_stream = should_produce_results_in_order_of_bucket_number,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
-            .can_enforce_sorting_properties_in_distributed_query = memory_bound_merging_will_be_used,
         },
         {
             .preserves_number_of_rows = false,
@@ -51,10 +50,7 @@ MergingAggregatedStep::MergingAggregatedStep(
     : ITransformingStep(
         input_stream_,
         params_.getHeader(input_stream_.header, final_),
-        getTraits(
-            should_produce_results_in_order_of_bucket_number_,
-            DB::memoryBoundMergingWillBeUsed(
-                input_stream_, memory_bound_merging_of_aggregation_results_enabled_, group_by_sort_description_)))
+        getTraits(should_produce_results_in_order_of_bucket_number_))
     , params(std::move(params_))
     , final(final_)
     , memory_efficient_aggregation(memory_efficient_aggregation_)
@@ -69,6 +65,19 @@ MergingAggregatedStep::MergingAggregatedStep(
     /// Aggregation keys are distinct
     for (const auto & key : params.keys)
         output_stream->distinct_columns.insert(key);
+
+    if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
+    {
+        output_stream->sort_description = group_by_sort_description;
+        output_stream->sort_scope = DataStream::SortScope::Global;
+    }
+}
+
+void MergingAggregatedStep::updateInputSortDescription(SortDescription sort_description, DataStream::SortScope sort_scope)
+{
+    auto & input_stream = input_streams.front();
+    input_stream.sort_scope = sort_scope;
+    input_stream.sort_description = sort_description;
 
     if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
     {
@@ -149,11 +158,6 @@ void MergingAggregatedStep::updateOutputStream()
     /// Aggregation keys are distinct
     for (const auto & key : params.keys)
         output_stream->distinct_columns.insert(key);
-}
-
-void MergingAggregatedStep::adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr context) const
-{
-    context->setSetting("enable_memory_bound_merging_of_aggregation_results", true);
 }
 
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const

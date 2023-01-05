@@ -181,6 +181,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
             /// For ON CLUSTER queries we will need to change some settings.
             /// For ASYNC queries we have to clone the context anyway.
             context_in_use = mutable_context = Context::createCopy(context);
+            mutable_context->makeQueryContext();
         }
 
         if (backup_settings.async)
@@ -285,6 +286,7 @@ void BackupsWorker::doBackup(
         backup_create_params.is_internal_backup = backup_settings.internal;
         backup_create_params.backup_coordination = backup_coordination;
         backup_create_params.backup_uuid = backup_settings.backup_uuid;
+        backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
         BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
 
         /// Write the backup.
@@ -400,6 +402,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
             /// For ON CLUSTER queries we will need to change some settings.
             /// For ASYNC queries we have to clone the context anyway.
             context_in_use = Context::createCopy(context);
+            context_in_use->makeQueryContext();
         }
 
         if (restore_settings.async)

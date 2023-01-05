@@ -91,4 +91,21 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
 
 **Note:** the `default` profile has special handling: all the constraints defined for the `default` profile become the default constraints, so they restrict all the users until they’re overridden explicitly for these users.
 
+## Constraints on Merge Tree Settings
+It is possible to set constraints for [merge tree settings](merge-tree-settings.md). These constraints are applied when table with merge tree engine is created or its storage settings are altered. Name of merge tree setting must be prepended by `merge_tree_` prefix when referenced in `<constraints>` section.
+
+**Example:** Forbid to create new tables with explicitly specified `storage_policy`
+
+``` xml
+<profiles>
+  <default>
+    <constraints>
+      <merge_tree_storage_policy>
+        <const/>
+      </merge_tree_storage_policy>
+    </constraints>
+  </default>
+</profiles>
+```
+
 [Original article](https://clickhouse.com/docs/en/operations/settings/constraints_on_settings/) <!--hide-->

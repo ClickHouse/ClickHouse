@@ -85,6 +85,8 @@ public:
 
     bool useNulls() const { return use_nulls; }
 
+    const Names & getKeyNames() const { return key_names; }
+
 private:
     Block sample_block;
     const Names key_names;
