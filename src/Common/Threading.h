@@ -20,10 +20,10 @@ struct Cancellable
 };
 
 // Scoped object, disabling thread cancellation (cannot be nested; must be inside `Cancellable` region)
-struct NotCancellable
+struct NonCancellable
 {
-    NotCancellable();
-    ~NotCancellable();
+    NonCancellable();
+    ~NonCancellable();
 };
 
 // Responsible for synchronization needed to deliver thread cancellation signal.
@@ -80,7 +80,7 @@ public:
 
 private:
     friend struct Cancellable;
-    friend struct NotCancellable;
+    friend struct NonCancellable;
 
     // Restores initial state for token to be reused. See `Cancellable` struct.
     // Intended to be called only by thread associated with this token.
@@ -89,7 +89,7 @@ private:
         state.store(0);
     }
 
-    // Enable thread cancellation. See `NotCancellable` struct.
+    // Enable thread cancellation. See `NonCancellable` struct.
     // Intended to be called only by thread associated with this token.
     void enable()
     {
@@ -97,7 +97,7 @@ private:
         state.fetch_and(~disabled);
     }
 
-    // Disable thread cancellation. See `NotCancellable` struct.
+    // Disable thread cancellation. See `NonCancellable` struct.
     // Intended to be called only by thread associated with this token.
     void disable()
     {
@@ -227,10 +227,10 @@ struct Cancellable
     ~Cancellable() = default;
 };
 
-struct NotCancellable
+struct NonCancellable
 {
-    NotCancellable() = default;
-    ~NotCancellable() = default;
+    NonCancellable() = default;
+    ~NonCancellable() = default;
 };
 
 class CancelToken
