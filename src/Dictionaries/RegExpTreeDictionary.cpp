@@ -246,7 +246,7 @@ void RegExpTreeDictionary::loadData()
         #if USE_VECTORSCAN
         std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
         hyperscan_regex = MultiRegexps::getOrSet<true, false>(regexps_views, std::nullopt);
-        /// TODO: fallback when exceptions occure.
+        /// TODO: fallback when exceptions occur.
         hyperscan_regex->get();
         #endif
 
