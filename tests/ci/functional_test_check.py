@@ -16,7 +16,7 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from build_download_helper import download_all_deb_packages
-from download_release_packets import download_last_release
+from download_release_packages import download_last_release
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import (
@@ -203,20 +203,21 @@ if __name__ == "__main__":
     temp_path = TEMP_PATH
     repo_path = REPO_COPY
     reports_path = REPORTS_PATH
+    post_commit_path = os.path.join(temp_path, "functional_commit_status.tsv")
 
     args = parse_args()
     check_name = args.check_name
     kill_timeout = args.kill_timeout
-    validate_bugix_check = args.validate_bugfix
+    validate_bugfix_check = args.validate_bugfix
 
     flaky_check = "flaky" in check_name.lower()
 
-    run_changed_tests = flaky_check or validate_bugix_check
+    run_changed_tests = flaky_check or validate_bugfix_check
     gh = Github(get_best_robot_token(), per_page=100)
 
-    # For validate_bugix_check we need up to date information about labels, so pr_event_from_api is used
+    # For validate_bugfix_check we need up to date information about labels, so pr_event_from_api is used
     pr_info = PRInfo(
-        need_changed_files=run_changed_tests, pr_event_from_api=validate_bugix_check
+        need_changed_files=run_changed_tests, pr_event_from_api=validate_bugfix_check
     )
 
     atexit.register(update_mergeable_check, gh, pr_info, check_name)
@@ -224,10 +225,10 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    if validate_bugix_check and "pr-bugfix" not in pr_info.labels:
+    if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
-                os.path.join(temp_path, "post_commit_status.tsv"),
+                post_commit_path,
                 f"Skipped (no pr-bugfix in {pr_info.labels})",
                 "success",
                 "null",
@@ -256,7 +257,7 @@ if __name__ == "__main__":
         tests_to_run = get_tests_to_run(pr_info)
         if not tests_to_run:
             commit = get_commit(gh, pr_info.sha)
-            state = override_status("success", check_name, validate_bugix_check)
+            state = override_status("success", check_name, validate_bugfix_check)
             if args.post_commit_status == "commit_status":
                 commit.create_status(
                     context=check_name_with_group,
@@ -264,9 +265,11 @@ if __name__ == "__main__":
                     state=state,
                 )
             elif args.post_commit_status == "file":
-                fpath = os.path.join(temp_path, "post_commit_status.tsv")
                 post_commit_status_to_file(
-                    fpath, description=NO_CHANGES_MSG, state=state, report_url="null"
+                    post_commit_path,
+                    description=NO_CHANGES_MSG,
+                    state=state,
+                    report_url="null",
                 )
             sys.exit(0)
 
@@ -279,7 +282,7 @@ if __name__ == "__main__":
     if not os.path.exists(packages_path):
         os.makedirs(packages_path)
 
-    if validate_bugix_check:
+    if validate_bugfix_check:
         download_last_release(packages_path)
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
@@ -297,7 +300,7 @@ if __name__ == "__main__":
     additional_envs = get_additional_envs(
         check_name, run_by_hash_num, run_by_hash_total
     )
-    if validate_bugix_check:
+    if validate_bugfix_check:
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
 
     run_command = get_run_command(
@@ -327,7 +330,7 @@ if __name__ == "__main__":
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path
     )
-    state = override_status(state, check_name, invert=validate_bugix_check)
+    state = override_status(state, check_name, invert=validate_bugfix_check)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)
@@ -348,7 +351,7 @@ if __name__ == "__main__":
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(
-            os.path.join(temp_path, "post_commit_status.tsv"),
+            post_commit_path,
             description,
             state,
             report_url,
