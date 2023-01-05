@@ -10,16 +10,13 @@ namespace DB
 void JSONEachRowWithProgressRowOutputFormat::writeRowStartDelimiter()
 {
     if (has_progress)
-    {
         writeProgress();
-        writeRowBetweenDelimiter();
-    }
     writeCString("{\"row\":{", *ostr);
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("}}", *ostr);
+    writeCString("}}\n", *ostr);
     field_number = 0;
 }
 
@@ -30,7 +27,7 @@ void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
     WriteBufferFromString buf(progress_line);
     writeCString("{\"progress\":", buf);
     progress.writeJSON(buf);
-    writeCString("}", buf);
+    writeCString("}\n", buf);
     buf.finalize();
     std::lock_guard lock(progress_lines_mutex);
     progress_lines.emplace_back(std::move(progress_line));
@@ -40,33 +37,22 @@ void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
 void JSONEachRowWithProgressRowOutputFormat::flush()
 {
     if (has_progress)
-    {
-        if (haveWrittenData())
-            writeRowBetweenDelimiter();
         writeProgress();
-    }
     JSONEachRowRowOutputFormat::flush();
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeSuffix()
 {
     if (has_progress)
-    {
-        writeRowBetweenDelimiter();
         writeProgress();
-    }
     JSONEachRowRowOutputFormat::writeSuffix();
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeProgress()
 {
     std::lock_guard lock(progress_lines_mutex);
-    for (size_t i = 0; i != progress_lines.size(); ++i)
-    {
-        if (i != 0)
-            writeRowBetweenDelimiter();
-        writeString(progress_lines[i], *ostr);
-    }
+    for (const auto & progress_line : progress_lines)
+        writeString(progress_line,  *ostr);
     progress_lines.clear();
     has_progress = false;
 }
