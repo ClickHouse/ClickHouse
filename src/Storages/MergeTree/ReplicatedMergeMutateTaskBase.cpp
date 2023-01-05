@@ -2,6 +2,8 @@
 
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <chrono>
+#include <exception>
 
 
 namespace DB
@@ -146,10 +148,26 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
     auto execute_fetch = [&] (bool need_to_check_missing_part) -> bool
     {
-        if (storage.executeFetch(entry, need_to_check_missing_part))
-            return remove_processed_entry();
+        /// Schedule fetch on own thread so that we could yield from the current
+        /// merge task and execute other higher priority merges if any.
+        fetch_thread = std::make_unique<ThreadFromGlobalPool>([this, need_to_check_missing_part]()
+        {
+            try
+            {
+                if (storage.executeFetch(entry, need_to_check_missing_part))
+                    fetch_status = FetchStatus::SUCCESS;
+                else
+                    fetch_status = FetchStatus::OBSOLETE;
+            }
+            catch (...)
+            {
+                fetch_exception = std::current_exception();
+                fetch_status = FetchStatus::FAILED;
+            }
+        });
 
-        return false;
+        state = State::NEED_FETCH_RESULT;
+        return true;
     };
 
 
@@ -168,7 +186,6 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
             part_log_writer = prepare_result.part_log_writer;
 
-            /// Avoid resheduling, execute fetch here, in the same thread.
             if (!prepare_result.prepared_successfully)
                 return execute_fetch(prepare_result.need_to_check_missing_part_in_fetch);
 
@@ -210,6 +227,25 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
             return remove_processed_entry();
         }
+        case State::NEED_FETCH_RESULT:
+        {
+            switch (fetch_status)
+            {
+                case FetchStatus::SUCCESS:
+                    /// Not really needed as the queue entry is removed as part of the fetchPart call.
+                    return remove_processed_entry();
+                case FetchStatus::OBSOLETE:
+                    /// executeFetch returned false.
+                    return false;
+                case FetchStatus::PENDING:
+                    /// Reschedule because the result is not ready yet.
+                    /// Sleep a bit to avoid busy looping.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    return true;
+                case FetchStatus::FAILED:
+                    std::rethrow_exception(fetch_exception);
+            }
+        }
         case State::SUCCESS :
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Do not call execute on previously succeeded task");
@@ -242,5 +278,12 @@ ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTask
     return CheckExistingPartResult::OK;
 }
 
+ReplicatedMergeMutateTaskBase::~ReplicatedMergeMutateTaskBase()
+{
+    /// If merge/mutation preferred a fetch, then wait for the thread running
+    /// the fetch to finish so it does not try to touch freed memory.
+    if (fetch_thread && fetch_thread->joinable())
+        fetch_thread->join();
+}
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <Common/logger_useful.h>
 
 #include <Storages/MergeTree/IExecutableTask.h>
@@ -31,7 +32,7 @@ public:
     {
     }
 
-    ~ReplicatedMergeMutateTaskBase() override = default;
+    ~ReplicatedMergeMutateTaskBase() override;
     void onCompleted() override;
     StorageID getStorageID() override;
     bool executeStep() override;
@@ -75,6 +76,7 @@ private:
     {
         NEED_PREPARE,
         NEED_EXECUTE_INNER_MERGE,
+        NEED_FETCH_RESULT,
         NEED_FINALIZE,
 
         SUCCESS
@@ -83,6 +85,20 @@ private:
     PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
+
+    std::unique_ptr<ThreadFromGlobalPool> fetch_thread = nullptr;
+    enum class FetchStatus
+    {
+        PENDING,
+        SUCCESS,
+        OBSOLETE,
+        FAILED,
+    };
+
+    /// This can be modified from fetch thread while being accessed concurrently
+    /// from the merge thread "coordinating" the task.
+    std::atomic<FetchStatus> fetch_status = FetchStatus::PENDING;
+    std::exception_ptr fetch_exception = nullptr;
 };
 
 }
