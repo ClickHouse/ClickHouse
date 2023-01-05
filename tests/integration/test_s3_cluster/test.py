@@ -283,6 +283,10 @@ def test_distributed_insert_select(started_cluster):
     )
 
     first_replica_first_shard.query(
+        """SYSTEM FLUSH DISTRIBUTED insert_select_distributed"""
+    )
+
+    first_replica_first_shard.query(
         """INSERT INTO insert_select_distributed SETTINGS insert_distributed_sync=1 SELECT * FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64') SETTINGS parallel_distributed_insert_select=1, insert_distributed_sync=1;""")
 
     for line in (
