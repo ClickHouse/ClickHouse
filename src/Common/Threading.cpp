@@ -118,11 +118,6 @@ namespace
     }
 }
 
-CancelToken::Registry::Registry()
-{
-    // setupCancelSignalHandler();
-}
-
 void CancelToken::Registry::insert(CancelToken * token)
 {
     std::lock_guard<std::mutex> lock(mutex);
