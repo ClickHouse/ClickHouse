@@ -212,12 +212,12 @@
             color: var(--misc-text-color);
         }
 
-        #data_div
-        {
+        .output-title {
             margin-top: 1rem;
+            font-weight: bold;
         }
 
-        #data-table
+        table
         {
             width: 100%;
             border-collapse: collapse;
@@ -255,7 +255,7 @@
         th
         {
             padding: 0.25rem 0.5rem;
-            text-align: center;
+            text-align: left;
             background-color: var(--table-header-color);
             border: 1px solid var(--border-color);
         }
@@ -340,6 +340,10 @@
             100% {
                 transform: none;
             }
+        }
+
+        #clear-history {
+            cursor: pointer;
         }
 
         #hourglass
@@ -461,6 +465,7 @@
             <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
         </div>
     </div>
+    <div class="output-title">Results</div>
     <div id="data_div">
         <table class="monospace-table shadow" id="data-table"></table>
         <pre class="monospace-table shadow" id="data-unparsed"></pre>
@@ -469,6 +474,21 @@
     <svg id="graph" fill="none"></svg>
     <p id="error" class="monospace shadow">
     </p>
+    <div class="output-title">Action History &nbsp; <a id="clear-history" onclick="clearHistory()">clear</a></div>
+    <div id="action_div" style="display:none">
+        <table>
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Action</th>
+                    <th>Message</th>
+                    <th>Stats</th>
+                </tr>
+            </thead>
+            <tbody id="action_body">
+            </tbody>
+        </table>
+    </div>
     <p id="logo-container">
         <a href="https://clickhouse.com/">
         <svg id="logo" width="50%" viewBox="0 0 180 28" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
@@ -516,8 +536,9 @@
         document.getElementById('user').value = user_from_url;
     }
 
-    function postImpl(posted_request_num, query)
+    function postImpl(posted_request_num)
     {
+        const query = queryQueue.shift();
         const user = document.getElementById('user').value;
         const password = document.getElementById('password').value;
 
@@ -549,7 +570,7 @@
             if (posted_request_num != request_num) {
                 return;
             } else if (this.readyState === XMLHttpRequest.DONE) {
-                renderResponse(this.status, this.response);
+                renderResponse(this.status, this.response, query);
 
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
@@ -575,6 +596,10 @@
                     }
                     document.title = title;
                     previous_query = query;
+
+                    if (queryQueue.length){
+                        postImpl(++request_num);
+                    }
                 }
             } else {
                 //console.log(this);
@@ -587,7 +612,7 @@
         xhr.send(query);
     }
 
-    function renderResponse(status, response) {
+    function renderResponse(status, response, query) {
         document.getElementById('hourglass').style.display = 'none';
 
         if (status === 200) {
@@ -595,22 +620,39 @@
             try { json = JSON.parse(response); } catch (e) {}
 
             if (json !== undefined && json.statistics !== undefined) {
-                renderResult(json);
+                renderResult(json, query);
             } else if (Array.isArray(json) && json.length == 2 &&
                 Array.isArray(json[0]) && Array.isArray(json[1]) && json[0].length > 1 && json[0].length == json[1].length) {
                 /// If user requested FORMAT JSONCompactColumns, we will render it as a chart.
-                renderChart(json);
+                renderChart(json, query);
             } else {
-                renderUnparsedResult(response);
+                renderUnparsedResult(response, query);
             }
             document.getElementById('check-mark').style.display = 'inline';
         } else {
             /// TODO: Proper rendering of network errors.
-            renderError(response);
+            renderError(response, query);
         }
     }
 
     let query_area = document.getElementById('query');
+
+    function updateRunButtonText() {
+        setTimeout(() => {
+        const selection =  (query_area.value).substring(query_area.selectionStart,query_area.selectionEnd);
+        const runButton = document.getElementById('run');
+        if (selection && selection.length){
+            runButton.innerText = 'Run selected';
+        } else {
+            runButton.innerText = 'Run';
+        }}, 100);
+    }
+
+    query_area.addEventListener('click', updateRunButtonText);
+    query_area.addEventListener('select', updateRunButtonText);
+    query_area.addEventListener('keyup', updateRunButtonText);
+    query_area.addEventListener('change', updateRunButtonText);
+    query_area.addEventListener('mouseup', updateRunButtonText);
 
     window.onpopstate = function(event) {
         if (!event.state) {
@@ -628,10 +670,22 @@
         query_area.value = window.atob(window.location.hash.substr(1));
     }
 
+    const queryQueue = [];
+
     function post()
     {
         ++request_num;
         let query = query_area.value;
+        const selection = (query_area.value).substring(query_area.selectionStart,query_area.selectionEnd);
+        if (selection && selection.length){
+            const multiStatements = selection.split(';').map(x => x.trim()).filter(x => x);
+            for (const statement of multiStatements){
+                queryQueue.push(statement);
+            }
+        } else {
+            queryQueue.push(query);
+        }
+
         postImpl(request_num, query);
     }
 
@@ -717,7 +771,7 @@
         return formatReadable(rows, 2, units);
     }
 
-    function renderResult(response)
+    function renderResult(response, query)
     {
         clear();
 
@@ -727,7 +781,9 @@
         const bytes = response.statistics.bytes_read;
         const formatted_bytes = formatReadableBytes(bytes);
         const formatted_rows = formatReadableRows(rows);
-        stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
+        const statsMessage = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
+        stats.innerText = statsMessage;
+        renderAction(true, response, query, statsMessage);
 
         /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
         if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
@@ -918,7 +974,7 @@
     }
 
     /// A function to render raw data when non-default format is specified.
-    function renderUnparsedResult(response)
+    function renderUnparsedResult(response, query)
     {
         clear();
         let data = document.getElementById('data-unparsed')
@@ -929,13 +985,48 @@
         }
 
         data.innerText = response;
+        renderAction(true, response, query);
         /// inline-block make width adjust to the size of content.
         data.style.display = 'inline-block';
     }
 
-    function renderError(response)
+    function renderAction(success, response, query, stats){
+        const actionDiv  = document.getElementById('action_div');
+        actionDiv.style = 'display:block';
+
+        const status = success ? 'Success' : 'Error';
+
+        if (stats) {
+            const message = success ? `${response.data.length} row(s) returned` : response;
+            action_body.innerHTML += `
+                    <tr>
+                        <td>${status}</td>
+                        <td>${query}</td>
+                        <td>${message}</td>
+                        <td>${stats}</td>
+                    </tr>`
+        } else {
+
+            action_body.innerHTML += `
+                    <tr>
+                        <td>${status}</td>
+                        <td>${query}</td>
+                        <td>${response}</td>
+                        <td>-</td>
+                    </tr>`
+        }
+    }
+
+    function clearHistory(){
+        const actionDiv  = document.getElementById('action_div');
+        actionDiv.style = 'display:none';
+        action_body.innerHTML = null;
+    }
+
+    function renderError(response, query)
     {
         clear();
+        renderAction(false, response, query);
         document.getElementById('error').innerText = response ? response : "No response.";
         document.getElementById('error').style.display = 'block';
         document.getElementById('logo-container').style.display = 'none';
