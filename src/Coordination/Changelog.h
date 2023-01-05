@@ -206,6 +206,11 @@ private:
     ThreadFromGlobalPool write_thread;
     ConcurrentBoundedQueue<WriteOperation> write_operations;
 
+    void appendCompletionThread();
+
+    ThreadFromGlobalPool append_completion_thread;
+    ConcurrentBoundedQueue<uint64_t> append_completion_queue;
+
     // last_durable_index needs to be exposed through const getter so we make mutex mutable
     mutable std::mutex durable_idx_mutex;
     std::condition_variable durable_idx_cv;
