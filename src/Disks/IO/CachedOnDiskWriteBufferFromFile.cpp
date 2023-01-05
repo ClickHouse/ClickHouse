@@ -162,7 +162,7 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     /// if we have less size to write, file segment will be resized in complete() method.
     auto holder = cache->set(key, offset, cache->max_file_segment_size, create_settings);
     chassert(holder->size() == 1);
-    holder->move(file_segments);
+    holder->moveTo(file_segments);
     return file_segments.back();
 }
 

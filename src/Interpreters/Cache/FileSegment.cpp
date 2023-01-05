@@ -67,8 +67,6 @@ FileSegment::FileSegment(
             reserved_size = downloaded_size = size_;
             is_downloaded = true;
             is_completed = true;
-            file = OpenedFileCache::instance().get(file_path, -1);
-            fd = file->getFD();
             chassert(std::filesystem::file_size(file_path) == size_);
             break;
         }
@@ -76,7 +74,6 @@ FileSegment::FileSegment(
         {
             is_detached = true;
             is_completed = true;
-            //CurrentMetrics::add(CurrentMetrics::CacheDetachedFileSegments);
             break;
         }
         default:
@@ -262,13 +259,6 @@ FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
     return remote_file_reader;
 }
 
-bool FileSegment::isLastHolder(const KeyTransaction & key_transaction) const
-{
-    chassert(!is_detached);
-    const auto * cell = key_transaction.getOffsets().get(offset());
-    return cell->file_segment.use_count() == 2;
-}
-
 FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 {
     auto key_transaction = createKeyTransaction(false);
@@ -282,7 +272,7 @@ FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 
     assert(!is_detached);
 
-    bool is_last_holder = isLastHolder(*key_transaction);
+    bool is_last_holder = key_transaction->isLastHolder(offset());
     if (!downloader_id.empty() || !is_last_holder)
         return nullptr;
 
@@ -501,24 +491,6 @@ bool FileSegment::reserve(size_t size_to_reserve)
     return reserved;
 }
 
-OpenedFileCache::OpenedFilePtr FileSegment::getFile() const
-{
-    auto lock = segment_guard.lock();
-    if (!is_downloaded)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is not downloaded");
-    chassert(file);
-    return file;
-}
-
-int FileSegment::getFD() const
-{
-    auto lock = segment_guard.lock();
-    if (!is_downloaded)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is not downloaded");
-    chassert(file);
-    return fd;
-}
-
 void FileSegment::setDownloadedUnlocked([[maybe_unused]] const FileSegmentGuard::Lock & lock)
 {
     if (is_downloaded)
@@ -533,9 +505,6 @@ void FileSegment::setDownloadedUnlocked([[maybe_unused]] const FileSegmentGuard:
 
     download_state = State::DOWNLOADED;
     is_downloaded = true;
-
-    file = OpenedFileCache::instance().get(file_path, -1);
-    fd = file->getFD();
 
     assert(getDownloadedSizeUnlocked(lock) > 0);
     assert(std::filesystem::file_size(file_path) > 0);
@@ -605,7 +574,7 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction)
         return;
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
-    const bool is_last_holder = isLastHolder(key_transaction);
+    const bool is_last_holder = key_transaction->isLastHolder(offset);
     const size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
 
     SCOPE_EXIT({

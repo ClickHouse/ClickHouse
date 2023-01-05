@@ -284,7 +284,7 @@ public:
     };
 
 private:
-    void assertInitializedUnlocked(CacheGuard::Lock & cache_lock) const;
+    void assertInitializedUnlocked(CacheGuard::Lock &) const;
 
     void loadCacheInfoIntoMemory();
 
@@ -378,6 +378,8 @@ struct KeyTransaction : private boost::noncopyable
     void reduceSizeToDownloaded(const Key & key, size_t offset, const FileSegmentGuard::Lock &);
 
     void remove(const Key & key, size_t offset, const FileSegmentGuard::Lock &);
+
+    bool isLastHolder(size_t offset);
 
     FileCache::CacheCells & getOffsets() { return *offsets; }
     const FileCache::CacheCells & getOffsets() const { return *offsets; }
