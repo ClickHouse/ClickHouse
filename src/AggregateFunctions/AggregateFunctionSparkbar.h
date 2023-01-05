@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
+#include <Columns/IColumn.h>
 
 namespace DB
 {
@@ -104,14 +105,14 @@ private:
     X min_x;
     X max_x;
     bool specified_min_max_x;
-    using Chars = PODArray<char>;
 
     template <class T>
-    void updateFrame(Chars & frame, const T value) const
+    int updateFrame(ColumnString::Chars & frame, const T value) const
     {
         static const String bars[9] = {" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
         const auto & bar = (isNaN(value) || value > 8 || value < 1) ? bars[0] : bars[static_cast<UInt8>(value)];
         frame.insert(bar.begin(), bar.end());
+        return static_cast<int>(bar.size());
     }
 
     /**
@@ -125,11 +126,18 @@ private:
      *  the actual y value of the first position + the actual second position y*0.1, and the remaining y*0.9 is reserved for the next bucket.
      *  The next bucket will use the last y*0.9 + the actual third position y*0.2, and the remaining y*0.8 will be reserved for the next bucket. And so on.
      */
-    Chars render(const AggregateFunctionSparkbarData<X, Y> & data) const
+    void render(ColumnString & to_column, const AggregateFunctionSparkbarData<X, Y> & data) const
     {
-        Chars value;
+        size_t sz = 0;
+        auto & values = to_column.getChars();
+        auto & offsets = to_column.getOffsets();
+        auto update_column = [&]() {
+            values.push_back('\0');
+            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+        };
+
         if (data.points.empty() || !width)
-            return value;
+            return update_column();
 
         size_t diff_x;
         X min_x_local;
@@ -156,13 +164,13 @@ private:
                 {
                     auto it = data.points.find(static_cast<X>(min_x_local + i));
                     bool found = it != data.points.end();
-                    updateFrame(value, found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
+                    sz += updateFrame(values, found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
                 }
             }
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    updateFrame(value, data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
+                    sz += updateFrame(values, data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
             }
         }
         else
@@ -225,17 +233,17 @@ private:
             }
 
             if (!min_y || !max_y) // No value is set
-                return {};
+                return update_column();
 
             Float64 diff_y = max_y.value() - min_y.value();
 
             auto update_frame = [&] (const std::optional<Float64> & point_y)
             {
-                updateFrame(value, point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
+                sz += updateFrame(values, point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
             };
             auto update_frame_for_constant = [&] (const std::optional<Float64> & point_y)
             {
-                updateFrame(value, point_y ? 1 : 0);
+                sz += updateFrame(values, point_y ? 1 : 0);
             };
 
             if (diff_y != 0.0)
@@ -243,7 +251,7 @@ private:
             else
                 std::for_each(new_points.begin(), new_points.end(), update_frame_for_constant);
         }
-        return value;
+        update_column();
     }
 
 
@@ -303,8 +311,7 @@ public:
     {
         auto & to_column = assert_cast<ColumnString &>(to);
         const auto & data = this->data(place);
-        const auto & value = render(data);
-        to_column.insertData(value.data(), value.size());
+        render(to_column, data);
     }
 };
 
