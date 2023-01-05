@@ -409,6 +409,7 @@ def test_alter_policy(start_cluster, name, engine):
 def get_random_string(length):
     return "randomPrintableASCII({})".format(length)
 
+
 def get_used_disks_for_table(node, table_name):
     return tuple(
         node.query(
