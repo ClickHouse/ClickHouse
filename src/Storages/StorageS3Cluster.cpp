@@ -47,7 +47,7 @@ StorageS3Cluster::StorageS3Cluster(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
-    : IStorage(table_id_)
+    : IStorageCluster(table_id_)
     , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.request_settings, configuration_.headers}
     , filename(configuration_.url)
     , cluster_name(configuration_.cluster_name)
@@ -98,12 +98,17 @@ Pipe StorageS3Cluster::read(
 {
     StorageS3::updateS3Configuration(context, s3_configuration);
 
+<<<<<<< HEAD
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
         *s3_configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().key; });
+=======
+    auto cluster = getCluster(context);
+    auto extension = getTaskIteratorExtension(query_info.query, context);
+>>>>>>> parent of b8d90660048 (Revert "Resurrect parallel distributed insert select with s3Cluster (#41535)")
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
@@ -136,6 +141,7 @@ Pipe StorageS3Cluster::read(
         auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
         for (auto & try_result : try_results)
         {
+<<<<<<< HEAD
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                     shard_info.pool,
                     std::vector<IConnectionPool::Entry>{try_result},
@@ -147,6 +153,28 @@ Pipe StorageS3Cluster::read(
                     Tables(),
                     processed_stage,
                     RemoteQueryExecutor::Extension{.task_iterator = callback});
+=======
+            auto connection = std::make_shared<Connection>(
+                node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                "S3ClusterInititiator",
+                node.compression,
+                node.secure
+            );
+
+            /// For unknown reason global context is passed to IStorage::read() method
+            /// So, task_identifier is passed as constructor argument. It is more obvious.
+            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                connection,
+                queryToString(query_info.original_query),
+                header,
+                context,
+                /*throttler=*/nullptr,
+                scalars,
+                Tables(),
+                processed_stage,
+                extension);
+>>>>>>> parent of b8d90660048 (Revert "Resurrect parallel distributed insert select with s3Cluster (#41535)")
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
@@ -168,6 +196,19 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
+
+ClusterPtr StorageS3Cluster::getCluster(ContextPtr context) const
+{
+    return context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+}
+
+RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr query, ContextPtr context) const
+{
+    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
+        *s3_configuration.client, s3_configuration.uri, query, virtual_block, context);
+    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
+    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+}
 
 NamesAndTypesList StorageS3Cluster::getVirtuals() const
 {
