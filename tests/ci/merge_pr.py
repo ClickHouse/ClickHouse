@@ -162,8 +162,9 @@ def main():
         logging.info("The PR #%s is already merged", pr.number)
         return
 
-    if pr.draft:
-        logging.info("The PR #%s is a draft, stopping", pr.number)
+    not_ready_to_merge = pr.draft or "WIP" in pr.title
+    if not_ready_to_merge:
+        logging.info("The PR #%s is not ready for merge, stopping", pr.number)
         return
 
     if args.check_green:
