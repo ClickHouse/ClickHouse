@@ -8,21 +8,17 @@
 
 #include <base/types.h>
 
+#include <Columns/IColumn.h>
+#include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
-#include "Core/ColumnWithTypeAndName.h"
-#include "Core/Field.h"
-
-#include <DataTypes/IDataType.h>
-
-#include <Columns/IColumn.h>
-#include <Columns/ColumnString.h>
-
-#include <QueryPipeline/Pipe.h>
-
 #include <Core/Block.h>
+#include <Core/Field.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/Regexps.h>
+#include <QueryPipeline/Pipe.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -34,8 +30,6 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
 }
-
-class DeferredConstructedRegexpsPtr;
 
 class RegExpTreeDictionary : public IDictionary
 {
@@ -159,7 +153,9 @@ private:
 
     std::map<UInt64, RegexTreeNodePtr> regex_nodes;
     std::unordered_map<UInt64, UInt64> topology_order;
-
+    #if USE_VECTORSCAN
+    MultiRegexps::DeferredConstructedRegexpsPtr hyperscan_regex;
+    #endif
 };
 
 }
