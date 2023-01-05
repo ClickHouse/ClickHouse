@@ -265,11 +265,9 @@ def test_distributed_insert_select(started_cluster):
     second_replica_first_shard = started_cluster.instances["s0_0_1"]
     first_replica_second_shard = started_cluster.instances["s0_1_0"]
 
+    first_replica_first_shard.query("""DROP TABLE IF EXISTS insert_select_local ON CLUSTER 'cluster_simple' SYNC;""")
     first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_local ON CLUSTER 'cluster_simple';"""
-    )
-    first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_distributed ON CLUSTER 'cluster_simple';"""
+        """DROP TABLE IF EXISTS insert_select_distributed ON CLUSTER 'cluster_simple' SYNC;"""
     )
 
     first_replica_first_shard.query(
@@ -281,20 +279,11 @@ def test_distributed_insert_select(started_cluster):
     )
 
     first_replica_first_shard.query(
-        """
-    CREATE TABLE insert_select_distributed ON CLUSTER 'cluster_simple' as insert_select_local
-    ENGINE = Distributed('cluster_simple', default, insert_select_local, b % 2);
-        """
+        """CREATE TABLE insert_select_distributed ON CLUSTER cluster_simple as insert_select_local ENGINE = Distributed('cluster_simple', default, insert_select_local, b % 2);"""
     )
 
     first_replica_first_shard.query(
-        """
-    INSERT INTO insert_select_distributed SETTINGS insert_distributed_sync=1 SELECT * FROM s3Cluster(
-        'cluster_simple',
-        'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
-    ) SETTINGS parallel_distributed_insert_select=1, insert_distributed_sync=1;
-        """
-    )
+        """INSERT INTO insert_select_distributed SETTINGS insert_distributed_sync=1 SELECT * FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64') SETTINGS parallel_distributed_insert_select=1, insert_distributed_sync=1;""")
 
     for line in (
         first_replica_first_shard.query("""SELECT * FROM insert_select_local;""")
@@ -321,10 +310,10 @@ def test_distributed_insert_select(started_cluster):
         assert int(b) % 2 == 1
 
     first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_local ON CLUSTER 'cluster_simple';"""
+        """DROP TABLE IF EXISTS insert_select_local ON CLUSTER 'cluster_simple' SYNC;"""
     )
     first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_distributed ON CLUSTER 'cluster_simple';"""
+        """DROP TABLE IF EXISTS insert_select_distributed ON CLUSTER 'cluster_simple' SYNC;"""
     )
 
 

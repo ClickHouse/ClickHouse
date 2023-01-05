@@ -98,17 +98,8 @@ Pipe StorageS3Cluster::read(
 {
     StorageS3::updateS3Configuration(context, s3_configuration);
 
-<<<<<<< HEAD
-    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
-
-    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *s3_configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
-
-    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().key; });
-=======
     auto cluster = getCluster(context);
     auto extension = getTaskIteratorExtension(query_info.query, context);
->>>>>>> parent of b8d90660048 (Revert "Resurrect parallel distributed insert select with s3Cluster (#41535)")
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
@@ -141,7 +132,6 @@ Pipe StorageS3Cluster::read(
         auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
         for (auto & try_result : try_results)
         {
-<<<<<<< HEAD
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                     shard_info.pool,
                     std::vector<IConnectionPool::Entry>{try_result},
@@ -152,29 +142,7 @@ Pipe StorageS3Cluster::read(
                     scalars,
                     Tables(),
                     processed_stage,
-                    RemoteQueryExecutor::Extension{.task_iterator = callback});
-=======
-            auto connection = std::make_shared<Connection>(
-                node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
-                "S3ClusterInititiator",
-                node.compression,
-                node.secure
-            );
-
-            /// For unknown reason global context is passed to IStorage::read() method
-            /// So, task_identifier is passed as constructor argument. It is more obvious.
-            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
-                queryToString(query_info.original_query),
-                header,
-                context,
-                /*throttler=*/nullptr,
-                scalars,
-                Tables(),
-                processed_stage,
-                extension);
->>>>>>> parent of b8d90660048 (Revert "Resurrect parallel distributed insert select with s3Cluster (#41535)")
+                    extension);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
@@ -206,7 +174,7 @@ RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr
 {
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
         *s3_configuration.client, s3_configuration.uri, query, virtual_block, context);
-    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().key; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
