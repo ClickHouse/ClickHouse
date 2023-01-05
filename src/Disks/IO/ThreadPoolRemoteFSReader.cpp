@@ -8,7 +8,6 @@
 #include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
 #include <IO/SeekableReadBuffer.h>
-#include <Disks/IO/ElapsedTimeProfileEventIncrement.h>
 
 #include <future>
 
@@ -17,7 +16,6 @@ namespace ProfileEvents
 {
     extern const Event ThreadpoolReaderTaskMicroseconds;
     extern const Event ThreadpoolReaderReadBytes;
-    extern const Event ThreadpoolSubmit;
 }
 
 namespace CurrentMetrics
@@ -27,10 +25,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
 IAsynchronousReader::Result RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
-    return reader.readInto(data, size, offset, ignore);
+    return reader->readInto(data, size, offset, ignore);
 }
 
 
@@ -42,16 +39,14 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    ElapsedUSProfileEventIncrement measure_time(ProfileEvents::ThreadpoolSubmit);
-
     auto schedule = threadPoolCallbackRunner<Result>(pool, "VFSRead");
 
     return schedule([request]() -> Result
     {
-        Stopwatch watch(CLOCK_MONOTONIC);
-
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
+
+        Stopwatch watch(CLOCK_MONOTONIC);
 
         Result result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
 

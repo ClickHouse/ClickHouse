@@ -341,45 +341,10 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
-    M(CachedReadBufferGetFileSegments, "Bytes read from filesystem cache") \
-    M(CachedReadBufferGetCacheReadBuffer, "Bytes read from filesystem cache") \
-    M(CachedReadBufferGetRemoteReadBuffer, "Bytes read from filesystem cache") \
-    M(CachedReadBufferPredownload, "Bytes read from filesystem cache") \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
-    M(CachedReadBufferWaitForReaderInit, "Time") \
-    M(CachedReadBufferWaitForReaderInit1, "Time") \
-    M(CachedReadBufferWaitForReaderInit2, "Time") \
-    M(CachedReadBufferGetImplementationBuffer, "Time") \
-    M(CachedReadBufferInitialize, "Time") \
-    M(CachedReadBufferGetOrSet, "Time") \
-    M(CachedReadBufferRead, "Time") \
-    M(CachedReadBufferRead1, "Time") \
-    M(CachedReadBufferRead2, "Time") \
-    M(CachedReadBufferRead3, "Time") \
-    M(CachedReadBufferRead4, "Time") \
-    M(CachedReadBufferRead5, "Time") \
-    M(CachedReadBufferRead6, "Time") \
-    M(CachedReadBufferRead7, "Time") \
-    M(CachedReadBufferRead8, "Time") \
-    M(CachedReadBufferRead9, "Time") \
-    M(CachedReadBufferRead10, "Time") \
-    M(FileCacheGetOrSet, "Time") \
-    M(FileCacheGetOrSet1, "Time") \
-    M(FileCacheGetOrSet2, "Time") \
-    M(FileCacheGetOrSet3, "Time") \
-    M(FileCacheGetOrSet4, "Time") \
-    M(FileCacheGetImpl, "Time") \
-    M(FileCacheGetImpl1, "Time") \
-    M(FileCacheGetImpl2, "Time") \
-    M(FileCacheGetImpl3, "Time") \
-    M(FileCacheGetImpl4, "Time") \
-    M(FileCacheGetImpl5, "Time") \
-    M(FileCacheLockKey, "Time") \
-    M(FileCacheCreateFile1, "Time") \
-    M(FileCacheCreateFile2, "Time") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -393,18 +358,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolSubmit, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolSubmit2, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun2, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun3, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun4, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun5, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun6, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun7, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun8, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun9, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolRun10, "Bytes read from a threadpool task in asynchronous reading") \
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
@@ -426,7 +379,6 @@ The server successfully detected this situation and will download merged part fr
     M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
-    M(AsynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
     \
     M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
     \

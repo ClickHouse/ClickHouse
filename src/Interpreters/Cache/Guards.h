@@ -6,10 +6,15 @@
 
 namespace DB
 {
+/**
+ * Priority of locking:
+ * Cache priority queue guard > key prefix guard > file segment guard.
+ */
 
 /**
-    * Guard for the whole cache object.
-    */
+ * Guard for the whole the cache.
+ * Used to get a lock per key prefix and then continue with only key prefix locked.
+ */
 struct CacheGuard
 {
     struct Lock
@@ -24,9 +29,9 @@ struct CacheGuard
 };
 
 /**
-    * Guard for a set of keys.
-    * One guard per key prefix (first three digits of the path hash).
-    */
+ * Guard for a set of keys.
+ * One guard per key prefix (first three digits of the path hash).
+ */
 struct KeyPrefixGuard
 {
     struct Lock
@@ -43,6 +48,9 @@ struct KeyPrefixGuard
 };
 using KeyPrefixGuardPtr = std::shared_ptr<KeyPrefixGuard>;
 
+/**
+ * Cache priority queue guard.
+ */
 struct CachePriorityQueueGuard
 {
     struct Lock
@@ -61,7 +69,6 @@ struct CachePriorityQueueGuard
 
 /**
  * Guard for a file segment.
- * Cache guard > key prefix guard > file segment guard.
  */
 struct FileSegmentGuard
 {

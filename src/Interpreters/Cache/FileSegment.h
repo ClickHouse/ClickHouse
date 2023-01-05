@@ -197,12 +197,6 @@ public:
 
     size_t getDownloadedSize() const;
 
-    OpenedFileCache::OpenedFilePtr getFile() const;
-    int getFD() const;
-
-    OpenedFileCache::OpenedFilePtr file;
-    int fd;
-
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
     ///    && it does not need this segment anymore
@@ -267,34 +261,34 @@ public:
     LocalCacheWriterPtr detachWriter();
 
 private:
-    size_t getFirstNonDownloadedOffsetUnlocked(const FileSegmentGuard::Lock & lock) const;
-    size_t getCurrentWriteOffsetUnlocked(const FileSegmentGuard::Lock & lock) const;
-    size_t getDownloadedSizeUnlocked(const FileSegmentGuard::Lock & lock) const;
+    size_t getFirstNonDownloadedOffsetUnlocked(const FileSegmentGuard::Lock &) const;
+    size_t getCurrentWriteOffsetUnlocked(const FileSegmentGuard::Lock &) const;
+    size_t getDownloadedSizeUnlocked(const FileSegmentGuard::Lock &) const;
 
-    String getInfoForLogUnlocked(const FileSegmentGuard::Lock & lock) const;
+    String getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const;
 
-    String getDownloaderUnlocked(const FileSegmentGuard::Lock & lock) const;
-    void resetDownloaderUnlocked(const FileSegmentGuard::Lock & lock);
-    void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock);
+    String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
+    void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
+    void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &);
 
-    void setDownloadState(State state, const FileSegmentGuard::Lock & lock);
+    void setDownloadState(State state, const FileSegmentGuard::Lock &);
     void setDownloadedSizeUnlocked(size_t delta, const FileSegmentGuard::Lock &);
 
-    void setDownloadedUnlocked(const FileSegmentGuard::Lock & lock);
-    void setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock);
+    void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
+    void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
 
     /// Finalized state is such a state that does not need to be completed (with complete()).
-    bool hasFinalizedStateUnlocked(const FileSegmentGuard::Lock & lock) const;
+    bool hasFinalizedStateUnlocked(const FileSegmentGuard::Lock &) const;
 
     bool isDetached(const FileSegmentGuard::Lock &) const { return is_detached; }
-    void detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock);
-    [[noreturn]] void throwIfDetachedUnlocked(const FileSegmentGuard::Lock & lock) const;
+    void detachAssumeStateFinalized(const FileSegmentGuard::Lock &);
+    [[noreturn]] void throwIfDetachedUnlocked(const FileSegmentGuard::Lock &) const;
 
-    void assertDetachedStatus(const FileSegmentGuard::Lock & lock) const;
+    void assertDetachedStatus(const FileSegmentGuard::Lock &) const;
     void assertNotDetached() const;
-    void assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock) const;
-    void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock & lock) const;
-    void assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock) const;
+    void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
+    void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock &) const;
+    void assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     KeyTransactionPtr createKeyTransaction(bool assert_exists = true) const;
 
@@ -309,8 +303,6 @@ private:
 
     void wrapWithCacheInfo(
         Exception & e, const String & message, const FileSegmentGuard::Lock & segment_lock) const;
-
-    bool isLastHolder(const KeyTransaction & key_transaction) const;
 
     Range segment_range;
 
@@ -401,7 +393,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     void reset();
 
-    void move(FileSegmentsHolder & holder)
+    void moveTo(FileSegmentsHolder & holder)
     {
         holder.file_segments.insert(holder.file_segments.end(), file_segments.begin(), file_segments.end());
         file_segments.clear();

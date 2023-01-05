@@ -62,6 +62,8 @@ public:
     };
 
 private:
+    void initialize(size_t offset, size_t size);
+
     /**
      * Return a list of file segments ordered in ascending order. This list represents
      * a full contiguous interval (without holes).
@@ -72,7 +74,7 @@ private:
 
     ImplementationBufferPtr getReadBufferForFileSegment(FileSegment & file_segment);
 
-    ImplementationBufferPtr getCacheReadBuffer(FileSegment & file_segment) const;
+    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment) const;
 
     ImplementationBufferPtr getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_);
 
@@ -130,6 +132,8 @@ private:
     }
 
     size_t first_offset = 0;
+    String nextimpl_step_log_info;
+    String last_caller_id;
 
     String query_id;
     bool enable_logging = false;

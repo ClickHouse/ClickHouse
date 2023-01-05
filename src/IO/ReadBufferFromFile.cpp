@@ -9,8 +9,6 @@
 namespace ProfileEvents
 {
     extern const Event FileOpen;
-    extern const Event FileCacheCreateFile1;
-    extern const Event FileCacheCreateFile2;
 }
 
 
@@ -89,26 +87,6 @@ void ReadBufferFromFile::close()
 
     fd = -1;
     metric_increment.destroy();
-}
-
-ReadBufferFromFilePReadWithDescriptorsCache::ReadBufferFromFilePReadWithDescriptorsCache(
-    const std::string & file_name_, size_t buf_size, int flags,
-    char * existing_memory, size_t alignment, std::optional<size_t> file_size_,
-    OpenedFileCache::OpenedFilePtr file_,
-    int fd_)
-    : ReadBufferFromFileDescriptorPRead(-1, buf_size, existing_memory, alignment, file_size_)
-    , file_name(file_name_)
-{
-    if (file_)
-    {
-        file = file_;
-        fd = fd_;
-    }
-    else
-    {
-        file = OpenedFileCache::instance().get(file_name, flags);
-        fd = file->getFD();
-    }
 }
 
 }

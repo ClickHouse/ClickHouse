@@ -11,26 +11,9 @@
 #include <pcg-random/pcg_random.hpp>
 #include <Common/hex.h>
 #include <filesystem>
-#include <Disks/IO/ElapsedTimeProfileEventIncrement.h>
 
 
 namespace fs = std::filesystem;
-
-namespace ProfileEvents
-{
-extern const Event FileCacheGetOrSet;
-extern const Event FileCacheGetOrSet1;
-extern const Event FileCacheGetOrSet2;
-extern const Event FileCacheGetOrSet3;
-extern const Event FileCacheGetOrSet4;
-extern const Event FileCacheGetImpl;
-extern const Event FileCacheGetImpl1;
-extern const Event FileCacheGetImpl2;
-extern const Event FileCacheGetImpl3;
-extern const Event FileCacheGetImpl4;
-extern const Event FileCacheGetImpl5;
-extern const Event FileCacheLockKey;
-}
 
 namespace DB
 {
@@ -126,8 +109,6 @@ FileSegments FileCache::getImpl(
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
 
-    ElapsedUSProfileEventIncrement increment(ProfileEvents::FileCacheGetImpl);
-
     if (bypass_cache_threshold && range.size() > bypass_cache_threshold)
     {
         auto file_segment = std::make_shared<FileSegment>(
@@ -139,8 +120,6 @@ FileSegments FileCache::getImpl(
     const auto & file_segments = key_transaction.getOffsets();
     if (file_segments.empty())
         return {};
-
-    ElapsedUSProfileEventIncrement increment1(ProfileEvents::FileCacheGetImpl1);
 
     FileSegments result;
     auto add_to_result = [&](const FileSegmentCell & cell)
@@ -190,7 +169,6 @@ FileSegments FileCache::getImpl(
     auto segment_it = file_segments.lower_bound(range.left);
     if (segment_it == file_segments.end())
     {
-        ElapsedUSProfileEventIncrement increment2(ProfileEvents::FileCacheGetImpl2);
         /// N - last cached segment for given file key, segment{N}.offset < range.left:
         ///   segment{N}                       segment{N}
         /// [________                         [_______]
@@ -206,7 +184,6 @@ FileSegments FileCache::getImpl(
     }
     else /// segment_it <-- segmment{k}
     {
-        ElapsedUSProfileEventIncrement increment3(ProfileEvents::FileCacheGetImpl3);
         if (segment_it != file_segments.begin())
         {
             const auto & prev_cell = std::prev(segment_it)->second;
@@ -229,7 +206,6 @@ FileSegments FileCache::getImpl(
         ///  ^                              ^                           ^   segment{k}.offset
         ///  range.left                     range.left                  range.right
 
-        ElapsedUSProfileEventIncrement increment4(ProfileEvents::FileCacheGetImpl4);
         while (segment_it != file_segments.end())
         {
             const auto & cell = segment_it->second;
@@ -377,7 +353,6 @@ void FileCache::fillHolesWithEmptyFileSegments(
 
 KeyTransactionPtr FileCache::createKeyTransaction(const Key & key, KeyNotFoundPolicy key_not_found_policy, bool assert_initialized)
 {
-    ElapsedUSProfileEventIncrement increment(ProfileEvents::FileCacheLockKey);
     auto lock = cache_guard.lock();
 
     if (assert_initialized)
@@ -441,8 +416,6 @@ FileSegmentsHolderPtr FileCache::getOrSet(
     size_t size,
     const CreateFileSegmentSettings & settings)
 {
-    ElapsedUSProfileEventIncrement increment(ProfileEvents::FileCacheGetOrSet);
-
     FileSegment::Range range(offset, offset + size - 1);
 
     auto key_transaction = createKeyTransaction(key, KeyNotFoundPolicy::CREATE_EMPTY);
@@ -934,7 +907,7 @@ void FileCache::removeAllReleasable()
 
     main_priority->iterate([&](const QueueEntry & entry) -> IterationResult
     {
-        auto key_transaction = entry.key_transaction_creator->create();
+        auto key_transaction = entry.createKeyTransaction();
         auto * cell = key_transaction->getOffsets().get(entry.offset);
 
         if (cell->releasable())
@@ -959,6 +932,12 @@ void KeyTransaction::remove(FileSegmentPtr file_segment)
 {
     /// We must hold pointer to file segment while removing it.
     remove(file_segment->key(), file_segment->offset(), file_segment->lock());
+}
+
+bool KeyTransaction::isLastHolder(size_t offset)
+{
+    const auto * cell = getOffsets().get(offset);
+    return cell->file_segment.use_count() == 2;
 }
 
 void KeyTransaction::remove(const Key & key, size_t offset, const FileSegmentGuard::Lock & segment_lock)
@@ -1419,9 +1398,10 @@ void FileCache::assertCacheCorrectness()
 
     auto lock = main_priority->lock();
     [[maybe_unused]] size_t total_size = 0;
+
     main_priority->iterate([&](const QueueEntry & entry) -> IterationResult
     {
-        auto key_transaction = entry.key_transaction_creator->create();
+        auto key_transaction = entry.createKeyTransaction();
         auto * cell = key_transaction->getOffsets().get(entry.offset);
 
         if (cell->size() != entry.size)

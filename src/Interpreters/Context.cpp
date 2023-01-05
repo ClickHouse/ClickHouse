@@ -3693,7 +3693,7 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         {
             if (!shared->asynchronous_remote_fs_reader)
             {
-                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 200);
+                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 100);
                 auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
 
                 shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
