@@ -27,7 +27,7 @@ struct NotCancellable
 };
 
 // Responsible for synchronization needed to deliver thread cancellation signal.
-// Basic building block for cancallable synchronization primitives.
+// Basic building block for cancellable synchronization primitives.
 // Allows to perform cancellable wait on memory addresses (think futex)
 class CancelToken
 {
