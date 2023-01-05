@@ -36,6 +36,7 @@ public:
     BinaryFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) override;
 
     void skipField(size_t file_column) override;
 
@@ -46,6 +47,11 @@ public:
     std::vector<String> readNames() override;
     std::vector<String> readTypes() override;
     std::vector<String> readHeaderRow();
+
+    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override
+    {
+        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowFieldsAndInferredTypes is not implemented"};
+    }
 
 private:
     /// Data types read from input data.
@@ -59,9 +65,14 @@ public:
     BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypes() override
+    DataTypes readRowAndGetDataTypesImpl() override
     {
         throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypes is not implemented"};
+    }
+
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override
+    {
+        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypesAndValues is not implemented"};
     }
 
     BinaryFormatReader reader;

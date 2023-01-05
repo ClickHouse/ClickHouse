@@ -49,6 +49,7 @@ public:
     }
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
@@ -65,11 +66,16 @@ public:
     std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
     std::vector<String> readRow() { return readRowImpl<false>(); }
 
+    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override;
+
     template <bool is_header>
     std::vector<String> readRowImpl();
 
     template <bool read_string>
     String readCSVFieldIntoString();
+
+private:
+    bool readFieldImpl(ReadBuffer & buf, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization);
 };
 
 class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader
@@ -78,9 +84,11 @@ public:
     CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypesImpl() override;
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
     CSVFormatReader reader;
+    DataTypes buffered_types;
 };
 
 std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);

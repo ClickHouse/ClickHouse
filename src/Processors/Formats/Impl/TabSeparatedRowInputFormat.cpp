@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -48,7 +49,8 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
         with_names_,
         with_types_,
         format_settings_,
-        std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_))
+        std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_),
+        format_settings_.tsv.try_detect_header)
 {
 }
 
@@ -119,6 +121,13 @@ std::vector<String> TabSeparatedFormatReader::readRow()
     return fields;
 }
 
+std::pair<std::vector<String>, DataTypes> TabSeparatedFormatReader::readRowFieldsAndInferredTypes()
+{
+    auto fields = readRow();
+    auto data_types = tryInferDataTypesByEscapingRule(fields, getFormatSettings(), getEscapingRule());
+    return {fields, data_types};
+}
+
 bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type,
     const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
 {
@@ -131,22 +140,39 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
         return false;
     }
 
+    return readFieldImpl(*in, column, type, serialization);
+}
+
+bool TabSeparatedFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String &)
+{
+    if (format_settings.tsv.empty_as_default && field.empty())
+    {
+        column.insertDefault();
+        return false;
+    }
+
+    ReadBufferFromString buf(field);
+    return readFieldImpl(buf, column, type, serialization);
+}
+
+bool TabSeparatedFormatReader::readFieldImpl(ReadBuffer & buf, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization)
+{
     bool as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
 
     if (is_raw)
     {
         if (as_nullable)
-            return SerializationNullable::deserializeTextRawImpl(column, *in, format_settings, serialization);
+            return SerializationNullable::deserializeTextRawImpl(column, buf, format_settings, serialization);
 
-        serialization->deserializeTextRaw(column, *in, format_settings);
+        serialization->deserializeTextRaw(column, buf, format_settings);
         return true;
     }
 
 
     if (as_nullable)
-        return SerializationNullable::deserializeTextEscapedImpl(column, *in, format_settings, serialization);
+        return SerializationNullable::deserializeTextEscapedImpl(column, buf, format_settings, serialization);
 
-    serialization->deserializeTextEscaped(column, *in, format_settings);
+    serialization->deserializeTextEscaped(column, buf, format_settings);
     return true;
 }
 
@@ -257,18 +283,23 @@ TabSeparatedSchemaReader::TabSeparatedSchemaReader(
         with_names_,
         with_types_,
         &reader,
-        getDefaultDataTypeForEscapingRule(is_raw_ ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped))
+        getDefaultDataTypeForEscapingRule(is_raw_ ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped),
+        format_settings_.tsv.try_detect_header)
     , reader(in_, format_settings_, is_raw_)
 {
 }
 
-DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypes()
+std::pair<std::vector<String>, DataTypes> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (in.eof())
         return {};
 
-    auto fields = reader.readRow();
-    return tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
+    return reader.readRowFieldsAndInferredTypes();
+}
+
+DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypesImpl()
+{
+    return readRowAndGetFieldsAndDataTypes().second;
 }
 
 void registerInputFormatTabSeparated(FormatFactory & factory)
@@ -309,7 +340,10 @@ void registerTSVSchemaReader(FormatFactory & factory)
                     String result = getAdditionalFormatInfoByEscapingRule(
                         settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
                     if (!with_names)
-                        result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                        result += fmt::format(
+                            ", column_names_for_schema_inference={}, try_detect_header={}",
+                            settings.column_names_for_schema_inference,
+                            settings.tsv.try_detect_header);
                     return result;
                 });
             }
@@ -377,9 +411,9 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
     {
-        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+        auto register_func = [&](const String & format_name, bool, bool)
         {
-            size_t min_rows = 1 + static_cast<int>(with_names) + static_cast<int>(with_types);
+            size_t min_rows = 3; /// Make it 3 for header auto detection (first 3 rows must be always in the same segment).
             factory.registerFileSegmentationEngine(format_name, [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
             {
                 return fileSegmentationEngineTabSeparatedImpl(in, memory, is_raw, min_bytes, min_rows, max_rows);

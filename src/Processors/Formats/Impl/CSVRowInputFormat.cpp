@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Formats/verbosePrintString.h>
 #include <Formats/registerWithNamesAndTypes.h>
@@ -49,7 +50,8 @@ CSVRowInputFormat::CSVRowInputFormat(
         with_names_,
         with_types_,
         format_settings_,
-        std::move(format_reader_))
+        std::move(format_reader_),
+        format_settings_.csv.try_detect_header)
 {
     const String bad_delimiters = " \t\"'.UL";
     if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
@@ -254,17 +256,41 @@ bool CSVFormatReader::readField(
         column.insertDefault();
         return false;
     }
-    else if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+
+    return readFieldImpl(*in, column, type, serialization);
+}
+
+/// Similar to readField above, but read value from string.
+bool CSVFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String &)
+{
+    if (format_settings.csv.empty_as_default && field.empty())
+    {
+        column.insertDefault();
+        return false;
+    }
+
+    ReadBufferFromString buf(field);
+    return readFieldImpl(buf, column, type, serialization);
+}
+
+bool CSVFormatReader::readFieldImpl(ReadBuffer & buf, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization)
+{
+    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
     {
         /// If value is null but type is not nullable then use default value instead.
-        return SerializationNullable::deserializeTextCSVImpl(column, *in, format_settings, serialization);
+        return SerializationNullable::deserializeTextCSVImpl(column, buf, format_settings, serialization);
     }
-    else
-    {
-        /// Read the column normally.
-        serialization->deserializeTextCSV(column, *in, format_settings);
-        return true;
-    }
+
+    /// Read the column normally.
+    serialization->deserializeTextCSV(column, buf, format_settings);
+    return true;
+}
+
+std::pair<std::vector<String>, DataTypes> CSVFormatReader::readRowFieldsAndInferredTypes()
+{
+    auto fields = readRow();
+    auto data_types = tryInferDataTypesByEscapingRule(fields, format_settings, FormatSettings::EscapingRule::CSV);
+    return {fields, data_types};
 }
 
 void CSVFormatReader::skipPrefixBeforeHeader()
@@ -281,19 +307,23 @@ CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_t
         with_names_,
         with_types_,
         &reader,
-        getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV))
+        getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV),
+        format_settings_.csv.try_detect_header)
     , reader(in_, format_settings_)
 {
 }
 
-
-DataTypes CSVSchemaReader::readRowAndGetDataTypes()
+std::pair<std::vector<String>, DataTypes> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (in.eof())
         return {};
 
-    auto fields = reader.readRow();
-    return tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), FormatSettings::EscapingRule::CSV);
+    return reader.readRowFieldsAndInferredTypes();
+}
+
+DataTypes CSVSchemaReader::readRowAndGetDataTypesImpl()
+{
+    return readRowAndGetFieldsAndDataTypes().second;
 }
 
 
@@ -383,9 +413,9 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
 
 void registerFileSegmentationEngineCSV(FormatFactory & factory)
 {
-    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+    auto register_func = [&](const String & format_name, bool, bool)
     {
-        size_t min_rows = 1 + int(with_names) + int(with_types);
+        size_t min_rows = 3; /// Make it 3 for header auto detection (first 3 rows must be always in the same segment).
         factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
         {
             return fileSegmentationEngineCSVImpl(in, memory, min_bytes, min_rows, max_rows);
@@ -410,7 +440,7 @@ void registerCSVSchemaReader(FormatFactory & factory)
             {
                 String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
                 if (!with_names)
-                    result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                    result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header);
                 return result;
             });
         }

@@ -4,6 +4,7 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -42,7 +43,8 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         with_names_,
         with_types_,
         format_settings_,
-        std::make_unique<CustomSeparatedFormatReader>(*buf_, ignore_spaces_, format_settings_))
+        std::make_unique<CustomSeparatedFormatReader>(*buf_, ignore_spaces_, format_settings_),
+        format_settings_.custom.try_detect_header)
     , buf(std::move(buf_))
 {
     /// In case of CustomSeparatedWithNames(AndTypes) formats and enabled setting input_format_with_names_use_header we don't know
@@ -212,6 +214,13 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
     return values;
 }
 
+std::pair<std::vector<String>, DataTypes> CustomSeparatedFormatReader::readRowFieldsAndInferredTypes()
+{
+    auto fields = readRow();
+    auto data_types = tryInferDataTypesByEscapingRule(fields, format_settings, getEscapingRule());
+    return {fields, data_types};
+}
+
 void CustomSeparatedFormatReader::skipHeaderRow()
 {
     skipRowStartDelimiter();
@@ -265,6 +274,13 @@ bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr 
     skipSpaces();
     updateFormatSettings(is_last_file_column);
     return deserializeFieldByEscapingRule(type, serialization, column, *buf, format_settings.custom.escaping_rule, format_settings);
+}
+
+bool CustomSeparatedFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String &)
+{
+    skipSpaces();
+    ReadBufferFromString field_buf(field);
+    return deserializeFieldByEscapingRule(type, serialization, column, field_buf, format_settings.custom.escaping_rule, format_settings);
 }
 
 bool CustomSeparatedFormatReader::checkForSuffixImpl(bool check_eof)
@@ -352,16 +368,20 @@ CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
         with_names_,
         with_types_,
         &reader,
-        getDefaultDataTypeForEscapingRule(format_setting_.custom.escaping_rule))
+        getDefaultDataTypeForEscapingRule(format_setting_.custom.escaping_rule),
+        format_setting_.custom.try_detect_header)
     , buf(in_)
     , reader(buf, ignore_spaces_, format_setting_)
 {
 }
 
-DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypes()
+std::pair<std::vector<String>, DataTypes> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
-    if (reader.checkForSuffix())
+    if (no_more_data || reader.checkForSuffix())
+    {
+        no_more_data = true;
         return {};
+    }
 
     if (!first_row || with_names || with_types)
         reader.skipRowBetweenDelimiter();
@@ -370,7 +390,13 @@ DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypes()
         first_row = false;
 
     auto fields = reader.readRow();
-    return tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule(), &json_inference_info);
+    auto data_types = tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule(), &json_inference_info);
+    return {fields, data_types};
+}
+
+DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypesImpl()
+{
+    return readRowAndGetFieldsAndDataTypes().second;
 }
 
 void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
@@ -414,7 +440,7 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
                 {
                     String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
                     if (!with_names)
-                        result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                        result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.custom.try_detect_header);
                     return result + fmt::format(
                             ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
                             " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",

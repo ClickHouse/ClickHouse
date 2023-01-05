@@ -35,6 +35,7 @@ public:
 
     bool readField(IColumn & column, const DataTypePtr & type,
                    const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
@@ -50,6 +51,8 @@ public:
     std::vector<String> readTypes() override { return readRow(); }
     String readFieldIntoString();
 
+    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override;
+
     void checkNullValueForNonNullable(DataTypePtr type) override;
 
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
@@ -60,6 +63,8 @@ public:
     }
 
 private:
+    bool readFieldImpl(ReadBuffer & buf, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization);
+
     bool is_raw;
     bool first_row = true;
 };
@@ -70,7 +75,8 @@ public:
     TabSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypesImpl() override;
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
     TabSeparatedFormatReader reader;
 };

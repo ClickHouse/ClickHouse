@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class ReadBuffer;
 
 
@@ -54,6 +59,7 @@ public:
     }
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) override;
 
     void skipField(size_t /*column_index*/) override { skipField(); }
     void skipField();
@@ -68,6 +74,11 @@ public:
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
 
+    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override
+    {
+        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowFieldsAndInferredTypes is not implemented"};
+    }
+
     bool yieldStrings() const { return yield_strings; }
 private:
     bool yield_strings;
@@ -79,7 +90,12 @@ public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypesImpl() override;
+
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override
+    {
+        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented"};
+    }
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
