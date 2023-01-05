@@ -251,7 +251,9 @@ def build_and_push_image(
     # `docker buildx build --load` does not support multiple images currently
     # images must be built separately and merged together with `docker manifest`
     digests = []
+    multiplatform_sw = Stopwatch()
     for arch in BUCKETS:
+        single_sw = Stopwatch()
         arch_tag = f"{tag}-{arch}"
         metadata_path = p.join(TEMP_PATH, arch_tag)
         dockerfile = p.join(image.full_path, f"Dockerfile.{os}")
@@ -271,9 +273,15 @@ def build_and_push_image(
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
         if retry_popen(cmd) != 0:
-            result.append(TestResult(f"{image.repo}:{tag}-{arch}", "FAIL"))
+            result.append(
+                TestResult(
+                    f"{image.repo}:{tag}-{arch}", "FAIL", single_sw.duration_seconds
+                )
+            )
             return result
-        result.append(TestResult(f"{image.repo}:{tag}-{arch}", "OK"))
+        result.append(
+            TestResult(f"{image.repo}:{tag}-{arch}", "OK", single_sw.duration_seconds)
+        )
         with open(metadata_path, "rb") as m:
             metadata = json.load(m)
             digests.append(metadata["containerimage.digest"])
@@ -284,8 +292,15 @@ def build_and_push_image(
         )
         logging.info("Pushing merged %s:%s image: %s", image.repo, tag, cmd)
         if retry_popen(cmd) != 0:
-            result.append(TestResult(f"{image.repo}:{tag}", "FAIL"))
+            result.append(
+                TestResult(
+                    f"{image.repo}:{tag}", "FAIL", multiplatform_sw.duration_seconds
+                )
+            )
             return result
+        result.append(
+            TestResult(f"{image.repo}:{tag}", "OK", multiplatform_sw.duration_seconds)
+        )
     else:
         logging.info(
             "Merging is available only on push, separate %s images are created",
