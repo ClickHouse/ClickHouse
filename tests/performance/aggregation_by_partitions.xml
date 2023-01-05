@@ -1,0 +1,13 @@
+<test>
+  <settings>
+<!-- <allow_aggregate_each_partition_independently>1</allow_aggregate_each_partition_independently> -->
+  </settings>
+
+  <create_query>create table t(a UInt32) engine=MergeTree order by tuple() partition by a % 16</create_query>
+
+  <fill_query>insert into t select * from numbers_mt(5e7)</fill_query>
+
+  <query>select a from t group by a format Null</query>
+
+  <drop_query>drop table t</drop_query>
+</test>

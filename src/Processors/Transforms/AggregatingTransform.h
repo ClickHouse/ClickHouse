@@ -147,9 +147,10 @@ public:
         Block header,
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataPtr many_data,
-        size_t current_variant,
+        size_t current_variant_,
         size_t max_threads,
-        size_t temporary_data_merge_threads);
+        size_t temporary_data_merge_threads,
+        bool skip_merging_ = false);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -181,6 +182,8 @@ private:
     AggregatedDataVariants & variants;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
+    size_t current_variant;
+    bool skip_merging = false;
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;

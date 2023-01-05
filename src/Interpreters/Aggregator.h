@@ -1084,6 +1084,7 @@ private:
     friend struct AggregatedDataVariants;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
+    friend class ConvertingAggregatedToChunksWithMergingSource;
     friend class AggregatingInOrderTransform;
 
     /// Data structure of source blocks.
