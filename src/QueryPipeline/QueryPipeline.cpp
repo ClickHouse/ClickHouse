@@ -540,7 +540,7 @@ void QueryPipeline::finalizeWriteInQueryResultCache()
         processors->begin(), processors->end(),
         [](ProcessorPtr processor){ return processor->getName() == "StreamInQueryResultCacheTransform"; });
 
-    if(it != processors->end())
+    if (it != processors->end())
         dynamic_cast<StreamInQueryResultCacheTransform &>(**it).finalizeWriteInQueryResultCache();
 }
 
