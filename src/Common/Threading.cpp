@@ -181,12 +181,7 @@ bool CancelToken::wait(UInt32 * address, UInt32 value)
 {
     chassert((reinterpret_cast<UInt64>(address) & canceled) == 0); // An `address` must be 2-byte aligned
     if (value & signaled) // Can happen after spurious wake-up due to cancel of other thread
-    {
-        // static std::atomic<int> x{0};
-        // if (x++ > 5)
-        //     sleep(3600);
         return true; // Spin-wait unless signal is handled
-    }
 
     UInt64 s = state.load();
     while (true)
