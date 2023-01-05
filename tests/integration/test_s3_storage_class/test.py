@@ -8,7 +8,12 @@ logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/config.d/minio.xml"], stay_alive=True, with_minio=True)
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/config.d/minio.xml"],
+    stay_alive=True,
+    with_minio=True,
+)
 
 @pytest.fixture(scope="module")
 def started_cluster():
