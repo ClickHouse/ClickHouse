@@ -160,7 +160,7 @@ struct ResultColumns
     MutableColumnPtr reg_exps = ColumnString::create();
     MutableColumnPtr keys = ColumnArray::create(ColumnString::create());
     MutableColumnPtr values = ColumnArray::create(ColumnString::create());
-    ResultColumns() {}
+    ResultColumns() = default;
 };
 
 using StringToNode = std::unordered_map<String, YAML::Node>;
