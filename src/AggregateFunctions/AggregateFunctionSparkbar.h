@@ -131,7 +131,8 @@ private:
         size_t sz = 0;
         auto & values = to_column.getChars();
         auto & offsets = to_column.getOffsets();
-        auto update_column = [&]() {
+        auto update_column = [&] ()
+        {
             values.push_back('\0');
             offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
         };
