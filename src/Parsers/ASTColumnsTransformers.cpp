@@ -217,7 +217,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
         for (const auto & child : children)
             expected_columns.insert(child->as<const ASTIdentifier &>().name());
 
-        for (auto it = nodes.begin(); it != nodes.end();)
+        for (auto * it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
@@ -234,7 +234,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     }
     else
     {
-        for (auto it = nodes.begin(); it != nodes.end();)
+        for (auto * it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {

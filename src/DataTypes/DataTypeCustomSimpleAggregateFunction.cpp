@@ -30,10 +30,26 @@ namespace ErrorCodes
 void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
 {
     /// TODO Make it sane.
-    static const std::vector<String> supported_functions{"any", "anyLast", "min",
-        "max", "sum", "sumWithOverflow", "groupBitAnd", "groupBitOr", "groupBitXor",
-        "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray",
-        "sumMappedArrays", "minMappedArrays", "maxMappedArrays"};
+    static const std::vector<String> supported_functions{
+        "any",
+        "anyLast",
+        "min",
+        "max",
+        "sum",
+        "sumWithOverflow",
+        "groupBitAnd",
+        "groupBitOr",
+        "groupBitXor",
+        "sumMap",
+        "minMap",
+        "maxMap",
+        "groupArrayArray",
+        "groupArrayLastArray",
+        "groupUniqArrayArray",
+        "sumMappedArrays",
+        "minMappedArrays",
+        "maxMappedArrays",
+    };
 
     // check function
     if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
@@ -131,9 +147,9 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
 
     DataTypePtr storage_type = DataTypeFactory::instance().get(argument_types[0]->getName());
 
-    if (!function->getReturnType()->equals(*removeLowCardinality(storage_type)))
+    if (!function->getResultType()->equals(*removeLowCardinality(storage_type)))
     {
-        throw Exception("Incompatible data types between aggregate function '" + function->getName() + "' which returns " + function->getReturnType()->getName() + " and column storage type " + storage_type->getName(),
+        throw Exception("Incompatible data types between aggregate function '" + function->getName() + "' which returns " + function->getResultType()->getName() + " and column storage type " + storage_type->getName(),
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
