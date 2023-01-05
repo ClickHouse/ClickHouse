@@ -1618,6 +1618,8 @@ def test_rename(start_cluster):
         """
         )
 
+        node1.query("SYSTEM STOP MERGES default.renaming_table")
+
         for _ in range(5):
             data = []
             for i in range(10):
