@@ -64,7 +64,6 @@ namespace
         explicit StringPiece(int ref_) : ref_num(ref_) {}
     };
 
-    /// TODO: We should consider what kind of types we should support.
     Field parseStringToField(const String & raw, DataTypePtr data_type)
     try
     {
@@ -244,6 +243,13 @@ void RegExpTreeDictionary::loadData()
             initRegexNodes(block);
         }
         initGraph();
+        #if USE_VECTORSCAN
+        std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
+        hyperscan_regex = MultiRegexps::getOrSet<true, false>(regexps_views, std::nullopt);
+        /// TODO: fallback when exceptions occure.
+        hyperscan_regex->get();
+        #endif
+
     }
     else
     {
@@ -364,10 +370,6 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
     [[maybe_unused]] const std::unordered_map<String, ColumnPtr> & defaults) const
 {
 #if USE_VECTORSCAN
-    std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
-
-    const auto & hyperscan_regex = MultiRegexps::getOrSet<true, false>(regexps_views, std::nullopt);
-
     hs_scratch_t * scratch = nullptr;
     hs_error_t err = hs_clone_scratch(hyperscan_regex->get()->getScratch(), &scratch);
 
@@ -454,7 +456,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
             if (attributes_to_set.contains(name))
                 continue;
 
-            /// TODO: default value might be a back-reference.
+            /// TODO: default value might be a back-reference, that is useful in lib ua-core
             DefaultValueProvider default_value(attr.null_value, defaults.at(name));
             columns[name]->insert(default_value.getDefaultValue(key_idx));
         }
