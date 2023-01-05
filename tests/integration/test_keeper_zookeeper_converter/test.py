@@ -5,6 +5,7 @@ import helpers.keeper_utils as keeper_utils
 from kazoo.client import KazooClient
 from kazoo.retry import KazooRetry
 from kazoo.security import make_acl
+from kazoo.handlers.threading import KazooTimeoutError
 import os
 import time
 
@@ -23,6 +24,11 @@ def start_zookeeper():
 
 def stop_zookeeper():
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
+    timeout = time.time() + 60
+    while node.get_process_pid("zookeeper") != None:
+        if time.time() > timeout:
+            raise Exception("Failed to stop ZooKeeper in 60 secs")
+        time.sleep(0.2)
 
 
 def clear_zookeeper():
@@ -32,6 +38,11 @@ def clear_zookeeper():
 def restart_and_clear_zookeeper():
     stop_zookeeper()
     clear_zookeeper()
+    start_zookeeper()
+
+
+def restart_zookeeper():
+    stop_zookeeper()
     start_zookeeper()
 
 
@@ -93,13 +104,25 @@ def get_fake_zk(timeout=60.0):
 
 
 def get_genuine_zk(timeout=60.0):
-    _genuine_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip("node") + ":2181",
-        timeout=timeout,
-        connection_retry=KazooRetry(max_tries=20),
-    )
-    _genuine_zk_instance.start()
-    return _genuine_zk_instance
+    CONNECTION_RETRIES = 100
+    for i in range(CONNECTION_RETRIES):
+        try:
+            _genuine_zk_instance = KazooClient(
+                hosts=cluster.get_instance_ip("node") + ":2181",
+                timeout=timeout,
+                connection_retry=KazooRetry(max_tries=20),
+            )
+            _genuine_zk_instance.start()
+            return _genuine_zk_instance
+        except KazooTimeoutError:
+            if i == CONNECTION_RETRIES - 1:
+                raise
+
+            print(
+                "Failed to connect to ZK cluster because of timeout. Restarting cluster and trying again."
+            )
+            time.sleep(0.2)
+            restart_zookeeper()
 
 
 def compare_stats(stat1, stat2, path, ignore_pzxid=False):

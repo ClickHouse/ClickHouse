@@ -525,7 +525,7 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
     }
 
     /// Check if we have enough data in buffer to check if it's a null.
-    if (istr.available() > null_representation.size())
+    if (settings.csv.custom_delimiter.empty() && istr.available() > null_representation.size())
     {
         auto check_for_null = [&istr, &null_representation, &settings]()
         {
@@ -550,8 +550,21 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
     {
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
-        if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\r' || *buf.position() == '\n'))
-            return true;
+        if (checkString(null_representation, buf))
+        {
+            if (!settings.csv.custom_delimiter.empty())
+            {
+                if (checkString(settings.csv.custom_delimiter, buf))
+                {
+                    /// Rollback to the beginning of custom delimiter.
+                    buf.rollbackToCheckpoint();
+                    assertString(null_representation, buf);
+                    return true;
+                }
+            }
+            else if (buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\r' || *buf.position() == '\n')
+                return true;
+        }
 
         buf.rollbackToCheckpoint();
         return false;

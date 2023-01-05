@@ -37,7 +37,6 @@ class BuildResult:
         compiler,
         build_type,
         sanitizer,
-        libraries,
         status,
         elapsed_seconds,
         with_coverage,
@@ -45,7 +44,6 @@ class BuildResult:
         self.compiler = compiler
         self.build_type = build_type
         self.sanitizer = sanitizer
-        self.libraries = libraries
         self.status = status
         self.elapsed_seconds = elapsed_seconds
         self.with_coverage = with_coverage
@@ -74,7 +72,7 @@ def group_by_artifacts(build_urls: List[str]) -> Dict[str, List[str]]:
             groups["apk"].append(url)
         elif url.endswith(".rpm"):
             groups["rpm"].append(url)
-        elif url.endswith(".tgz"):
+        elif url.endswith(".tgz") or url.endswith(".tgz.sha512"):
             groups["tgz"].append(url)
         else:
             groups["binary"].append(url)
@@ -89,7 +87,6 @@ def get_failed_report(
         compiler="unknown",
         build_type="unknown",
         sanitizer="unknown",
-        libraries="unknown",
         status=message,
         elapsed_seconds=0,
         with_coverage=False,
@@ -105,7 +102,6 @@ def process_report(
         compiler=build_config["compiler"],
         build_type=build_config["build_type"],
         sanitizer=build_config["sanitizer"],
-        libraries=build_config["libraries"],
         status="success" if build_report["status"] else "failure",
         elapsed_seconds=build_report["elapsed_seconds"],
         with_coverage=False,

@@ -10,7 +10,7 @@ from release import RELEASE_READY_STATUS
 
 def main():
     pr_info = PRInfo()
-    gh = GitHub(get_best_robot_token(), per_page=100)
+    gh = GitHub(get_best_robot_token(), create_cache_dir=False, per_page=100)
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(
         context=RELEASE_READY_STATUS,

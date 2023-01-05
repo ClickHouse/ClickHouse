@@ -668,7 +668,7 @@ struct ImplBLAKE3
         {
             auto err_st = std::string(err_msg);
             blake3_free_char_pointer(err_msg);
-            throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Function returned error message: " + err_st, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
     #endif

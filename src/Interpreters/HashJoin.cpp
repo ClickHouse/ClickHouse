@@ -178,7 +178,7 @@ namespace JoinStuff
     }
 }
 
-static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable)
+static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable)
 {
     if (nullable)
     {
@@ -193,11 +193,9 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 
         JoinCommon::removeColumnNullability(column);
     }
-
-    return std::move(column);
 }
 
-static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable, const ColumnUInt8 & negative_null_map)
+static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable, const ColumnUInt8 & negative_null_map)
 {
     if (nullable)
     {
@@ -211,8 +209,6 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     }
     else
         JoinCommon::removeColumnNullability(column);
-
-    return std::move(column);
 }
 
 HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
@@ -225,7 +221,8 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("HashJoin"))
 {
-    LOG_DEBUG(log, "HashJoin. Datatype: {}, kind: {}, strictness: {}", data->type, kind, strictness);
+    LOG_DEBUG(log, "Datatype: {}, kind: {}, strictness: {}, right header: {}", data->type, kind, strictness, right_sample_block.dumpStructure());
+    LOG_DEBUG(log, "Keys: {}", TableJoin::formatClauses(table_join->getClauses(), true));
 
     if (isCrossOrComma(kind))
     {
@@ -1474,7 +1471,7 @@ void HashJoin::joinBlockImpl(
                 ColumnWithTypeAndName right_col(col.column, col.type, right_col_name);
                 if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
                     JoinCommon::changeLowCardinalityInplace(right_col);
-                right_col = correctNullability(std::move(right_col), is_nullable);
+                correctNullabilityInplace(right_col, is_nullable);
                 block.insert(std::move(right_col));
             }
         }
@@ -1492,7 +1489,7 @@ void HashJoin::joinBlockImpl(
         {
             const auto & right_key = required_right_keys.getByPosition(i);
             auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
-            if (!block.findByName(right_col_name /*right_key.name*/))
+            if (!block.findByName(right_col_name))
             {
                 const auto & left_name = required_right_keys_sources[i];
 
@@ -1508,11 +1505,11 @@ void HashJoin::joinBlockImpl(
                 ColumnWithTypeAndName right_col(thin_column, col.type, right_col_name);
                 if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
                     JoinCommon::changeLowCardinalityInplace(right_col);
-                right_col = correctNullability(std::move(right_col), is_nullable, null_map_filter);
+                correctNullabilityInplace(right_col, is_nullable, null_map_filter);
                 block.insert(std::move(right_col));
 
                 if constexpr (jf.need_replication)
-                    right_keys_to_replicate.push_back(block.getPositionByName(right_key.name));
+                    right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
             }
         }
     }
@@ -1963,7 +1960,7 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
         /// ... calculate `left_columns_count` ...
         size_t left_columns_count = left_sample_block.columns();
         auto non_joined = std::make_unique<NotJoinedHash<true>>(*this, max_block_size);
-        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
 
     }
     else
@@ -1971,7 +1968,7 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
         size_t left_columns_count = left_sample_block.columns();
         assert(left_columns_count == result_sample_block.columns() - required_right_keys.columns() - sample_block_with_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedHash<false>>(*this, max_block_size);
-        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
     }
 }
 
@@ -2019,14 +2016,14 @@ BlocksList HashJoin::releaseJoinedBlocks()
         for (size_t i = 0; i < positions.size(); ++i)
         {
             auto & column = saved_block.getByPosition(positions[i]);
-            restored_block.insert(correctNullability(std::move(column), is_nullable[i]));
+            correctNullabilityInplace(column, is_nullable[i]);
+            restored_block.insert(column);
         }
         restored_blocks.emplace_back(std::move(restored_block));
     }
 
     return restored_blocks;
 }
-
 
 const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
 {

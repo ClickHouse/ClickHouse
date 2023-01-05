@@ -1,5 +1,5 @@
 #pragma once
-#include <QueryPipeline/PipelineResourcesHolder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <functional>

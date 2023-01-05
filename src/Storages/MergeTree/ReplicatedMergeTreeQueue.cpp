@@ -1193,7 +1193,7 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
         const LogEntry & another_entry = *entry_for_same_part_it->second;
         out_reason = fmt::format(
             "Not executing log entry {} of type {} for part {} "
-            "because another log entry {} of type {} for the same part ({}) is being processed. This shouldn't happen often.",
+            "because another log entry {} of type {} for the same part ({}) is being processed.",
             entry.znode_name, entry.type, entry.new_part_name,
             another_entry.znode_name, another_entry.type, another_entry.new_part_name);
         LOG_INFO(log, fmt::runtime(out_reason));

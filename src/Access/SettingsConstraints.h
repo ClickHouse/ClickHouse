@@ -12,6 +12,7 @@ namespace Poco::Util
 namespace DB
 {
 struct Settings;
+struct MergeTreeSettings;
 struct SettingChange;
 class SettingsChanges;
 class AccessControl;
@@ -65,15 +66,21 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability);
-    void get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
+    void set(const String & full_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability);
+    void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
+    void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
 
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
+    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements) const;
     void check(const Settings & current_settings, const SettingChange & change) const;
     void check(const Settings & current_settings, const SettingsChanges & changes) const;
     void check(const Settings & current_settings, SettingsChanges & changes) const;
+
+    /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
+    void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
+    void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
     void clamp(const Settings & current_settings, SettingsChanges & changes) const;
@@ -137,8 +144,10 @@ private:
     };
 
     bool checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
+    bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
     Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
+    Checker getMergeTreeChecker(std::string_view short_name) const;
 
     // Special container for heterogeneous lookups: to avoid `String` construction during `find(std::string_view)`
     using Constraints = std::unordered_map<String, Constraint, StringHash, std::equal_to<>>;

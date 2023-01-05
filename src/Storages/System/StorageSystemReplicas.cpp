@@ -153,7 +153,7 @@ Pipe StorageSystemReplicas::read(
     MutableColumns res_columns = storage_snapshot->metadata->getSampleBlock().cloneEmptyColumns();
 
     size_t tables_size = col_database->size();
-    std::vector<StorageReplicatedMergeTree::Status> statuses(tables_size);
+    std::vector<ReplicatedTableStatus> statuses(tables_size);
 
     size_t thread_pool_size = std::min(tables_size, static_cast<size_t>(getNumberOfPhysicalCPUCores()));
     auto settings = context->getSettingsRef();
