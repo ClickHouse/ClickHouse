@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
-GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit) : size_limit(limit)
+GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit) : lst{}, size_limit(limit)
 {}
 
 bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
