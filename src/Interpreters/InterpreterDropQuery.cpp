@@ -74,28 +74,51 @@ BlockIO InterpreterDropQuery::execute()
 }
 
 
-void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait)
+void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, StoragePtr table)
 {
-    if (uuid_to_wait == UUIDHelpers::Nil)
+    /// Temporary or non existing table.
+    if (!table)
         return;
 
-    if (query.kind == ASTDropQuery::Kind::Drop)
-        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait);
-    else if (query.kind == ASTDropQuery::Kind::Detach)
-        db->waitDetachedTableNotInUse(uuid_to_wait);
+    auto uuid = table->getStorageID().uuid;
+
+    if (uuid == UUIDHelpers::Nil)
+    {
+        /// Ignore SYNC, since for Ordinary database it should be implicit.
+
+        if (!table.unique())
+        {
+            auto * log = &Poco::Logger::get("InterpreterDropQuery");
+            std::string log_name = table->getStorageID().getNameForLogs();
+
+            Stopwatch watch;
+            LOG_DEBUG(log, "Table {} is still in use, waiting.", log_name);
+            while (!table.unique())
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            LOG_DEBUG(log, "Table {} had been destroyed (took {}ms).", log_name, watch.elapsedMilliseconds());
+        }
+    }
+    else if (query.sync)
+    {
+        table.reset();
+
+        if (query.kind == ASTDropQuery::Kind::Drop)
+            DatabaseCatalog::instance().waitTableFinallyDropped(uuid);
+        else if (query.kind == ASTDropQuery::Kind::Detach)
+            db->waitDetachedTableNotInUse(uuid);
+    }
 }
 
 BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 {
     DatabasePtr database;
-    UUID table_to_wait_on = UUIDHelpers::Nil;
-    auto res = executeToTableImpl(getContext(), query, database, table_to_wait_on);
-    if (query.sync)
-        waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on);
+    StoragePtr table;
+    auto res = executeToTableImpl(getContext(), query, database, table);
+    waitForTableToBeActuallyDroppedOrDetached(query, database, std::move(table));
     return res;
 }
 
-BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
+BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQuery & query, DatabasePtr & db, StoragePtr & removed_table)
 {
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
@@ -254,7 +277,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
         }
 
         db = database;
-        uuid_to_wait = table_id.uuid;
+        removed_table = table;
     }
 
     return {};
@@ -298,7 +321,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
 BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
 {
     DatabasePtr database;
-    std::vector<UUID> tables_to_wait;
+    std::vector<StoragePtr> tables_to_wait;
     BlockIO res;
     try
     {
@@ -306,23 +329,19 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     }
     catch (...)
     {
-        if (query.sync)
-        {
-            for (const auto & table_uuid : tables_to_wait)
-                waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
-        }
+        for (auto & table : tables_to_wait)
+            waitForTableToBeActuallyDroppedOrDetached(query, database, std::move(table));
+
         throw;
     }
 
-    if (query.sync)
-    {
-        for (const auto & table_uuid : tables_to_wait)
-            waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
-    }
+    for (auto & table : tables_to_wait)
+        waitForTableToBeActuallyDroppedOrDetached(query, database, std::move(table));
+
     return res;
 }
 
-BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait)
+BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<StoragePtr> & tables_to_wait)
 {
     const auto & database_name = query.getDatabase();
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
@@ -366,19 +385,24 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     DatabasePtr db;
-                    UUID table_to_wait = UUIDHelpers::Nil;
                     query_for_table.setTable(iterator->name());
                     query_for_table.is_dictionary = iterator->table()->isDictionary();
-                    executeToTableImpl(table_context, query_for_table, db, table_to_wait);
-                    uuids_to_wait.push_back(table_to_wait);
+
+                    StoragePtr table;
+                    executeToTableImpl(table_context, query_for_table, db, table);
+                    tables_to_wait.push_back(table);
                 }
             }
 
             if (!drop && query.sync)
             {
                 /// Avoid "some tables are still in use" when sync mode is enabled
-                for (const auto & table_uuid : uuids_to_wait)
-                    database->waitDetachedTableNotInUse(table_uuid);
+                for (auto & table_to_wait : tables_to_wait)
+                {
+                    auto uuid_to_wait = table_to_wait->getStorageID().uuid;
+                    table_to_wait.reset();
+                    database->waitDetachedTableNotInUse(uuid_to_wait);
+                }
             }
 
             /// Protects from concurrent CREATE TABLE queries
