@@ -15,6 +15,7 @@ node = cluster.add_instance(
     with_minio=True,
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -49,4 +50,3 @@ def test_s3_storage_class_right(started_cluster):
     )
 
     assert result == "1\n"
-
