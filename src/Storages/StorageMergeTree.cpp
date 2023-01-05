@@ -817,7 +817,8 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         /// (left = nullptr, right = "first part of partition")
         if (!left)
         {
-            if (currently_merging_mutating_parts.contains(right)) {
+            if (currently_merging_mutating_parts.contains(right))
+            {
                 if (disable_reason)
                     *disable_reason = "Some part currently in a merging or mutating process";
                 return false;
