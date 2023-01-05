@@ -110,8 +110,6 @@ private:
     friend struct Registry;
     struct Registry
     {
-        Registry();
-
         std::mutex mutex;
         std::unordered_map<UInt64, CancelToken*> threads; // By thread ID
 
