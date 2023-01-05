@@ -30,7 +30,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 {
     const auto & ast_function = assert_cast<const ASTFunction *>(ast.get());
 
-    auto & args = ast_function->children;
+    const auto & args = ast_function->children;
     if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, bad_arguments_error_message);
 
