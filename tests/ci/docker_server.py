@@ -7,6 +7,7 @@ import logging
 import subprocess
 import sys
 import time
+from pathlib import Path
 from os import path as p, makedirs
 from typing import List
 
@@ -23,6 +24,7 @@ from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from version_helper import (
     ClickHouseVersion,
@@ -117,7 +119,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def retry_popen(cmd: str) -> int:
+def retry_popen(cmd: str, log_file: Path) -> int:
     max_retries = 5
     for retry in range(max_retries):
         # From time to time docker build may failed. Curl issues, or even push
@@ -130,18 +132,14 @@ def retry_popen(cmd: str) -> int:
                 cmd,
             )
             time.sleep(progressive_sleep)
-        with subprocess.Popen(
+        with TeePopen(
             cmd,
-            shell=True,
-            stderr=subprocess.STDOUT,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
+            log_file=log_file,
         ) as process:
-            for line in process.stdout:  # type: ignore
-                print(line, end="")
             retcode = process.wait()
             if retcode == 0:
                 return 0
+
     return retcode
 
 
@@ -272,15 +270,24 @@ def build_and_push_image(
         )
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        if retry_popen(cmd) != 0:
+        log_file = Path(TEMP_PATH) / f"{image.repo.replace('/', '__')}:{tag}-{arch}.log"
+        if retry_popen(cmd, log_file) != 0:
             result.append(
                 TestResult(
-                    f"{image.repo}:{tag}-{arch}", "FAIL", single_sw.duration_seconds
+                    f"{image.repo}:{tag}-{arch}",
+                    "FAIL",
+                    single_sw.duration_seconds,
+                    [log_file],
                 )
             )
             return result
         result.append(
-            TestResult(f"{image.repo}:{tag}-{arch}", "OK", single_sw.duration_seconds)
+            TestResult(
+                f"{image.repo}:{tag}-{arch}",
+                "OK",
+                single_sw.duration_seconds,
+                [log_file],
+            )
         )
         with open(metadata_path, "rb") as m:
             metadata = json.load(m)
@@ -291,7 +298,7 @@ def build_and_push_image(
             f"--tag {image.repo}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.repo, tag, cmd)
-        if retry_popen(cmd) != 0:
+        if retry_popen(cmd, Path("/dev/null")) != 0:
             result.append(
                 TestResult(
                     f"{image.repo}:{tag}", "FAIL", multiplatform_sw.duration_seconds
