@@ -317,7 +317,8 @@ class ClickhouseIntegrationTestsRunner:
                 logging.info("docker-compose pull failed: " + str(err))
                 continue
         logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
-        exit(1)
+        # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
+        exit(13)
 
     def _can_run_with(self, path, opt):
         with open(path, "r") as script:

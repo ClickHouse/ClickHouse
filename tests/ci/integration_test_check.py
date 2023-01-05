@@ -247,6 +247,11 @@ if __name__ == "__main__":
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run tests successfully")
+        elif retcode == 13:
+            logging.warning(
+                "There were issues with infrastructure. Not writing status report to restart job."
+            )
+            sys.exit(1)
         else:
             logging.info("Some tests failed")
 
