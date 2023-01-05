@@ -124,7 +124,7 @@ void TestSharedMutexCancelReader()
                 std::shared_lock lock(sm);
                 successes++;
             }
-            catch(DB::Exception & e)
+            catch (DB::Exception & e)
             {
                 ASSERT_EQ(e.code(), DB::ErrorCodes::THREAD_WAS_CANCELLED);
                 ASSERT_EQ(e.message(), "test");
