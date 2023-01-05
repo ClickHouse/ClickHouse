@@ -76,8 +76,6 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 
-#define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
-
 namespace DB
 {
 
@@ -227,7 +225,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     if ((create.storage->engine->name == "MaterializeMySQL" || create.storage->engine->name == "MaterializedMySQL")
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_mysql
-        && !internal)
+        && !internal && !create.attach)
     {
         throw Exception("MaterializedMySQL is an experimental database engine. "
                         "Enable allow_experimental_database_materialized_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
@@ -235,7 +233,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     if (create.storage->engine->name == "Replicated"
         && !getContext()->getSettingsRef().allow_experimental_database_replicated
-        && !internal)
+        && !internal && !create.attach)
     {
         throw Exception("Replicated is an experimental database engine. "
                         "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
@@ -243,7 +241,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql
-        && !internal)
+        && !internal && !create.attach)
     {
         throw Exception("MaterializedPostgreSQL is an experimental database engine. "
                         "Enable allow_experimental_database_materialized_postgresql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
@@ -559,7 +557,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
-    for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
+    for (const auto * ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
     {
         ColumnDescription column;
 

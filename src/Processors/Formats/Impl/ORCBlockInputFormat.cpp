@@ -189,8 +189,9 @@ NamesAndTypesList ORCSchemaReader::readSchema()
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, "ORC", format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference);
-    return getNamesAndRecursivelyNullableTypes(header);
-}
+    if (format_settings.schema_inference_make_columns_nullable)
+        return getNamesAndRecursivelyNullableTypes(header);
+    return header.getNamesAndTypesList();}
 
 void registerInputFormatORC(FormatFactory & factory)
 {
@@ -216,6 +217,11 @@ void registerORCSchemaReader(FormatFactory & factory)
             return std::make_shared<ORCSchemaReader>(buf, settings);
         }
         );
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("ORC", [](const FormatSettings & settings)
+    {
+        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+    });
 }
 
 }
