@@ -31,7 +31,7 @@ th {{ cursor: pointer; }}
 tr:hover {{ filter: brightness(120%); }}
 .failed {{ cursor: pointer; }}
 .failed-content {{ display: none; }}
-#fish {{ display: none; float: right; position: relative; top: -20em; right: 10vw; margin-bottom: -20em; width: 30vh; filter: brightness(3%); z-index: -1; }}
+#fish {{ display: none; float: right; position: relative; top: -20em; right: 2vw; margin-bottom: -20em; width: 30vw; filter: brightness(3%); z-index: -1; }}
   </style>
   <title>{title}</title>
 </head>
