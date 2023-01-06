@@ -97,6 +97,8 @@ struct QuantileInterpolatedWeighted
     }
 
 private:
+    using Pair = typename std::pair<UnderlyingType, Float64>;
+
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     template <typename T>
     T getImpl(Float64 level) const
@@ -108,8 +110,8 @@ private:
 
         /// Maintain a vector of pair of values and weights for easier sorting and for building
         /// a cumulative distribution using the provided weights.
-        using Pair = typename std::pair<UnderlyingType, Float64>;
         std::vector<Pair> value_weight_pairs;
+        value_weight_pairs.reserve(size);
 
         /// Note: weight provided must be a 64-bit integer
         /// Float64 is used as accumulator here to get approximate results.
@@ -123,7 +125,7 @@ private:
             sum_weight += pair.getMapped();
             auto value = pair.getKey();
             auto weight = pair.getMapped();
-            value_weight_pairs.push_back(std::make_pair(value, weight));
+            value_weight_pairs.push_back({value, weight});
         }
 
         ::sort(value_weight_pairs.begin(), value_weight_pairs.end(), [](const Pair & a, const Pair & b) { return a.first < b.first; });
@@ -133,21 +135,12 @@ private:
         /// vector for populating and storing the cumulative sum using the provided weights.
         /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
         std::vector<Float64> weights_cum_sum;
+        weights_cum_sum.reserve(size);
 
-        bool first = true;
         for (size_t idx = 0; idx < size; ++idx)
         {
             accumulated += value_weight_pairs[idx].second;
-
-            if (first)
-            {
-                weights_cum_sum.push_back(value_weight_pairs[idx].second);
-                first = false;
-            }
-            else
-            {
-                weights_cum_sum.push_back(accumulated);
-            }
+            weights_cum_sum.push_back(accumulated);
         }
 
         /// The following estimation of quantile is general and the idea is:
@@ -204,8 +197,8 @@ private:
             return;
         }
 
-        using Pair = typename std::pair<UnderlyingType, Float64>;
         std::vector<Pair> value_weight_pairs;
+        value_weight_pairs.reserve(size);
 
         Float64 sum_weight = 0;
         for (const auto & pair : map)
@@ -213,7 +206,7 @@ private:
             sum_weight += pair.getMapped();
             auto value = pair.getKey();
             auto weight = pair.getMapped();
-            value_weight_pairs.push_back(std::make_pair(value, weight));
+            value_weight_pairs.push_back({value, weight});
         }
 
         ::sort(value_weight_pairs.begin(), value_weight_pairs.end(), [](const Pair & a, const Pair & b) { return a.first < b.first; });
@@ -223,22 +216,14 @@ private:
         /// vector for populating and storing the cumulative sum using the provided weights.
         /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
         std::vector<Float64> weights_cum_sum;
+        weights_cum_sum.reserve(size);
 
-        bool first = true;
         for (size_t idx = 0; idx < size; ++idx)
         {
             accumulated += value_weight_pairs[idx].second;
-
-            if (first)
-            {
-                weights_cum_sum.emplace_back(value_weight_pairs[idx].second);
-                first = false;
-            }
-            else
-            {
-                weights_cum_sum.emplace_back(accumulated);
-            }
+            weights_cum_sum.emplace_back(accumulated);
         }
+
 
         /// The following estimation of quantile is general and the idea is:
         /// https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method
@@ -249,9 +234,7 @@ private:
             value_weight_pairs[idx].second
                 = sum_weight == 0 ? 0 : (weights_cum_sum[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
 
-        size_t level_index = 0;
-
-        while (level_index < num_levels)
+        for (size_t level_index = 0; level_index < num_levels; ++level_index)
         {
             /// perform linear interpolation for every level
             auto level = levels[indices[level_index]];
@@ -282,7 +265,6 @@ private:
                 yl = yr;
 
             result[indices[level_index]] = static_cast<T>(interpolate(level, xl, xr, yl, yr));
-            ++level_index;
         }
     }
 
