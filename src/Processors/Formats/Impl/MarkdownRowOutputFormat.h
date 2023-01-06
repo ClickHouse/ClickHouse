@@ -21,7 +21,6 @@ private:
     /// |columnName1|columnName2|...|columnNameN|
     /// |:-:|:-:|...|:-:|
     void writePrefix() override;
-    void writeSuffix() override;
 
     /// Write '|' before each row
     void writeRowStartDelimiter() override;
@@ -29,11 +28,8 @@ private:
     /// Write '|' between values
     void writeFieldDelimiter() override;
 
-    /// Write '|' at the end of each row
+    /// Write '|\n' at the end of each row
     void writeRowEndDelimiter() override;
-
-    /// Write '\n' after each row
-    void writeRowBetweenDelimiter() override;
 
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
 
