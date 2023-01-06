@@ -314,7 +314,7 @@ void TemporaryFileStream::updateAllocAndCheck()
 
 bool TemporaryFileStream::isEof() const
 {
-    return file == nullptr && segment_holder->empty();
+    return file == nullptr && !segment_holder;
 }
 
 void TemporaryFileStream::release()
@@ -334,15 +334,15 @@ void TemporaryFileStream::release()
         parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
     }
 
-    if (!segment_holder->empty())
-        segment_holder->reset();
+    if (segment_holder)
+        segment_holder.reset();
 }
 
 String TemporaryFileStream::getPath() const
 {
     if (file)
         return file->getPath();
-    if (!segment_holder->empty())
+    if (segment_holder && !segment_holder->empty())
         return segment_holder->front().getPathInLocalCache();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream has no file");

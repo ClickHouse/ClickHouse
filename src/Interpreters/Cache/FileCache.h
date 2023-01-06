@@ -386,12 +386,7 @@ struct KeyTransaction : private boost::noncopyable
 
     std::vector<size_t> delete_offsets;
 
-    const CachePriorityQueueGuard::Lock & getQueueLock() const
-    {
-        if (!queue_lock)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue is not locked");
-        return *queue_lock;
-    }
+    const CachePriorityQueueGuard::Lock & getQueueLock() const;
 
 private:
     KeyPrefixGuardPtr guard;
