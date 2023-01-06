@@ -144,7 +144,8 @@ private:
         FileSegmentCell(
             FileSegmentPtr file_segment_,
             KeyTransaction & key_transaction,
-            IFileCachePriority & priority_queue);
+            IFileCachePriority & priority_queue,
+            CachePriorityQueueGuard::Lock * queue_lock);
 
         FileSegmentCell(FileSegmentCell && other) noexcept
             : file_segment(std::move(other.file_segment)), queue_iterator(std::move(other.queue_iterator)) {}
@@ -242,11 +243,11 @@ private:
 
             bool isSkipDownloadIfExceed() const { return skip_download_if_exceeds_query_cache; }
 
-            void remove(const Key & key, size_t offset, size_t size, KeyTransaction & key_transaction);
+            void remove(const Key & key, size_t offset, size_t size, const CachePriorityQueueGuard::Lock &);
 
-            void reserve(const Key & key, size_t offset, size_t size, KeyTransaction & key_transaction);
+            void reserve(const Key & key, size_t offset, size_t size, const KeyTransaction & key_transaction, const CachePriorityQueueGuard::Lock &);
 
-            void use(const Key & key, size_t offset, KeyTransaction & key_transaction);
+            void use(const Key & key, size_t offset, const CachePriorityQueueGuard::Lock &);
         };
 
         using QueryContextPtr = std::shared_ptr<QueryContext>;
@@ -315,27 +316,31 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        KeyTransaction & key_transaction);
+        KeyTransaction & key_transaction,
+        CachePriorityQueueGuard::Lock * queue_lock);
 
     bool tryReserveUnlocked(
         const Key & key,
         size_t offset,
         size_t size,
-        KeyTransactionPtr key_transaction);
+        KeyTransactionPtr key_transaction,
+        const CachePriorityQueueGuard::Lock &);
 
     bool tryReserveInCache(
         const Key & key,
         size_t offset,
         size_t size,
         QueryLimit::QueryContextPtr query_context,
-        KeyTransactionPtr key_transaction);
+        KeyTransactionPtr key_transaction,
+        const CachePriorityQueueGuard::Lock &);
 
     bool tryReserveInQueryCache(
         const Key & key,
         size_t offset,
         size_t size,
         QueryLimit::QueryContextPtr query_context,
-        KeyTransactionPtr key_transaction);
+        KeyTransactionPtr key_transaction,
+        const CachePriorityQueueGuard::Lock &);
 
     void removeKeyDirectoryIfExists(const Key & key, const KeyPrefixGuard::Lock & lock) const;
 
@@ -348,8 +353,8 @@ private:
     static void iterateAndCollectKeyLocks(
         IFileCachePriority & priority,
         IterateAndCollectLocksFunc && func,
-        const CachePriorityQueueGuard::Lock & lock,
-        KeyTransactionsMap & locked_map);
+        KeyTransactionsMap & locked_map,
+        const CachePriorityQueueGuard::Lock & queue_lock);
 };
 
 struct KeyTransactionCreator
@@ -369,15 +374,15 @@ struct KeyTransaction : private boost::noncopyable
 {
     using Key = FileCacheKey;
 
-    KeyTransaction(KeyPrefixGuardPtr guard_, FileCache::CacheCellsPtr offsets_, std::shared_ptr<CachePriorityQueueGuard::Lock> queue_lock_ = nullptr);
+    KeyTransaction(KeyPrefixGuardPtr guard_, FileCache::CacheCellsPtr offsets_);
 
-    KeyTransactionCreatorPtr getCreator() { return std::make_unique<KeyTransactionCreator>(guard, offsets); }
+    KeyTransactionCreatorPtr getCreator() const { return std::make_unique<KeyTransactionCreator>(guard, offsets); }
 
-    void remove(FileSegmentPtr file_segment);
+    void reduceSizeToDownloaded(const Key & key, size_t offset, const FileSegmentGuard::Lock &, const CachePriorityQueueGuard::Lock &);
 
-    void reduceSizeToDownloaded(const Key & key, size_t offset, const FileSegmentGuard::Lock &);
+    void remove(FileSegmentPtr file_segment, const CachePriorityQueueGuard::Lock &);
 
-    void remove(const Key & key, size_t offset, const FileSegmentGuard::Lock &);
+    void remove(const Key & key, size_t offset, const FileSegmentGuard::Lock &, const CachePriorityQueueGuard::Lock &);
 
     bool isLastHolder(size_t offset);
 
@@ -386,8 +391,6 @@ struct KeyTransaction : private boost::noncopyable
 
     std::vector<size_t> delete_offsets;
 
-    const CachePriorityQueueGuard::Lock & getQueueLock() const;
-
 private:
     KeyPrefixGuardPtr guard;
     const KeyPrefixGuard::Lock lock;
@@ -395,9 +398,6 @@ private:
     FileCache::CacheCellsPtr offsets;
 
     Poco::Logger * log;
-public:
-    std::shared_ptr<CachePriorityQueueGuard::Lock> queue_lock;
-
 };
 
 }
