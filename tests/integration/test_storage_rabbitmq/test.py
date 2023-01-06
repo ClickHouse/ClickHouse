@@ -3296,8 +3296,8 @@ def test_block_based_formats_2(rabbitmq_cluster):
 
 
 def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
-     instance.query(
-         """
+    instance.query(
+        """
          DROP TABLE IF EXISTS test.view;
          DROP TABLE IF EXISTS test.consumer;
 
@@ -3317,146 +3317,146 @@ def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
          CREATE MATERIALIZED VIEW test.consumer TO test.view AS
              SELECT * FROM test.rabbitmq;
      """
-     )
+    )
 
-     cancel = threading.Event()
+    cancel = threading.Event()
 
-     def produce():
-         credentials = pika.PlainCredentials("root", "clickhouse")
-         parameters = pika.ConnectionParameters(
-             rabbitmq_cluster.rabbitmq_ip,
-             rabbitmq_cluster.rabbitmq_port,
-             "/",
-             credentials,
-         )
-         connection = pika.BlockingConnection(parameters)
+    def produce():
+        credentials = pika.PlainCredentials("root", "clickhouse")
+        parameters = pika.ConnectionParameters(
+            rabbitmq_cluster.rabbitmq_ip,
+            rabbitmq_cluster.rabbitmq_port,
+            "/",
+            credentials,
+        )
+        connection = pika.BlockingConnection(parameters)
 
-         while not cancel.is_set():
-             try:
-                 channel = connection.channel()
-                 channel.basic_publish(
-                     exchange="flush_by_block",
-                     routing_key="",
-                     body=json.dumps({"key": 0, "value": 0}),
-                 )
-             except e:
-                 print(f"Got error: {str(e)}")
+        while not cancel.is_set():
+            try:
+                channel = connection.channel()
+                channel.basic_publish(
+                    exchange="flush_by_block",
+                    routing_key="",
+                    body=json.dumps({"key": 0, "value": 0}),
+                )
+            except e:
+                print(f"Got error: {str(e)}")
 
-     produce_thread = threading.Thread(target=produce)
-     produce_thread.start()
+    produce_thread = threading.Thread(target=produce)
+    produce_thread.start()
 
-     while 0 == int(
-         instance.query(
-             "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'"
-         )
-     ):
-         time.sleep(0.5)
+    while 0 == int(
+        instance.query(
+            "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'"
+        )
+    ):
+        time.sleep(0.5)
 
-     cancel.set()
-     produce_thread.join()
+    cancel.set()
+    produce_thread.join()
 
-     # more flushes can happens during test, we need to check only result of first flush (part named all_1_1_0).
-     result = instance.query("SELECT count() FROM test.view WHERE _part='all_1_1_0'")
-     # logging.debug(result)
+    # more flushes can happens during test, we need to check only result of first flush (part named all_1_1_0).
+    result = instance.query("SELECT count() FROM test.view WHERE _part='all_1_1_0'")
+    # logging.debug(result)
 
-     instance.query(
-         """
+    instance.query(
+        """
          DROP TABLE test.consumer;
          DROP TABLE test.view;
          DROP TABLE test.rabbitmq;
      """
-     )
+    )
 
-     # 100 = first poll should return 100 messages (and rows)
-     # not waiting for stream_flush_interval_ms
-     assert (
-         int(result) == 100
-     ), "Messages from rabbitmq should be flushed when block of size rabbitmq_max_block_size is formed!"
+    # 100 = first poll should return 100 messages (and rows)
+    # not waiting for stream_flush_interval_ms
+    assert (
+        int(result) == 100
+    ), "Messages from rabbitmq should be flushed when block of size rabbitmq_max_block_size is formed!"
 
 
- def test_rabbitmq_flush_by_time(rabbitmq_cluster):
-     instance.query(
-         """
-         DROP TABLE IF EXISTS test.view;
-         DROP TABLE IF EXISTS test.consumer;
+def test_rabbitmq_flush_by_time(rabbitmq_cluster):
+    instance.query(
+        """
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
 
-         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
-             ENGINE = RabbitMQ
-             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                      rabbitmq_exchange_name = 'flush_by_time',
-                      rabbitmq_queue_base = 'flush_by_time',
-                      rabbitmq_max_block_size = 100,
-                      rabbitmq_flush_interval_ms = 5000,
-                      rabbitmq_format = 'JSONEachRow';
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'flush_by_time',
+                     rabbitmq_queue_base = 'flush_by_time',
+                     rabbitmq_max_block_size = 100,
+                     rabbitmq_flush_interval_ms = 5000,
+                     rabbitmq_format = 'JSONEachRow';
 
-         CREATE TABLE test.view (key UInt64, value UInt64, ts DateTime64(3) MATERIALIZED now64(3))
-             ENGINE = MergeTree()
-             ORDER BY key;
-     """
-     )
+        CREATE TABLE test.view (key UInt64, value UInt64, ts DateTime64(3) MATERIALIZED now64(3))
+            ENGINE = MergeTree()
+            ORDER BY key;
+    """
+    )
 
-     cancel = threading.Event()
+    cancel = threading.Event()
 
-     def produce():
-         credentials = pika.PlainCredentials("root", "clickhouse")
-         parameters = pika.ConnectionParameters(
-             rabbitmq_cluster.rabbitmq_ip,
-             rabbitmq_cluster.rabbitmq_port,
-             "/",
-             credentials,
-         )
-         connection = pika.BlockingConnection(parameters)
+    def produce():
+        credentials = pika.PlainCredentials("root", "clickhouse")
+        parameters = pika.ConnectionParameters(
+            rabbitmq_cluster.rabbitmq_ip,
+            rabbitmq_cluster.rabbitmq_port,
+            "/",
+            credentials,
+        )
+        connection = pika.BlockingConnection(parameters)
 
-         while not cancel.is_set():
-             try:
-                 channel = connection.channel()
-                 channel.basic_publish(
-                     exchange="flush_by_time",
-                     routing_key="",
-                     body=json.dumps({"key": 0, "value": 0}),
-                 )
-                 print("Produced a message")
-                 time.sleep(0.8)
-             except e:
-                 print(f"Got error: {str(e)}")
+        while not cancel.is_set():
+            try:
+                channel = connection.channel()
+                channel.basic_publish(
+                    exchange="flush_by_time",
+                    routing_key="",
+                    body=json.dumps({"key": 0, "value": 0}),
+                )
+                print("Produced a message")
+                time.sleep(0.8)
+            except e:
+                print(f"Got error: {str(e)}")
 
-     produce_thread = threading.Thread(target=produce)
-     produce_thread.start()
+    produce_thread = threading.Thread(target=produce)
+    produce_thread.start()
 
-     instance.query(
-         """
-         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-             SELECT * FROM test.rabbitmq;
-     """
-     )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+    """
+    )
 
-     while True:
-         time.sleep(0.2)
-         count = instance.query(
-             "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view'"
-         )
-         print(f"kssenii total count: {count}")
-         count = int(
-             instance.query(
-                 "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'"
-             )
-         )
-         print(f"kssenii count: {count}")
-         if count > 0:
-             break
+    while True:
+        time.sleep(0.2)
+        count = instance.query(
+            "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view'"
+        )
+        print(f"kssenii total count: {count}")
+        count = int(
+            instance.query(
+                "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'"
+            )
+        )
+        print(f"kssenii count: {count}")
+        if count > 0:
+            break
 
-     time.sleep(12)
-     result = instance.query("SELECT uniqExact(ts) FROM test.view")
+    time.sleep(12)
+    result = instance.query("SELECT uniqExact(ts) FROM test.view")
 
-     cancel.set()
-     produce_thread.join()
+    cancel.set()
+    produce_thread.join()
 
-     instance.query(
-         """
-         DROP TABLE test.consumer;
-         DROP TABLE test.view;
-         DROP TABLE test.rabbitmq;
-     """
-     )
+    instance.query(
+        """
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+        DROP TABLE test.rabbitmq;
+    """
+    )
 
-     assert int(result) == 3
+    assert int(result) == 3
