@@ -2,12 +2,12 @@
 
 #include <atomic>
 #include <mutex>
-#include <shared_mutex>
 #include <utility>
 #include <vector>
 #include <functional>
 
 #include <Common/ThreadPool.h>
+#include <Common/Threading.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PODArray.h>

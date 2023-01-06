@@ -3,7 +3,9 @@
 #include <base/types.h>
 #include <base/defines.h>
 
-#include <Common/Exception.h>
+#include <Common/Exception.h> // for chassert to work
+
+#include <shared_mutex> // for std::shared_lock and std::unique_lock
 
 #ifdef OS_LINUX /// Because of futex
 
@@ -215,8 +217,6 @@ private:
 }
 
 #else
-
-#include <shared_mutex>
 
 // WARNING: We support cancellable synchronization primitives only on linux for now
 

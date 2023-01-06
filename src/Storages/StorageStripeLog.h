@@ -1,11 +1,11 @@
 #pragma once
 
 #include <map>
-#include <shared_mutex>
 
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Formats/IndexForNativeFormat.h>
+#include <Common/Threading.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
 #include <Disks/IDisk.h>
