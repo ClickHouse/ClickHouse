@@ -77,7 +77,7 @@ def main(args):
         pr_info.number,
         pr_info.sha,
         test_results,
-        [],
+        args.status,
         check_name_with_group,
     )
 
