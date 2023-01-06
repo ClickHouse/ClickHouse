@@ -386,7 +386,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
     for (const auto & [name, attr] : attributes)
     {
         auto col_ptr = attr.type->createColumn();
-        col_ptr->reserve(key_offsets.size());
+        col_ptr->reserve(keys_offsets.size());
         columns[name] = std::move(col_ptr);
     }
 
@@ -401,9 +401,9 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
     };
 
     UInt64 offset = 0;
-    for (size_t key_idx = 0; key_idx < key_offsets.size(); ++key_idx)
+    for (size_t key_idx = 0; key_idx < keys_offsets.size(); ++key_idx)
     {
-        auto key_offset = key_offsets[key_idx];
+        auto key_offset = keys_offsets[key_idx];
         UInt64 length = key_offset - offset - 1;
 
         MatchContext match_result(regexp_ids, topology_order);
