@@ -200,7 +200,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     const MergeTreeMutableDataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums)
 {
+    /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
+
     if (new_part->isProjectionPart())
     {
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))

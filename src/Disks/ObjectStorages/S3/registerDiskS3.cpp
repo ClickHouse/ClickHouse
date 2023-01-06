@@ -11,7 +11,6 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 
-#include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
@@ -24,6 +23,7 @@
 
 #include <Storages/StorageS3Settings.h>
 #include <Core/ServerUUID.h>
+#include <Common/Macros.h>
 
 
 namespace DB
@@ -105,7 +105,8 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         ContextPtr context,
         const DisksMap & /*map*/) -> DiskPtr
     {
-        S3::URI uri(config.getString(config_prefix + ".endpoint"));
+        String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+        S3::URI uri(endpoint);
 
         if (uri.key.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No key in S3 uri: {}", uri.uri.toString());
@@ -166,9 +167,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 
         s3disk->startup(context, skip_access_check);
 
-        std::shared_ptr<IDisk> disk_result = s3disk;
-
-        return std::make_shared<DiskRestartProxy>(disk_result);
+        return s3disk;
     };
     factory.registerDiskType("s3", creator);
     factory.registerDiskType("s3_plain", creator);
