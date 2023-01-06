@@ -125,7 +125,7 @@
             font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;
         }
 
-        .monospace-table
+        .monospace-table tbody
         {
             /* Liberation is worse than DejaVu for block drawing characters. */
             font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
@@ -317,6 +317,11 @@
             color: var(--misc-text-color);
         }
 
+        .status-row {
+            width: 1%;
+            text-align: right;
+        }
+
         div.empty-result
         {
             opacity: 10%;
@@ -363,14 +368,12 @@
 
         .check-mark
         {
-            text-align: center;
             font-size: 110%;
             color: #080;
         }
 
         .cross-mark
         {
-            text-align: center;
             font-size: 110%;
             color: #C00;
         }
@@ -491,8 +494,8 @@
         <table>
             <thead>
                 <tr>
+                    <th class="row-number">№</th>
                     <th></th>
-                    <th>#</th>
                     <th>Action</th>
                     <th>Message</th>
                     <th>Stats</th>
@@ -1023,8 +1026,8 @@
         const message = success ? `${response.data.length} row(s) returned` : response;
         action_body.innerHTML += `
                 <tr>
-                    <td><span class="${iconClass}">${icon}</span></td>
                     <td>${request_num}</td>
+                    <td class="status-row"><span class="${iconClass}">${icon}</span></td>
                     <td>${query}</td>
                     <td>${stats ? message : response}</td>
                     <td>${stats ? stats : '-'}</td>
