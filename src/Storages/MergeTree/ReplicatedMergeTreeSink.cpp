@@ -203,7 +203,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
-    , storage_snapshot(storage.getStorageSnapshot(metadata_snapshot, context))
+    , storage_snapshot(storage.getStorageSnapshotWithoutParts(metadata_snapshot))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (required_quorum_size == 1)
@@ -485,7 +485,8 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false);
             if (conflict_block_ids.empty())
                 break;
-            LOG_DEBUG(log, "Found depulicate block IDs: {}, retry times {}", toString(conflict_block_ids), ++retry_times);
+            ++retry_times;
+            LOG_DEBUG(log, "Found duplicate block IDs: {}, retry times {}", toString(conflict_block_ids), retry_times);
             /// partition clean conflict
             rewriteBlock(log, partition, conflict_block_ids);
             if (partition.block_id.empty())
@@ -538,7 +539,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
     ///
     /// metadata_snapshot->check(part->getColumns());
 
-    String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
+    const String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
@@ -819,6 +820,14 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
                     part->name);
         }
 
+        auto rename_part_to_temporary = [&temporary_part_relative_path, &transaction, &part]()
+        {
+            transaction.rollbackPartsToTemporaryState();
+
+            part->is_temp = true;
+            part->renameTo(temporary_part_relative_path, false);
+        };
+
         try
         {
             ThreadFuzzer::maybeInjectSleep();
@@ -827,11 +836,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         }
         catch (const Exception &)
         {
-            transaction.rollbackPartsToTemporaryState();
-
-            part->is_temp = true;
-            part->renameTo(temporary_part_relative_path, false);
-
+            rename_part_to_temporary();
             throw;
         }
 
@@ -905,10 +910,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
                 /// We will try to add this part again on the new iteration as it's just a new part.
                 /// So remove it from storage parts set immediately and transfer state to temporary.
-                transaction.rollbackPartsToTemporaryState();
-
-                part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false);
+                rename_part_to_temporary();
 
                 if constexpr (async_insert)
                 {
@@ -930,8 +932,20 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
             }
             else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
             {
-                storage.unlockSharedData(*part, zookeeper);
-                transaction.rollback();
+                try
+                {
+                    storage.unlockSharedData(*part, zookeeper);
+                }
+                catch (const zkutil::KeeperException & e)
+                {
+                    /// suppress this exception since need to rename part to temporary next
+                    LOG_DEBUG(log, "Unlocking shared data failed during error handling: code={} message={}", e.code, e.message());
+                }
+
+                /// Part was not committed to keeper
+                /// So make it temporary to avoid its resurrection on restart
+                rename_part_to_temporary();
+
                 throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
             }
             else

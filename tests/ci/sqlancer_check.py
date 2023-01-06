@@ -95,7 +95,7 @@ if __name__ == "__main__":
     run_command = get_run_command(build_url, workspace_path, docker_image)
     logging.info("Going to run %s", run_command)
 
-    run_log_path = os.path.join(workspace_path, "runlog.log")
+    run_log_path = os.path.join(workspace_path, "run.log")
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log

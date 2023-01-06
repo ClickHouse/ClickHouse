@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Formats/newLineSegmentationEngine.h>
 #include <IO/ReadHelpers.h>
 
@@ -129,8 +130,7 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
 
 void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    IInputFormat::setReadBuffer(*buf);
+    buf->setSubBuffer(in_);
 }
 
 RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -155,15 +155,15 @@ DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != field_extractor.getMatchedFieldsSize(); ++i)
     {
         String field(field_extractor.getField(i));
-        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule));
+        data_types.push_back(tryInferDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule, &json_inference_info));
     }
 
     return data_types;
 }
 
-void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredTypesIfNeeded(type, new_type, format_settings, format_settings.regexp.escaping_rule);
+    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, format_settings.regexp.escaping_rule, &json_inference_info);
 }
 
 

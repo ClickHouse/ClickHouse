@@ -174,6 +174,9 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
             "Table {} needs the same join_use_nulls setting as present in LEFT or FULL JOIN",
             getStorageID().getNameForLogs());
 
+    if (analyzed_join->getClauses().size() != 1)
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "JOIN keys should match to the Join engine keys [{}]", fmt::join(getKeyNames(), ", "));
+
     const auto & join_on = analyzed_join->getOnlyClause();
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "ON section of JOIN with filter conditions is not implemented");
@@ -211,9 +214,9 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
         left_key_names_resorted.push_back(key_names_left[key_position]);
     }
 
-    /// Set names qualifiers: table.column -> column
-    /// It's required because storage join stores non-qualified names
-    /// Qualifies will be added by join implementation (HashJoin)
+    /// Set qualified identifiers to original names (table.column -> column).
+    /// It's required because storage join stores non-qualified names.
+    /// Qualifies will be added by join implementation (TableJoin contains a rename mapping).
     analyzed_join->setRightKeys(key_names);
     analyzed_join->setLeftKeys(left_key_names_resorted);
 
