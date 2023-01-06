@@ -7,8 +7,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <IO/SeekableReadBuffer.h>
-#include <Disks/IO/ElapsedTimeProfileEventIncrement.h>
 
 #include <future>
 
@@ -41,8 +41,7 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    ElapsedUSProfileEventIncrement measure_time(ProfileEvents::ThreadpoolReaderSubmit);
-
+    ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderSubmit);
 
     auto schedule = threadPoolCallbackRunner<Result>(pool, "VFSRead");
 

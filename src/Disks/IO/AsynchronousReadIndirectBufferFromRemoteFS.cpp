@@ -2,9 +2,9 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/IO/ElapsedTimeProfileEventIncrement.h>
 
 
 namespace CurrentMetrics
@@ -175,7 +175,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
     if (prefetch_future.valid())
     {
-        ElapsedUSProfileEventIncrement measure_time(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
         std::tie(size, offset) = prefetch_future.get();
@@ -186,7 +186,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
     else
     {
-        ElapsedUSProfileEventIncrement measure_time(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
 
         chassert(memory.size() == read_settings.remote_fs_buffer_size);
         std::tie(size, offset) = impl->readInto(memory.data(), memory.size(), file_offset_of_buffer_end, bytes_to_ignore);
