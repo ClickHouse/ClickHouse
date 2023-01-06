@@ -661,7 +661,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 if (part_storage->hasLightweightDeletedMask())
                     return_all_columns = true;
             }
-            
+
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             if (materialize_ttl_recalculate_only)
             {
