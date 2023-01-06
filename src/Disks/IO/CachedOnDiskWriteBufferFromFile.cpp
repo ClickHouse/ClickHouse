@@ -228,7 +228,7 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 {
     /// Write data to cache.
     size_t size = offset();
-    cacheData(working_buffer.begin(), size);
+    cacheData(working_buffer.begin(), size, throw_on_error_from_cache);
     current_download_offset += size;
 
     try
@@ -245,10 +245,6 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 
         throw;
     }
-
-    /// Write data to cache.
-    cacheData(working_buffer.begin(), size, throw_on_error_from_cache);
-    current_download_offset += size;
 }
 
 void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool throw_on_error)
