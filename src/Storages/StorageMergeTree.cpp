@@ -171,6 +171,8 @@ void StorageMergeTree::shutdown()
     if (shutdown_called.exchange(true))
         return;
 
+    stopOutdatedDataPartsLoadingTask();
+
     /// Unlock all waiting mutations
     {
         std::lock_guard lock(mutation_wait_mutex);
