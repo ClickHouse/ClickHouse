@@ -160,7 +160,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-
     const Settings & settings = storage.getContext()->getSettingsRef();
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),

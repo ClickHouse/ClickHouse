@@ -65,7 +65,7 @@ add_contrib (dragonbox-cmake dragonbox)
 add_contrib (vectorscan-cmake vectorscan)
 add_contrib (jemalloc-cmake jemalloc)
 add_contrib (libcpuid-cmake libcpuid)
-add_contrib (libdivide)
+add_contrib (libdivide-cmake)
 add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
@@ -115,12 +115,25 @@ endif()
 add_contrib (llvm-project-cmake llvm-project)
 add_contrib (libfuzzer-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
-add_contrib (aws-s3-cmake
+
+add_contrib (aws-cmake
     aws
+    aws-c-auth
+    aws-c-cal
     aws-c-common
+    aws-c-compression
     aws-c-event-stream
+    aws-c-http
+    aws-c-io
+    aws-c-mqtt
+    aws-c-s3
+    aws-c-sdkutils
+    aws-s2n-tls
     aws-checksums
+    aws-crt-cpp
+    aws-cmake
 )
+
 add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
@@ -165,6 +178,10 @@ add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
 add_contrib (morton-nd-cmake morton-nd)
+
+if (ARCH_S390X)
+    add_contrib(crc32-s390x-cmake crc32-s390x)
+endif()
 
 add_contrib (annoy-cmake annoy)
 

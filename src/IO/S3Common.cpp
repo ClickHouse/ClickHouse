@@ -9,6 +9,7 @@
 #    include <Common/quoteString.h>
 
 #    include <IO/WriteBufferFromString.h>
+#    include <IO/HTTPHeaderEntries.h>
 #    include <Storages/StorageS3Settings.h>
 
 #    include <aws/core/Version.h>
@@ -149,13 +150,12 @@ class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
     static constexpr char EC2_IMDS_TOKEN_TTL_HEADER[] = "x-aws-ec2-metadata-token-ttl-seconds";
 
-    static constexpr char EC2_DEFAULT_METADATA_ENDPOINT[] = "http://169.254.169.254";
-
 public:
     /// See EC2MetadataClient.
 
-    explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+    explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
         : Aws::Internal::AWSHttpResourceClient(client_configuration)
+        , endpoint(endpoint_)
         , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
     {
     }
@@ -180,7 +180,7 @@ public:
         {
             std::lock_guard locker(token_mutex);
 
-            LOG_TRACE(logger, "Getting default credentials for EC2 instance.");
+            LOG_TRACE(logger, "Getting default credentials for ec2 instance from {}", endpoint);
             auto result = GetResourceWithAWSWebServiceResult(endpoint.c_str(), EC2_SECURITY_CREDENTIALS_RESOURCE, nullptr);
             credentials_string = result.GetPayload();
             if (result.GetResponseCode() == Aws::Http::HttpResponseCode::UNAUTHORIZED)
@@ -286,11 +286,49 @@ public:
     }
 
 private:
-    const Aws::String endpoint = EC2_DEFAULT_METADATA_ENDPOINT;
+    const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
     mutable Aws::String token;
     Poco::Logger * logger;
 };
+
+std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+{
+    Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
+    auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
+    if (ec2_metadata_service_endpoint.empty())
+    {
+        Aws::String ec2_metadata_service_endpoint_mode = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
+        if (ec2_metadata_service_endpoint_mode.length() == 0)
+        {
+            ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
+        }
+        else
+        {
+            if (ec2_metadata_service_endpoint_mode.length() == 4)
+            {
+                if (Aws::Utils::StringUtils::CaselessCompare(ec2_metadata_service_endpoint_mode.c_str(), "ipv4"))
+                {
+                    ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
+                }
+                else if (Aws::Utils::StringUtils::CaselessCompare(ec2_metadata_service_endpoint_mode.c_str(), "ipv6"))
+                {
+                    ec2_metadata_service_endpoint = "http://[fd00:ec2::254]";
+                }
+                else
+                {
+                    LOG_ERROR(logger, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE can only be set to ipv4 or ipv6, received: {}", ec2_metadata_service_endpoint_mode);
+                }
+            }
+            else
+            {
+                LOG_ERROR(logger, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE can only be set to ipv4 or ipv6, received: {}", ec2_metadata_service_endpoint_mode);
+            }
+        }
+    }
+    LOG_INFO(logger, "Using IMDS endpoint: {}", ec2_metadata_service_endpoint);
+    return std::make_shared<AWSEC2MetadataClient>(client_configuration, ec2_metadata_service_endpoint.c_str());
+}
 
 class AWSEC2InstanceProfileConfigLoader : public Aws::Config::AWSProfileConfigLoader
 {
@@ -646,7 +684,7 @@ public:
 
                 aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
 
-                auto ec2_metadata_client = std::make_shared<AWSEC2MetadataClient>(aws_client_configuration);
+                auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
                 auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !use_insecure_imds_request);
 
                 AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));
@@ -700,7 +738,7 @@ namespace S3
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
-        HeaderCollection headers,
+        HTTPHeaderEntries headers,
         bool use_environment_credentials,
         bool use_insecure_imds_request)
     {
@@ -851,8 +889,12 @@ namespace S3
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
+    bool isNotFoundError(Aws::S3::S3Errors error)
+    {
+        return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
+    }
 
-    S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    Aws::S3::Model::HeadObjectOutcome headObject(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (for_disk_s3)
@@ -865,7 +907,12 @@ namespace S3
         if (!version_id.empty())
             req.SetVersionId(version_id);
 
-        Aws::S3::Model::HeadObjectOutcome outcome = client.HeadObject(req);
+        return client.HeadObject(req);
+    }
+
+    S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    {
+        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
 
         if (outcome.IsSuccess())
         {
@@ -874,7 +921,10 @@ namespace S3
         }
         else if (throw_on_error)
         {
-            throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            const auto & error = outcome.GetError();
+            throw DB::Exception(ErrorCodes::S3_ERROR,
+                "Failed to HEAD object: {}. HTTP response code: {}",
+                error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
         }
         return {};
     }
@@ -884,6 +934,21 @@ namespace S3
         return getObjectInfo(client, bucket, key, version_id, throw_on_error, for_disk_s3).size;
     }
 
+    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+    {
+        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
+
+        if (outcome.IsSuccess())
+            return true;
+
+        const auto & error = outcome.GetError();
+        if (isNotFoundError(error.GetErrorType()))
+            return false;
+
+        throw S3Exception(error.GetErrorType(),
+            "Failed to check existence of key {} in bucket {}: {}",
+            key, bucket, error.GetMessage());
+    }
 }
 
 }
@@ -916,7 +981,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     if (config.has(config_elem + ".use_insecure_imds_request"))
         use_insecure_imds_request = config.getBool(config_elem + ".use_insecure_imds_request");
 
-    HeaderCollection headers;
+    HTTPHeaderEntries headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;
     config.keys(config_elem, subconfig_keys);
     for (const std::string & subkey : subconfig_keys)
@@ -927,7 +992,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
             auto delimiter = header_str.find(':');
             if (delimiter == std::string::npos)
                 throw Exception("Malformed s3 header value", ErrorCodes::INVALID_CONFIG_PARAMETER);
-            headers.emplace_back(HttpHeader{header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos)});
+            headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
         }
     }
 

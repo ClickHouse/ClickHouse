@@ -1736,7 +1736,7 @@ namespace
         }
 
         const std::shared_ptr<const DataTypeAggregateFunction> aggregate_function_data_type;
-        const AggregateFunctionPtr aggregate_function;
+        AggregateFunctionPtr aggregate_function;
         String text_buffer;
     };
 
@@ -2509,6 +2509,11 @@ namespace
         void finalizeWrite() override
         {
             writer->endMessage(/*with_length_delimiter = */ true);
+        }
+
+        void reset() override
+        {
+            first_call_of_write_row = true;
         }
 
         void readRow(size_t row_num) override
