@@ -108,7 +108,7 @@ public:
             auto & arguments = match_function->getArguments().getNodes();
             auto & patterns = identifier_to_patterns.at(arguments[0]);
             arguments.push_back(std::make_shared<ConstantNode>(Field{std::move(patterns)}));
-            match_function->resolveAsFunction(match_function_ref->build(match_function->getArgumentTypes()));
+            match_function->resolveAsFunction(match_function_ref);
         }
 
         /// OR must have at least two arguments.
