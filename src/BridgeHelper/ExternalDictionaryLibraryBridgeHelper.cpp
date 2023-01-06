@@ -263,7 +263,7 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadBase(const Poco::URI & 
         0,
         DBMS_DEFAULT_BUFFER_SIZE,
         getContext()->getReadSettings(),
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
+        HTTPHeaderEntries{});
 
     auto source = FormatFactory::instance().getInput(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
     source->addBuffer(std::move(read_buf_ptr));
