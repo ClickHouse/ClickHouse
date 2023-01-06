@@ -86,6 +86,49 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 }
 
 
+void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements) const
+{
+    for (const auto & element : profile_elements)
+    {
+        if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
+            continue;
+
+        if (!element.value.isNull())
+        {
+            SettingChange value(element.setting_name, element.value);
+            check(current_settings, value);
+        }
+
+        if (!element.min_value.isNull())
+        {
+            SettingChange value(element.setting_name, element.min_value);
+            check(current_settings, value);
+        }
+
+        if (!element.max_value.isNull())
+        {
+            SettingChange value(element.setting_name, element.max_value);
+            check(current_settings, value);
+        }
+
+        SettingConstraintWritability new_value = SettingConstraintWritability::WRITABLE;
+        SettingConstraintWritability old_value = SettingConstraintWritability::WRITABLE;
+
+        if (element.writability)
+            new_value = *element.writability;
+
+        auto it = constraints.find(element.setting_name);
+        if (it != constraints.end())
+            old_value = it->second.writability;
+
+        if (new_value != old_value)
+        {
+            if (old_value == SettingConstraintWritability::CONST)
+                throw Exception("Setting " + element.setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
+        }
+    }
+}
+
 void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change) const
 {
     checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
