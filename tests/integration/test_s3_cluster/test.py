@@ -304,18 +304,24 @@ def test_distributed_insert_select_with_replicated(started_cluster):
             """
         )
 
-    assert int(
-        second_replica_first_shard.query(
-            """SELECT count(*) FROM system.query_log WHERE not is_initial_query and query ilike '%s3Cluster%';"""
-        ).strip()
-    ) != 0
+    assert (
+        int(
+            second_replica_first_shard.query(
+                """SELECT count(*) FROM system.query_log WHERE not is_initial_query and query ilike '%s3Cluster%';"""
+            ).strip()
+        )
+        != 0
+    )
 
     # Check whether we inserted at least something
-    assert int(
-        second_replica_first_shard.query(
-            """SELECT count(*) FROM insert_select_replicated_local;"""
-        ).strip()
-    ) != 0
+    assert (
+        int(
+            second_replica_first_shard.query(
+                """SELECT count(*) FROM insert_select_replicated_local;"""
+            ).strip()
+        )
+        != 0
+    )
 
     first_replica_first_shard.query(
         """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard' SYNC;"""
