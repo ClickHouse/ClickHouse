@@ -36,16 +36,10 @@ void TabSeparatedRowOutputFormat::writePrefix()
     const auto & header = getPort(PortKind::Main).getHeader();
 
     if (with_names)
-    {
         writeLine(header.getNames());
-        writeRowBetweenDelimiter();
-    }
 
     if (with_types)
-    {
         writeLine(header.getDataTypeNames());
-        writeRowBetweenDelimiter();
-    }
 }
 
 
@@ -64,38 +58,21 @@ void TabSeparatedRowOutputFormat::writeFieldDelimiter()
 }
 
 
-void TabSeparatedRowOutputFormat::writeRowBetweenDelimiter()
+void TabSeparatedRowOutputFormat::writeRowEndDelimiter()
 {
     if (format_settings.tsv.crlf_end_of_line)
         writeChar('\r', out);
     writeChar('\n', out);
 }
 
-void TabSeparatedRowOutputFormat::writeSuffix()
-{
-    /// Output '\n' an the end of data if we had any data.
-    if (haveWrittenData())
-        writeRowBetweenDelimiter();
-}
-
 void TabSeparatedRowOutputFormat::writeBeforeTotals()
 {
-    writeRowBetweenDelimiter();
+    writeChar('\n', out);
 }
 
 void TabSeparatedRowOutputFormat::writeBeforeExtremes()
 {
-    writeRowBetweenDelimiter();
-}
-
-void TabSeparatedRowOutputFormat::writeAfterTotals()
-{
-    writeRowBetweenDelimiter();
-}
-
-void TabSeparatedRowOutputFormat::writeAfterExtremes()
-{
-    writeRowBetweenDelimiter();
+    writeChar('\n', out);
 }
 
 void registerOutputFormatTabSeparated(FormatFactory & factory)

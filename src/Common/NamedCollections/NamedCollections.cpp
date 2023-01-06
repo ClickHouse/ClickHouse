@@ -3,8 +3,8 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Storages/NamedCollections/NamedCollectionConfiguration.h>
-#include <Storages/NamedCollections/NamedCollectionUtils.h>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <ranges>
 
@@ -229,9 +229,29 @@ public:
         assert(removed);
     }
 
-    Keys getKeys() const
+    Keys getKeys(ssize_t depth, const std::string & prefix) const
     {
-        return keys;
+        std::queue<std::string> enumerate_input;
+
+        if (prefix.empty())
+        {
+            if (depth == -1)
+            {
+                /// Return all keys with full depth.
+                return keys;
+            }
+        }
+        else
+        {
+            if (!Configuration::hasConfigValue(*config, prefix))
+                return {};
+
+            enumerate_input.push(prefix);
+        }
+
+        Keys result;
+        Configuration::listKeys(*config, enumerate_input, result, depth);
+        return result;
     }
 
     Keys::const_iterator begin() const
@@ -379,10 +399,10 @@ MutableNamedCollectionPtr NamedCollection::duplicate() const
             std::move(impl), collection_name, NamedCollectionUtils::SourceId::NONE, true));
 }
 
-NamedCollection::Keys NamedCollection::getKeys() const
+NamedCollection::Keys NamedCollection::getKeys(ssize_t depth, const std::string & prefix) const
 {
     std::lock_guard lock(mutex);
-    return pimpl->getKeys();
+    return pimpl->getKeys(depth, prefix);
 }
 
 template <bool Locked> NamedCollection::const_iterator NamedCollection::begin() const
