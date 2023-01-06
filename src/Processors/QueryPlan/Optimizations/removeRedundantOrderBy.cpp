@@ -131,7 +131,7 @@ class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy, d
 {
     /// stack with nodes which affect order
     /// nodes added when traversing top-down
-    /// as soon as all children for such node are traveresed, the node is removed from stack
+    /// as soon as all children for the node on top of stack are traversed, the node is removed from stack
     std::vector<QueryPlan::Node *> nodes_affect_order;
 
 public:
