@@ -3446,7 +3446,7 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
     zookeeper->multi(ops);
 }
 
-void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
+void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name, bool storage_init)
 {
     auto zookeeper = getZooKeeper();
 
@@ -3501,21 +3501,6 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             getRemovePartFromZooKeeperOps(part_name, ops, stat.numChildren > 0);
         }
 
-        /// We use merge predicate + version check here, because DROP RANGE update log version and we are trying to avoid race with it. We must be sure, that our part
-        /// was not dropped, otherwise we will have fetch entry, but no virtual part for it (DROP RANGE will remove it). So bad sequence is the following:
-        /// 1) Create DROP PART in log for broken_part (for example because it's not only broken, but also empty)
-        /// 1.5) Pull to log and start execution (removePartProducingOpsInRange)
-        /// 2) Execute this method (create GET PART for broken part)
-        /// 3) Finish DROP PART execution (remove part from virtual parts)
-        /// 4) Now we get GET PART for broken part which is absent in virtual parts == bug
-        ///
-        /// Because of version check this method will never create FETCH if drop part exists
-        ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
-        if (merge_pred.hasDropRange(broken_part_info))
-        {
-            LOG_INFO(log, "Broken part {} is covered by DROP RANGE, don't need to fetch it", part_name);
-            return;
-        }
 
         LogEntryPtr log_entry = std::make_shared<LogEntry>();
         log_entry->type = LogEntry::GET_PART;
@@ -3523,13 +3508,31 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         log_entry->source_replica = "";
         log_entry->new_part_name = part_name;
 
-        /// Check that our version of log (and queue) is the most fresh. Otherwise don't create new entry fetch entry.
-        ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion()));
+        if (!storage_init)
+        {
+            /// We use merge predicate + version check here, because DROP RANGE update log version and we are trying to avoid race with it. We must be sure, that our part
+            /// was not dropped, otherwise we will have fetch entry, but no virtual part for it (DROP RANGE will remove it). So bad sequence is the following:
+            /// 1) Create DROP PART in log for broken_part (for example because it's not only broken, but also empty)
+            /// 1.5) Pull to log and start execution (removePartProducingOpsInRange)
+            /// 2) Execute this method (create GET PART for broken part)
+            /// 3) Finish DROP PART execution (remove part from virtual parts)
+            /// 4) Now we get GET PART for broken part which is absent in virtual parts == bug
+            ///
+            /// Because of version check this method will never create FETCH if drop part exists
+
+            ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
+            if (merge_pred.hasDropRange(broken_part_info))
+            {
+                LOG_INFO(log, "Broken part {} is covered by DROP RANGE, don't need to fetch it", part_name);
+                return;
+            }
+            /// Check that our version of log (and queue) is the most fresh. Otherwise don't create new entry fetch entry.
+            ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion()));
+        }
 
         ops.emplace_back(zkutil::makeCreateRequest(
             fs::path(replica_path) / "queue/queue-", log_entry->toString(),
             zkutil::CreateMode::PersistentSequential));
-
 
         Coordination::Responses results;
         auto rc = zookeeper->tryMulti(ops, results);

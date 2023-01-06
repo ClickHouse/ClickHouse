@@ -235,7 +235,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
         /// We cannot simply remove part from ZooKeeper, because it may be removed from virtual_part,
         /// so we have to create some entry in the queue. Maybe we will execute it (by fetching part or covering part from somewhere),
         /// maybe will simply replace with empty part.
-        storage.removePartAndEnqueueFetch(part_name);
+        storage.removePartAndEnqueueFetch(part_name, /* storage_init = */false);
     }
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
