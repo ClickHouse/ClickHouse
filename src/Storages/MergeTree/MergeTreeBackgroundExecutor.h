@@ -21,7 +21,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 struct TaskRuntimeData;
@@ -172,7 +172,7 @@ public:
         , metric(metric_)
     {
         if (max_tasks_count == 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task count for MergeTreeBackgroundExecutor must not be zero");
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
 
         pending.setCapacity(max_tasks_count);
         active.set_capacity(max_tasks_count);
