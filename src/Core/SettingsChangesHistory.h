@@ -80,6 +80,7 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
+    {"23.1", {{"input_format_json_read_objects_as_strings", 0, 1, "Enable reading nested json objects as strings while object type is experimental"}}},
     {"22.12", {{"max_size_to_preallocate_for_aggregation", 10'000'000, 100'000'000, "This optimizes performance"},
                {"query_plan_aggregation_in_order", 0, 1, "Enable some refactoring around query plan"},
                {"format_binary_max_string_size", 0, 1_GiB, "Prevent allocating large amount of memory"}}},

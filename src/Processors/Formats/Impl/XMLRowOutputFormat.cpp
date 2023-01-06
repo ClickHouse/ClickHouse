@@ -7,8 +7,8 @@
 namespace DB
 {
 
-XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(true, header_, out_, params_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : RowOutputFormatWithUTF8ValidationAdaptor(true, header_, out_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     field_tag_names.resize(sample.columns());
@@ -94,11 +94,9 @@ void XMLRowOutputFormat::writeRowEndDelimiter()
     ++row_count;
 }
 
-
 void XMLRowOutputFormat::writeSuffix()
 {
     writeCString("\t</data>\n", *ostr);
-
 }
 
 
@@ -200,6 +198,13 @@ void XMLRowOutputFormat::finalizeImpl()
     ostr->next();
 }
 
+void XMLRowOutputFormat::resetFormatterImpl()
+{
+    RowOutputFormatWithUTF8ValidationAdaptor::resetFormatterImpl();
+    row_count = 0;
+    statistics = Statistics();
+}
+
 void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
 {
     if (statistics.applied_limit)
@@ -231,10 +236,9 @@ void registerOutputFormatXML(FormatFactory & factory)
     factory.registerOutputFormat("XML", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<XMLRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<XMLRowOutputFormat>(buf, sample, settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("XML");

@@ -74,13 +74,17 @@ void ParquetBlockOutputFormat::finalizeImpl()
         throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
+void ParquetBlockOutputFormat::resetFormatterImpl()
+{
+    file_writer.reset();
+}
+
 void registerOutputFormatParquet(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
