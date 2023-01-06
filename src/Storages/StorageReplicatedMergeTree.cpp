@@ -1873,6 +1873,11 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::executeFetchShared(
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     LOG_TRACE(log, "Executing DROP_RANGE {}", entry.new_part_name);
+
+    /// Wait for loading of outdated parts because DROP_RANGE
+    /// command must be applied to all parts on disk.
+    waitForOutdatedPartsToBeLoaded();
+
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry, /* fetch_entry_znode= */ {});
@@ -1937,6 +1942,11 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     LOG_DEBUG(log, "Executing log entry {} to replace parts range {} with {} parts from {}.{}",
               entry.znode_name, entry_replace.drop_range_part_name, entry_replace.new_part_names.size(),
               entry_replace.from_database, entry_replace.from_table);
+
+    /// Wait for loading of outdated parts because REPLACE_RANGE
+    /// command must be applied to all parts on disk.
+    waitForOutdatedPartsToBeLoaded();
+
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage_settings_ptr = getSettings();
 

@@ -1086,7 +1086,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     if (part_disk_ptr->exists(marker_path))
     {
-        /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist.
+        /// NOTE: getBytesOnDisk() cannot be used here, since it may be zero if checksums.txt does not exist.
         res.size_of_part = calculatePartSizeSafe(res.part, log);
         res.is_broken = true;
 
@@ -1695,7 +1695,9 @@ try
 {
     {
         std::lock_guard lock(outdated_data_parts_mutex);
-        LOG_DEBUG(log, "Loading {} outdated data parts", outdated_unloaded_data_parts.size());
+        LOG_DEBUG(log, "Loading {} outdated data parts {}",
+            outdated_unloaded_data_parts.size(),
+            is_async ? "asynchronously" : "synchronously");
     }
 
     size_t num_loaded_parts = 0;
@@ -1709,7 +1711,7 @@ try
             if (is_async && outdated_data_parts_loading_canceled)
             {
                 LOG_DEBUG(log,
-                    "Stopped loading outdated parts because task was canceled. "
+                    "Stopped loading outdated data parts because task was canceled. "
                     "Loaded {} parts, {} left unloaded", num_loaded_parts, outdated_unloaded_data_parts.size());
                 return;
             }
@@ -3586,6 +3588,13 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
 MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
+#ifndef NDEBUG
+    {
+        /// All parts (including outdated) must be loaded at this moment.
+        std::lock_guard lock(outdated_data_parts_mutex);
+        assert(outdated_unloaded_data_parts.empty());
+    }
+#endif
 
     auto parts_to_remove = grabActivePartsToRemoveForDropRange(txn, drop_range, lock);
 
