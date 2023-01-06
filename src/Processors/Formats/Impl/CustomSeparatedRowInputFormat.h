@@ -30,7 +30,7 @@ private:
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
 
     bool allowSyncAfterError() const override;
-    void syncAfterError() override;
+    void syncAfterErrorImpl() override;
     void readPrefix() override;
 
     std::unique_ptr<PeekableReadBuffer> buf;
@@ -73,7 +73,7 @@ public:
 
     std::vector<String> readRow() { return readRowImpl<false>(); }
 
-    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override;
+    std::vector<String> readRowForHeaderDetection() override { return readRowImpl<false>(); }
 
     bool checkEndOfRow();
     bool checkForSuffixImpl(bool check_eof);

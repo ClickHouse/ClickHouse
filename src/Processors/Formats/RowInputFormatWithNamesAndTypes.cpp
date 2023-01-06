@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -22,7 +23,7 @@ namespace
     bool checkIfAllTypesAreString(const DataTypes & types)
     {
         for (const auto & type : types)
-            if (!type || !isString(removeNullable(type)))
+            if (!type || !isString(removeNullable(removeLowCardinality(type))))
                 return false;
         return true;
     }
@@ -44,7 +45,7 @@ namespace
     bool haveNotStringAndNotNullType(const DataTypes & types)
     {
         for (const auto & type : types)
-            if (type && !isString(type) && !type->onlyNull())
+            if (type && !isString(removeNullable(removeLowCardinality(type))) && !type->onlyNull())
                 return true;
         return false;
     }
@@ -148,14 +149,8 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
     }
 }
 
-void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names)
+void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out)
 {
-    auto header = getPort().getHeader();
-    /// We can detect header only if at least one column in header is not String
-    /// (otherwise we cannot tell if first rows are a header or real data.
-    if (checkIfAllTypesAreString(header.getDataTypes()))
-        return;
-
     /// Empty data.
     if (unlikely(format_reader->checkForSuffix()))
     {
@@ -163,51 +158,56 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
         return;
     }
 
-    auto [first_row_values, first_row_types] = format_reader->readRowFieldsAndInferredTypes();
-    /// The first row can be a header with names if it contains only Strings.
-    if (!checkIfAllTypesAreString(first_row_types))
-    {
-        /// Remember values from the first row to read data from them later.
-        buffered_row = first_row_values;
-        return;
-    }
+    auto first_row_values = format_reader->readRowForHeaderDetection();
 
-    /// Data contains only 1 row, don't treat the first row as names in this case.
-    if (unlikely(format_reader->checkForSuffix()))
+    /// To understand if the first row is a header with column names, we check
+    /// that all values from this row is a subset of column names from read header.
+    auto column_names = getPort().getHeader().getNames();
+    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
+    /// Values can be in quotes, remove them.
+    auto possible_names = removeQuotesIfAny(first_row_values);
+    bool first_row_is_a_header = true;
+    for (const auto & possible_name : possible_names)
+    {
+        if (!column_names_set.contains(possible_name))
+        {
+            first_row_is_a_header = false;
+            break;
+        }
+    }
+        
+    if (!first_row_is_a_header)
     {
         /// Remember values from the first row to read data from them later.
         buffered_row = first_row_values;
-        end_of_stream = true;
         return;
     }
 
     /// First row is a header with column names.
-    column_names = removeQuotesIfAny(first_row_values);
+    column_names_out = possible_names;
     is_header_detected = true;
+
+    /// Data contains only 1 row and it's just names.
+    if (unlikely(format_reader->checkForSuffix()))
+    {
+        end_of_stream = true;
+        return;
+    }
 
     /// Skip delimiter between the first and the second rows.
     format_reader->skipRowBetweenDelimiter();
 
-    auto [second_row_values, second_row_types] = format_reader->readRowFieldsAndInferredTypes();
-    /// The second row can be a header with type names if it contains only Strings and all strings are valid type names.
-    if (!checkIfAllTypesAreString(second_row_types) || !checkIfValuesAreTypeNames(removeQuotesIfAny(second_row_values)))
+    auto second_row_values = format_reader->readRowForHeaderDetection();
+    /// The second row can be a header with type names if it contains only valid type names.
+    if (!checkIfValuesAreTypeNames(removeQuotesIfAny(second_row_values)))
     {
         /// Remember values from the second row to read data from them later.
         buffered_row = second_row_values;
         return;
     }
 
-    /// Data contains only 2 rows, don't treat the second row as type names in this case.
-    if (unlikely(format_reader->checkForSuffix()))
-    {
-        /// Remember values from the first row to read data from them later.
-        buffered_row = second_row_values;
-        end_of_stream = true;
-        return;
-    }
-
     /// The second row is a header with type names.
-    type_names = removeQuotesIfAny(second_row_values);
+    type_names_out = removeQuotesIfAny(second_row_values);
 }
 
 bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadExtension & ext)
@@ -301,6 +301,19 @@ void RowInputFormatWithNamesAndTypes::resetParser()
     column_mapping->not_presented_columns.clear();
     column_mapping->names_of_columns.clear();
     end_of_stream = false;
+}
+
+void RowInputFormatWithNamesAndTypes::syncAfterError()
+{
+    /// Check if error happened while parsing values from buffered rwo.
+    if (!buffered_row.empty())
+    {
+        /// Just clear buffered row.
+        buffered_row.clear();
+        return;
+    }
+
+    syncAfterErrorImpl();
 }
 
 void RowInputFormatWithNamesAndTypes::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)

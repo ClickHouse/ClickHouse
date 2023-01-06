@@ -84,7 +84,7 @@ String TabSeparatedFormatReader::readFieldIntoString()
     if (is_raw)
         readString(field, *in);
     else
-        readEscapedString(field, *in);
+        readTSVField(field, *in);
     return field;
 }
 
@@ -121,13 +121,6 @@ std::vector<String> TabSeparatedFormatReader::readRow()
     return fields;
 }
 
-std::pair<std::vector<String>, DataTypes> TabSeparatedFormatReader::readRowFieldsAndInferredTypes()
-{
-    auto fields = readRow();
-    auto data_types = tryInferDataTypesByEscapingRule(fields, getFormatSettings(), getEscapingRule());
-    return {fields, data_types};
-}
-
 bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type,
     const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
 {
@@ -143,7 +136,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     return readFieldImpl(*in, column, type, serialization);
 }
 
-bool TabSeparatedFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String &)
+bool TabSeparatedFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name)
 {
     if (format_settings.tsv.empty_as_default && field.empty())
     {
@@ -152,7 +145,10 @@ bool TabSeparatedFormatReader::readField(const String & field, IColumn & column,
     }
 
     ReadBufferFromString buf(field);
-    return readFieldImpl(buf, column, type, serialization);
+    auto res = readFieldImpl(buf, column, type, serialization);
+    if (!buf.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, R"(Cannot parse value of column "{}" with type {} here: "{}")", column_name, type->getName(), field);
+    return res;
 }
 
 bool TabSeparatedFormatReader::readFieldImpl(ReadBuffer & buf, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization)
@@ -270,7 +266,7 @@ void TabSeparatedFormatReader::skipPrefixBeforeHeader()
         readRow();
 }
 
-void TabSeparatedRowInputFormat::syncAfterError()
+void TabSeparatedRowInputFormat::syncAfterErrorImpl()
 {
     skipToUnescapedNextLineOrEOF(*in);
 }
@@ -294,8 +290,9 @@ std::pair<std::vector<String>, DataTypes> TabSeparatedSchemaReader::readRowAndGe
     if (in.eof())
         return {};
 
-    return reader.readRowFieldsAndInferredTypes();
-}
+    auto fields = reader.readRow();
+    auto data_types = tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
+    return {fields, data_types};}
 
 DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypesImpl()
 {

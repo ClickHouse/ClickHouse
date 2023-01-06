@@ -35,7 +35,7 @@ public:
     DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
     DataTypePtr get(const ASTPtr & ast) const;
     DataTypePtr getCustom(DataTypeCustomDescPtr customization) const;
-    
+
     /// Return nullptr in case of error.
     DataTypePtr tryGet(const String & full_name) const;
     DataTypePtr tryGet(const String & family_name, const ASTPtr & parameters) const;

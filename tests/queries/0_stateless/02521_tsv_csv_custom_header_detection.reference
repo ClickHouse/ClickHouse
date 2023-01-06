@@ -72,9 +72,9 @@ y	Nullable(String)
 z	Array(Nullable(Int64))					
 Hello	\N	[1,2,3]
 13
-x	Nullable(String)					
-y	Nullable(String)					
-z	Nullable(String)					
+c1	Nullable(String)					
+c2	Nullable(String)					
+c3	Nullable(String)					
 x	y	z
 Hello	\N	World
 \N	Hello	\N
@@ -85,9 +85,9 @@ z	Array(Nullable(Int64))
 Hello	\N	[]
 \N	\N	[1,2,3]
 15
-x	Nullable(String)					
-y	Nullable(String)					
-z	Nullable(String)					
+c1	Nullable(String)					
+c2	Nullable(String)					
+c3	Nullable(String)					
 x	y	z
 Hello	\N	\N
 \N	World	\N

@@ -1507,4 +1507,5 @@ void readQuotedField(String & s, ReadBuffer & buf);
 
 void readJSONField(String & s, ReadBuffer & buf);
 
+void readTSVField(String & s, ReadBuffer & buf);
 }

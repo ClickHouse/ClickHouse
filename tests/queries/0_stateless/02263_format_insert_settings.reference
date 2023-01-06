@@ -10,7 +10,7 @@ FORMAT tsv
 INSERT INTO foo SETTINGS max_threads = 1 FORMAT tsv
 insert into foo settings max_threads=1 format tsv settings max_threads=1
 You have SETTINGS before and after FORMAT
-Cannot parse input: expected '\n' before: 'settings max_threads=1 1'
+Cannot parse value of column "key" with type Int32 here: "settings max_threads=1 1"
 1
 You have SETTINGS before and after FORMAT
 [multi] insert into foo values

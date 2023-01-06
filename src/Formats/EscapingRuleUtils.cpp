@@ -233,7 +233,7 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
                 readCSVField(result, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readEscapedString(result, buf);
+            readTSVField(result, buf);
             break;
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read value with {} escaping rule", escapingRuleToString(escaping_rule));
@@ -292,13 +292,14 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 return type;
             }
 
-            /// Case when CSV value is not in quotes. Check if it's a number, and if not, determine it's as a string.
-            auto type = tryInferNumberFromString(field, format_settings);
+            /// Case when CSV value is not in quotes. Check if it's a number or date/datetime, and if not, determine it's as a string.
+            if (auto number_type = tryInferNumberFromString(field, format_settings))
+                return number_type;
 
-            if (!type)
-                return std::make_shared<DataTypeString>();
+            if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
+                return date_type;
 
-            return type;
+            return std::make_shared<DataTypeString>();
         }
         case FormatSettings::EscapingRule::Raw: [[fallthrough]];
         case FormatSettings::EscapingRule::Escaped:

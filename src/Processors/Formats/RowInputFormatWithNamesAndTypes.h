@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class FormatWithNamesAndTypesReader;
 
 /// Base class for input formats with -WithNames and -WithNamesAndTypes suffixes.
@@ -51,6 +56,12 @@ protected:
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
+    void syncAfterError() override;
+    virtual void syncAfterErrorImpl()
+    {
+        throw Exception("Method syncAfterErrorImpl is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
@@ -93,9 +104,11 @@ public:
     /// Read row with types and return the list of them.
     virtual std::vector<String> readTypes() = 0;
 
-    /// Read row and return parsed column fields and inferred data types.
-    /// Used for header detection.
-    virtual std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() = 0;
+    /// Read row with raw values.
+    virtual std::vector<String> readRowForHeaderDetection()
+    {
+        throw Exception("Method readRowForHeaderDetection is not implemented for format reader", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Skip single field, it's used to skip unknown columns.
     virtual void skipField(size_t file_column) = 0;
@@ -147,15 +160,23 @@ public:
 
 protected:
     virtual DataTypes readRowAndGetDataTypes() override;
-    virtual DataTypes readRowAndGetDataTypesImpl() = 0;
+
+    virtual DataTypes readRowAndGetDataTypesImpl()
+    {
+        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypesImpl is not implemented"};
+    }
+
     /// Return column fields with inferred types. In case of no more rows, return empty vectors.
-    virtual std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() = 0;
+    virtual std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes()
+    {
+        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented"};
+    }
 
     bool with_names;
     bool with_types;
 
 private:
-    void tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names);
+    void tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out);
 
     FormatWithNamesAndTypesReader * format_reader;
     bool try_detect_header;
