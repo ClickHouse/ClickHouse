@@ -1,6 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/FullSortingMergeJoin.h>
-// #include <Planner/Utils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -79,11 +78,11 @@ public:
 
     bool visitTopDown(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
-        return getDerived().visitTopDown(current_node, parent_node);
+        return getDerived().visitTopDownImpl(current_node, parent_node);
     }
     void visitBottomUp(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
-        getDerived().visitBottomUp(current_node, parent_node);
+        getDerived().visitBottomUpImpl(current_node, parent_node);
     }
 
 private:
@@ -96,13 +95,13 @@ protected:
     {
         if constexpr (debug_logging)
         {
-            IQueryPlanStep * current_step = node->step.get();
+            const IQueryPlanStep * current_step = node->step.get();
             LOG_DEBUG(
                 &Poco::Logger::get("QueryPlanVisitor"),
                 "{}: {}: {}",
                 prefix,
                 current_step->getName(),
-                reinterpret_cast<void *>(current_step));
+                reinterpret_cast<const void *>(current_step));
         }
     }
 };
@@ -116,9 +115,9 @@ public:
 
     explicit operator bool() const { return distributed_query; }
 
-    static bool visitTopDown(QueryPlan::Node *, QueryPlan::Node *) { return true; }
+    static bool visitTopDownImpl(QueryPlan::Node *, QueryPlan::Node *) { return true; }
 
-    void visitBottomUp(QueryPlan::Node * current_node, QueryPlan::Node *)
+    void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node *)
     {
         if (typeid_cast<ReadFromRemote *>(current_node->step.get()))
             distributed_query = true;
@@ -130,12 +129,15 @@ private:
 
 class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy, debug_logging_enabled>
 {
+    /// stack with nodes which affect order
+    /// nodes added when traversing top-down
+    /// as soon as all children for such node are traveresed, the node is removed from stack
     std::vector<QueryPlan::Node *> nodes_affect_order;
 
 public:
     explicit RemoveRedundantOrderBy(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantOrderBy, debug_logging_enabled>(root_) { }
 
-    bool visitTopDown(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
+    bool visitTopDownImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
         IQueryPlanStep * current_step = current_node->step.get();
 
@@ -173,7 +175,7 @@ public:
         return true;
     }
 
-    void visitBottomUp(QueryPlan::Node * current_node, QueryPlan::Node *)
+    void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node *)
     {
         /// we come here when all children of current_node are visited,
         /// so it's a node which affect order, remove it from the corresponding stack
@@ -259,10 +261,15 @@ private:
 
             const auto * step = node->step.get();
 
-            const auto * expr = typeid_cast<const ExpressionStep *>(step);
-            if (expr)
+
+            if (const auto * expr = typeid_cast<const ExpressionStep *>(step); expr)
             {
                 if (expr->getExpression()->hasStatefulFunctions())
+                    return false;
+            }
+            else if (const auto * filter = typeid_cast<const FilterStep *>(step); filter)
+            {
+                if (filter->getExpression()->hasStatefulFunctions())
                     return false;
             }
             else
