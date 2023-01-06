@@ -365,7 +365,7 @@ namespace
 
 std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndices(
     [[maybe_unused]] const ColumnString::Chars & keys_data,
-    [[maybe_unused]] const ColumnString::Offsets & key_offsets,
+    [[maybe_unused]] const ColumnString::Offsets & keys_offsets,
     [[maybe_unused]] const std::unordered_map<String, const DictionaryAttribute &> & attributes,
     [[maybe_unused]] const std::unordered_map<String, ColumnPtr> & defaults) const
 {
