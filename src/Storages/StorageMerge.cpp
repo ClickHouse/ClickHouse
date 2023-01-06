@@ -653,7 +653,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, modified_query_info.query, *builder, processed_stage);
+        convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, *builder);
     }
 
     return builder;
@@ -829,9 +829,7 @@ void ReadFromMerge::convertingSourceStream(
     const StorageMetadataPtr & metadata_snapshot,
     const Aliases & aliases,
     ContextPtr local_context,
-    ASTPtr & query,
-    QueryPipelineBuilder & builder,
-    QueryProcessingStage::Enum)
+    QueryPipelineBuilder & builder)
 {
     Block before_block_header = builder.getHeader();
 
@@ -868,39 +866,6 @@ void ReadFromMerge::convertingSourceStream(
             return std::make_shared<ExpressionTransform>(stream_header, actions);
         });
     }
-
-    auto where_expression = query->as<ASTSelectQuery>()->where();
-
-    if (!where_expression)
-        return;
-
-    // if (processed_stage > QueryProcessingStage::FetchColumns)
-    // {
-    //     for (size_t column_index : collections::range(0, header.columns()))
-    //     {
-    //         ColumnWithTypeAndName header_column = header.getByPosition(column_index);
-    //         ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
-    //         /// If the processed_stage greater than FetchColumns and the block structure between streams is different.
-    //         /// the where expression maybe invalid because of ConvertingTransform.
-    //         /// So we need to throw exception.
-    //         if (!header_column.type->equals(*before_column.type.get()))
-    //         {
-    //             NamesAndTypesList source_columns = metadata_snapshot->getSampleBlock().getNamesAndTypesList();
-    //             auto virtual_column = *storage_merge->getVirtuals().tryGetByName("_table");
-    //             source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
-    //             auto syntax_result = TreeRewriter(local_context).analyze(where_expression, source_columns);
-    //             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, local_context}.getActions(false, false);
-    //             Names required_columns = actions->getRequiredColumns();
-
-    //             for (const auto & required_column : required_columns)
-    //             {
-    //                 if (required_column == header_column.name)
-    //                     throw Exception("Block structure mismatch in Merge Storage: different types:\n" + before_block_header.dumpStructure()
-    //                                     + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
-    //             }
-    //         }
-    //     }
-    // }
 }
 
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
