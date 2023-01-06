@@ -545,7 +545,7 @@ private:
     void removePartsFromZooKeeperWithRetries(PartsToRemoveFromZooKeeper & parts, size_t max_retries = 5);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
-    void removePartAndEnqueueFetch(const String & part_name);
+    void removePartAndEnqueueFetch(const String & part_name, bool storage_init);
 
     /// Running jobs from the queue.
 
