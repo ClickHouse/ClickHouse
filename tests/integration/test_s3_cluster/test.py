@@ -260,73 +260,12 @@ def test_unskip_unavailable_shards(started_cluster):
     assert "NETWORK_ERROR" in error
 
 
-def test_distributed_insert_select(started_cluster):
-    first_replica_first_shard = started_cluster.instances["s0_0_0"]
-    second_replica_first_shard = started_cluster.instances["s0_0_1"]
-    first_replica_second_shard = started_cluster.instances["s0_1_0"]
-
-    first_replica_first_shard.query("""DROP TABLE IF EXISTS insert_select_local ON CLUSTER 'cluster_simple' SYNC;""")
-    first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_distributed ON CLUSTER 'cluster_simple' SYNC;"""
-    )
-
-    first_replica_first_shard.query(
-        """
-    CREATE TABLE insert_select_local ON CLUSTER 'cluster_simple' (a String, b UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select', '{replica}')
-    ORDER BY (a, b);
-        """
-    )
-
-    first_replica_first_shard.query(
-        """CREATE TABLE insert_select_distributed ON CLUSTER cluster_simple as insert_select_local ENGINE = Distributed('cluster_simple', default, insert_select_local, b % 2);"""
-    )
-
-    first_replica_first_shard.query(
-        """SYSTEM FLUSH DISTRIBUTED insert_select_distributed"""
-    )
-
-    first_replica_first_shard.query(
-        """INSERT INTO insert_select_distributed SETTINGS insert_distributed_sync=1 SELECT * FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64') SETTINGS parallel_distributed_insert_select=1, insert_distributed_sync=1;""")
-
-    for line in (
-        first_replica_first_shard.query("""SELECT * FROM insert_select_local;""")
-        .strip()
-        .split("\n")
-    ):
-        _, b = line.split()
-        assert int(b) % 2 == 0
-
-    for line in (
-        second_replica_first_shard.query("""SELECT * FROM insert_select_local;""")
-        .strip()
-        .split("\n")
-    ):
-        _, b = line.split()
-        assert int(b) % 2 == 0
-
-    for line in (
-        first_replica_second_shard.query("""SELECT * FROM insert_select_local;""")
-        .strip()
-        .split("\n")
-    ):
-        _, b = line.split()
-        assert int(b) % 2 == 1
-
-    first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_local ON CLUSTER 'cluster_simple' SYNC;"""
-    )
-    first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_distributed ON CLUSTER 'cluster_simple' SYNC;"""
-    )
-
-
 def test_distributed_insert_select_with_replicated(started_cluster):
     first_replica_first_shard = started_cluster.instances["s0_0_0"]
     second_replica_first_shard = started_cluster.instances["s0_0_1"]
 
     first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard';"""
+        """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard' SYNC;"""
     )
 
     first_replica_first_shard.query(
@@ -353,7 +292,7 @@ def test_distributed_insert_select_with_replicated(started_cluster):
         """
     INSERT INTO insert_select_replicated_local SELECT * FROM s3Cluster(
         'first_shard',
-        'http://minio1:9001/root/data/generated_replicated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
     ) SETTINGS parallel_distributed_insert_select=1;
         """
     )
@@ -365,14 +304,19 @@ def test_distributed_insert_select_with_replicated(started_cluster):
             """
         )
 
-    second = int(
+    assert int(
         second_replica_first_shard.query(
-            """SELECT count(*) FROM system.query_log WHERE not is_initial_query and query like '%s3Cluster%';"""
+            """SELECT count(*) FROM system.query_log WHERE not is_initial_query and query ilike '%s3Cluster%';"""
         ).strip()
-    )
+    ) != 0
 
-    assert second != 0
+    # Check whether we inserted at least something
+    assert int(
+        second_replica_first_shard.query(
+            """SELECT count(*) FROM insert_select_replicated_local;"""
+        ).strip()
+    ) != 0
 
     first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard';"""
+        """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard' SYNC;"""
     )

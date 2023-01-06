@@ -27,11 +27,9 @@
                 <host>s0_0_0</host>
                 <port>9000</port>
             </replica>
-        </shard>
-        <shard>
             <replica>
-                <host>s0_0_0</host>
-                <port>19000</port>
+                <host>s0_0_1</host>
+                <port>9000</port>
             </replica>
         </shard>
     </first_shard>
