@@ -105,20 +105,20 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         else
             writeString("Disks ", warning);
 
-        int index = 0;
+        int num_disks_removed_from_config = 0;
         for (const auto & [name, disk] : old_disks_minus_new_disks)
         {
             /// Custom disks are not present in config.
             if (disk->isCustomDisk())
                 continue;
 
-            if (index++ > 0)
+            if (num_disks_removed_from_config++ > 0)
                 writeString(", ", warning);
 
             writeBackQuotedString(name, warning);
         }
 
-        if (index > 0)
+        if (num_disks_removed_from_config > 0)
         {
             writeString(" disappeared from configuration, this change will be applied after restart of ClickHouse", warning);
             LOG_WARNING(&Poco::Logger::get("DiskSelector"), fmt::runtime(warning.str()));

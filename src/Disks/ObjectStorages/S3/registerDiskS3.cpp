@@ -131,7 +131,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         else
         {
             s3_storage = std::make_shared<S3ObjectStorage>(std::move(client), std::move(settings), uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
-            auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context->getPath());
+            auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
             metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
         }
 

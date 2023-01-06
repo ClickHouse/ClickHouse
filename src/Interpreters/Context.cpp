@@ -2920,19 +2920,19 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
-StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & name) const
+StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
-    const std::string storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + name;
+    const std::string storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
     auto storage_policy_selector = getStoragePolicySelector(lock);
     StoragePolicyPtr storage_policy = storage_policy_selector->tryGet(storage_policy_name);
 
     if (!storage_policy)
     {
         auto disk_selector = getDiskSelector(lock);
-        auto disk = disk_selector->get(name);
-        auto volume = std::make_shared<SingleDiskVolume>("_volume_" + name, disk);
+        auto disk = disk_selector->get(disk_name);
+        auto volume = std::make_shared<SingleDiskVolume>("_volume_" + disk_name, disk);
 
         static const auto move_factor_for_single_disk_volume = 0.0;
         storage_policy = std::make_shared<StoragePolicy>(storage_policy_name, Volumes{volume}, move_factor_for_single_disk_volume);

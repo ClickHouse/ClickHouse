@@ -24,7 +24,7 @@ void registerDiskAzureBlobStorage(DiskFactory & factory, bool global_skip_access
         ContextPtr context,
         const DisksMap & /*map*/)
     {
-        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context->getPath());
+        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
         ObjectStoragePtr azure_object_storage = std::make_unique<AzureObjectStorage>(
             name,
