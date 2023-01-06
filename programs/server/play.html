@@ -49,6 +49,7 @@
             --link-color: #06D;
             --logo-color: #CEE;
             --logo-color-active: #BDD;
+            --highlight-color: #A9A9A9;
         }
 
         [data-theme="dark"] {
@@ -70,6 +71,7 @@
             --link-color: #4BDAF7;
             --logo-color: #222;
             --logo-color-active: #333;
+            --highlight-color: #A9A9A9;
         }
 
         *
@@ -258,6 +260,31 @@
             text-align: left;
             background-color: var(--table-header-color);
             border: 1px solid var(--border-color);
+            position: relative;
+        }
+
+        .resizer
+        {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            cursor: col-resize;
+            user-select: none;
+        }
+
+        .resizer:hover,
+        .resizing
+        {
+            border-right: 2px solid var(--highlight-color);
+        }
+
+        .resizable
+        {
+            border: 1px solid gray;
+            height: 100px;
+            width: 100px;
+            position: relative;
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
@@ -494,7 +521,7 @@
     </p>
     <div class="output-title">Action History &nbsp; <a id="clear-history" onclick="clearHistory()">clear</a></div>
     <div id="action_div" style="display:none">
-        <table>
+        <table id="action-table" >
             <thead>
                 <tr>
                     <th class="row-number">№</th>
@@ -544,6 +571,9 @@
 
     // Stores statements to execute when user clicks 'Run'
     const query_queue = [];
+
+    // Stores all our previous results/actions
+    let action_history = [];
 
     const current_url = new URL(window.location);
 
@@ -595,17 +625,21 @@
             if (posted_request_num != request_num) {
                 return;
             } else if (this.readyState === XMLHttpRequest.DONE) {
-                renderResponse(this.status, this.response, query);
+                renderResponse(this.status, this.response, query, false);
 
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
-                if (query != previous_query) {
-                    const state = {
+                const state = {
                         query: query,
                         status: this.status,
+                        request_num: request_num,
+                        action_history: action_history,
                         response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
                     };
-                    const title = "ClickHouse Query: " + query;
+
+                    // Doesn't make sense to store query when multi-statement execution is available as there might be several
+                    // queries executed. Instead store the most recent request number.
+                    const title = "ClickHouse Query #" + request_num;
 
                     let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
                     if (server_address != location.origin) {
@@ -625,7 +659,6 @@
                     if (query_queue.length){
                         postImpl(++request_num);
                     }
-                }
             } else {
                 //console.log(this);
             }
@@ -637,28 +670,50 @@
         xhr.send(query);
     }
 
-    function renderResponse(status, response, query)
+    function renderStats(response){
+        let stats = document.getElementById('stats');
+        const seconds = response.statistics.elapsed.toFixed(3);
+        const rows = response.statistics.rows_read;
+        const bytes = response.statistics.bytes_read;
+        const formatted_bytes = formatReadableBytes(bytes);
+        const formatted_rows = formatReadableRows(rows);
+        const stats_message = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
+        stats.innerText = stats_message;
+
+        return stats_message;
+    }
+
+    function renderResponse(status, response, query, is_restore)
     {
         document.getElementById('hourglass').style.display = 'none';
 
-        if (status === 200) {
-            let json;
-            try { json = JSON.parse(response); } catch (e) {}
+        let stats;
+        let result;
+        let success = false;
 
-            if (json !== undefined && json.statistics !== undefined) {
-                renderResult(json, query);
-            } else if (Array.isArray(json) && json.length == 2 &&
-                Array.isArray(json[0]) && Array.isArray(json[1]) && json[0].length > 1 && json[0].length == json[1].length) {
+        if (status === 200) {
+            try { result = JSON.parse(response); } catch (e) {}
+
+            if (result !== undefined && result.statistics !== undefined) {
+                stats = renderStats(result);
+                renderResult(result, query, stats);
+            } else if (Array.isArray(result) && result.length == 2 &&
+                Array.isArray(result[0]) && Array.isArray(result[1]) && result[0].length > 1 && result[0].length == result[1].length) {
                 /// If user requested FORMAT JSONCompactColumns, we will render it as a chart.
-                renderChart(json, query);
+                renderChart(result, query);
             } else {
                 renderUnparsedResult(response, query);
             }
             document.getElementById('check-mark').style.display = 'inline';
+            success = true;
         } else {
             /// TODO: Proper rendering of network errors.
             renderError(response, query);
+            result = response;
         }
+
+        renderActionHistory(success, result, query, stats, is_restore);
+        setupTables();
     }
 
     function getQuerySelection()
@@ -666,13 +721,8 @@
         return (query_area.value).substring(query_area.selectionStart, query_area.selectionEnd);
     }
 
-    query_area.addEventListener('click', updateRunButtonText);
-    query_area.addEventListener('select', updateRunButtonText);
-    query_area.addEventListener('keyup', updateRunButtonText);
-    query_area.addEventListener('change', updateRunButtonText);
-    query_area.addEventListener('mouseup', updateRunButtonText);
-
-    function updateRunButtonText() {
+    function updateRunButtonText()
+    {
         setTimeout(() => {
             const selection = getQuerySelection();
             const run_button = document.getElementById('run');
@@ -682,23 +732,6 @@
                 run_button.innerText = 'Run';
             }
         }, 100);
-    }
-
-    window.onpopstate = function(event)
-    {
-        if (!event.state) {
-            return;
-        }
-        query_area.value = event.state.query;
-        if (!event.state.response) {
-            clear();
-            return;
-        }
-        renderResponse(event.state.status, event.state.response);
-    };
-
-    if (window.location.hash) {
-        query_area.value = window.atob(window.location.hash.substr(1));
     }
 
     function post()
@@ -717,6 +750,31 @@
         postImpl(request_num, query);
     }
 
+    window.onpopstate = function(event)
+    {
+        if (!event.state) {
+            return;
+        }
+        query_area.value = event.state.query;
+        if (!event.state.response) {
+            clear();
+            return;
+        }
+
+        action_history = event.state.action_history
+        renderResponse(event.state.status, event.state.response, event.state.query, true);
+    };
+
+    if (window.location.hash) {
+        query_area.value = window.atob(window.location.hash.substr(1));
+    }
+
+    query_area.addEventListener('click', updateRunButtonText);
+    query_area.addEventListener('select', updateRunButtonText);
+    query_area.addEventListener('keyup', updateRunButtonText);
+    query_area.addEventListener('change', updateRunButtonText);
+    query_area.addEventListener('mouseup', updateRunButtonText);
+
     document.getElementById('run').onclick = function()
     {
         post();
@@ -728,6 +786,67 @@
         if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
             post();
         }
+    }
+
+    // Allow actions table columns to be resizable
+    function setupTables()
+    {
+        const createResizableTable = function(table)
+        {
+            const cols = table.querySelectorAll('th');
+            [].forEach.call(cols, function(col)
+            {
+                // Add a resizer element to the column
+                const resizer = document.createElement('div');
+                resizer.classList.add('resizer');
+
+                // Set the height
+                resizer.style.height = `${table.offsetHeight}px`;
+
+                col.appendChild(resizer);
+
+                createResizableColumn(col, resizer);
+            });
+        };
+
+        const createResizableColumn = function(col, resizer)
+        {
+            let x = 0;
+            let w = 0;
+
+            const mouseDownHandler = function(e)
+            {
+                x = e.clientX;
+
+                const styles = window.getComputedStyle(col);
+                w = parseInt(styles.width, 10);
+
+                document.addEventListener('mousemove', mouseMoveHandler);
+                document.addEventListener('mouseup', mouseUpHandler);
+
+                resizer.classList.add('resizing');
+            };
+
+            const mouseMoveHandler = function(e)
+            {
+                const dx = e.clientX - x;
+                col.style.width = `${w + dx}px`;
+            };
+
+            const mouseUpHandler = function()
+            {
+                resizer.classList.remove('resizing');
+                document.removeEventListener('mousemove', mouseMoveHandler);
+                document.removeEventListener('mouseup', mouseUpHandler);
+            };
+
+            resizer.addEventListener('mousedown', mouseDownHandler);
+        };
+
+        setTimeout(() => {
+            createResizableTable(document.getElementById('action-table'));
+            createResizableTable(document.getElementById('data-table'));
+        }, 500);
     }
 
     /// Pressing Tab in textarea will increase indentation.
@@ -799,19 +918,9 @@
         return formatReadable(rows, 2, units);
     }
 
-    function renderResult(response, query)
+    function renderResult(response, query, stats)
     {
         clear();
-
-        let stats = document.getElementById('stats');
-        const seconds = response.statistics.elapsed.toFixed(3);
-        const rows = response.statistics.rows_read;
-        const bytes = response.statistics.bytes_read;
-        const formatted_bytes = formatReadableBytes(bytes);
-        const formatted_rows = formatReadableRows(rows);
-        const statsMessage = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
-        stats.innerText = statsMessage;
-        renderAction(true, response, query, statsMessage);
 
         /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
         if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
@@ -1013,31 +1122,45 @@
         }
 
         data.innerText = response;
-        renderAction(true, response, query);
         /// inline-block make width adjust to the size of content.
         data.style.display = 'inline-block';
     }
 
-    function renderAction(success, response, query, stats) {
-        const clearHistoryButton = document.getElementById('clear-history');
-        clearHistoryButton.style = 'display:inline-block';
+    function renderActionHistory(success, response, query, stats, is_restore)
+    {
+        const clear_history_button = document.getElementById('clear-history');
+        clear_history_button.style = 'display:inline-block';
 
-        const actionDiv  = document.getElementById('action_div');
-        actionDiv.style = 'display:block';
+        const action_div  = document.getElementById('action_div');
+        action_div.style = 'display:block';
 
         const status = success ? 'Success' : 'Error';
-        const iconClass = success ? 'check-mark' : 'cross-mark'
+        const icon_class = success ? 'check-mark' : 'cross-mark'
         const icon = success ? '✔' : '✘';
 
         const message = success ? `${response.data.length} row(s) returned` : response;
-        action_body.innerHTML += `
-                <tr>
-                    <td>${request_num}</td>
-                    <td class="status-row"><span class="${iconClass}">${icon}</span></td>
-                    <td>${query}</td>
-                    <td>${stats ? message : response}</td>
-                    <td>${stats ? stats : '-'}</td>
-                </tr>`
+
+        if (!is_restore) {
+            action_history.push({
+                request_num: request_num,
+                icon_class: icon_class,
+                icon: icon,
+                query: query,
+                message: stats ? message : response,
+                stats_message: stats ? stats : '-',
+                stats: stats
+            });
+        }
+
+        action_body.innerHTML = action_history.map(x =>
+            `<tr>
+                <td class="row-number">${x.request_num}</td>
+                <td class="status-row"><span class="${x.icon_class}">${x.icon}</span></td>
+                <td>${x.query}</td>
+                <td>${x.message}</td>
+                <td>${x.stats_message}</td>
+            </tr>`
+        ).join('');
     }
 
     function clearHistory(){
@@ -1052,7 +1175,6 @@
     function renderError(response, query)
     {
         clear();
-        renderAction(false, response, query);
         document.getElementById('error').innerText = response ? response : "No response.";
         document.getElementById('error').style.display = 'block';
         document.getElementById('logo-container').style.display = 'none';
