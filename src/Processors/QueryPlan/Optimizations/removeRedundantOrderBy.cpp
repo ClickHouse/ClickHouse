@@ -106,26 +106,7 @@ protected:
     }
 };
 
-constexpr bool debug_logging_enabled = true;
-
-class IsQueryDistributed : public QueryPlanVisitor<IsQueryDistributed, debug_logging_enabled>
-{
-public:
-    explicit IsQueryDistributed(QueryPlan::Node * root_) : QueryPlanVisitor<IsQueryDistributed, debug_logging_enabled>(root_) { }
-
-    explicit operator bool() const { return distributed_query; }
-
-    static bool visitTopDownImpl(QueryPlan::Node *, QueryPlan::Node *) { return true; }
-
-    void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node *)
-    {
-        if (typeid_cast<ReadFromRemote *>(current_node->step.get()))
-            distributed_query = true;
-    }
-
-private:
-    bool distributed_query = false;
-};
+constexpr bool debug_logging_enabled = false;
 
 class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy, debug_logging_enabled>
 {
@@ -313,11 +294,6 @@ private:
 
 void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
 {
-    // IsQueryDistributed is_distributed(root);
-    // is_distributed.visit();
-    // if (is_distributed.operator bool())
-    //     return;
-
     RemoveRedundantOrderBy(root).visit();
 }
 
