@@ -61,7 +61,7 @@ class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
         if (!function->isResolved())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Function {} is not resolved after running {} pass",
-            function->dumpTree(), pass_name);
+            function->toAST()->formatForErrorMessage(), pass_name);
     }
 
 public:

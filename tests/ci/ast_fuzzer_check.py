@@ -124,20 +124,12 @@ if __name__ == "__main__":
     s3_helper = S3Helper()
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + "/" + f)
+            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
         except Exception as ex:
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ""
 
     report_url = GITHUB_RUN_URL
-    if paths["run.log"]:
-        report_url = paths["run.log"]
-    if paths["main.log"]:
-        report_url = paths["main.log"]
-    if paths["server.log.gz"]:
-        report_url = paths["server.log.gz"]
-    if paths["fuzzer.log"]:
-        report_url = paths["fuzzer.log"]
     if paths["report.html"]:
         report_url = paths["report.html"]
 

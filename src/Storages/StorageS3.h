@@ -137,7 +137,8 @@ public:
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
-        size_t download_thread_num);
+        size_t download_thread_num,
+        bool only_need_virtual_columns_ = false);
 
     ~StorageS3Source() override;
 
@@ -159,6 +160,7 @@ private:
     std::shared_ptr<const Aws::S3::S3Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
+    bool only_need_virtual_columns{false};
 
     struct ReaderHolder
     {
@@ -282,13 +284,13 @@ public:
         bool static_configuration = true;
 
         /// Headers from ast is a part of static configuration.
-        HeaderCollection headers_from_ast;
+        HTTPHeaderEntries headers_from_ast;
 
         S3Configuration(
             const String & url_,
             const S3::AuthSettings & auth_settings_,
             const S3Settings::RequestSettings & request_settings_,
-            const HeaderCollection & headers_from_ast_)
+            const HTTPHeaderEntries & headers_from_ast_)
             : uri(S3::URI(url_))
             , auth_settings(auth_settings_)
             , request_settings(request_settings_)

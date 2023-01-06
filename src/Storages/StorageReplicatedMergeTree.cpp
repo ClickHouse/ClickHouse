@@ -113,6 +113,7 @@ namespace ProfileEvents
     extern const Event NotCreatedLogEntryForMerge;
     extern const Event CreatedLogEntryForMutation;
     extern const Event NotCreatedLogEntryForMutation;
+    extern const Event ReplicaPartialShutdown;
 }
 
 namespace CurrentMetrics
@@ -4246,10 +4247,10 @@ void StorageReplicatedMergeTree::startup()
         return;
     }
 
-    startupImpl();
+    startupImpl(/* from_attach_thread */ false);
 }
 
-void StorageReplicatedMergeTree::startupImpl()
+void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
 {
     /// Do not start replication if ZooKeeper is not configured or there is no metadata in zookeeper
     if (!has_metadata_in_zookeeper.has_value() || !*has_metadata_in_zookeeper)
@@ -4291,7 +4292,16 @@ void StorageReplicatedMergeTree::startupImpl()
         /// It means that failed "startup" must not create any background tasks that we will have to wait.
         try
         {
-            shutdown();
+            /// it's important to avoid full shutdown here, because it even tries to shutdown attach thread which was
+            /// designed exactly for this: try to start table if no zookeeper connection available.
+            if (from_attach_thread)
+            {
+                restarting_thread.shutdown(/* part_of_full_shutdown */false);
+            }
+            else
+            {
+                shutdown();
+            }
         }
         catch (...)
         {
@@ -4311,6 +4321,35 @@ void StorageReplicatedMergeTree::flush()
     flushAllInMemoryPartsIfNeeded();
 }
 
+
+void StorageReplicatedMergeTree::partialShutdown()
+{
+    ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
+
+    partial_shutdown_called = true;
+    partial_shutdown_event.set();
+    replica_is_active_node = nullptr;
+
+    LOG_TRACE(log, "Waiting for threads to finish");
+    merge_selecting_task->deactivate();
+    queue_updating_task->deactivate();
+    mutations_updating_task->deactivate();
+    mutations_finalizing_task->deactivate();
+
+    cleanup_thread.stop();
+    part_check_thread.stop();
+
+    /// Stop queue processing
+    {
+        auto fetch_lock = fetcher.blocker.cancel();
+        auto merge_lock = merger_mutator.merges_blocker.cancel();
+        auto move_lock = parts_mover.moves_blocker.cancel();
+        background_operations_assignee.finish();
+    }
+
+    LOG_TRACE(log, "Threads finished");
+}
+
 void StorageReplicatedMergeTree::shutdown()
 {
     if (shutdown_called.exchange(true))
@@ -4327,7 +4366,8 @@ void StorageReplicatedMergeTree::shutdown()
 
     if (attach_thread)
         attach_thread->shutdown();
-    restarting_thread.shutdown();
+
+    restarting_thread.shutdown(/* part_of_full_shutdown */true);
     background_operations_assignee.finish();
     part_moves_between_shards_orchestrator.shutdown();
 
@@ -5161,7 +5201,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 
     LOG_INFO(log, "Attached all partitions, starting table");
 
-    startupImpl();
+    startupImpl(/* from_attach_thread */ false);
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
