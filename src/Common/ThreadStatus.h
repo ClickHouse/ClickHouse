@@ -5,6 +5,7 @@
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Threading.h>
 #include <base/StringRef.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
@@ -14,7 +15,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_set>
 
 

@@ -7,6 +7,7 @@
 #include <Core/Block.h>
 
 #include <Common/MultiVersion.h>
+#include <Common/Threading.h>
 
 #include <mutex>
 
@@ -130,7 +131,7 @@ private:
     TemporaryDataOnDiskPtr tmp_data;
 
     Buckets buckets;
-    mutable std::shared_mutex rehash_mutex;
+    mutable DB::FastSharedMutex rehash_mutex;
 
     FileBucket * current_bucket = nullptr;
     mutable std::mutex current_bucket_mutex;

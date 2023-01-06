@@ -15,7 +15,7 @@ class FakeMetadataStorageFromDisk final : public IMetadataStorage
 private:
     friend class FakeMetadataStorageFromDiskTransaction;
 
-    mutable std::shared_mutex metadata_mutex;
+    mutable DB::FastSharedMutex metadata_mutex;
 
     DiskPtr disk;
     ObjectStoragePtr object_storage;

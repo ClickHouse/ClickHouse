@@ -17,7 +17,7 @@ class MetadataStorageFromDisk final : public IMetadataStorage
 private:
     friend class MetadataStorageFromDiskTransaction;
 
-    mutable std::shared_mutex metadata_mutex;
+    mutable DB::FastSharedMutex metadata_mutex;
 
     DiskPtr disk;
     std::string object_storage_root_path;
@@ -67,8 +67,8 @@ public:
 
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
 
-    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> & lock) const;
-    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
+    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<DB::FastSharedMutex> & lock) const;
+    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<DB::FastSharedMutex> & lock) const;
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
