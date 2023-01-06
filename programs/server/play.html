@@ -348,7 +348,10 @@
         }
 
         #clear-history {
+            display: none;
             cursor: pointer;
+            text-decoration: underline;
+            font-size: 0.8rem;
         }
 
         #hourglass
@@ -1015,7 +1018,10 @@
         data.style.display = 'inline-block';
     }
 
-    function renderAction(success, response, query, stats){
+    function renderAction(success, response, query, stats) {
+        const clearHistoryButton = document.getElementById('clear-history');
+        clearHistoryButton.style = 'display:inline-block';
+
         const actionDiv  = document.getElementById('action_div');
         actionDiv.style = 'display:block';
 
@@ -1038,6 +1044,9 @@
         const actionDiv  = document.getElementById('action_div');
         actionDiv.style = 'display:none';
         action_body.innerHTML = null;
+
+        const clearHistoryButton = document.getElementById('clear-history');
+        clearHistoryButton.style = 'display:none';
     }
 
     function renderError(response, query)
