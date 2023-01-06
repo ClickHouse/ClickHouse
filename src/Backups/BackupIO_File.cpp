@@ -72,6 +72,13 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
     return std::make_unique<WriteBufferFromFile>(file_path);
 }
 
+void BackupWriterFile::removeFile(const String & file_name)
+{
+    fs::remove(path / file_name);
+    if (fs::is_directory(path) && fs::is_empty(path))
+        fs::remove(path);
+}
+
 void BackupWriterFile::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)

@@ -66,7 +66,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .read_in_order = query_info.input_order_info != nullptr,
         .apply_deleted_mask = context->applyDeletedMask(),
         .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
-            && (settings.max_streams_to_max_threads_ratio > 1 || settings.allow_asynchronous_read_from_io_pool_for_merge_tree),
+            && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
     };
 }
 
