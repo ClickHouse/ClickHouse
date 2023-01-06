@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 skim = "0.10.2"
 cxx = "1.0.83"
+term = "0.7.0"
 
 [build-dependencies]
 cxx-build = "1.0.83"

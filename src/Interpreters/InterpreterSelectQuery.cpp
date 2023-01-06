@@ -568,7 +568,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             syntax_analyzer_result,
             context,
             metadata_snapshot,
-            NameSet(required_result_column_names.begin(), required_result_column_names.end()),
+            required_result_column_names,
             !options.only_analyze,
             options,
             prepared_sets);

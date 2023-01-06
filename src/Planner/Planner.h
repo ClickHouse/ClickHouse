@@ -45,11 +45,14 @@ public:
         return std::move(query_plan);
     }
 
+    void addStorageLimits(const StorageLimitsList & limits);
+
 private:
     QueryTreeNodePtr query_tree;
     QueryPlan query_plan;
     SelectQueryOptions select_query_options;
     PlannerContextPtr planner_context;
+    StorageLimitsList storage_limits;
 };
 
 }
