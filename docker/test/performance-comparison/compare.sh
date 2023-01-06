@@ -1132,8 +1132,8 @@ do
     {
         # The second grep is a heuristic for error messages like
         # "socket.timeout: timed out".
-        rg -no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
-            || rg -no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
+        rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
+            || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
             || head -2 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
