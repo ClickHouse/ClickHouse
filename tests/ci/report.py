@@ -18,7 +18,7 @@ HTML_BASE_TEST_TEMPLATE = """
     -webkit-background-clip: text;
     -moz-background-clip: text;
 }}
-html {{ font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: linear-gradient(180deg, hsl(190deg, 90%, 10%), hsl(190deg, 90%, 0%)); color: white; }}
+html {{ font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: hsl(190deg, 90%, 5%) linear-gradient(180deg, hsl(190deg, 90%, 10%), hsl(190deg, 90%, 0%)); color: white; }}
 h1 {{ margin-left: 10px; }}
 th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background: hsl(190deg, 90%, 15%); }}
 th {{ background: hsl(180deg, 90%, 15%); }}
