@@ -589,7 +589,7 @@
             if (posted_request_num != request_num) {
                 return;
             } else if (this.readyState === XMLHttpRequest.DONE) {
-                renderResponse(this.status, this.response, query, request_num);
+                renderResponse(this.status, this.response, query);
 
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
@@ -631,7 +631,7 @@
         xhr.send(query);
     }
 
-    function renderResponse(status, response, query, request_num)
+    function renderResponse(status, response, query)
     {
         document.getElementById('hourglass').style.display = 'none';
 
