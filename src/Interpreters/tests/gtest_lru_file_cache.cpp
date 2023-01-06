@@ -536,7 +536,10 @@ TEST_F(FileCacheTest, writeBuffer)
         segment_settings.kind = FileSegmentKind::Temporary;
         segment_settings.unbounded = true;
 
-        auto holder = cache.set(cache.createKeyForPath(key), 0, 3, segment_settings);
+        auto cache_key = cache.createKeyForPath(key);
+        auto holder = cache.set(cache_key, 0, 3, segment_settings);
+        /// The same is done in TemporaryDataOnDisk::createStreamToCacheFile.
+        std::filesystem::create_directories(cache.getPathInLocalCache(cache_key));
         EXPECT_EQ(holder->size(), 1);
         auto & segment = holder->front();
         WriteBufferToFileSegment out(&segment);

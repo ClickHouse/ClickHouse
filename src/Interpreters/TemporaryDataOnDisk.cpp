@@ -60,9 +60,11 @@ TemporaryFileStream & TemporaryDataOnDisk::createStreamToCacheFile(const Block &
     if (!file_cache)
         throw Exception("TemporaryDataOnDiskScope has no cache", ErrorCodes::LOGICAL_ERROR);
 
-    auto holder = file_cache->set(FileSegment::Key::random(), 0, std::max(10_MiB, max_file_size), CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true));
+    auto key = FileSegment::Key::random();
+    auto holder = file_cache->set(key, 0, std::max(10_MiB, max_file_size), CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true));
 
     std::lock_guard lock(mutex);
+    std::filesystem::create_directories(file_cache->getPathInLocalCache(key));
     TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(holder), header, this));
     return *tmp_stream;
 }

@@ -843,6 +843,7 @@ bool FileCache::tryReserveInCache(
         for (const auto & offset_to_delete : transaction->delete_offsets)
         {
             auto * cell = transaction->getOffsets().get(offset_to_delete);
+            transaction->queue_lock = lock;
             transaction->remove(cell->file_segment);
         }
     }
