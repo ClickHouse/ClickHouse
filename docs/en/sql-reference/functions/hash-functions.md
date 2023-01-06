@@ -581,6 +581,41 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
+## xxh3
+
+Produces a 64-bit [xxh3](https://github.com/Cyan4973/xxHash) hash value.
+
+**Syntax**
+
+```sql
+xxh3(expr)
+```
+
+**Arguments**
+
+-   `expr` — A list of [expressions](../../sql-reference/syntax.md#syntax-expressions) of any data type.
+
+**Returned value**
+
+A 64-bit `xxh3` hash value.
+
+Type:  [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT xxh3('Hello', 'world')```
+
+Result:
+
+```response
+┌─xxh3('Hello', 'world')─┐
+│    5607458076371731292 │
+└────────────────────────┘
+```
+
 ## xxHash32, xxHash64
 
 Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits.
