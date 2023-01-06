@@ -73,7 +73,6 @@ public:
 
     /// Lock current priority queue. All methods must be called under this lock.
     CachePriorityQueueGuard::Lock lock() { return guard.lock(); }
-    std::shared_ptr<CachePriorityQueueGuard::Lock> lockShared() { return guard.lockShared(); }
 
     /// Add a cache record that did not exist before, and throw a
     /// logical exception if the cache block already exists.

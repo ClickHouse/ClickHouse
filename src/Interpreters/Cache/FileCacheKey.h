@@ -15,7 +15,7 @@ struct FileCacheKey
 
     explicit FileCacheKey(const std::string & path);
 
-    explicit FileCacheKey(const UInt128 & path);
+    explicit FileCacheKey(const UInt128 & key_);
 
     static FileCacheKey random();
 
