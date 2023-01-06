@@ -32,7 +32,7 @@ protected:
 
 private:
     bool allowSyncAfterError() const override { return true; }
-    void syncAfterError() override;
+    void syncAfterErrorImpl() override;
 };
 
 class CSVFormatReader : public FormatWithNamesAndTypesReader
@@ -65,8 +65,8 @@ public:
     std::vector<String> readTypes() override { return readHeaderRow(); }
     std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
     std::vector<String> readRow() { return readRowImpl<false>(); }
+    std::vector<String> readRowForHeaderDetection() override { return readRowImpl<false>(); }
 
-    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override;
 
     template <bool is_header>
     std::vector<String> readRowImpl();

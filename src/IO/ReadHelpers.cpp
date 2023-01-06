@@ -491,8 +491,8 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-template <typename Vector>
-void readEscapedStringInto(Vector & s, ReadBuffer & buf)
+template <typename Vector, bool parse_complex_escape_sequence>
+void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -508,9 +508,31 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
             return;
 
         if (*buf.position() == '\\')
-            parseComplexEscapeSequence(s, buf);
+        {
+            if constexpr (parse_complex_escape_sequence)
+            {
+                parseComplexEscapeSequence(s, buf);
+            }
+            else
+            {
+                s.push_back(*buf.position());
+                ++buf.position();
+                if (!buf.eof())
+                {
+                    s.push_back(*buf.position());
+                    ++buf.position();
+                }
+            }
+        }
     }
 }
+
+template <typename Vector>
+void readEscapedStringInto(Vector & s, ReadBuffer & buf)
+{
+    readEscapedStringIntoImpl<Vector, true>(s, buf);
+}
+
 
 void readEscapedString(String & s, ReadBuffer & buf)
 {
@@ -1671,6 +1693,12 @@ void readJSONField(String & s, ReadBuffer & buf)
     s.clear();
     auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
     readParsedValueInto(s, buf, parse_func);
+}
+
+void readTSVField(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringIntoImpl<String, false>(s, buf);
 }
 
 }

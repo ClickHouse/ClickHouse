@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class ReadBuffer;
 
 /** A stream for inputting data in a binary line-by-line format.
@@ -48,11 +43,6 @@ public:
     std::vector<String> readTypes() override;
     std::vector<String> readHeaderRow();
 
-    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override
-    {
-        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowFieldsAndInferredTypes is not implemented"};
-    }
-
 private:
     /// Data types read from input data.
     DataTypes read_data_types;
@@ -65,16 +55,6 @@ public:
     BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypesImpl() override
-    {
-        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypes is not implemented"};
-    }
-
-    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override
-    {
-        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypesAndValues is not implemented"};
-    }
-
     BinaryFormatReader reader;
 };
 

@@ -30,7 +30,7 @@ run_format 'insert into foo settings max_threads=1 format tsv settings max_threa
 # and via server (since this is a separate code path)
 $CLICKHOUSE_CLIENT -q 'drop table if exists data_02263'
 $CLICKHOUSE_CLIENT -q 'create table data_02263 (key Int) engine=Memory()'
-$CLICKHOUSE_CLIENT -q 'insert into data_02263 format TSV settings max_threads=1 1' 2> >(grep -m1 -F -o "Cannot parse input: expected '\n' before: 'settings max_threads=1 1'")
+$CLICKHOUSE_CLIENT -q 'insert into data_02263 format TSV settings max_threads=1 1' 2> >(grep -m1 -F -o "Cannot parse value of column \"key\" with type Int32 here: \"settings max_threads=1 1\"")
 $CLICKHOUSE_CLIENT --allow_settings_after_format_in_insert=1 -q 'insert into data_02263 format TSV settings max_threads=1 1'
 $CLICKHOUSE_CLIENT -q 'select * from data_02263'
 $CLICKHOUSE_CLIENT --allow_settings_after_format_in_insert=1 -q 'insert into data_02263 settings max_threads=1 format tsv settings max_threads=1' 2> >(grep -m1 -F -o "You have SETTINGS before and after FORMAT")

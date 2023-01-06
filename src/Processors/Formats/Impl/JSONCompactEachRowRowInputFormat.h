@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class ReadBuffer;
 
 
@@ -41,7 +36,7 @@ public:
 
 private:
     bool allowSyncAfterError() const override { return true; }
-    void syncAfterError() override;
+    void syncAfterErrorImpl() override;
 };
 
 class JSONCompactEachRowFormatReader : public FormatWithNamesAndTypesReader
@@ -74,11 +69,6 @@ public:
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
 
-    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override
-    {
-        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowFieldsAndInferredTypes is not implemented"};
-    }
-
     bool yieldStrings() const { return yield_strings; }
 private:
     bool yield_strings;
@@ -91,11 +81,6 @@ public:
 
 private:
     DataTypes readRowAndGetDataTypesImpl() override;
-
-    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override
-    {
-        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented"};
-    }
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;

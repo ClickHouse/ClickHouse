@@ -22,6 +22,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    bool hasTupleType(const DataTypes & types)
+    {
+        for (const auto & type : types)
+            if (isTuple(type))
+                return true;
+        return false;
+    }
+}
+
 CSVRowInputFormat::CSVRowInputFormat(
     const Block & header_,
     ReadBuffer & in_,
@@ -51,7 +62,8 @@ CSVRowInputFormat::CSVRowInputFormat(
         with_types_,
         format_settings_,
         std::move(format_reader_),
-        format_settings_.csv.try_detect_header)
+        /// We cannot detect header properly when we have Tuple in CSV, because tuple name is a single column, but tuple elements are parsed as separate CSV columns.
+        format_settings_.csv.try_detect_header && !hasTupleType(header_.getDataTypes()))
 {
     const String bad_delimiters = " \t\"'.UL";
     if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
@@ -61,7 +73,7 @@ CSVRowInputFormat::CSVRowInputFormat(
             ErrorCodes::BAD_ARGUMENTS);
 }
 
-void CSVRowInputFormat::syncAfterError()
+void CSVRowInputFormat::syncAfterErrorImpl()
 {
     skipToNextLineOrEOF(*in);
 }
@@ -270,7 +282,10 @@ bool CSVFormatReader::readField(const String & field, IColumn & column, const Da
     }
 
     ReadBufferFromString buf(field);
-    return readFieldImpl(buf, column, type, serialization);
+    auto res = readFieldImpl(buf, column, type, serialization);
+    if (!buf.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse value of type {} here: \"{}\"", type->getName(), field);
+    return res;
 }
 
 bool CSVFormatReader::readFieldImpl(ReadBuffer & buf, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization)
@@ -284,13 +299,6 @@ bool CSVFormatReader::readFieldImpl(ReadBuffer & buf, IColumn & column, const Da
     /// Read the column normally.
     serialization->deserializeTextCSV(column, buf, format_settings);
     return true;
-}
-
-std::pair<std::vector<String>, DataTypes> CSVFormatReader::readRowFieldsAndInferredTypes()
-{
-    auto fields = readRow();
-    auto data_types = tryInferDataTypesByEscapingRule(fields, format_settings, FormatSettings::EscapingRule::CSV);
-    return {fields, data_types};
 }
 
 void CSVFormatReader::skipPrefixBeforeHeader()
@@ -318,8 +326,9 @@ std::pair<std::vector<String>, DataTypes> CSVSchemaReader::readRowAndGetFieldsAn
     if (in.eof())
         return {};
 
-    return reader.readRowFieldsAndInferredTypes();
-}
+    auto fields = reader.readRow();
+    auto data_types = tryInferDataTypesByEscapingRule(fields, format_settings, FormatSettings::EscapingRule::CSV);
+    return {fields, data_types};}
 
 DataTypes CSVSchemaReader::readRowAndGetDataTypesImpl()
 {

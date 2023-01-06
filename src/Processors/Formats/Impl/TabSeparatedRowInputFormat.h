@@ -24,7 +24,7 @@ public:
 
 private:
     bool allowSyncAfterError() const override { return true; }
-    void syncAfterError() override;
+    void syncAfterErrorImpl() override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 };
 
@@ -51,7 +51,7 @@ public:
     std::vector<String> readTypes() override { return readRow(); }
     String readFieldIntoString();
 
-    std::pair<std::vector<String>, DataTypes> readRowFieldsAndInferredTypes() override;
+    std::vector<String> readRowForHeaderDetection() override { return readRow(); }
 
     void checkNullValueForNonNullable(DataTypePtr type) override;
 
