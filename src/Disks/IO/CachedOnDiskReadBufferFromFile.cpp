@@ -331,9 +331,9 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                         ///                           file_offset_of_buffer_end
 
                         LOG_TEST(log, "Predownload. File segment info: {}", file_segment.getInfoForLog());
-                        chassert(file_offset_of_buffer_end > file_segment->getCurrentWriteOffset());
+                        chassert(file_offset_of_buffer_end > file_segment.getCurrentWriteOffset());
                         bytes_to_predownload = file_offset_of_buffer_end - file_segment.getCurrentWriteOffset();
-                        chassert(bytes_to_predownload < file_segment->range().size());
+                        chassert(bytes_to_predownload < file_segment.range().size());
                     }
 
                     read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
@@ -366,7 +366,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segment)
 {
-    chassert(!file_segmentisDownloader());
+    chassert(!file_segment.isDownloader());
     chassert(file_offset_of_buffer_end >= file_segment.range().left);
 
     auto range = file_segment.range();
@@ -521,7 +521,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
         /// download from offset a'' < a', but return buffer from offset a'.
         LOG_TEST(log, "Bytes to predownload: {}, caller_id: {}", bytes_to_predownload, FileSegment::getCallerId());
 
-        chassert(implementation_buffer->getFileOffsetOfBufferEnd() == file_segment->getCurrentWriteOffset());
+        chassert(implementation_buffer->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset());
         size_t current_offset = file_segment.getCurrentWriteOffset();
         const auto & current_range = file_segment.range();
 
@@ -791,7 +791,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     file_segment.completePartAndResetDownloader();
             }
 
-            chassert(!file_segment->isDownloader());
+            chassert(!file_segment.isDownloader());
         }
         catch (...)
         {
