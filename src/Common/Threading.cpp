@@ -1,5 +1,4 @@
 #include <Common/Threading.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -25,12 +24,12 @@ namespace DB
 
 namespace
 {
-    inline long futexWait(void * address, UInt32 value)
+    inline Int64 futexWait(void * address, UInt32 value)
     {
         return syscall(SYS_futex, address, FUTEX_WAIT_PRIVATE, value, nullptr, nullptr, 0);
     }
 
-    inline long futexWake(void * address, int count)
+    inline Int64 futexWake(void * address, int count)
     {
         return syscall(SYS_futex, address, FUTEX_WAKE_PRIVATE, count, nullptr, nullptr, 0);
     }
