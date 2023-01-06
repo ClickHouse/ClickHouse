@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -946,6 +947,8 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];
+            if (step->actions()->hasArrayJoin())
+                throw Exception("arrayJoin is not allowed in mutations", ErrorCodes::UNEXPECTED_EXPRESSION);
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
