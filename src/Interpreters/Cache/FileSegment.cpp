@@ -574,7 +574,7 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction)
         return;
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
-    const bool is_last_holder = key_transaction->isLastHolder(offset);
+    const bool is_last_holder = key_transaction.isLastHolder(offset());
     const size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
 
     SCOPE_EXIT({
@@ -853,15 +853,10 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
     return file_segments.erase(file_segments.begin());
 }
 
-void FileSegmentsHolder::reset()
+FileSegmentsHolder::~FileSegmentsHolder()
 {
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
         file_segment_it = completeAndPopFrontImpl();
-}
-
-FileSegmentsHolder::~FileSegmentsHolder()
-{
-    reset();
 }
 
 String FileSegmentsHolder::toString()

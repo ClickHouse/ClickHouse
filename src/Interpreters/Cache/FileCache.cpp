@@ -940,6 +940,13 @@ bool KeyTransaction::isLastHolder(size_t offset)
     return cell->file_segment.use_count() == 2;
 }
 
+const CachePriorityQueueGuard::Lock & KeyTransaction::getQueueLock() const
+{
+    if (!queue_lock)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue is not locked");
+    return *queue_lock;
+}
+
 void KeyTransaction::remove(const Key & key, size_t offset, const FileSegmentGuard::Lock & segment_lock)
 {
     LOG_DEBUG(
