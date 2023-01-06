@@ -301,21 +301,6 @@ void FileSegment::resetRemoteFileReader()
     remote_file_reader.reset();
 }
 
-std::unique_ptr<WriteBufferFromFile> FileSegment::detachWriter()
-{
-    auto lock = segment_guard.lock();
-
-    if (!cache_writer)
-    {
-        if (detached_writer)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Writer is already detached");
-
-        cache_writer = std::make_unique<WriteBufferFromFile>(file_path);
-    }
-    detached_writer = true;
-    return std::move(cache_writer);
-}
-
 void FileSegment::write(const char * from, size_t size, size_t offset)
 {
     if (!size)
@@ -358,9 +343,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
                     ErrorCodes::LOGICAL_ERROR,
                     "Cache writer was finalized (downloaded size: {}, state: {})",
                     current_downloaded_size, stateToString(download_state));
-
-            if (detached_writer)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer was detached");
 
             cache_writer = std::make_unique<WriteBufferFromFile>(file_path);
         }
@@ -836,7 +818,7 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
         return file_segments.erase(file_segments.begin());
     }
 
-    auto lock = file_segment.cache->main_priority->lock();
+    auto lock = file_segment.cache->main_priority->lockShared();
     /// File segment pointer must be reset right after calling complete() and
     /// under the same mutex, because complete() checks for segment pointers.
     auto key_transaction = file_segment.createKeyTransaction(/* assert_exists */false);
@@ -844,10 +826,13 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
     {
         auto queue_iter = key_transaction->getOffsets().tryGet(file_segment.offset())->queue_iterator;
         if (queue_iter)
-            queue_iter->use(lock);
+            queue_iter->use(*lock);
 
         if (!file_segment.isCompleted())
+        {
+            key_transaction->queue_lock = lock;
             file_segment.completeUnlocked(*key_transaction);
+        }
     }
 
     return file_segments.erase(file_segments.begin());

@@ -27,7 +27,7 @@ namespace
 }
 
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
-    : WriteBufferFromFileDecorator(file_segment_->detachWriter()), file_segment(file_segment_)
+    : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPathInLocalCache())), file_segment(file_segment_)
 {
     auto downloader = file_segment->getOrSetDownloader();
     if (downloader != FileSegment::getCallerId())

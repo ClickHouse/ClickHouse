@@ -258,8 +258,6 @@ public:
 
     void setDownloadedSize(size_t delta);
 
-    LocalCacheWriterPtr detachWriter();
-
 private:
     size_t getFirstNonDownloadedOffsetUnlocked(const FileSegmentGuard::Lock &) const;
     size_t getCurrentWriteOffsetUnlocked(const FileSegmentGuard::Lock &) const;
@@ -313,7 +311,6 @@ private:
 
     RemoteFileReaderPtr remote_file_reader;
     LocalCacheWriterPtr cache_writer;
-    bool detached_writer = false;
 
     /// downloaded_size should always be less or equal to reserved_size
     size_t downloaded_size = 0;
