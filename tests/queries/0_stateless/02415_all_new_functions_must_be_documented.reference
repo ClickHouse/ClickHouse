@@ -56,6 +56,10 @@ URLHierarchy
 URLPathHierarchy
 UUIDNumToString
 UUIDStringToNum
+YYYYMMDDToDate
+YYYYMMDDToDate32
+YYYYMMDDhhmmssToDateTime
+YYYYMMDDhhmmssToDateTime64
 _CAST
 __bitBoolMaskAnd
 __bitBoolMaskOr
