@@ -128,9 +128,8 @@ void ParquetBlockInputFormat::prepareReader()
         format_settings.parquet.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
-    ArrowFieldIndexUtil field_util(
+    ArrowFieldIndexUtil<false> field_util(
         format_settings.parquet.case_insensitive_column_matching,
-        false,
         format_settings.parquet.allow_missing_columns);
     column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
 }
