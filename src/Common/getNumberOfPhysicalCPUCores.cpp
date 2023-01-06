@@ -40,18 +40,6 @@ static unsigned getNumberOfPhysicalCPUCoresImpl()
 {
     unsigned cpu_count = std::thread::hardware_concurrency();
 
-    /// Most of x86_64 CPUs have 2-way Hyper-Threading
-    /// Aarch64 and RISC-V don't have SMT so far.
-    /// POWER has SMT and it can be multiple way (like 8-way), but we don't know how ClickHouse really behaves, so use all of them.
-
-#if defined(__x86_64__)
-    /// Let's limit ourself to the number of physical cores.
-    /// But if the number of logical cores is small - maybe it is a small machine
-    /// or very limited cloud instance and it is reasonable to use all the cores.
-    if (cpu_count >= 32)
-        cpu_count /= 2;
-#endif
-
 #if defined(OS_LINUX)
     cpu_count = getCGroupLimitedCPUCores(cpu_count);
 #endif
