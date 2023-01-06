@@ -6,8 +6,6 @@
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
         "dependent": [
-            "docker/test/split_build_smoke_test",
-            "docker/test/pvs",
             "docker/test/codebrowser"
         ]
     },
@@ -29,10 +27,6 @@
     },
     "docker/test/performance-comparison": {
         "name": "clickhouse/performance-comparison",
-        "dependent": []
-    },
-    "docker/test/pvs": {
-        "name": "clickhouse/pvs-test",
         "dependent": []
     },
     "docker/test/util": {
@@ -61,10 +55,6 @@
     },
     "docker/test/stress": {
         "name": "clickhouse/stress-test",
-        "dependent": []
-    },
-    "docker/test/split_build_smoke_test": {
-        "name": "clickhouse/split-build-smoke-test",
         "dependent": []
     },
     "docker/test/codebrowser": {

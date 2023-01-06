@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -220,8 +221,13 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
+    /// We must read with one thread because it guarantees that
+    /// output stream will be sorted after reading from MergeTree parts.
+    /// Disable all settings that can enable reading with several streams.
     context_copy->setSetting("max_streams_to_max_threads_ratio", 1);
     context_copy->setSetting("max_threads", 1);
+    context_copy->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
+    context_copy->setSetting("max_streams_for_merge_tree_reading", Field(0));
 
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
@@ -941,6 +947,8 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];
+            if (step->actions()->hasArrayJoin())
+                throw Exception("arrayJoin is not allowed in mutations", ErrorCodes::UNEXPECTED_EXPRESSION);
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.

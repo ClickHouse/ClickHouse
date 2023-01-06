@@ -10,6 +10,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/IResolvedFunction.h>
 
 #include "config.h"
 
@@ -83,10 +84,20 @@ public:
     using Fraction = AvgFraction<Numerator, Denominator>;
 
     explicit AggregateFunctionAvgBase(const DataTypes & argument_types_,
-        UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
-        : Base(argument_types_, {}), num_scale(num_scale_), denom_scale(denom_scale_) {}
+                                      UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
+        : Base(argument_types_, {}, createResultType())
+        , num_scale(num_scale_)
+        , denom_scale(denom_scale_)
+    {}
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<Float64>>(); }
+    AggregateFunctionAvgBase(const DataTypes & argument_types_, const DataTypePtr & result_type_,
+                             UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
+        : Base(argument_types_, {}, result_type_)
+        , num_scale(num_scale_)
+        , denom_scale(denom_scale_)
+    {}
+
+    DataTypePtr createResultType() const { return std::make_shared<DataTypeNumber<Float64>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -135,7 +146,7 @@ public:
         for (const auto & argument : this->argument_types)
             can_be_compiled &= canBeNativeType(*argument);
 
-        auto return_type = getReturnType();
+        auto return_type = this->getResultType();
         can_be_compiled &= canBeNativeType(*return_type);
 
         return can_be_compiled;

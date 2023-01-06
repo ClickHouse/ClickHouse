@@ -54,9 +54,11 @@ private:
     Poco::Logger * log;
 
     UVLoop loop;
+    /// Preserve order of destruction here:
+    /// destruct connection and handler before the loop above.
     RabbitMQHandler event_handler;
-
     std::unique_ptr<AMQP::TcpConnection> connection;
+
     std::mutex mutex;
 };
 
