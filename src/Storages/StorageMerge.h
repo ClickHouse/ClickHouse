@@ -195,8 +195,8 @@ private:
 
     static void convertingSourceStream(
         const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
-        ContextPtr context, ASTPtr & query,
-        QueryPipelineBuilder & builder, QueryProcessingStage::Enum);
+        ContextPtr context,
+        QueryPipelineBuilder & builder);
 };
 
 }
