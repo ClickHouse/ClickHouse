@@ -349,6 +349,7 @@ if [ -f core.gz ]; then
 fi
 
 grep --text -F '<Fatal>' server.log > fatal.log ||:
+dmesg -T > dmesg.log ||:
 
 pigz server.log
 
