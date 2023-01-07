@@ -1,5 +1,5 @@
 #include "NamedCollectionsHelpers.h"
-#include <Storages/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier.h>
@@ -67,9 +67,11 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
 
     auto collection_copy = collection->duplicate();
 
-    for (const auto & ast : asts)
+    for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
-        auto value_override = getKeyValueFromAST(ast);
+        auto value_override = getKeyValueFromAST(*it);
+        if (!value_override && !(*it)->as<ASTFunction>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
         if (!value_override)
             continue;
 
@@ -80,33 +82,13 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
     return collection_copy;
 }
 
-void validateNamedCollection(
-    const NamedCollection & collection,
-    const std::unordered_set<std::string_view> & required_keys,
-    const std::unordered_set<std::string_view> & optional_keys)
+HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection)
 {
-    const auto & keys = collection.getKeys();
+    HTTPHeaderEntries headers;
+    auto keys = collection.getKeys(0, "headers");
     for (const auto & key : keys)
-    {
-        if (!required_keys.contains(key) && !optional_keys.contains(key))
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected key `{}` in named collection. Required keys: {}, optional keys: {}",
-                key, fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
-        }
-    }
-
-    for (const auto & key : required_keys)
-    {
-        if (!keys.contains(key))
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Key `{}` is required, but not specified. Required keys: {}, optional keys: {}",
-                key, fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
-        }
-    }
+        headers.emplace_back(collection.get<String>(key + ".name"), collection.get<String>(key + ".value"));
+    return headers;
 }
 
 }

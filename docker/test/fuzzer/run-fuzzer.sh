@@ -262,14 +262,17 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
+        if ! grep -E --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
 
-        if grep -E --text 'Sanitizer: (out-of-memory|failed to allocate)' description.txt
+        IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+
+        if [ "${IS_SANITIZED}" -eq "1" ] && grep -E --text 'Sanitizer: (out-of-memory|out of memory|failed to allocate|Child process was terminated by signal 9)' description.txt
         then
             # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
+            # Why? Because sanitizers have the memory overhead, that is not controllable from inside clickhouse-server.
             task_exit_code=0
             echo "success" > status.txt
         else
