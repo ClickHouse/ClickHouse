@@ -6,6 +6,7 @@ import logging
 import requests  # type: ignore
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/tags"
+CLICKHOUSE_PACKAGE_URL = "https://github.com/ClickHouse/ClickHouse/releases/download/v{version}-{type}/clickhouse-common-static_{version}_amd64.deb"
 VERSION_PATTERN = r"(v(?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+-[a-zA-Z]*)"
 
 
@@ -42,7 +43,29 @@ def find_previous_release(server_version, releases):
 
     for release in releases:
         if release.version < server_version:
-            return True, release
+
+            # Check if the artifact exists on GitHub.
+            # It can be not true for a short period of time
+            # after creating a tag for a new release before uploading the packages.
+            if (
+                requests.head(
+                    CLICKHOUSE_PACKAGE_URL.format(
+                        version=release.version, type=release.type
+                    ),
+                    total=10,
+                    read=10,
+                    connect=10,
+                    backoff_factor=0.3,
+                ).status_code
+                != 404
+            ):
+                return True, release
+            else:
+                print(
+                    "The tag {version}-{type} exists bug the package is not yet available on GitHub".format(
+                        version=release.version, type=release.type
+                    )
+                )
 
     return False, None
 
