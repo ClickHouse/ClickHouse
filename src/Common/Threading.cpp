@@ -143,32 +143,33 @@ void CancelToken::Registry::signal(UInt64 tid, int code, const String & message)
         it->second->signalImpl(code, message);
 }
 
-CancelToken::Registry & CancelToken::Registry::instance()
+const std::shared_ptr<CancelToken::Registry> & CancelToken::Registry::instance()
 {
-    static Registry registry;
+    static std::shared_ptr<Registry> registry{new Registry()}; // shared_ptr is used to enforce correct destruction order of tokens and registry
     return registry;
 }
 
 CancelToken::CancelToken()
     : state(disabled)
     , thread_id(getThreadId())
+    , registry(Registry::instance())
 {
-    Registry::instance().insert(this);
+    registry->insert(this);
 }
 
 CancelToken::~CancelToken()
 {
-    Registry::instance().remove(this);
+    registry->remove(this);
 }
 
 void CancelToken::signal(UInt64 tid)
 {
-    Registry::instance().signal(tid);
+    Registry::instance()->signal(tid);
 }
 
 void CancelToken::signal(UInt64 tid, int code, const String & message)
 {
-    Registry::instance().signal(tid, code, message);
+    Registry::instance()->signal(tid, code, message);
 }
 
 bool CancelToken::wait(UInt32 * address, UInt32 value)

@@ -12,6 +12,7 @@
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
+#include <memory>
 
 namespace DB
 {
@@ -122,7 +123,7 @@ private:
         void signal(UInt64 tid);
         void signal(UInt64 tid, int code, const String & message);
 
-        static Registry & instance();
+        static const std::shared_ptr<Registry> & instance();
     };
 
     // Cancels this token and wakes thread if necessary.
@@ -153,6 +154,9 @@ private:
 
     // Token is permanently attached to a single thread. There is one-to-one mapping between threads and tokens.
     const UInt64 thread_id;
+
+    // To avoid `Registry` destruction before last `Token` destruction
+    const std::shared_ptr<Registry> registry;
 };
 
 class CancellableSharedMutex
