@@ -273,11 +273,11 @@ LimitTransform::PortsData LimitTransform::queuePop()
     if (rows_in_queue >= offset)
     {
         if (rows_in_queue + pop.current_chunk.getNumRows() <= rows_to_keep)
-            ///                         <--------> rows_in_queue
-            ///            <---------------------> rows_to_keep
-            ///            ^limit            ^offset
-            ///                 <-------> pop
-            ///                 <-------> to return
+            ///              <--------> rows_in_queue
+            /// <---------------------> rows_to_keep
+            /// ^limit            ^offset
+            ///      <-------> pop
+            ///      <-------> to return
             return pop;
 
         /// Need to cut chunk
@@ -285,11 +285,11 @@ LimitTransform::PortsData LimitTransform::queuePop()
         UInt64 num_rows = pop.current_chunk.getNumRows();
         Columns columns = pop.current_chunk.detachColumns();
 
-        ///                         <--------> rows_in_queue
-        ///                   <--------------> rows_to_keep
-        ///                   ^limit      ^offset
-        ///        <----------------> pop
-        ///                   <-----> to return
+        ///                  <--------> rows_in_queue
+        ///            <--------------> rows_to_keep
+        ///            ^limit      ^offset
+        /// <----------------> pop
+        ///            <-----> to return
         UInt64 diff = num_rows + rows_in_queue - rows_to_keep;
         for (UInt64 i = 0; i < num_columns; ++i)
             columns[i] = columns[i]->cut(diff, num_rows - diff);
@@ -306,11 +306,11 @@ LimitTransform::PortsData LimitTransform::queuePop()
 
     if (rows_in_queue + num_rows > rows_to_keep)
     {
-        ///                    <------------------> rows_in_queue
-        ///  <----------------> pop
-        ///     ^limit    ^offset
-        ///      <--------> to return (limit is reachable)
-        ///  <------------> to return (limit is unreachable)
+        ///                   <------------------> rows_in_queue
+        /// <----------------> pop
+        ///    ^limit    ^offset
+        ///     <--------> to return (limit is reachable)
+        /// <------------> to return (limit is unreachable)
 
         /// When limit is unreachable, need to return all rows before offset
         if (limit_is_unreachable)

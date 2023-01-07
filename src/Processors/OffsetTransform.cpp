@@ -222,10 +222,10 @@ OffsetTransform::PortsData OffsetTransform::queuePop()
     UInt64 num_rows = pop.current_chunk.getNumRows();
     Columns columns = pop.current_chunk.detachColumns();
 
-    ///             <--------> rows_in_queue
-    ///   <---------> pop
-    ///   <-----> to return
-    ///         ^offset
+    ///           <--------> rows_in_queue
+    /// <---------> pop
+    /// <-----> to return
+    ///       ^offset
 
     UInt64 length = rows_in_queue + num_rows - offset;
     for (UInt64 i = 0; i < num_columns; ++i)

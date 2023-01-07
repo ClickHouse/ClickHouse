@@ -33,6 +33,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
@@ -581,19 +582,29 @@ void Planner::buildQueryPlanIfNeeded()
     query_plan.addStep(std::move(expression_step_projection));
 
     UInt64 limit_offset = 0;
+    bool is_limit_offset_negative = false;
     if (query_node.hasOffset())
     {
         /// Constness of offset is validated during query analysis stage
-        limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+        Field converted = convertFieldToType(query_node.getOffset()->as<ConstantNode &>().getValue(), DataTypeInt128());
+        Int128 val = converted.safeGet<Int128>();
+        is_limit_offset_negative = val < 0;
+        val = is_limit_offset_negative ? (0 - val) : val;
+        limit_offset = UInt64(val);
     }
 
     UInt64 limit_length = 0;
-
+    bool is_limit_length_negative = false;
     if (query_node.hasLimit())
     {
         /// Constness of limit is validated during query analysis stage
-        limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+        Field converted = convertFieldToType(query_node.getLimit()->as<ConstantNode &>().getValue(), DataTypeInt128());
+        Int128 val = converted.safeGet<Int128>();
+        is_limit_length_negative = val < 0;
+        val = is_limit_length_negative ? (0 - val) : val;
+        limit_length = UInt64(val);
     }
+    bool is_limit_negative = is_limit_length_negative || is_limit_offset_negative;
 
     if (query_node.isDistinct())
     {
@@ -607,7 +618,7 @@ void Planner::buildQueryPlanIfNeeded()
         /** If after this stage of DISTINCT ORDER BY is not executed,
           * then you can get no more than limit_length + limit_offset of different rows.
           */
-        if (no_order_by && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+        if (!is_limit_negative && no_order_by && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             limit_hint_for_distinct = limit_length + limit_offset;
 
         auto distinct_step = std::make_unique<DistinctStep>(
@@ -646,7 +657,7 @@ void Planner::buildQueryPlanIfNeeded()
         UInt64 partial_sorting_limit = 0;
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN
-        if (limit_length != 0 && !query_node.isDistinct() && !query_node.hasLimitBy() && !query_node.isLimitWithTies() &&
+        if (!is_limit_negative && limit_length != 0 && !query_node.isDistinct() && !query_node.hasLimitBy() && !query_node.isLimitWithTies() &&
             !query_has_array_join_in_join_tree && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
         {
             partial_sorting_limit = limit_length + limit_offset;
@@ -826,7 +837,7 @@ void Planner::buildQueryPlanIfNeeded()
             limit_offset,
             always_read_till_end,
             limit_with_ties,
-            false,
+            is_limit_negative,
             limit_with_ties_sort_description);
 
         if (limit_with_ties)
@@ -836,7 +847,7 @@ void Planner::buildQueryPlanIfNeeded()
     }
     else if (query_node.hasOffset())
     {
-        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
+        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset, is_limit_offset_negative);
         query_plan.addStep(std::move(offsets_step));
     }
 

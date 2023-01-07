@@ -1103,7 +1103,9 @@ private:
 
     static void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
-    static void validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
+    static void validateLimitByExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
+
+    static std::pair<bool, Int128> validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
@@ -1861,7 +1863,24 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     }
 }
 
-void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
+void QueryAnalyzer::validateLimitByExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
+{
+    const auto * limit_offset_constant_node = expression_node->as<ConstantNode>();
+    if (!limit_offset_constant_node || !isNativeNumber(removeNullable(limit_offset_constant_node->getResultType())))
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+                        "{} expression must be constant with numeric type. Actual {}. In scope {}",
+                        expression_description,
+                        expression_node->formatASTForErrorMessage(),
+                        scope.scope_node->formatASTForErrorMessage());
+
+    Field converted = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
+    if (converted.isNull())
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+                        "{} numeric constant expression is not representable as UInt64",
+                        expression_description);
+}
+
+std::pair<bool, Int128> QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
 {
     const auto * limit_offset_constant_node = expression_node->as<ConstantNode>();
     if (!limit_offset_constant_node || !isNativeNumber(removeNullable(limit_offset_constant_node->getResultType())))
@@ -1871,11 +1890,19 @@ void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-    Field converted = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
+    Field converted = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeInt128());
     if (converted.isNull())
         throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-            "{} numeric constant expression is not representable as UInt64",
+                        "{} numeric constant expression's absolute value is not representable as UInt64",
+                        expression_description);
+    Int128 val = converted.safeGet<Int128>();
+    bool is_negative = val < 0;
+    val = is_negative ? (0 - val) : val;
+    if (val > Int128(UINT64_MAX))
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+            "{} numeric constant expression's absolute value is not representable as UInt64",
             expression_description);
+    return {is_negative, val};
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
@@ -5991,13 +6018,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasLimitByLimit())
     {
         resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        validateLimitOffsetExpression(query_node_typed.getLimitByLimit(), "LIMIT BY LIMIT", scope);
+        validateLimitByExpression(query_node_typed.getLimitByLimit(), "LIMIT BY LIMIT", scope);
     }
 
     if (query_node_typed.hasLimitByOffset())
     {
         resolveExpressionNode(query_node_typed.getLimitByOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        validateLimitOffsetExpression(query_node_typed.getLimitByOffset(), "LIMIT BY OFFSET", scope);
+        validateLimitByExpression(query_node_typed.getLimitByOffset(), "LIMIT BY OFFSET", scope);
     }
 
     if (query_node_typed.hasLimitBy())
@@ -6011,10 +6038,21 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasLimit())
     {
         resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        validateLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
-    }
+        auto [is_limit_negative, limit] = validateLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
 
-    if (query_node_typed.hasOffset())
+        if (query_node_typed.hasOffset() && limit)
+        {
+            resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            auto [is_offset_negative, _] = validateLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
+            if (is_offset_negative != is_limit_negative)
+            {
+                throw Exception(
+                    "The sign of limit and offset must be the same",
+                    ErrorCodes::INVALID_LIMIT_EXPRESSION);
+            }
+        }
+    }
+    else if (query_node_typed.hasOffset())
     {
         resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         validateLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
