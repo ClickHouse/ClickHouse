@@ -23,7 +23,7 @@ HTML_BASE_TEST_TEMPLATE = """
     --shadow-intensity: 1;
     --tr-hover-filter: brightness(120%);
     --table-border-color: black;
-}
+}}
 
 [data-theme="light"] {{
     --color: black;
