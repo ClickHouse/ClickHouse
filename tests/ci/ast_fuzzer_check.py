@@ -119,6 +119,7 @@ if __name__ == "__main__":
         "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
         "report.html": os.path.join(workspace_path, "report.html"),
         "core.gz": os.path.join(workspace_path, "core.gz"),
+        "dmesg.log": os.path.join(workspace_path, "dmesg.log"),
     }
 
     s3_helper = S3Helper()
