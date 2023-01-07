@@ -62,7 +62,7 @@ def find_previous_release(server_version, releases):
                 return True, release
             else:
                 print(
-                    "The tag {version}-{type} exists bug the package is not yet available on GitHub".format(
+                    "The tag {version}-{type} exists but the package is not yet available on GitHub".format(
                         version=release.version, type=release.type
                     )
                 )
