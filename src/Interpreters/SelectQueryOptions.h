@@ -44,7 +44,6 @@ struct SelectQueryOptions
     /// This flag is needed for projection description.
     /// Otherwise, keys for GROUP BY may be removed as constants.
     bool ignore_ast_optimizations = false;
-    bool ignore_alias = false;
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
@@ -118,12 +117,6 @@ struct SelectQueryOptions
     SelectQueryOptions & projectionQuery(bool value = true)
     {
         is_projection_query = value;
-        return *this;
-    }
-
-    SelectQueryOptions & ignoreAlias(bool value = true)
-    {
-        ignore_alias = value;
         return *this;
     }
 

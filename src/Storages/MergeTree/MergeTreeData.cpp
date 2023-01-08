@@ -6015,7 +6015,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         QueryProcessingStage::WithMergeableState,
         /* depth */ 1,
         /* is_subquery_= */ true
-        ).ignoreProjections().ignoreAlias();
+        ).ignoreProjections();
 
     InterpreterSelectQuery select(
         query_ptr,
