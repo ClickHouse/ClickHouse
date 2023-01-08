@@ -1,0 +1,43 @@
+Row 1:
+──────
+ipv4:                                        1.2.3.4
+wyHash64(toIPv4('1.2.3.4')):                 13096729196120951355
+xxHash32(toIPv4('1.2.3.4')):                 2430391091
+gccMurmurHash(toIPv4('1.2.3.4')):            5478801830569062645
+murmurHash2_32(toIPv4('1.2.3.4')):           1658978282
+javaHashUTF16LE(toIPv4('1.2.3.4')):          24190
+intHash64(toIPv4('1.2.3.4')):                5715546585361069049
+intHash32(toIPv4('1.2.3.4')):                3152671896
+metroHash64(toIPv4('1.2.3.4')):              5715546585361069049
+farmHash64(toIPv4('1.2.3.4')):               5715546585361069049
+hex(sipHash128(toIPv4('1.2.3.4'))):          DBB6A76B92B59789EFB42185DC32311D
+hex(murmurHash3_128(toIPv4('1.2.3.4'))):     549E9EF692591F6BB55874EF9A0DE88E
+jumpConsistentHash(toIPv4('1.2.3.4'), 42):   37
+sipHash64(toIPv4('1.2.3.4')):                10711397536826262068
+kostikConsistentHash(toIPv4('1.2.3.4'), 42): 0
+xxHash64(toIPv4('1.2.3.4')):                 14496144933713060978
+murmurHash2_64(toIPv4('1.2.3.4')):           10829690723193326442
+cityHash64(toIPv4('1.2.3.4')):               5715546585361069049
+hiveHash(toIPv4('1.2.3.4')):                 122110
+murmurHash3_64(toIPv4('1.2.3.4')):           16570805747704317665
+murmurHash3_32(toIPv4('1.2.3.4')):           1165084099
+yandexConsistentHash(toIPv4('1.2.3.4'), 42): 0
+Row 1:
+──────
+ipv6:                                                    fe80::62:5aff:fed1:daf0
+wyHash64(toIPv6('fe80::62:5aff:fed1:daf0')):             18071806066582739916
+xxHash32(toIPv6('fe80::62:5aff:fed1:daf0')):             3353862080
+gccMurmurHash(toIPv6('fe80::62:5aff:fed1:daf0')):        11049311547848936878
+murmurHash2_32(toIPv6('fe80::62:5aff:fed1:daf0')):       1039121047
+javaHashUTF16LE(toIPv6('fe80::62:5aff:fed1:daf0')):      -666938696
+metroHash64(toIPv6('fe80::62:5aff:fed1:daf0')):          15333045864940909774
+farmHash64(toIPv6('fe80::62:5aff:fed1:daf0')):           6643158734288374888
+hex(sipHash128(toIPv6('fe80::62:5aff:fed1:daf0'))):      31D50562F877B1F92A99B05B646568B7
+hex(murmurHash3_128(toIPv6('fe80::62:5aff:fed1:daf0'))): 6FFEF0C1DF8B5B472FE2EDF0C76C12B9
+sipHash64(toIPv6('fe80::62:5aff:fed1:daf0')):            5681592867096972315
+xxHash64(toIPv6('fe80::62:5aff:fed1:daf0')):             4533874364641685764
+murmurHash2_64(toIPv6('fe80::62:5aff:fed1:daf0')):       11839090601505681839
+cityHash64(toIPv6('fe80::62:5aff:fed1:daf0')):           1599722731594796935
+hiveHash(toIPv6('fe80::62:5aff:fed1:daf0')):             684606770
+murmurHash3_64(toIPv6('fe80::62:5aff:fed1:daf0')):       18323430650022796352
+murmurHash3_32(toIPv6('fe80::62:5aff:fed1:daf0')):       3971193740
