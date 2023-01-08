@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <max_execution_time>10</max_execution_time>
+            <max_memory_usage>10G</max_memory_usage>
 
             <!--
                 Otherwise we will get the TOO_MANY_SIMULTANEOUS_QUERIES errors,
