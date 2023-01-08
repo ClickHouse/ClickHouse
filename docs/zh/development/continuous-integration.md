@@ -110,9 +110,6 @@ git push
 ## 集成测试 {#integration-tests}
 运行[集成测试](./tests.md#integration-tests).
 
-## Testflows 检查{#testflows-check}
-使用Testflows测试系统去运行一些测试, 在[此处](https://github.com/ClickHouse/ClickHouse/tree/master/tests/testflows#running-tests-locally)查看如何在本地运行它们.
-
 ## 压力测试 {#stress-test}
 从多个客户端并发运行无状态功能测试, 用以检测与并发相关的错误.如果失败:
 ```
