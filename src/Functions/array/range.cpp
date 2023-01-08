@@ -225,8 +225,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            for (size_t idx = 0; idx < row_length[row_idx]; idx++)
-                out_data[offset++] = static_cast<T>(start_data[row_idx] + idx * step);
+            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
+            {
+                out_data[offset] = static_cast<T>(start_data[row_idx] + idx * step);
+                ++offset;
+            }
             out_offsets[row_idx] = offset;
         }
 
@@ -317,8 +320,8 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             if (step_data[row_idx] == 0)
-                throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't less or equal to zero",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception{ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "A call to function {} underflows, the 3rd argument step can't be less or equal to zero", getName()};
             if (start_data[row_idx] < end_start[row_idx] && step_data[row_idx] > 0)
                 row_length[row_idx] = (static_cast<__int128_t>(end_start[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
             else if (start_data[row_idx] > end_start[row_idx] && step_data[row_idx] < 0)
@@ -348,8 +351,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            for (size_t idx = 0; idx < row_length[row_idx]; idx++)
-                out_data[offset++] = static_cast<T>(start_data[row_idx] + idx * step_data[row_idx]);
+            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
+            {
+                out_data[offset] = static_cast<T>(start_data[row_idx] + idx * step_data[row_idx]);
+                ++offset;
+            }
             out_offsets[row_idx] = offset;
         }
 
