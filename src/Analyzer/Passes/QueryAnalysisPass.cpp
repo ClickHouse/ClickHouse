@@ -4333,7 +4333,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             ? AggregateFunctionFactory::instance().get(function_name + "OrNull", argument_types, parameters, properties)
             : AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
 
-        function_node.resolveAsWindowFunction(aggregate_function);
+        function_node.resolveAsWindowFunction(std::move(aggregate_function));
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
@@ -4396,7 +4396,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto aggregate_function = need_add_or_null
             ? AggregateFunctionFactory::instance().get(function_name + "OrNull", argument_types, parameters, properties)
             : AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
-        function_node.resolveAsAggregateFunction(aggregate_function);
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
         return result_projection_names;
     }
 
