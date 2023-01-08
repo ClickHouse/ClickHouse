@@ -241,13 +241,29 @@ quit
     # clickhouse-client. We don't check for existence of server process, because
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
-    if clickhouse-client --query "select 1 format Null"
-    then
-        server_died=0
-    else
-        echo "Server live check returns $?"
-        server_died=1
-    fi
+
+    for _ in {1..100}
+    do
+        if clickhouse-client --query "SELECT 1" 2> err
+        then
+            server_died=0
+            break
+        else
+            # There are legitimate queries leading to this error, example:
+            # SELECT * FROM remote('127.0.0.{1..255}', system, one)
+            if grep -F 'TOO_MANY_SIMULTANEOUS_QUERIES' err
+            then
+                # Give it some time to cool down
+                clickhouse-client --query "SHOW PROCESSLIST"
+                sleep 1
+            else
+                echo "Server live check returns $?"
+                cat err
+                server_died=1
+                break
+            fi
+        fi
+    done
 
     # wait in background to call wait in foreground and ensure that the
     # process is alive, since w/o job control this is the only way to obtain
