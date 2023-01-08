@@ -910,12 +910,7 @@ void StorageReplicatedMergeTree::drop()
     {
         /// Load remaining parts synchronously because task
         /// for loading is already cancelled in shutdown().
-        std::lock_guard lock(outdated_data_parts_mutex);
-        if (!outdated_unloaded_data_parts.empty())
-        {
-            assert(outdated_data_parts_loading_canceled);
-            loadOutdatedDataParts(/*is_async=*/ false);
-        }
+        loadOutdatedDataParts(/*is_async=*/ false);
     }
 
     dropAllData();
