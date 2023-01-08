@@ -597,7 +597,7 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps
-for core in core.*; do
+find . -type f -name 'core.*' | while read core; do
     zstd --threads=0 $core
     mv $core.zst /test_output/
 done
