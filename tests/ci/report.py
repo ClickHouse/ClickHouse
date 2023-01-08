@@ -2,33 +2,96 @@
 import os
 import datetime
 
-### FIXME: BEST FRONTEND PRACTICIES BELOW
+### BEST FRONTEND PRACTICES BELOW
 
 HTML_BASE_TEST_TEMPLATE = """
 <!DOCTYPE html>
 <html>
   <style>
-body {{ font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: #EEE; }}
+
+:root {{
+    --color: white;
+    --background: hsl(190deg, 90%, 5%) linear-gradient(180deg, hsl(190deg, 90%, 10%), hsl(190deg, 90%, 0%));
+    --td-background: hsl(190deg, 90%, 15%);
+    --th-background: hsl(180deg, 90%, 15%);
+    --link-color: white;
+    --link-hover-color: #F40;
+    --menu-background: hsl(190deg, 90%, 20%);
+    --menu-hover-background: hsl(190deg, 100%, 50%);
+    --menu-hover-color: black;
+    --text-gradient: linear-gradient(90deg, #8F8, #F88);
+    --shadow-intensity: 1;
+    --tr-hover-filter: brightness(120%);
+    --table-border-color: black;
+}}
+
+[data-theme="light"] {{
+    --color: black;
+    --background: hsl(190deg, 90%, 90%) linear-gradient(180deg, #EEE, #DEE);
+    --td-background: white;
+    --th-background: #EEE;
+    --link-color: #08F;
+    --link-hover-color: #F40;
+    --menu-background: white;
+    --menu-hover-background: white;
+    --menu-hover-color: #F40;
+    --text-gradient: linear-gradient(90deg, black, black);
+    --shadow-intensity: 0.1;
+    --tr-hover-filter: brightness(95%);
+    --table-border-color: #DDD;
+}}
+
+.gradient {{
+    background-image: var(--text-gradient);
+    background-size: 100%;
+    background-repeat: repeat;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    -moz-text-fill-color: transparent;
+    -webkit-background-clip: text;
+    -moz-background-clip: text;
+}}
+html {{ min-height: 100%; font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: var(--background); color: var(--color); }}
 h1 {{ margin-left: 10px; }}
-th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
-td {{ white-space: pre; font-family: Monospace, Courier New; }}
-border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
-a {{ color: #06F; text-decoration: none; }}
-a:hover, a:active {{ color: #F40; text-decoration: underline; }}
-table {{ border: 0; }}
-p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
+th, td {{ padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; border: 1px solid var(--table-border-color); }}
+td {{ background: var(--td-background); }}
+th {{ background: var(--th-background); }}
+a {{ color: var(--link-color); text-decoration: none; }}
+a:hover, a:active {{ color: var(--link-hover-color); text-decoration: none; }}
+table {{ box-shadow: 0 8px 25px -5px rgba(0, 0, 0, var(--shadow-intensity)); border-collapse: collapse; border-spacing: 0; }}
+p.links a {{ padding: 5px; margin: 3px; background: var(--menu-background); line-height: 2.5; white-space: nowrap; box-shadow: 0 8px 25px -5px rgba(0, 0, 0, var(--shadow-intensity)); }}
+p.links a:hover {{ background: var(--menu-hover-background); color: var(--menu-hover-color); }}
 th {{ cursor: pointer; }}
+tr:hover {{ filter: var(--tr-hover-filter); }}
 .failed {{ cursor: pointer; }}
-.failed-content.open {{}}
 .failed-content {{ display: none; }}
+#fish {{ display: none; float: right; position: relative; top: -20em; right: 2vw; margin-bottom: -20em; width: 30vw; filter: brightness(7%); z-index: -1; }}
+
+.themes {{
+    float: right;
+    font-size: 20pt;
+    margin-bottom: 1rem;
+}}
+
+#toggle-dark, #toggle-light {{
+    padding-right: 0.5rem;
+    user-select: none;
+    cursor: pointer;
+}}
+
+#toggle-dark:hover, #toggle-light:hover {{
+    display: inline-block;
+    transform: translate(1px, 1px);
+    filter: brightness(125%);
+}}
 
   </style>
   <title>{title}</title>
 </head>
 <body>
 <div class="main">
-
-<h1>{header}</h1>
+<span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
+<h1><span class="gradient">{header}</span></h1>
 <p class="links">
 <a href="{raw_log_url}">{raw_log_name}</a>
 <a href="{commit_url}">Commit</a>
@@ -37,7 +100,7 @@ th {{ cursor: pointer; }}
 <a href="{job_url}">Job (github actions)</a>
 </p>
 {test_part}
-</body>
+<img id="fish" src="https://presentations.clickhouse.com/images/fish.png" />
 <script type="text/javascript">
     /// Straight from https://stackoverflow.com/questions/14267781/sorting-html-table-with-javascript
 
@@ -53,7 +116,6 @@ th {{ cursor: pointer; }}
         v1 !== '' && v2 !== '' && !isNaN(v1) && !isNaN(v2) ? v1 - v2 : v1.toString().localeCompare(v2)
         )(getCellValue(asc ? a : b, idx), getCellValue(asc ? b : a, idx));
 
-    // do the work...
     document.querySelectorAll('th').forEach(th => th.addEventListener('click', (() => {{
         const table = th.closest('table');
         Array.from(table.querySelectorAll('tr:nth-child(n+2)'))
@@ -63,10 +125,33 @@ th {{ cursor: pointer; }}
 
     Array.from(document.getElementsByClassName("failed")).forEach(tr => tr.addEventListener('click', function() {{
         var content = this.nextElementSibling;
-        content.classList.toggle("failed-content.open");
         content.classList.toggle("failed-content");
     }}));
+
+    let theme = 'dark';
+
+    function setTheme(new_theme) {{
+        theme = new_theme;
+        document.documentElement.setAttribute('data-theme', theme);
+        window.localStorage.setItem('theme', theme);
+        drawFish();
+    }}
+
+    function drawFish() {{
+        document.getElementById('fish').style.display = (document.body.clientHeight > 3000 && theme == 'dark') ? 'block' : 'none';
+    }}
+
+    document.getElementById('toggle-light').addEventListener('click', e => setTheme('light'));
+    document.getElementById('toggle-dark').addEventListener('click', e => setTheme('dark'));
+
+    let new_theme = window.localStorage.getItem('theme');
+    if (new_theme && new_theme != theme) {{
+        setTheme(new_theme);
+    }}
+
+    drawFish();
 </script>
+</body>
 </html>
 """
 
