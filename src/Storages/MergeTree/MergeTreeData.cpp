@@ -1679,7 +1679,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     if (!unloaded_parts.empty())
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
-        outdated_unloaded_data_parts = std::move(unloaded_parts);
+
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            outdated_unloaded_data_parts = std::move(unloaded_parts);
+        }
 
         outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
             "MergeTreeData::loadOutdatedDataParts",
@@ -1695,6 +1699,9 @@ try
 {
     {
         std::lock_guard lock(outdated_data_parts_mutex);
+        if (outdated_unloaded_data_parts.empty())
+            return;
+
         LOG_DEBUG(log, "Loading {} outdated data parts {}",
             outdated_unloaded_data_parts.size(),
             is_async ? "asynchronously" : "synchronously");
@@ -1734,7 +1741,8 @@ try
             preparePartForRemoval(res.part);
     }
 
-    LOG_DEBUG(log, "Loaded {} outdated data parts", num_loaded_parts);
+    LOG_DEBUG(log, "Loaded {} outdated data parts {}",
+        num_loaded_parts, is_async ? "asynchronously" : "synchronously");
     outdated_data_parts_cv.notify_all();
 }
 catch (...)
@@ -3591,7 +3599,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
 #ifndef NDEBUG
     {
         /// All parts (including outdated) must be loaded at this moment.
-        std::lock_guard lock(outdated_data_parts_mutex);
+        std::lock_guard outdated_parts_lock(outdated_data_parts_mutex);
         assert(outdated_unloaded_data_parts.empty());
     }
 #endif
