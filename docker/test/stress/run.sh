@@ -77,11 +77,12 @@ EOL
 
     local max_users_mem
     max_users_mem=$((total_mem*30/100)) # 30%
-    echo "Setting max_memory_usage_for_user=$max_users_mem"
+    echo "Setting max_memory_usage_for_user=$max_users_mem and max_memory_usage for queries to 10G"
     cat > /etc/clickhouse-server/users.d/max_memory_usage_for_user.xml <<EOL
 <clickhouse>
     <profiles>
         <default>
+            <max_memory_usage>10G</max_memory_usage>
             <max_memory_usage_for_user>${max_users_mem}</max_memory_usage_for_user>
         </default>
     </profiles>
