@@ -154,10 +154,6 @@ Runs [stateful functional tests](tests.md#functional-tests). Treat them in the s
 Runs [integration tests](tests.md#integration-tests).
 
 
-## Testflows Check
-Runs some tests using Testflows test system. See [here](https://github.com/ClickHouse/ClickHouse/tree/master/tests/testflows#running-tests-locally) how to run them locally.
-
-
 ## Stress Test
 Runs stateless functional tests concurrently from several clients to detect
 concurrency-related errors. If it fails:
