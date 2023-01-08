@@ -37,6 +37,9 @@ public:
     bool shouldAlignRightInPrettyFormats() const override { return false; }
     bool textCanContainOnlyValidUTF8() const override { return true; }
     bool isComparable() const override { return true; }
+    bool isValueRepresentedByNumber() const override { return true; }
+    bool isValueRepresentedByInteger() const override { return true; }
+    bool isValueRepresentedByUnsignedInteger() const override { return true; }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return true; }
