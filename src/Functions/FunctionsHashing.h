@@ -52,6 +52,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
+#include <base/IPv4andIPv6.h>
 #include <base/range.h>
 #include <base/bit_cast.h>
 
@@ -838,6 +839,8 @@ public:
             return executeType<Decimal32>(arguments);
         else if (which.isDecimal64())
             return executeType<Decimal64>(arguments);
+        else if (which.isIPv4())
+            return executeType<IPv4>(arguments);
         else
             throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
