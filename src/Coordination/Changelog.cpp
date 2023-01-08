@@ -321,6 +321,8 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     else
         start_to_read_from = 1;
 
+    SCOPE_EXIT({ initialized = true; });
+
     /// Got through changelog files in order of start_index
     for (const auto & [changelog_start_index, changelog_description] : existing_changelogs)
     {
@@ -432,8 +434,6 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
     if (!current_writer)
         rotate(max_log_id + 1, writer_lock);
-
-    initialized = true;
 }
 
 
@@ -846,17 +846,14 @@ Changelog::~Changelog()
 
 void Changelog::cleanLogThread()
 {
-    while (!log_files_to_delete_queue.isFinishedAndEmpty())
+    std::string path;
+    while (log_files_to_delete_queue.pop(path))
     {
-        std::string path;
-        if (log_files_to_delete_queue.pop(path))
-        {
-            std::error_code ec;
-            if (std::filesystem::remove(path, ec))
-                LOG_INFO(log, "Removed changelog {} because of compaction.", path);
-            else
-                LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
-        }
+        std::error_code ec;
+        if (std::filesystem::remove(path, ec))
+            LOG_INFO(log, "Removed changelog {} because of compaction.", path);
+        else
+            LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
     }
 }
 
