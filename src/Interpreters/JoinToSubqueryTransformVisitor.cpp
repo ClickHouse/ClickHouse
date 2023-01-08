@@ -564,7 +564,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                     if (auto * alias_ident_typed = alias_ident->as<ASTIdentifier>())
                     {
                         alias_ident_typed->restoreTable();
-                        bool alias_equals_column_name = alias_ident->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
+                        bool alias_equals_column_name = alias_ident->getColumnName() == ident->getColumnName();
                         if (!alias_equals_column_name)
                             throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                     }

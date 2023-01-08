@@ -231,7 +231,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     if (partition_columns)
     {
         for (auto i : collections::range(partition_columns->children.size()))
-            partition_column_name_to_value_index[partition_columns->children[i]->getColumnNameWithoutAlias()] = i;
+            partition_column_name_to_value_index[partition_columns->children[i]->getColumnName()] = i;
     }
 
     const auto & analysis_result = select.getAnalysisResult();

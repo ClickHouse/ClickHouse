@@ -6240,8 +6240,13 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
     ProjectionCandidate * selected_candidate = nullptr;
     size_t min_sum_marks = std::numeric_limits<size_t>::max();
-    if (metadata_snapshot->minmax_count_projection && !has_lightweight_delete_parts.load(std::memory_order_relaxed)) /// Disable ReadFromStorage for parts with lightweight.
-        add_projection_candidate(*metadata_snapshot->minmax_count_projection, true);
+    if (metadata_snapshot->minmax_count_projection)
+    {
+        // Parts with lightweight delete mask cannot use minmax_count_projection
+        if (!has_lightweight_delete_parts.load(std::memory_order_relaxed))
+            add_projection_candidate(*metadata_snapshot->minmax_count_projection, true);
+    }
+
     std::optional<ProjectionCandidate> minmax_count_projection_candidate;
     if (!candidates.empty())
     {

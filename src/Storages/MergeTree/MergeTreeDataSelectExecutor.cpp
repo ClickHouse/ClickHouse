@@ -124,7 +124,7 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     for (const auto & elem : query.groupBy()->children)
     {
         /// Note, here aliases should not be used, since there will be no such column in a block.
-        String name = elem->getColumnNameWithoutAlias();
+        String name = elem->getColumnName();
         order_descr.emplace_back(name, 1, 1);
     }
 

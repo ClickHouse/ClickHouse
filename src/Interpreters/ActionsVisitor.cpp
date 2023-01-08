@@ -1002,7 +1002,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             for (const auto & arg : node.arguments->children)
             {
                 visit(arg, index_hint_data);
-                args.push_back({arg->getColumnNameWithoutAlias(), {}});
+                args.push_back({arg->getColumnName(), {}});
             }
         }
 

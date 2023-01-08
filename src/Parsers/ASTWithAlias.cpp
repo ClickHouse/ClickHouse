@@ -42,14 +42,6 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
 
 void ASTWithAlias::appendColumnName(WriteBuffer & ostr) const
 {
-    if (prefer_alias_to_column_name && !alias.empty())
-        writeString(alias, ostr);
-    else
-        appendColumnNameImpl(ostr);
-}
-
-void ASTWithAlias::appendColumnNameWithoutAlias(WriteBuffer & ostr) const
-{
     appendColumnNameImpl(ostr);
 }
 

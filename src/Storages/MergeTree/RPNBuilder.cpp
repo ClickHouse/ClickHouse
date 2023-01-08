@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, bool legacy = false)
+void appendColumnName(const ActionsDAG::Node & node, WriteBuffer & out, bool legacy = false)
 {
     switch (node.type)
     {
@@ -48,11 +48,11 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             break;
         }
         case ActionsDAG::ActionType::ALIAS:
-            appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
+            appendColumnName(*node.children.front(), out, legacy);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
             writeCString("arrayJoin(", out);
-            appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
+            appendColumnName(*node.children.front(), out, legacy);
             writeChar(')', out);
             break;
         case ActionsDAG::ActionType::FUNCTION:
@@ -71,17 +71,17 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     writeCString(", ", out);
                 first = false;
 
-                appendColumnNameWithoutAlias(*arg, out, legacy);
+                appendColumnName(*arg, out, legacy);
             }
             writeChar(')', out);
         }
     }
 }
 
-String getColumnNameWithoutAlias(const ActionsDAG::Node & node, bool legacy = false)
+String getColumnNameFromNode(const ActionsDAG::Node & node, bool legacy = false)
 {
     WriteBufferFromOwnString out;
-    appendColumnNameWithoutAlias(node, out, legacy);
+    appendColumnName(node, out, legacy);
     return std::move(out.str());
 }
 
@@ -114,9 +114,9 @@ RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeCon
 std::string RPNBuilderTreeNode::getColumnName() const
 {
     if (ast_node)
-        return ast_node->getColumnNameWithoutAlias();
+        return ast_node->getColumnName();
     else
-        return getColumnNameWithoutAlias(*dag_node);
+        return getColumnNameFromNode(*dag_node);
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
@@ -125,11 +125,11 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
     {
         auto adjusted_ast = ast_node->clone();
         KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
-        return adjusted_ast->getColumnNameWithoutAlias();
+        return adjusted_ast->getColumnName();
     }
     else
     {
-        return getColumnNameWithoutAlias(*dag_node, true /*legacy*/);
+        return getColumnNameFromNode(*dag_node, true /*legacy*/);
     }
 }
 
