@@ -39,6 +39,15 @@ enum class WeekModeFlag : UInt8
 };
 using YearWeek = std::pair<UInt16, UInt8>;
 
+/// Modes for toDayOfWeek() function.
+enum class WeekDayMode
+{
+    WeekStartsMonday1 = 0,
+    WeekStartsMonday0 = 1,
+    WeekStartsSunday0 = 2,
+    WeekStartsSunday1 = 3
+};
+
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
   */
@@ -625,15 +634,11 @@ public:
     template <typename DateOrTime>
     inline UInt8 toDayOfWeek(DateOrTime v, UInt8 week_day_mode) const
     {
-        /// 0: Sun = 7, Mon = 1
-        /// 1: Sun = 6, Mon = 0
-        /// 2: Sun = 0, Mon = 1
-        /// 3: Sun = 1, Mon = 2
-        week_day_mode = check_week_day_mode(week_day_mode);
+        WeekDayMode mode = check_week_day_mode(week_day_mode);
         auto res = toDayOfWeek(v);
 
-        bool start_from_sunday = week_day_mode & (1 << 1);
-        bool zero_based = (week_day_mode == 1 || week_day_mode == 2);
+        bool start_from_sunday = (mode == WeekDayMode::WeekStartsSunday0 || mode == WeekDayMode::WeekStartsSunday1);
+        bool zero_based = (mode == WeekDayMode::WeekStartsMonday0 || mode == WeekDayMode::WeekStartsSunday0);
         if (start_from_sunday)
             res = res % 7 + 1;
         if (zero_based)
@@ -864,9 +869,9 @@ public:
     }
 
     /// Check and change mode to effective.
-    inline UInt8 check_week_day_mode(UInt8 mode) const /// NOLINT
+    inline WeekDayMode check_week_day_mode(UInt8 mode) const /// NOLINT
     {
-        return mode & 3;
+        return static_cast<WeekDayMode>(mode & 3);
     }
 
 
