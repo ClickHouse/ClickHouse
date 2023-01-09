@@ -289,5 +289,3 @@ Build jobs and tests are run in Sandbox on per commit basis. Resulting packages 
 
 We do not use Travis CI due to the limit on time and computational power.
 We do not use Jenkins. It was used before and now we are happy we are not using Jenkins.
-
-[Original article](https://clickhouse.com/docs/en/development/tests/) <!--hide-->

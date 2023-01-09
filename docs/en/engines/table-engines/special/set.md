@@ -31,4 +31,3 @@ Possible values:
 - 0 — Disabled.
 
 Default value: `1`.
-
