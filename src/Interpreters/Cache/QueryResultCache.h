@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Settings.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -31,9 +30,6 @@ public:
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select)
         const ASTPtr ast;
 
-        /// Identifies a (virtual) cache partition. Can be used to cache the same query multiple times with different timeouts.
-        const String partition_key;
-
         /// Note: For a transactionally consistent cache, we would need to include the system settings in the cache key or invalidate the
         /// cache whenever the settings change. This is because certain settings (e.g. "additional_table_filters") can affect the query
         /// result.
@@ -52,7 +48,7 @@ public:
         /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
 
-        Key(ASTPtr ast_, String partition_key_,
+        Key(ASTPtr ast_,
             Block header_, const std::optional<String> & username_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_);
 
@@ -119,7 +115,7 @@ public:
         bool hasCacheEntryForKey() const;
         Pipe && getPipe(); /// must be called only if hasCacheEntryForKey() returns true
     private:
-        Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_);
+        Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_, const std::lock_guard<std::mutex> &);
         Pipe pipe;
         friend class QueryResultCache; /// for createReader()
     };

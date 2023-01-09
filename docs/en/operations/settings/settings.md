@@ -1244,7 +1244,7 @@ Default value: `0`.
 
 ## query_result_cache_min_query_runs {#query-result-cache-min-query-runs}
 
-Minimum number a SELECT query must run before its result is stored in the [query result cache](../query-result-cache.md).
+Minimum number of times a SELECT query must run before its result is stored in the [query result cache](../query-result-cache.md).
 
 Possible values:
 
@@ -1274,7 +1274,8 @@ Default value: `60`
 
 ## query_result_cache_share_between_users {#query-result-cache-share-between-users}
 
-If turned on, the result of SELECT queries cached in the [query result cache](../query-result-cache.md) are accessible to other users (shared).
+If turned on, the result of SELECT queries cached in the [query result cache](../query-result-cache.md) can be read by other users.
+It is not recommended to enable this setting due to security reasons.
 
 Possible values:
 
@@ -1282,16 +1283,6 @@ Possible values:
 - 1 - Enabled
 
 Default value: `0`.
-
-## query_result_cache_partition_key {#query-result-cache-partition-key}
-
-Represents a partition of the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- Any string.
-
-Default value: `` (empty string)
 
 ## insert_quorum {#settings-insert_quorum}
 

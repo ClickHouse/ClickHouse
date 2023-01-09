@@ -714,7 +714,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     && res.pipeline.pulling())
                 {
                     QueryResultCache::Key key(
-                        ast, settings.query_result_cache_partition_key, res.pipeline.getHeader(),
+                        ast, res.pipeline.getHeader(),
                         std::make_optional<String>(context->getUserName()),
                         std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_ttl));
                     QueryResultCache::Reader reader = query_result_cache->createReader(key);
@@ -733,7 +733,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     QueryResultCache::Key key(
-                        ast, settings.query_result_cache_partition_key, res.pipeline.getHeader(),
+                        ast, res.pipeline.getHeader(),
                         settings.query_result_cache_share_between_users ? std::nullopt : std::make_optional<String>(context->getUserName()),
                         std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_ttl));
 
@@ -894,6 +894,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     context,
                                     ast,
                                     enable_experimental_query_result_cache = settings.enable_experimental_query_result_cache,
+                                    query_result_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions,
                                     log_queries,
                                     log_queries_min_type = settings.log_queries_min_type,
                                     log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
@@ -907,7 +908,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_result_cache = context->getQueryResultCache();
                 if (query_result_cache != nullptr
                     && pulling_pipeline
-                    && enable_experimental_query_result_cache)
+                    && enable_experimental_query_result_cache
+                    && (!astContainsNonDeterministicFunctions(ast, context) || query_result_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     query_pipeline.finalizeWriteInQueryResultCache();
                 }
