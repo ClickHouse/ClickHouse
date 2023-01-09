@@ -3,8 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionCustomWeekToSomething.h>
 
-
-
 namespace DB
 {
 
