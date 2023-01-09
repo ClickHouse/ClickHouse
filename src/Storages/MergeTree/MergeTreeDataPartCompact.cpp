@@ -77,11 +77,9 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         shared_from_this(), ordered_columns_list, metadata_snapshot,
-<<<<<<< HEAD
-        indices_to_recalc, getMarksFileExtension(),
-=======
-        indices_to_recalc, statistics_columns_, statistics_descriptions, index_granularity_info.marks_file_extension,
->>>>>>> 32a9c1d592c (x)
+        indices_to_recalc,
+        statistics_columns_, statistics_descriptions,
+        getMarksFileExtension(),
         default_codec_, writer_settings, computed_index_granularity);
 }
 
