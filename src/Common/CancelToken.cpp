@@ -138,7 +138,7 @@ bool CancelToken::wait(UInt32 * address, UInt32 value)
 
 void CancelToken::raise()
 {
-    std::unique_lock<std::mutex> lock(signal_mutex);
+    std::unique_lock lock(signal_mutex);
     if (exception_code != 0)
         throw DB::Exception(
             std::exchange(exception_code, 0),
@@ -167,7 +167,7 @@ std::mutex CancelToken::signal_mutex;
 void CancelToken::signalImpl(int code, const String & message)
 {
     // Serialize all signaling threads to avoid races due to concurrent signal()/raise() calls
-    std::unique_lock<std::mutex> lock(signal_mutex);
+    std::unique_lock lock(signal_mutex);
 
     UInt64 s = state.load();
     while (true)
