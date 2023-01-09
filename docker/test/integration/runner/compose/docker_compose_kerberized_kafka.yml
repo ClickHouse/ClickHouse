@@ -23,7 +23,7 @@ services:
     # restart: always
     hostname: kerberized_kafka1
     ports:
-      - ${KERBERIZED_KAFKA_EXTERNAL_PORT}:${KERBERIZED_KAFKA_EXTERNAL_PORT}
+      - ${KERBERIZED_KAFKA_EXTERNAL_PORT:-19092}:${KERBERIZED_KAFKA_EXTERNAL_PORT:-19092}
     environment:
       KAFKA_LISTENERS: OUTSIDE://:19092,UNSECURED_OUTSIDE://:19093,UNSECURED_INSIDE://0.0.0.0:${KERBERIZED_KAFKA_EXTERNAL_PORT}
       KAFKA_ADVERTISED_LISTENERS: OUTSIDE://kerberized_kafka1:19092,UNSECURED_OUTSIDE://kerberized_kafka1:19093,UNSECURED_INSIDE://localhost:${KERBERIZED_KAFKA_EXTERNAL_PORT}
@@ -41,7 +41,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/broker_jaas.conf -Djava.security.krb5.conf=/etc/kafka/secrets/krb.conf -Dsun.security.krb5.debug=true"
     volumes:
-      - ${KERBERIZED_KAFKA_DIR}/secrets:/etc/kafka/secrets
+      - ${KERBERIZED_KAFKA_DIR:-}/secrets:/etc/kafka/secrets
       - /dev/urandom:/dev/random
     depends_on:
       - kafka_kerberized_zookeeper

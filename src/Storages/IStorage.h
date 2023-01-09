@@ -241,6 +241,10 @@ public:
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 
+    /// Return true if storage can execute 'DELETE FROM' mutations. This is different from lightweight delete
+    /// because those are internally translated into 'ALTER UDPATE' mutations.
+    virtual bool supportsDelete() const { return false; }
+
 private:
 
     StorageID storage_id;
@@ -482,7 +486,7 @@ public:
     }
 
     /// Mutate the table contents
-    virtual void mutate(const MutationCommands &, ContextPtr)
+    virtual void mutate(const MutationCommands &, ContextPtr, bool /*force_wait*/)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

@@ -146,7 +146,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     /// insertResultInto may invalidate states, so we must unshare ownership of them
     column_aggregate_func.ensureOwnership();
 
-    MutableColumnPtr res = func->getReturnType()->createColumn();
+    MutableColumnPtr res = func->getResultType()->createColumn();
     res->reserve(data.size());
 
     /// If there are references to states in final column, we must hold their ownership

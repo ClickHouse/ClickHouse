@@ -3,7 +3,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/getRandomASCIIString.h>
-#include <Storages/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
@@ -18,7 +18,7 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
-    extern const Event AsynchronousReadWaitMicroseconds;
+    extern const Event AsynchronousRemoteReadWaitMicroseconds;
     extern const Event RemoteFSSeeks;
     extern const Event RemoteFSPrefetches;
     extern const Event RemoteFSCancelledPrefetches;
@@ -110,7 +110,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::asyncReadInto(char * data, size_t size, int64_t priority)
 {
     IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(impl);
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
@@ -229,13 +229,12 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     if (!hasPendingDataToRead())
         return false;
 
-    Stopwatch watch;
     size_t size, offset;
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
     if (prefetch_future.valid())
     {
-        ElapsedUSProfileEventIncrement measure_time(ProfileEvents::AsynchronousReadWaitMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
         std::tie(size, offset) = prefetch_future.get();
         prefetch_future = {};
@@ -251,10 +250,11 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
     else
     {
-        ElapsedUSProfileEventIncrement measure_time(ProfileEvents::AsynchronousReadWaitMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
 
         chassert(memory.size() == read_settings.remote_fs_buffer_size);
-        std::tie(size, offset) = asyncReadInto(memory.data(), memory.size(), 0).get();
+        std::tie(size, offset) = impl->readInto(memory.data(), memory.size(), file_offset_of_buffer_end, bytes_to_ignore);
+        bytes_to_ignore = 0;
 
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedBytes, size);

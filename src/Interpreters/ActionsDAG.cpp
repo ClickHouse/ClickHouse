@@ -33,6 +33,35 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::NodeRawConstPtrs & children)
+{
+    size_t num_arguments = children.size();
+
+    bool all_const = true;
+    ColumnsWithTypeAndName arguments(num_arguments);
+
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        const auto & child = *children[i];
+
+        ColumnWithTypeAndName argument;
+        argument.column = child.column;
+        argument.type = child.result_type;
+        argument.name = child.result_name;
+
+        if (!argument.column || !isColumnConst(*argument.column))
+            all_const = false;
+
+        arguments[i] = std::move(argument);
+    }
+    return { std::move(arguments), all_const };
+}
+
+}
+
 void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 {
     map.add("Node Type", magic_enum::enum_name(type));
@@ -48,8 +77,6 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 
     if (function_base)
         map.add("Function", function_base->getName());
-    else if (function_builder)
-        map.add("Function", function_builder->getName());
 
     if (type == ActionType::FUNCTION)
         map.add("Compiled", is_function_compiled);
@@ -163,32 +190,46 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         NodeRawConstPtrs children,
         std::string result_name)
 {
+    auto [arguments, all_const] = getFunctionArguments(children);
+
+    auto function_base = function->build(arguments);
+    return addFunctionImpl(
+        function_base,
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        all_const);
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunction(
+    const FunctionBasePtr & function_base,
+    NodeRawConstPtrs children,
+    std::string result_name)
+{
+    auto [arguments, all_const] = getFunctionArguments(children);
+
+    return addFunctionImpl(
+        function_base,
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        all_const);
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
+    const FunctionBasePtr & function_base,
+    NodeRawConstPtrs children,
+    ColumnsWithTypeAndName arguments,
+    std::string result_name,
+    bool all_const)
+{
     size_t num_arguments = children.size();
 
     Node node;
     node.type = ActionType::FUNCTION;
-    node.function_builder = function;
     node.children = std::move(children);
 
-    bool all_const = true;
-    ColumnsWithTypeAndName arguments(num_arguments);
-
-    for (size_t i = 0; i < num_arguments; ++i)
-    {
-        const auto & child = *node.children[i];
-
-        ColumnWithTypeAndName argument;
-        argument.column = child.column;
-        argument.type = child.result_type;
-        argument.name = child.result_name;
-
-        if (!argument.column || !isColumnConst(*argument.column))
-            all_const = false;
-
-        arguments[i] = std::move(argument);
-    }
-
-    node.function_base = function->build(arguments);
+    node.function_base = function_base;
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
     node.is_deterministic = node.function_base->isDeterministic();
@@ -224,7 +265,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 
     if (result_name.empty())
     {
-        result_name = function->getName() + "(";
+        result_name = function_base->getName() + "(";
         for (size_t i = 0; i < num_arguments; ++i)
         {
             if (i)
@@ -563,8 +604,14 @@ Block ActionsDAG::updateHeader(Block header) const
                         arguments[i] = node_to_column[node->children[i]];
                         if (!arguments[i].column)
                             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                            "Not found column {} in block", node->children[i]->result_name);
+                                            "Not found column {} in block {}", node->children[i]->result_name,
+                                            header.dumpStructure());
                     }
+
+                    if (node->type == ActionsDAG::ActionType::INPUT)
+                        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                                        "Not found column {} in block {}",
+                                        node->result_name, header.dumpStructure());
 
                     node_to_column[node] = executeActionForHeader(node, std::move(arguments));
                 }
@@ -1954,8 +2001,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
 
                 FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
 
-                predicate->function_builder = func_builder_cast;
-                predicate->function_base = predicate->function_builder->build(arguments);
+                predicate->function_base = func_builder_cast->build(arguments);
                 predicate->function = predicate->function_base->prepare(arguments);
             }
         }
@@ -1966,7 +2012,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             predicate->children.swap(new_children);
             auto arguments = prepareFunctionArguments(predicate->children);
 
-            predicate->function_base = predicate->function_builder->build(arguments);
+            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
+            predicate->function_base = func_builder_and->build(arguments);
             predicate->function = predicate->function_base->prepare(arguments);
         }
     }
@@ -2171,7 +2219,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                 for (const auto & child : node->children)
                     function_children.push_back(node_to_result_node.find(child)->second);
 
-                result_node = &result_dag->addFunction(node->function_builder, std::move(function_children), {});
+                result_node = &result_dag->addFunction(node->function_base, std::move(function_children), {});
                 break;
             }
         }

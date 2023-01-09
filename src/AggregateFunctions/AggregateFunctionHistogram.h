@@ -307,7 +307,7 @@ private:
 
 public:
     AggregateFunctionHistogram(UInt32 max_bins_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params)
+        : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params, createResultType())
         , max_bins(max_bins_)
     {
     }
@@ -316,7 +316,7 @@ public:
     {
         return Data::structSize(max_bins);
     }
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         DataTypes types;
         auto mean = std::make_shared<DataTypeNumber<Data::Mean>>();

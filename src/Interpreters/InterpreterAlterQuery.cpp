@@ -143,11 +143,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                                                          "to execute ALTERs of different types in single query");
     }
 
-    if (!mutation_commands.empty())
+    if (mutation_commands.hasNonEmptyMutationCommands())
     {
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext());
+        table->mutate(mutation_commands, getContext(), false);
     }
 
     if (!partition_commands.empty())
