@@ -66,7 +66,7 @@ function find_reference_sha
         # test all of them.
         unset found
         declare -a urls_to_try=(
-            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/$BUILD_NAME/performance.tar.zst",
+            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
             "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/$BUILD_NAME/performance.tgz"
         )
         for path in "${urls_to_try[@]}"
