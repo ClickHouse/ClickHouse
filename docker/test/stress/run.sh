@@ -77,11 +77,12 @@ EOL
 
     local max_users_mem
     max_users_mem=$((total_mem*30/100)) # 30%
-    echo "Setting max_memory_usage_for_user=$max_users_mem"
+    echo "Setting max_memory_usage_for_user=$max_users_mem and max_memory_usage for queries to 10G"
     cat > /etc/clickhouse-server/users.d/max_memory_usage_for_user.xml <<EOL
 <clickhouse>
     <profiles>
         <default>
+            <max_memory_usage>10G</max_memory_usage>
             <max_memory_usage_for_user>${max_users_mem}</max_memory_usage_for_user>
         </default>
     </profiles>
@@ -159,7 +160,7 @@ function start()
             echo -e "Cannot start clickhouse-server\tFAIL" >> /test_output/test_results.tsv
             cat /var/log/clickhouse-server/stdout.log
             tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
+            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
             break
         fi
         # use root to match with current uid
@@ -302,7 +303,7 @@ start
 
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
-                       && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
+                       && rg -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
 
 stop
 
@@ -312,8 +313,8 @@ stop
 # Grep logs for sanitizer asserts, crashes and other critical errors
 
 # Sanitizer asserts
-grep -Fa "==================" /var/log/clickhouse-server/stderr.log | grep -v "in query:" >> /test_output/tmp
-grep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+rg -Fa "==================" /var/log/clickhouse-server/stderr.log | rg -v "in query:" >> /test_output/tmp
+rg -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
 zgrep -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
     && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
@@ -363,7 +364,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
     echo -e "Backward compatibility check\n"
 
     echo "Get previous release tag"
-    previous_release_tag=$(clickhouse-client --version | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | get_previous_release_tag)
+    previous_release_tag=$(clickhouse-client --version | rg -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | get_previous_release_tag)
     echo $previous_release_tag
 
     echo "Clone previous release repository"
@@ -476,7 +477,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         start 500
         clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
             || (echo -e 'Backward compatibility check: Server failed to start\tFAIL' >> /test_output/test_results.tsv \
-            && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
+            && rg -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
 
         clickhouse-client --query="SELECT 'Server version: ', version()"
 
