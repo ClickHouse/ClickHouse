@@ -1,7 +1,7 @@
 #pragma once
 #include "config.h"
 #if USE_PARQUET || USE_ORC
-#include <map>
+#include <unordered_map>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
@@ -21,7 +21,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-/// For orc format, index_nested_type = true, a nested type takes one index.
+/// For ORC format, index_nested_type = true, a nested type takes one index count. And the
+/// the start index for ORC format should be 1, since index 0 indicates to select all columns.
 template<bool index_nested_type>
 class ArrowFieldIndexUtil
 {
@@ -31,7 +32,6 @@ public:
         , allow_missing_columns(allow_missing_columns_)
     {
     }
-    ~ArrowFieldIndexUtil() = default;
 
     /// Recursively count every field indices. Return a map
     ///   - key: field name with full path. eg. a struct field's name is like a.x.i
@@ -42,10 +42,12 @@ public:
     /// - y: (1, 2)
     /// - y.i: (1, 1)
     /// - y.j: (2, 1)
-    std::map<std::string, std::pair<int, int>>
+    std::unordered_map<std::string, std::pair<int, int>>
         calculateFieldIndices(const arrow::Schema & schema)
     {
-        std::map<std::string, std::pair<int, int>> result;
+        std::unordered_map<std::string, std::pair<int, int>> result;
+        // For format like ORC, index = 0 indicates to select all columns, so we skip 0 and start
+        // from 1.
         int index_start = index_nested_type;
         for (int i = 0; i < schema.num_fields(); ++i)
         {
@@ -60,8 +62,7 @@ public:
     std::vector<int> findRequiredIndices(const Block & header, const arrow::Schema & schema)
     {
         std::vector<int> required_indices;
-        std::set<std::string> added_nested_table;
-        std::set<int> added_indices;
+        std::unordered_set<int> added_indices;
         /// Flat all named fields' index information into a map.
         auto fields_indices = calculateFieldIndices(schema);
         for (size_t i = 0; i < header.columns(); ++i)
@@ -85,11 +86,8 @@ public:
             for (int j = 0; j < it->second.second; ++j)
             {
                 auto index = it->second.first + j;
-                if (!added_indices.contains(index))
-                {
+                if (added_indices.insert(index).second)
                     required_indices.emplace_back(index);
-                    added_indices.insert(index);
-                }
             }
         }
         return required_indices;
@@ -128,7 +126,7 @@ private:
     void calculateFieldIndices(const arrow::Field & field,
         std::string field_name,
         int & current_start_index,
-        std::map<std::string, std::pair<int, int>> & result, const std::string & name_prefix = "")
+        std::unordered_map<std::string, std::pair<int, int>> & result, const std::string & name_prefix = "")
     {
         const auto & field_type = field.type();
         if (field_name.empty())
