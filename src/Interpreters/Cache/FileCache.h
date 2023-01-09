@@ -27,8 +27,7 @@ namespace DB
 
 struct KeyTransaction;
 using KeyTransactionPtr = std::shared_ptr<KeyTransaction>;
-using KeyPrefix = std::string;
-using KeyTransactionsMap = std::unordered_map<KeyPrefix, KeyTransactionPtr>;
+using KeyTransactionsMap = std::unordered_map<FileCacheKey, KeyTransactionPtr>;
 
 
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
@@ -169,14 +168,17 @@ private:
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
 
-    using CachedFiles = std::unordered_map<Key, CacheCellsPtr>;
+    struct CachedFilesMetadata
+    {
+        CacheCellsPtr cells;
+        KeyGuardPtr guard;
+
+        CachedFilesMetadata() : cells(std::make_shared<CacheCells>()), guard(std::make_shared<KeyGuard>()) {}
+    };
+    using CachedFiles = std::unordered_map<Key, CachedFilesMetadata>;
     CachedFiles files;
 
-    using KeyPrefix = std::string;
-    using KeysLocksMap = std::unordered_map<KeyPrefix, KeyPrefixGuardPtr>;
-    KeysLocksMap keys_locks;
-
-    mutable std::mutex key_locks_and_files_mutex; /// Protects `files` and `keys_locks`
+    mutable std::mutex files_mutex; /// Protects `files` and `keys_locks`
 
     enum class KeyNotFoundPolicy
     {
@@ -280,7 +282,7 @@ public:
 private:
     void assertInitialized() const;
 
-    void loadCacheInfoIntoMemory();
+    void loadMetadata();
 
     FileSegments getImpl(
         const Key & key,
@@ -335,7 +337,7 @@ private:
         KeyTransactionPtr key_transaction,
         const CachePriorityQueueGuard::Lock &);
 
-    void removeKeyDirectoryIfExists(const Key & key, const KeyPrefixGuard::Lock & lock) const;
+    void removeKeyDirectoryIfExists(const Key & key, const KeyGuard::Lock & lock) const;
 
     struct IterateAndLockResult
     {
@@ -353,12 +355,12 @@ private:
 struct KeyTransactionCreator
 {
     KeyTransactionCreator(
-        KeyPrefixGuardPtr guard_, FileCache::CacheCellsPtr offsets_)
+        KeyGuardPtr guard_, FileCache::CacheCellsPtr offsets_)
         : guard(guard_) , offsets(offsets_) {}
 
     KeyTransactionPtr create();
 
-    KeyPrefixGuardPtr guard;
+    KeyGuardPtr guard;
     FileCache::CacheCellsPtr offsets;
 };
 using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
@@ -367,7 +369,7 @@ struct KeyTransaction : private boost::noncopyable
 {
     using Key = FileCacheKey;
 
-    KeyTransaction(KeyPrefixGuardPtr guard_, FileCache::CacheCellsPtr offsets_);
+    KeyTransaction(KeyGuardPtr guard_, FileCache::CacheCellsPtr offsets_);
 
     KeyTransactionCreatorPtr getCreator() const { return std::make_unique<KeyTransactionCreator>(guard, offsets); }
 
@@ -385,8 +387,8 @@ struct KeyTransaction : private boost::noncopyable
     std::vector<size_t> delete_offsets;
 
 private:
-    KeyPrefixGuardPtr guard;
-    const KeyPrefixGuard::Lock lock;
+    KeyGuardPtr guard;
+    const KeyGuard::Lock lock;
 
     FileCache::CacheCellsPtr offsets;
 

@@ -10,13 +10,11 @@ namespace DB
 
 FileCacheKey::FileCacheKey(const std::string & path)
     : key(sipHash128(path.data(), path.size()))
-    , key_prefix(toString().substr(0, 3))
 {
 }
 
 FileCacheKey::FileCacheKey(const UInt128 & key_)
     : key(key_)
-    , key_prefix(toString().substr(0, 3))
 {
 }
 
