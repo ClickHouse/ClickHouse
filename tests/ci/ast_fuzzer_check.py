@@ -95,7 +95,7 @@ if __name__ == "__main__":
     )
     logging.info("Going to run %s", run_command)
 
-    run_log_path = os.path.join(temp_path, "runlog.log")
+    run_log_path = os.path.join(temp_path, "run.log")
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     )
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/fuzzer_{check_name_lower}/"
     paths = {
-        "runlog.log": run_log_path,
+        "run.log": run_log_path,
         "main.log": os.path.join(workspace_path, "main.log"),
         "server.log.gz": os.path.join(workspace_path, "server.log.gz"),
         "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
@@ -124,20 +124,12 @@ if __name__ == "__main__":
     s3_helper = S3Helper()
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + "/" + f)
+            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
         except Exception as ex:
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ""
 
     report_url = GITHUB_RUN_URL
-    if paths["runlog.log"]:
-        report_url = paths["runlog.log"]
-    if paths["main.log"]:
-        report_url = paths["main.log"]
-    if paths["server.log.gz"]:
-        report_url = paths["server.log.gz"]
-    if paths["fuzzer.log"]:
-        report_url = paths["fuzzer.log"]
     if paths["report.html"]:
         report_url = paths["report.html"]
 

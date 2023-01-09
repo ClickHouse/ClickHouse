@@ -84,7 +84,7 @@ def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
             images_dict = json.load(dict_file)
     else:
         logging.info(
-            "Image file %s doesnt exists in repo %s", image_file_path, repo_path
+            "Image file %s doesn't exist in repo %s", image_file_path, repo_path
         )
 
     return images_dict
@@ -476,7 +476,6 @@ def main():
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
     print(f"::notice ::Report url: {url}")
-    print(f'::set-output name=url_output::"{url}"')
 
     if not args.reports:
         return

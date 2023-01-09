@@ -6,6 +6,39 @@ slug: /en/operations/settings/settings
 
 # Settings
 
+## additional_table_filters
+
+An additional filter expression that is applied after reading
+from the specified table.
+
+Default value: 0.
+
+**Example**
+
+``` sql
+insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 2 │ bb   │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+```sql
+SELECT *
+FROM table_1
+SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
@@ -1010,6 +1043,12 @@ Works for tables with streaming in the case of a timeout, or when a thread gener
 The default value is 7500.
 
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
+
+## stream_poll_timeout_ms {#stream_poll_timeout_ms}
+
+Timeout for polling data from/to streaming storages.
+
+Default value: 500.
 
 ## load_balancing {#settings-load_balancing}
 
@@ -2402,19 +2441,6 @@ Result
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
 
-## persistent {#persistent}
-
-Disables persistency for the [Set](../../engines/table-engines/special/set.md/#set) and [Join](../../engines/table-engines/special/join.md/#join) table engines.
-
-Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-
-Default value: `1`.
-
 ## allow_nullable_key {#allow-nullable-key}
 
 Allows using of the [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md/#table_engines-mergetree) tables.
@@ -3625,7 +3651,7 @@ z	IPv4
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
 If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
 
-Default value: `false`.
+Default value: `true`.
 
 ## input_format_try_infer_integers {#input_format_try_infer_integers}
 
