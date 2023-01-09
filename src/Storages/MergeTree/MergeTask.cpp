@@ -6,13 +6,10 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
-<<<<<<< HEAD
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
-
-=======
 #include <Storages/StatisticsDescription.h>
->>>>>>> 32a9c1d592c (x)
+
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
