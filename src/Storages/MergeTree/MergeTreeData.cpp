@@ -3781,7 +3781,11 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr q
         max_k = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
         k = k_inactive + 1;
     }
-    const UInt64 delay_milliseconds = static_cast<UInt64>(::pow(settings->max_delay_to_insert * 1000, static_cast<double>(k) / max_k));
+
+    const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
+    /// min() as a save guard here
+    const UInt64 delay_milliseconds
+        = std::min(max_delay_milliseconds, static_cast<UInt64>(::pow(max_delay_milliseconds, static_cast<double>(k) / max_k)));
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
     ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_milliseconds);
@@ -5724,6 +5728,15 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     bool need_primary_key_max_column = false;
     const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
+
+    if (required_columns_set.contains("_partition_value") && !typeid_cast<const DataTypeTuple *>(getPartitionValueType().get()))
+    {
+        throw Exception(
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "Missing column `_partition_value` because there is no partition column in table {}",
+            getStorageID().getTableName());
+    }
+
     if (!primary_key_max_column_name.empty())
         need_primary_key_max_column = required_columns_set.contains(primary_key_max_column_name);
 
