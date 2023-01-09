@@ -6,10 +6,8 @@ namespace DB
 
 struct FileCacheKey
 {
-    /// Hash of the path.
-    UInt128 key;
-    /// Prefix of the path.
-    std::string key_prefix;
+    using KeyHash = UInt128;
+    KeyHash key;
 
     std::string toString() const;
 

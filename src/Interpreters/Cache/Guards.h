@@ -15,11 +15,11 @@ namespace DB
  * Guard for a set of keys.
  * One guard per key prefix (first three digits of the path hash).
  */
-struct KeyPrefixGuard
+struct KeyGuard
 {
     struct Lock
     {
-        explicit Lock(KeyPrefixGuard & guard) : lock(guard.mutex) {}
+        explicit Lock(KeyGuard & guard) : lock(guard.mutex) {}
         std::unique_lock<std::mutex> lock;
     };
 
@@ -27,9 +27,9 @@ struct KeyPrefixGuard
 
     Lock lock() { return Lock(*this); }
 
-    KeyPrefixGuard() = default;
+    KeyGuard() = default;
 };
-using KeyPrefixGuardPtr = std::shared_ptr<KeyPrefixGuard>;
+using KeyGuardPtr = std::shared_ptr<KeyGuard>;
 
 /**
  * Cache priority queue guard.
