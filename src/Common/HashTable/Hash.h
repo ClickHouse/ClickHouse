@@ -6,6 +6,8 @@
 #include <base/unaligned.h>
 #include <base/StringRef.h>
 
+#include <absl/numeric/bits.h>
+
 #include <type_traits>
 
 
@@ -326,6 +328,22 @@ struct UInt128HashCRC32
 struct UInt128HashCRC32 : public UInt128Hash {};
 
 #endif
+
+struct UInt128HashNew
+{
+    size_t operator()(UInt128 x) const
+    {
+        auto & lo = x.items[0];
+        const auto & hi = x.items[1];
+        UInt64 state = 0x9ddfea08eb382d69;
+        lo = absl::rotr(lo, 53);
+        lo += state;
+        state ^= hi;
+        UInt128 m = state;
+        m *= lo;
+        return static_cast<uint64_t>(m ^ (m >> 64));
+    }
+};
 
 struct UInt128TrivialHash
 {
