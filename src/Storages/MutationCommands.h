@@ -37,12 +37,9 @@ struct MutationCommand
         MATERIALIZE_TTL,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
-<<<<<<< HEAD
         ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
-=======
         DROP_STATISTIC,
         MATERIALIZE_STATISTIC,
->>>>>>> 32a9c1d592c (x)
     };
 
     Type type = EMPTY;
