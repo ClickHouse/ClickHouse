@@ -66,10 +66,7 @@ function find_reference_sha
         # test all of them.
         unset found
         declare -a urls_to_try=(
-            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/$BUILD_NAME/performance.tgz"
-            # FIXME: the following link is left there for backward compatibility.
-            # We should remove it after 2022-11-01
-            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/performance/performance.tgz"
+            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
         )
         for path in "${urls_to_try[@]}"
         do
@@ -94,9 +91,9 @@ chmod 777 workspace output
 cd workspace
 
 # Download the package for the version we are going to test.
-if curl_with_retry "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/$BUILD_NAME/performance.tgz"
+if curl_with_retry "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/$BUILD_NAME/performance.tar.zst"
 then
-    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/$BUILD_NAME/performance.tgz"
+    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/$BUILD_NAME/performance.tar.zst"
 fi
 
 mkdir right
