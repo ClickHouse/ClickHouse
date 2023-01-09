@@ -629,4 +629,4 @@ ORDER BY k ASC
 
 如果参数不为零则抛出异常。
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/other_functions/) <!--hide-->
+

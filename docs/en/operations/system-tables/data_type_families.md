@@ -36,4 +36,4 @@ SELECT * FROM system.data_type_families WHERE alias_to = 'String'
 
 -   [Syntax](../../sql-reference/syntax.md) — Information about supported syntax.
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/data_type_families) <!--hide-->
+

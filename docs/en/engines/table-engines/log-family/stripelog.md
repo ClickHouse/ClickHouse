@@ -91,4 +91,4 @@ SELECT * FROM stripe_log_table ORDER BY timestamp
 └─────────────────────┴──────────────┴────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/stripelog/) <!--hide-->
+

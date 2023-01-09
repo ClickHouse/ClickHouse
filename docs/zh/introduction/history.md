@@ -52,4 +52,4 @@ OLAPServer可以很好的工作在非聚合数据上，但是它有诸多限制�
 
 为了消除OLAPServer的这些局限性，解决所有报表使用非聚合数据的问题，我们开发了ClickHouse数据库管理系统。
 
-[来源文章](https://clickhouse.com/docs/en/introduction/ya_metrika_task/) <!--hide-->
+

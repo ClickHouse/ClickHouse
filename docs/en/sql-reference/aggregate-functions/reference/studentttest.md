@@ -71,4 +71,4 @@ Result:
 -   [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
 -   [welchTTest function](welchttest.md#welchttest)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/studentttest/) <!--hide-->
+

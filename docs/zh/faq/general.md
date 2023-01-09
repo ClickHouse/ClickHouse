@@ -19,4 +19,4 @@ slug: /zh/faq/general
 
     NLS_LANG=CHINESE_CHINA.ZHS16GBK
 
-[来源文章](https://clickhouse.com/docs/zh/faq/general/) <!--hide-->
+

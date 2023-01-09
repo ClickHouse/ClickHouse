@@ -439,4 +439,4 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions;
 ```
 
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/encoding_functions/) <!--hide-->
+

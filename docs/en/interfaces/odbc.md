@@ -10,4 +10,4 @@ Use the [official ODBC driver](https://github.com/ClickHouse/clickhouse-odbc) fo
 
 
 
-[Original article](https://clickhouse.com/docs/en/interfaces/odbc/) <!--hide-->
+

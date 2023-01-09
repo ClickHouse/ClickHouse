@@ -30,4 +30,4 @@ SELECT * FROM system.time_zones LIMIT 10
 └────────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/time_zones) <!--hide-->
+

@@ -261,4 +261,4 @@ SeekTable [бесплатен](https://www.seektable.com/help/cloud-pricing) д�
 Подробно о продукте смотрите на [TABLUM.IO](https://tablum.io/)
 
 
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->
+

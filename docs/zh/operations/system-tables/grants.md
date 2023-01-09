@@ -24,4 +24,4 @@ slug: /zh/operations/system-tables/grants
 
 -    `grant_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 被授予`WITH GRANT OPTION` 权限, 参见 [GRANT](../../sql-reference/statements/grant.md#grant-privigele-syntax).
 
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/grants) <!--hide-->
+

@@ -168,4 +168,4 @@ move_ttl_info.max:                     []
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [TTL for Columns and Tables](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl)
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/parts) <!--hide-->
+

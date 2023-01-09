@@ -50,4 +50,4 @@ last_exception:
 
 -   [分布式表引擎](../../engines/table-engines/special/distributed.md)
 
-[原始文章](https://clickhouse.com/docs/en/operations/system_tables/distribution_queue) <!--hide-->
+

@@ -23,4 +23,4 @@ sidebar_label: Общие вопросы
     Загляните в другие категории F.A.Q. или поищите в остальных разделах документации, ориентируясь по оглавлению слева.
 :::
 
-[Original article](https://clickhouse.com/docs/ru/faq/general/) <!--hide-->
+

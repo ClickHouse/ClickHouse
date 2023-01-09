@@ -80,4 +80,4 @@ SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
 └──────────────────────────────────┴────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/data_types/domains/ipv4) <!--hide-->
+

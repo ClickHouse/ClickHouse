@@ -10,4 +10,4 @@ sidebar_label: merge
 
 表结构取自遇到的第一个与正则表达式匹配的表。
 
-[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/merge/) <!--hide-->
+

@@ -148,4 +148,4 @@ SELECT * FROM mysql_db.mysql_table
 └────────┴───────┘
 ```
 
-[来源文章](https://clickhouse.com/docs/en/database_engines/mysql/) <!--hide-->
+

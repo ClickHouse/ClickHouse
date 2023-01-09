@@ -14,4 +14,4 @@ ClickHouse поддерживает аутентификацию и управл
 - Kerberos [аутентификатор](./kerberos.md#external-authenticators-kerberos)
 - [SSL X.509 аутентификация](./ssl-x509.md#ssl-external-authentication)
 
-[Оригинальная статья](https://clickhouse.com/docs/ru/operations/external-authenticators/index/) <!--hide-->
+

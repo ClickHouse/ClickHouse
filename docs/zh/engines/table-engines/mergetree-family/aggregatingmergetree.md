@@ -98,4 +98,4 @@ GROUP BY StartDate
 ORDER BY StartDate;
 ```
 
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->
+

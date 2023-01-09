@@ -12,5 +12,5 @@ The engine belongs to the family of `Log` engines. See the common properties of 
 For concurrent data access, the read operations can be performed simultaneously, while write operations block reads and each other.
 The `Log` engine does not support indexes. Similarly, if writing to a table failed, the table is broken, and reading from it returns an error. The `Log` engine is appropriate for temporary data, write-once tables, and for testing or demonstration purposes.
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/log-family/log/) <!--hide-->
+
 

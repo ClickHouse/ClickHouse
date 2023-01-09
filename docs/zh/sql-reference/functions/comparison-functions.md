@@ -33,4 +33,4 @@ sidebar_label: 比较函数
 
 ## 大于等于, &gt;= 运算符 {#greaterorequals-operator}
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/comparison_functions/) <!--hide-->
+

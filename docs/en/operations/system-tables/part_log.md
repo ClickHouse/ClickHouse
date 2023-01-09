@@ -80,4 +80,4 @@ error:                         0
 exception:
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/part_log) <!--hide-->
+

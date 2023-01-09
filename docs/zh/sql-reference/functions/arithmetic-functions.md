@@ -155,4 +155,4 @@ SELECT min2(-1, 2);
 └─────────────┘
 ```
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->
+

@@ -69,4 +69,4 @@ SELECT COUNT() FROM mongo_table;
 └─────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/ru/engines/table-engines/integrations/mongodb/) <!--hide-->
+

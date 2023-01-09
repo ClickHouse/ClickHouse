@@ -106,4 +106,4 @@ sidebar_label: 第三方集成库
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
-[源文章](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->
+

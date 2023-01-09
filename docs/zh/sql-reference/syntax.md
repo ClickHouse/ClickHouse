@@ -193,4 +193,4 @@ select查询中，星号可以代替表达式使用。详情请参见“select�
 表达式列表是用逗号分隔的一个或多个表达式。
 反过来，函数和运算符可以将表达式作为参数。
 
-[原始文档](https://clickhouse.com/docs/en/sql_reference/syntax/) <!--hide-->
+

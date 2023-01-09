@@ -93,4 +93,4 @@ FROM system.numbers
 
 -   [JDBC table function](../../../sql-reference/table-functions/jdbc.md).
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/jdbc/) <!--hide-->
+
