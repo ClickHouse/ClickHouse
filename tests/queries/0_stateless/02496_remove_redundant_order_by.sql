@@ -169,6 +169,16 @@ FROM
 )
 GROUP BY number;
 
+SELECT '-- query with aggregation function but w/o GROUP BY -> remove sorting';
+EXPLAIN
+SELECT sum(number)
+FROM
+(
+    SELECT *
+    FROM numbers(10)
+    ORDER BY number DESC
+);
+
 SELECT '-- check that optimization is applied recursively to subqueries as well';
 SELECT '-- GROUP BY with aggregation function which does NOT depend on order -> eliminate ORDER BY in most inner subquery here';
 EXPLAIN header=1
