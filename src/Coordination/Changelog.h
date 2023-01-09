@@ -206,6 +206,10 @@ private:
     ThreadFromGlobalPool write_thread;
     ConcurrentBoundedQueue<WriteOperation> write_operations;
 
+    /// Append log completion callback tries to acquire NuRaft's global lock
+    /// Deadlock can occur if NuRaft waits for a append/flush to finish
+    /// while the lock is taken
+    /// For those reasons we call the completion callback in a different thread
     void appendCompletionThread();
 
     ThreadFromGlobalPool append_completion_thread;
