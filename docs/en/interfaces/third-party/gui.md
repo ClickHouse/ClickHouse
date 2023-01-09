@@ -307,4 +307,16 @@ License: [commercial](https://tablum.io/pricing) product with 3-month free perio
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)
 
+### ClickhouseLight {#clickhouse_light}
+
+[ClickhouseLight](https://marketplace.visualstudio.com/items?itemName=fanruten.clickhouse-light) is the plugin for Visual Code that implements a simple client for ClickHouse DB and provides an easy way to run requests and save credentials for a connection. With it you can easily store your requests in text files and share them through a common repository.
+
+Features:
+- Store connections settings in the .clickhouse_settings file
+- Select a database in a request
+- Support comments starting from # 
+- Connect with a random http port
+
+ClickhouseLight is [available for free](https://marketplace.visualstudio.com/items?itemName=fanruten.clickhouse-light) on the Visual Studio Marketplace.
+
 [Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->
