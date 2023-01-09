@@ -350,9 +350,7 @@ void CancellableSharedMutex::lock()
 bool CancellableSharedMutex::try_lock()
 {
     UInt64 value = state.load();
-    if ((value & (readers | writers)) == 0 && state.compare_exchange_strong(value, value | writers))
-        return true;
-    return false;
+    return (value & (readers | writers)) == 0 && state.compare_exchange_strong(value, value | writers);
 }
 
 void CancellableSharedMutex::unlock()
