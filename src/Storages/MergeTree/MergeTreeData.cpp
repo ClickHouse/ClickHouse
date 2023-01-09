@@ -5770,6 +5770,15 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     bool need_primary_key_max_column = false;
     const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
+
+    if (required_columns_set.contains("_partition_value") && !typeid_cast<const DataTypeTuple *>(getPartitionValueType().get()))
+    {
+        throw Exception(
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "Missing column `_partition_value` because there is no partition column in table {}",
+            getStorageID().getTableName());
+    }
+
     if (!primary_key_max_column_name.empty())
         need_primary_key_max_column = required_columns_set.contains(primary_key_max_column_name);
 
