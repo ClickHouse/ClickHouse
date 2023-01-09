@@ -6,6 +6,39 @@ slug: /en/operations/settings/settings
 
 # Settings
 
+## additional_table_filters
+
+An additional filter expression that is applied after reading
+from the specified table.
+
+Default value: 0.
+
+**Example**
+
+``` sql
+insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 2 │ bb   │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+```sql
+SELECT *
+FROM table_1
+SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
@@ -2407,19 +2440,6 @@ Result
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
-
-## persistent {#persistent}
-
-Disables persistency for the [Set](../../engines/table-engines/special/set.md/#set) and [Join](../../engines/table-engines/special/join.md/#join) table engines.
-
-Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-
-Default value: `1`.
 
 ## allow_nullable_key {#allow-nullable-key}
 
