@@ -1776,7 +1776,8 @@ static void executeMergeAggregatedImpl(
         query_plan.getCurrentDataStream(),
         params,
         final,
-        settings.distributed_aggregation_memory_efficient && is_remote_storage,
+        /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
+        settings.distributed_aggregation_memory_efficient && is_remote_storage && !has_grouping_sets,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
         should_produce_results_in_order_of_bucket_number,
