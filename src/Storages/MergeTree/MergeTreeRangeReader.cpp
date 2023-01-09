@@ -516,11 +516,13 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
 
     LOG_TEST(log, "ReadResult::optimize() before: {}", dumpInfo());
 
-    SCOPE_EXIT(checkInternalConsistency());
-
-    SCOPE_EXIT({
-        LOG_TEST(log, "ReadResult::optimize() after: {}", dumpInfo());
-    });
+    SCOPE_EXIT(
+        if (!std::uncaught_exceptions())
+        {
+            checkInternalConsistency();
+            LOG_TEST(log, "ReadResult::optimize() after: {}", dumpInfo());
+        }
+    );
 
     if (total_zero_rows_in_tails == filter.size())
     {
@@ -924,10 +926,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     ReadResult read_result(log);
 
-    SCOPE_EXIT({
-        LOG_TEST(log, "read() returned {}, sample block {}",
-            read_result.dumpInfo(), this->result_sample_block.dumpNames());
-    });
+    SCOPE_EXIT(
+        if (!std::uncaught_exceptions())
+            LOG_TEST(log, "read() returned {}, sample block {}",
+                read_result.dumpInfo(), this->result_sample_block.dumpNames());
+    );
 
     if (prev_reader)
     {
