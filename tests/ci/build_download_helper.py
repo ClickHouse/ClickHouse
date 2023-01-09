@@ -140,5 +140,8 @@ def download_clickhouse_binary(check_name, reports_path, result_path):
 
 def download_performance_build(check_name, reports_path, result_path):
     download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("performance.tgz")
+        check_name,
+        reports_path,
+        result_path,
+        lambda x: x.endswith("performance.tar.zst"),
     )
