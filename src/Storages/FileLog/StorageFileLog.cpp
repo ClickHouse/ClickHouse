@@ -47,6 +47,8 @@ namespace
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 }
 
+static constexpr auto TMP_SUFFIX = ".tmp";
+
 StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
     ContextPtr context_,
@@ -234,23 +236,24 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
     {
         checkOffsetIsValid(file_meta.file_name, file_meta.last_writen_position);
     }
-    else
-    {
-        disk->createFile(full_path);
-    }
+
+    std::string tmp_path = full_path + TMP_SUFFIX;
+    disk->removeFileIfExists(tmp_path);
 
     try
     {
-        auto out = disk->writeFile(full_path);
+        disk->createFile(tmp_path);
+        auto out = disk->writeFile(tmp_path);
         writeIntText(inode, *out);
         writeChar('\n', *out);
         writeIntText(file_meta.last_writen_position, *out);
     }
     catch (...)
     {
-        disk->removeFile(full_path);
+        disk->removeFileIfExists(tmp_path);
         throw;
     }
+    disk->replaceFile(tmp_path, full_path);
 }
 
 void StorageFileLog::deserialize()
@@ -258,15 +261,28 @@ void StorageFileLog::deserialize()
     if (!disk->exists(metadata_base_path))
         return;
 
+    std::vector<std::string> files_to_remove;
+
     /// In case of single file (not a watched directory),
     /// iterated directory always has one file inside.
     for (const auto dir_iter = disk->iterateDirectory(metadata_base_path); dir_iter->isValid(); dir_iter->next())
     {
-        auto [metadata, inode] = readMetadata(dir_iter->name());
+        const auto & filename = dir_iter->name();
+        if (filename.ends_with(TMP_SUFFIX))
+        {
+            files_to_remove.push_back(getFullMetaPath(filename));
+            continue;
+        }
+
+        auto [metadata, inode] = readMetadata(filename);
         if (!metadata)
             continue;
+
         file_infos.meta_by_inode.emplace(inode, metadata);
     }
+
+    for (const auto & file : files_to_remove)
+        disk->removeFile(file);
 }
 
 UInt64 StorageFileLog::getInode(const String & file_name)
