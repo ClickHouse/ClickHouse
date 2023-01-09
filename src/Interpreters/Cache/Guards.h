@@ -12,23 +12,6 @@ namespace DB
  */
 
 /**
- * Guard for the whole the cache.
- * Used to get a lock per key prefix and then continue with only key prefix locked.
- */
-struct CacheGuard
-{
-    struct Lock
-    {
-        explicit Lock(CacheGuard & guard) : lock(guard.mutex) {}
-        std::unique_lock<std::mutex> lock;
-    };
-
-    std::mutex mutex;
-
-    Lock lock() { return Lock(*this); }
-};
-
-/**
  * Guard for a set of keys.
  * One guard per key prefix (first three digits of the path hash).
  */
