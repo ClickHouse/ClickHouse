@@ -5,6 +5,8 @@
 namespace DB
 {
 
+/// This source is throwing exception at the first attempt to read from it.
+/// Can be used as a additional check that pipeline (or its part) is never executed.
 class ThrowingExceptionSource : public ISource
 {
 public:

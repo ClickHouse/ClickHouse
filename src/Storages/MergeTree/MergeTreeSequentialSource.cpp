@@ -260,6 +260,11 @@ Pipe createMergeTreeSequentialSource(
     return pipe;
 }
 
+/// A Query Plan step to read from a single Merge Tree part
+/// using Merge Tree Sequential Source (which reads strictly sequentially in a single thread).
+/// This step is used for mutations because the usual reading is too tricky.
+/// Previously, sequential reading was achieved by changing some settings like max_threads,
+/// however, this approach lead to data corruption after some new settings were introduced.
 class ReadFromPart final : public ISourceStep
 {
 public:

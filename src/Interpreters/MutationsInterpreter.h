@@ -95,6 +95,10 @@ public:
 
     void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
+    /// Internal class which represents a data part for MergeTree
+    /// or just storage for other storages.
+    /// The main idea is to create a dedicated reading from MergeTree part.
+    /// Additionally we propagate some storage properties.
     struct Source
     {
         StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_) const;

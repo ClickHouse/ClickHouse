@@ -1001,7 +1001,7 @@ struct VirtualColumns
     Columns virtuals;
     Names columns_to_read;
 
-    explicit VirtualColumns(Names required_columns, const MergeTreeData::DataPartPtr & part) : columns_to_read(std::move(required_columns))
+    VirtualColumns(Names required_columns, const MergeTreeData::DataPartPtr & part) : columns_to_read(std::move(required_columns))
     {
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
