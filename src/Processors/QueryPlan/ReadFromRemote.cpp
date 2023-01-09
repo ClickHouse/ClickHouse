@@ -330,10 +330,10 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         auto pool = shard.shard_info.per_replica_pools[replica_num];
         assert(pool);
 
-        auto pool_with_failover =  std::make_shared<ConnectionPoolWithFailover>(
+        auto pool_with_failover = std::make_shared<ConnectionPoolWithFailover>(
             ConnectionPoolPtrs{pool}, current_settings.load_balancing);
 
-        addPipeForSingeReplica(pipes, pool_with_failover, replica_info);
+        addPipeForSingeReplica(pipes, std::move(pool_with_failover), replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
