@@ -98,7 +98,7 @@ then
 fi
 
 mkdir right
-wget -nv -nd -c "$right_path" -O- | tar -C right --no-same-owner --strip-components=1 -zxv
+wget -nv -nd -c "$right_path" -O- | tar -C right --no-same-owner --strip-components=1 --zstd --extract --verbose
 
 # Find reference revision if not specified explicitly
 if [ "$REF_SHA" == "" ]; then find_reference_sha; fi
