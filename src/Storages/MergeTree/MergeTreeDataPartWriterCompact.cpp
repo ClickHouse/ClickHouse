@@ -14,12 +14,14 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
+    const NamesAndTypesList & statistics_columns_,
+    const StatisticDescriptions & statistics_descriptions_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
-        indices_to_recalc_, marks_file_extension_,
+        indices_to_recalc_, statistics_columns_, statistics_descriptions_, marks_file_extension_,
         default_codec_, settings_, index_granularity_)
     , plain_file(data_part_->getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
@@ -180,6 +182,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 
     Block skip_indices_block = getBlockAndPermute(block, getSkipIndicesColumns(), nullptr);
     calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
+
+    Block stats_block = getBlockAndPermute(block, getStatsColumns(), nullptr);
+    calculateStatistics(stats_block, granules_to_write);
 }
 
 void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const Granules & granules)
@@ -402,6 +407,7 @@ void MergeTreeDataPartWriterCompact::fillChecksums(IMergeTreeDataPart::Checksums
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
+    fillStatisticsChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterCompact::finish(bool sync)
@@ -414,6 +420,7 @@ void MergeTreeDataPartWriterCompact::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
+    finishStatisticsSerialization(sync);
 }
 
 }

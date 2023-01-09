@@ -1917,6 +1917,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             /// Prewhere is always the first one.
             prewhere_step_num = 0;
+            // TODO: prewhere infos
             prewhere_info = std::make_shared<PrewhereInfo>(actions, query.prewhere()->getColumnName());
 
             if (allowEarlyConstantFolding(*prewhere_info->prewhere_actions, settings))

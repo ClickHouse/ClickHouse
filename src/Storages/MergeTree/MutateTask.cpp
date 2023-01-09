@@ -1,25 +1,36 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <Common/logger_useful.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <Common/escapeForFileName.h>
+<<<<<<< HEAD
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
+=======
+#include <Common/logger_useful.h>
+#include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
+>>>>>>> 32a9c1d592c (x)
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Processors/Transforms/TTLTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Interpreters/SquashingTransform.h>
+#include <Parsers/queryToString.h>
+#include <Poco/Logger.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MutationCommands.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <boost/algorithm/string/replace.hpp>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/StatisticsDescription.h>
 
 
 namespace CurrentMetrics
@@ -66,6 +77,7 @@ static void splitMutationCommands(
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
@@ -79,7 +91,9 @@ static void splitMutationCommands(
                 if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
                     mutated_columns.emplace(command.column_name);
             }
-            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
+            else if (command.type == MutationCommand::Type::DROP_INDEX
+                || command.type == MutationCommand::Type::DROP_STATISTIC
+                || command.type == MutationCommand::Type::DROP_PROJECTION)
             {
                 for_file_renames.push_back(command);
             }
@@ -123,6 +137,7 @@ static void splitMutationCommands(
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
@@ -131,7 +146,9 @@ static void splitMutationCommands(
             {
                 for_interpreter.push_back(command);
             }
-            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
+            else if (command.type == MutationCommand::Type::DROP_INDEX
+                || command.type == MutationCommand::Type::DROP_STATISTIC
+                || command.type == MutationCommand::Type::DROP_PROJECTION)
             {
                 for_file_renames.push_back(command);
             }
@@ -344,6 +361,43 @@ static std::vector<ProjectionDescriptionRawPtr> getProjectionsForNewDataPart(
     return new_projections;
 }
 
+static StatisticDescriptions getStatisticsForNewDataPart(
+    const StatisticDescriptions & all_statistics,
+    const MutationCommands & commands_for_removes)
+{
+    NameSet removed_statistics;
+    for (const auto & command : commands_for_removes)
+        if (command.type == MutationCommand::DROP_STATISTIC)
+            removed_statistics.insert(command.column_name);
+
+    StatisticDescriptions new_statistics;
+    for (const auto & statistic : all_statistics)
+        if (!removed_statistics.contains(statistic.name))
+            new_statistics.push_back(statistic);
+    return new_statistics;
+}
+
+static NamesAndTypesList getStatisticsColumns(const ColumnsDescription & columns, const StatisticDescriptions & statistics)
+{
+    NameSet used_columns;
+    for (const auto& statistic : statistics)
+    {
+        for (const auto& column : statistic.column_names)
+        {
+            used_columns.insert(column);
+        }
+    }
+
+    NamesAndTypesList result;
+    for (const auto& column : columns)
+    {
+        if (used_columns.contains(column.name))
+        {
+            result.emplace_back(column.name, column.type);
+        }
+    }
+    return result;
+}
 
 /// Return set of indices which should be recalculated during mutation also
 /// wraps input stream into additional expression stream
@@ -476,6 +530,41 @@ static std::unordered_map<String, size_t> getStreamCounts(
 }
 
 
+/// Return set of statistics which should be recalculated during mutation
+static StatisticDescriptions getStatisticsToRecalculate(
+    const NameSet & updated_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr /*context*/,
+    const NameSet & materialized_statistics,
+    const MergeTreeData::DataPartPtr & source_part)
+{
+    StatisticDescriptions result;
+    const auto& statistics = metadata_snapshot->getStatistics();
+    for (const auto& statistic : statistics)
+    {
+        if (materialized_statistics.contains(statistic.name))
+        {
+            // It's enough to check only one file
+            const auto filename = generateFileNameForStatistics(statistic.name, statistic.column_names.front());
+            if (!source_part->checksums.has(filename))
+            {
+                result.push_back(statistic);
+            }
+        }
+        else
+        {
+            for (const auto& column_name : statistic.column_names)
+            {
+                if (updated_columns.contains(column_name))
+                {
+                    result.push_back(statistic);
+                }
+            }
+        }
+    }
+    return result;
+}
+
 /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
 /// Because we will generate new versions of them after we perform mutation.
 static NameSet collectFilesToSkip(
@@ -484,7 +573,9 @@ static NameSet collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc)
+    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
+    const StatisticDescriptions & statistics_to_recalc
+    )
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -520,6 +611,18 @@ static NameSet collectFilesToSkip(
     for (const auto & projection : projections_to_recalc)
         files_to_skip.insert(projection->getDirectoryName());
 
+    for (const auto& statistic : statistics_to_recalc)
+    {
+        for (const auto& column_name : statistic.column_names)
+        {
+            const auto filename = generateFileNameForStatistics(statistic.name, column_name);
+            if (updated_header.has(column_name) && source_part->checksums.has(filename))
+            {
+                files_to_skip.insert(filename);
+            }
+        }
+    }
+
     return files_to_skip;
 }
 
@@ -552,6 +655,17 @@ static NameToNameVector collectFilesForRenames(
             {
                 rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
                 rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+            }
+        }
+        else if (command.type == MutationCommand::Type::DROP_STATISTIC)
+        {
+            for (const auto & [filename, _] : source_part->checksums.files)
+            {
+                if (filename.starts_with(std::string{PART_STATS_FILE_NAME} + "_" + command.column_name + "_")
+                    && filename.ends_with(PART_STATS_FILE_EXT))
+                {
+                    rename_vector.emplace_back(filename, "");
+                }
             }
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
@@ -691,6 +805,7 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadProjections(false, false);
+<<<<<<< HEAD
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
@@ -698,6 +813,12 @@ void finalizeMutatedPart(
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     new_data_part->default_codec = codec;
+=======
+    new_data_part->setBytesOnDisk(
+        MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), part_path));
+    new_data_part->default_codec = codec;
+    new_data_part->calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk();
+>>>>>>> 32a9c1d592c (x)
 }
 
 }
@@ -744,6 +865,7 @@ struct MutationContext
     NamesAndTypesList storage_columns;
     NameSet materialized_indices;
     NameSet materialized_projections;
+    NameSet materialized_statistics;
     MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
         = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
 
@@ -758,6 +880,7 @@ struct MutationContext
     NameSet updated_columns;
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
+    StatisticDescriptions statistics_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
 
@@ -1173,6 +1296,8 @@ private:
 
         auto skip_part_indices = MutationHelpers::getIndicesForNewDataPart(ctx->metadata_snapshot->getSecondaryIndices(), ctx->for_file_renames);
         ctx->projections_to_build = MutationHelpers::getProjectionsForNewDataPart(ctx->metadata_snapshot->getProjections(), ctx->for_file_renames);
+        auto statistics_descriptions = MutationHelpers::getStatisticsForNewDataPart(ctx->metadata_snapshot->getStatistics(), ctx->for_file_renames);
+        auto statistics_columns = MutationHelpers::getStatisticsColumns(ctx->metadata_snapshot->getColumns(), statistics_descriptions);
 
         if (!ctx->mutating_pipeline_builder.initialized())
             throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -1200,6 +1325,8 @@ private:
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_part_indices,
+            statistics_columns,
+            statistics_descriptions,
             ctx->compression_codec,
             ctx->txn,
             false,
@@ -1381,6 +1508,8 @@ private:
                 ctx->updated_header,
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
+                MutationHelpers::getStatisticsColumns(ctx->metadata_snapshot->getColumns(), ctx->statistics_to_recalc),
+                ctx->statistics_to_recalc,
                 nullptr,
                 ctx->source_part->index_granularity,
                 &ctx->source_part->index_granularity_info
@@ -1600,6 +1729,7 @@ bool MutateTask::prepare()
             ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
+        ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
         /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
         /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of rows.
@@ -1670,6 +1800,8 @@ bool MutateTask::prepare()
             ctx->mutating_pipeline_builder, ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices, ctx->source_part);
         ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
             ctx->updated_columns, ctx->metadata_snapshot, ctx->materialized_projections, ctx->source_part);
+        ctx->statistics_to_recalc = MutationHelpers::getStatisticsToRecalculate(
+            ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_statistics, ctx->source_part);
 
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
@@ -1677,6 +1809,7 @@ bool MutateTask::prepare()
             ctx->updated_header,
             ctx->indices_to_recalc,
             ctx->mrk_extension,
+<<<<<<< HEAD
             ctx->projections_to_recalc);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
@@ -1684,9 +1817,16 @@ bool MutateTask::prepare()
             ctx->new_data_part,
             ctx->for_file_renames,
             ctx->mrk_extension);
+=======
+            ctx->projections_to_recalc,
+            ctx->statistics_to_recalc
+            );
+        ctx->files_to_rename = MutationHelpers::collectFilesForRenames(ctx->source_part, ctx->for_file_renames, ctx->mrk_extension);
+>>>>>>> 32a9c1d592c (x)
 
         if (ctx->indices_to_recalc.empty() &&
             ctx->projections_to_recalc.empty() &&
+            ctx->statistics_to_recalc.empty() &&
             ctx->mutation_kind != MutationsInterpreter::MutationKind::MUTATE_OTHER
             && ctx->files_to_rename.empty())
         {

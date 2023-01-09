@@ -10,6 +10,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Storages/Statistics.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
@@ -84,6 +85,20 @@ struct ColumnSize
 };
 
 using IndexSize = ColumnSize;
+
+struct StatisticSize
+{
+    size_t data_ram = 0;
+    size_t data_compressed = 0;
+    size_t data_uncompressed = 0;
+
+    void add(const StatisticSize & other)
+    {
+        data_ram += other.data_ram;
+        data_compressed += other.data_compressed;
+        data_uncompressed += other.data_uncompressed;
+    }
+};
 
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
@@ -183,6 +198,11 @@ public:
     /// Valid only for MergeTree family.
     using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
     virtual IndexSizeByName getSecondaryIndexSizes() const { return {}; }
+
+    /// Optional size information of each statistic.
+    /// Valid only for MergeTree family.
+    using StatisticSizeByName = std::unordered_map<std::string, StatisticSize>;
+    virtual StatisticSizeByName getStatisticSizes() const { return {}; }
 
     /// Get mutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
@@ -603,6 +623,11 @@ public:
 
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const { return {}; }
+
+    /// Returns set of merged statistics for provided partitions.
+    virtual IStatisticsPtr getStatisticsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const { return nullptr; }
+
+    virtual void reloadStatistics() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reload Statistics is not implemented for this storage."); }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

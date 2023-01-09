@@ -44,7 +44,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2,
     ...
     PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
-    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
+    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
+    ...
+    STATISTIC statistic_name_1 (...) [TYPE type1],
+    STATISTIC statistic_name_2 (...) [TYPE type2]
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
@@ -1046,3 +1049,48 @@ Examples of working configurations can be found in integration tests directory (
 -   `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
 -   `_partition_value` — Values (a tuple) of a `partition by` expression.
 -   `_sample_factor` — Sample factor (from the query).
+
+## Column Statistics (Experimental) {#column-statistics}
+
+The statistic declaration is in the columns section of the `CREATE` query.
+
+``` sql
+STATISTIC statistic_name (list of columns) [TYPE type]
+```
+
+For tables from the `*MergeTree` family, statistics can be specified.
+
+These lightweight statistics aggregate information about distribution of values in columns.
+They can be used for query optimization (At current time they are used for moving expressions to PREWHERE).
+
+**Example**
+
+``` sql
+CREATE TABLE table_name
+(
+    u64 UInt64,
+    i32 Int32,
+    s String,
+    ...
+    STATISTIC a (u64) TYPE tdigest,
+    STATISTIC b (i32, s)
+) ENGINE = MergeTree()
+...
+```
+
+
+#### Available Types of Column Statistics {#available-types-of-column-statistics}
+
+-   `tdigest`
+
+    Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+
+-   `granule_tdigest`
+
+    Stores two [TDigest](https://github.com/tdunning/t-digest) sketches.
+    One sketch stores minimums per each granule and the other one stores maximums.
+    This statistic can be more useful for PREWHERE optimization than simple `tdigest` in case of values in column somehow correlated with primary key. For example, air temperature or prices can depend on time.
+
+-   `granule_string_hash`
+
+    For each string it stores in [Count-min Sketch](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) the number of granules containing it.

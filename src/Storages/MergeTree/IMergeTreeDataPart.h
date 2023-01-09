@@ -20,9 +20,11 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
 
 #include <shared_mutex>
+#include <unordered_map>
 
 
 namespace zkutil
@@ -74,6 +76,7 @@ public:
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
+    using StatisticSizeByName = std::unordered_map<std::string, StatisticSize>;
 
     using Type = MergeTreeDataPartType;
 
@@ -108,6 +111,8 @@ public:
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const NamesAndTypesList & statistics_columns_,
+        const StatisticDescriptions & statistics_descriptions,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity) = 0;
@@ -127,6 +132,10 @@ public:
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
+
+    /// NOTE: Returns zeros if statistics are not found in checksums.
+    /// Otherwise return information about statistic size on disk.
+    StatisticSize getStatisticSize(const String & statistic_name) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
@@ -351,7 +360,7 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    void calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk();
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -414,6 +423,11 @@ public:
     /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
 
+    /// Loads statistics
+    /// Statistics sketches are too large to store them in RAM for each part,
+    /// so we store aggregated statistics per each partition.
+    MergeTreeStatisticsPtr loadStatistics() const;
+
     /// Ensures that creation_tid was correctly set after part creation.
     void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
 
@@ -472,6 +486,7 @@ protected:
     ColumnSize total_secondary_indices_size;
 
     IndexSizeByName secondary_index_sizes;
+    StatisticSizeByName statistic_sizes;
 
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
@@ -574,6 +589,8 @@ private:
     void calculateColumnsSizesOnDisk();
 
     void calculateSecondaryIndicesSizesOnDisk();
+
+    void calculateStatisticsSizesOnDisk();
 
     void appendFilesOfPartitionAndMinMaxIndex(Strings & files) const;
 

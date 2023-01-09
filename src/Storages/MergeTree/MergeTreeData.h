@@ -1,6 +1,10 @@
 #pragma once
 
+<<<<<<< HEAD
 #include <base/defines.h>
+=======
+#include <unordered_map>
+>>>>>>> 32a9c1d592c (x)
 #include <Common/SimpleIncrement.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
@@ -800,6 +804,12 @@ public:
         return secondary_index_sizes;
     }
 
+    StatisticSizeByName getStatisticSizes() const override
+    {
+        auto lock = lockParts();
+        return statistics_sizes;
+    }
+
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
@@ -1044,13 +1054,28 @@ public:
     /// Mutex for currently_submerging_parts and currently_emerging_parts
     mutable std::mutex currently_submerging_emerging_mutex;
 
+<<<<<<< HEAD
     /// Used for freezePartitionsByMatcher and unfreezePartitionsByMatcher
     using MatcherFn = std::function<bool(const String &)>;
 
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
+=======
+    void reloadStatistics() override;
+>>>>>>> 32a9c1d592c (x)
 
 protected:
+    /// Get Statistics for prewhere planning
+    MergeTreeStatisticsPtr getStatisticsByPartitionPredicateImpl(
+        const SelectQueryInfo & query_info, ContextPtr local_context) const;
+
+    void updateStatisticsByPartition();
+
+    /// Approximate and updated eventually
+    /// TODO: do I need to use PartitionID here?
+    mutable std::shared_mutex partition_to_stats_mutex;
+    std::unordered_map<String, MergeTreeStatisticsPtr> partition_to_stats;
+
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
     friend struct ReplicatedMergeTreeTableMetadata;
@@ -1072,6 +1097,9 @@ protected:
 
     /// Current secondary index sizes in compressed and uncompressed form.
     IndexSizeByName secondary_index_sizes;
+
+    /// Current secondary index sizes in ram, compressed and uncompressed form.
+    StatisticSizeByName statistics_sizes;
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
@@ -1161,6 +1189,8 @@ protected:
     /// These callbacks will be passed to the constructor of each task.
     IExecutableTask::TaskResultCallback common_assignee_trigger;
     IExecutableTask::TaskResultCallback moves_assignee_trigger;
+
+    BackgroundSchedulePool::TaskHolder stats_merger_task;
 
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;

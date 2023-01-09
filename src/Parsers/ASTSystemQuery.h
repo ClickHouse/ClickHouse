@@ -50,6 +50,7 @@ public:
         RELOAD_CONFIG,
         RELOAD_USERS,
         RELOAD_SYMBOLS,
+        RELOAD_STATISTICS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,

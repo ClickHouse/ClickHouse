@@ -18,6 +18,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
+    const NamesAndTypesList & statistics_columns,
+    const StatisticDescriptions & statistics_descriptions,
     CompressionCodecPtr default_codec_,
     const MergeTreeTransactionPtr & txn,
     bool reset_columns_,
@@ -46,7 +48,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     data_part->version.setCreationTID(tid, nullptr);
     data_part->storeVersionMetadata();
 
+<<<<<<< HEAD
     writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings, {});
+=======
+    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, statistics_columns, statistics_descriptions, default_codec, writer_settings);
+>>>>>>> 32a9c1d592c (x)
 }
 
 /// If data is pre-sorted.
@@ -188,7 +194,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    new_part->calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk();
 
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;

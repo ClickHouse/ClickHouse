@@ -8,6 +8,7 @@ sidebar_label: ALTER
 
 Most `ALTER TABLE` queries modify table settings or data:
 
+<<<<<<< HEAD
 -   [COLUMN](/docs/en/sql-reference/statements/alter/column.md)
 -   [PARTITION](/docs/en/sql-reference/statements/alter/partition.md)
 -   [DELETE](/docs/en/sql-reference/statements/alter/delete.md)
@@ -16,6 +17,17 @@ Most `ALTER TABLE` queries modify table settings or data:
 -   [INDEX](/docs/en/sql-reference/statements/alter/skipping-index.md)
 -   [CONSTRAINT](/docs/en/sql-reference/statements/alter/constraint.md)
 -   [TTL](/docs/en/sql-reference/statements/alter/ttl.md)
+=======
+-   [COLUMN](../../../sql-reference/statements/alter/column.md)
+-   [PARTITION](../../../sql-reference/statements/alter/partition.md)
+-   [DELETE](../../../sql-reference/statements/alter/delete.md)
+-   [UPDATE](../../../sql-reference/statements/alter/update.md)
+-   [ORDER BY](../../../sql-reference/statements/alter/order-by.md)
+-   [INDEX](../../../sql-reference/statements/alter/index/index.md)
+-   [CONSTRAINT](../../../sql-reference/statements/alter/constraint.md)
+-   [TTL](../../../sql-reference/statements/alter/ttl.md)
+-   [STATISTIC](../../../sql-reference/statements/alter/statistic.md)
+>>>>>>> 32a9c1d592c (x)
 
 :::note    
 Most `ALTER TABLE` queries are supported only for [\*MergeTree](/docs/en/engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](/docs/en/engines/table-engines/special/merge.md) and [Distributed](/docs/en/engines/table-engines/special/distributed.md).

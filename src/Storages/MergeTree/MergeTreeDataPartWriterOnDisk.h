@@ -1,15 +1,22 @@
 #pragma once
 
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <unordered_map>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Disks/IDisk.h>
+#include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <IO/HashingWriteBuffer.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+<<<<<<< HEAD
 #include <Disks/IDisk.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
+=======
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
+
+>>>>>>> 32a9c1d592c (x)
 
 namespace DB
 {
@@ -57,9 +64,14 @@ public:
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
             size_t max_compress_block_size_,
+<<<<<<< HEAD
             const CompressionCodecPtr & marks_compression_codec_,
             size_t marks_compress_block_size_,
             const WriteSettings & query_write_settings);
+=======
+            const WriteSettings & query_write_settings,
+            bool use_marks = true);
+>>>>>>> 32a9c1d592c (x)
 
         String escaped_column_name;
         std::string data_file_extension;
@@ -73,10 +85,15 @@ public:
 
         /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
+<<<<<<< HEAD
         HashingWriteBuffer marks_hashing;
         CompressedWriteBuffer marks_compressor;
         HashingWriteBuffer marks_compressed_hashing;
         bool compress_marks;
+=======
+        std::unique_ptr<HashingWriteBuffer> marks;
+        bool use_marks;
+>>>>>>> 32a9c1d592c (x)
 
         bool is_prefinalized = false;
 
@@ -96,6 +113,8 @@ public:
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const NamesAndTypesList & statistics_columns,
+        const StatisticDescriptions & statistics_descriptions,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
@@ -116,6 +135,8 @@ protected:
     /// and one skip index granule can contain multiple "normal" marks. So skip indices serialization
     /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
+    /// Calculate statistics
+    void calculateStatistics(const Block & block, const Granules & granules_to_write);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void fillPrimaryIndexChecksums(MergeTreeData::DataPart::Checksums & checksums);
@@ -123,6 +144,9 @@ protected:
     /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
     void fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums);
     void finishSkipIndicesSerialization(bool sync);
+    /// Finishes stats serialization: write all accumulated data to disk and compute checksums
+    void fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void finishStatisticsSerialization(bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }
@@ -131,8 +155,12 @@ protected:
 
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
+    /// Get unique non ordered stats column.
+    Names getStatsColumns() const;
 
     const MergeTreeIndices skip_indices;
+    const NamesAndTypesList statistics_columns;
+    const StatisticDescriptions statistics_descriptions;
 
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
@@ -142,6 +170,29 @@ protected:
     std::vector<StreamPtr> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
+
+    struct StatisticsStream
+    {
+        StatisticsStream(
+            const String & filename_,
+            DiskPtr disk_,
+            const String & data_path_,
+            const CompressionCodecPtr & compression_codec_,
+            size_t max_compress_block_size_,
+            const WriteSettings & query_write_settings);
+
+        void prefinalizeAndAddToChecksums(IMergeTreeDataPart::Checksums & checksums);
+        void finalize() const;
+        void sync() const;
+
+        String filename;
+        std::unique_ptr<WriteBufferFromFileBase> plain_buffer;
+        HashingWriteBuffer hashing_buffer;
+        CompressedWriteBuffer compressed_buffer;
+        HashingWriteBuffer compressed_hashing_buffer;
+    };
+    std::map<std::pair<String, String>, std::unique_ptr<StatisticsStream>> statistic_and_column_to_stream;
+    IMergeTreeStatisticCollectorPtrs stats_collectors;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;
@@ -165,6 +216,7 @@ protected:
 private:
     void initSkipIndices();
     void initPrimaryIndex();
+    void initStatistics();
 
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
 };

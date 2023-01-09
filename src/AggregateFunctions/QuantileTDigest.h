@@ -1,13 +1,16 @@
 #pragma once
 
+#include <base/types.h>
 #include <cmath>
 #include <Common/Exception.h>
-#include <Common/RadixSort.h>
 #include <Common/PODArray.h>
+#include <Common/RadixSort.h>
 #include <Core/AccurateComparison.h>
-#include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
+#include <IO/WriteBuffer.h>
+#include <Poco/Logger.h>
+#include <string>
 
 
 namespace DB
@@ -200,6 +203,11 @@ class QuantileTDigest
     }
 
 public:
+    size_t getAllocatedBytes() const
+    {
+        return sizeof(QuantileTDigest) + centroids.allocated_bytes();
+    }
+
     /** Performs compression of accumulated centroids
       * When merging, the invariant is retained to the maximum size of each
       * centroid that does not exceed `4 q (1 - q) \ delta N`.
@@ -454,6 +462,45 @@ public:
         auto rest_of_results = centroids.back().mean;
         for (; result_num < size; ++result_num)
             result[levels_permutation[result_num]] = static_cast<ResultType>(rest_of_results);
+    }
+
+    /** Finds approximate quantile of value.
+      */
+    Float32 cdf(T value)
+    {
+        if (centroids.empty() || std::isnan(value) || std::isinf(value))
+        {
+            return 0;
+        }
+
+        compress();
+
+        if (centroids.size() == 1)
+        {
+            if (value < centroids.front().mean)
+                return 0;
+            else if (value == centroids.front().mean)
+                return 0.5;
+            else
+                return 1;
+        }
+
+        Count sum = 0;
+
+        for (const auto & c : centroids)
+        {
+            Float64 current_x = sum + c.count * 0.5;
+
+            if (value <= c.mean)
+            {
+                // Add interpolation???
+                return current_x / count;
+            }
+
+            sum += c.count;
+        }
+
+        return 1;
     }
 
     T get(Float64 level)

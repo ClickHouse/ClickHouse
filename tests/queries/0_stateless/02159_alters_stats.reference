@@ -1,0 +1,48 @@
+0
+CREATE TABLE default.alters_stats\n(\n    `a` Int32,\n    `b` Int32,\n    `c` Int32,\n    `d` Int32,\n    `k` Int32,\n    `heavy` String,\n    `heavy2` String\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS experimantal_stats_update_period = 100000, index_granularity = 8192
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM alters_stats
+PREWHERE d > 250000
+WHERE (d > 250000) AND ((a > 10) AND (b > 300000) AND (c > 500000) AND (0 = 0))
+1
+CREATE TABLE default.alters_stats\n(\n    `a` Int32,\n    `b` Int32,\n    `c` Int32,\n    `d` Int32,\n    `k` Int32,\n    `heavy` String,\n    `heavy2` String,\n    STATISTIC st1 (a, b, c) TYPE AUTO,\n    STATISTIC st2 d TYPE AUTO\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS experimantal_stats_update_period = 100000, index_granularity = 8192
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM alters_stats
+PREWHERE (b > 300000) AND (c > 500000)
+WHERE ((b > 300000) AND (c > 500000)) AND ((a > 10) AND (d > 250000) AND (1 = 1))
+2
+CREATE TABLE default.alters_stats\n(\n    `a` Int32,\n    `b` Int32,\n    `c` Int32,\n    `d` Int32,\n    `k` Int32,\n    `heavy` String,\n    `heavy2` String,\n    STATISTIC st1 (a, b, c) TYPE AUTO,\n    STATISTIC st3 d TYPE AUTO\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS experimantal_stats_update_period = 100000, index_granularity = 8192
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM alters_stats
+PREWHERE d > 250000
+WHERE (d > 250000) AND ((a > 10) AND (b > 300000) AND (c > 500000) AND (2 = 2))
+3
+CREATE TABLE default.alters_stats\n(\n    `a` Int32,\n    `b` Int32,\n    `c` Int32,\n    `d` Int32,\n    `k` Int32,\n    `heavy` String,\n    `heavy2` String,\n    STATISTIC st3 d TYPE AUTO\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS experimantal_stats_update_period = 100000, index_granularity = 8192
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM alters_stats
+PREWHERE d > 250000
+WHERE (d > 250000) AND ((a > 10) AND (b > 300000) AND (c > 500000) AND (3 = 3))

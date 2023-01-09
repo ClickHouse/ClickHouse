@@ -1,0 +1,32 @@
+empty
+SELECT
+    a,
+    b,
+    c,
+    d
+FROM str_prewhere
+WHERE (a = 10) AND (b = \'test 10 clickhouse 10\') AND (c = \'test 10 clickhouse 10\') AND (d = \'test 42 clickhouse 42\')
+SELECT
+    a,
+    b,
+    c,
+    d
+FROM str_prewhere
+PREWHERE c = \'unknown\'
+WHERE (c = \'unknown\') AND ((a = 10) AND (b = \'test 10 clickhouse 10\') AND (d = \'test 42 clickhouse 42\'))
+SELECT
+    a,
+    b,
+    c,
+    d
+FROM str_prewhere
+PREWHERE b = \'test 10 clickhouse 10\'
+WHERE (b = \'test 10 clickhouse 10\') AND ((a = 10) AND (c = \'test 10 clickhouse 10\'))
+SELECT
+    a,
+    b,
+    c,
+    d
+FROM str_prewhere
+PREWHERE d = \'test 42 clickhouse 42\'
+WHERE (d = \'test 42 clickhouse 42\') AND ((a = 10) AND (b = \'test 10 clickhouse 10\') AND (c = \'test 10 clickhouse 10\'))

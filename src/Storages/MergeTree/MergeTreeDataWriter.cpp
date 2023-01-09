@@ -15,6 +15,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+#include <Storages/StatisticsDescription.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 
 #include <Parsers/queryToString.h>
@@ -507,7 +508,10 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     auto out = std::make_unique<MergedBlockOutputStream>(new_data_part, metadata_snapshot, columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec,
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
+        columns,
+        context->getSettings().calculate_stats_during_insert ? metadata_snapshot->getStatistics() : StatisticDescriptions{},
+        compression_codec,
         context->getCurrentTransaction(), false, false, context->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
@@ -643,6 +647,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
+        columns,
+        StatisticDescriptions{},
         compression_codec,
         NO_TRANSACTION_PTR,
         false, false, data.getContext()->getWriteSettings());

@@ -1,0 +1,197 @@
+empty
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+WHERE (a = 10) AND (b = 100) AND (c = 0) AND (d = 100)
+tdigest test
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE b = 100
+WHERE (b = 100) AND ((a = 10) AND (c < 10) AND (d = 100))
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE b < 100
+WHERE (b < 100) AND ((a > 0) AND (c > 0) AND (d < 100))
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE (c > 0) AND (d > 100) AND (b > 100)
+WHERE ((c > 0) AND (d > 100) AND (b > 100)) AND (a > 0)
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE b < 100
+WHERE (b < 100) AND ((a > 0) AND (c > 0) AND (d > 100))
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE d < 100
+WHERE (d < 100) AND ((a > 0) AND (c > 0) AND (b > 100))
+empty 2
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+WHERE (a = 10) AND (b = 100) AND (c < 10) AND (d = 100)
+auto test
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE b = 1000
+WHERE (b = 1000) AND ((a = 10) AND (c = 5) AND (d = 1000))
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE b < 10000
+WHERE (b < 10000) AND ((a > 0) AND (d < 10000))
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE (d > 10000) AND (b > 10000)
+WHERE ((d > 10000) AND (b > 10000)) AND (a > 0)
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE b < 10000
+WHERE (b < 10000) AND ((a > 0) AND (d > 10000))
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE d < 10000
+WHERE (d < 10000) AND ((a > 0) AND (b > 10000))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE d < 10000
+WHERE (d < 10000) AND (b > 10000)
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE b < 10000
+WHERE (b < 10000) AND (d > 10000)
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE (b > 10000) AND (b < 20000)
+WHERE ((b > 10000) AND (b < 20000)) AND (d < 10000)
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE (d > 10000) AND (d < 20000)
+WHERE ((d > 10000) AND (d < 20000)) AND (b < 10000)
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE d < 10000
+WHERE (d < 10000) AND ((c > 0) AND (10000 <= b) AND ((b, d) > (10000, 10000)))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE (c > 0) AND (10000 <= b)
+WHERE ((c > 0) AND (10000 <= b)) AND ((b, d) > (10000, 10000))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE (c > 0) AND (10000 <= b)
+WHERE ((c > 0) AND (10000 <= b)) AND ((10000, 10000) < (b, d))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE 10000 >= b
+WHERE (10000 >= b) AND ((c > 0) AND (d > 10000) AND ((b, d) < (10000, 10000)))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE b = 10000
+WHERE (b = 10000) AND ((c > 0) AND (d > 10000) AND (d = 10000))
+segment test
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE b < 1000
+WHERE (b < 1000) AND ((c < 10) AND (d < 100000) AND (a > 100) AND (d > 10000))
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE (d < 105000) AND (d > 10000)
+WHERE ((d < 105000) AND (d > 10000)) AND ((b < 100000) AND (c < 10) AND (a > 100))

@@ -75,12 +75,14 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
+    const NamesAndTypesList & statistics_columns_,
+    const StatisticDescriptions & statistics_descriptions_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
-           indices_to_recalc_, marks_file_extension_,
+           indices_to_recalc_, statistics_columns_, statistics_descriptions_, marks_file_extension_,
            default_codec_, settings_, index_granularity_)
 {
     const auto & columns = metadata_snapshot->getColumns();
@@ -255,6 +257,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
 
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
 
+    const Block stats_block = getBlockAndPermute(block, getStatsColumns(), permutation);
+    calculateStatistics(stats_block, granules_to_write);
+
     shiftCurrentMark(granules_to_write);
 }
 
@@ -271,12 +276,22 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
 void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark)
 {
     Stream & stream = *column_streams[stream_with_mark.stream_name];
+<<<<<<< HEAD
     WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
     writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, marks_out);
     writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, marks_out);
     if (settings.can_use_adaptive_granularity)
         writeIntBinary(rows_in_mark, marks_out);
+=======
+    if (stream.use_marks)
+    {
+        writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, *stream.marks);
+        writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, *stream.marks);
+        if (settings.can_use_adaptive_granularity)
+            writeIntBinary(rows_in_mark, *stream.marks);
+    }
+>>>>>>> 32a9c1d592c (x)
 }
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
@@ -612,6 +627,7 @@ void MergeTreeDataPartWriterWide::fillChecksums(IMergeTreeDataPart::Checksums & 
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
+    fillStatisticsChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterWide::finish(bool sync)
@@ -624,6 +640,7 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
+    finishStatisticsSerialization(sync);
 }
 
 void MergeTreeDataPartWriterWide::writeFinalMark(

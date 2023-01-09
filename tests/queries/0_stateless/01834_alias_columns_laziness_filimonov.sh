@@ -12,7 +12,7 @@ insert into aliases_lazyness(x) select * from numbers(100);
 
 # In very old ClickHouse versions alias column was calculated for every row.
 # If it works this way, the query will take at least 0.1 * 100 = 10 seconds.
-# If the issue does not exist, the query should call sleepEachRow() "only" 4 times:
+# If the issue does not exist, the query should call sleepEachRow() "only" 4 times: # TODO: will be 6 for enabled statistics
 # - from MergeTreeData::getQueryProcessingStageWithAggregateProjection() -> MergeTreeWhereOptimizer -> getBlockWithConstants()
 # - from MergeTreeWhereOptimizer -> getBlockWithConstants()
 # - ReadFromMergeTree::selectRangesToRead() -> getBlockWithConstants()

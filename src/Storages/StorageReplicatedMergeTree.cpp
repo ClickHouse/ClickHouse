@@ -1127,7 +1127,128 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+<<<<<<< HEAD
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, local_context, old_metadata);
+=======
+
+    new_metadata.columns = new_columns;
+
+    if (!metadata_diff.empty())
+    {
+        auto parse_key_expr = [] (const String & key_expr)
+        {
+            ParserNotEmptyExpressionList parser(false);
+            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+            ASTPtr order_by_ast;
+            if (new_sorting_key_expr_list->children.size() == 1)
+                order_by_ast = new_sorting_key_expr_list->children[0];
+            else
+            {
+                auto tuple = makeASTFunction("tuple");
+                tuple->arguments->children = new_sorting_key_expr_list->children;
+                order_by_ast = tuple;
+            }
+            return order_by_ast;
+        };
+
+        if (metadata_diff.sorting_key_changed)
+        {
+            auto order_by_ast = parse_key_expr(metadata_diff.new_sorting_key);
+            auto & sorting_key = new_metadata.sorting_key;
+            auto & primary_key = new_metadata.primary_key;
+
+            sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, getContext());
+
+            if (primary_key.definition_ast == nullptr)
+            {
+                /// Primary and sorting key become independent after this ALTER so we have to
+                /// save the old ORDER BY expression as the new primary key.
+                auto old_sorting_key_ast = old_metadata.getSortingKey().definition_ast;
+                primary_key = KeyDescription::getKeyFromAST(
+                    old_sorting_key_ast, new_metadata.columns, getContext());
+            }
+        }
+
+        if (metadata_diff.sampling_expression_changed)
+        {
+            if (!metadata_diff.new_sampling_expression.empty())
+            {
+                auto sample_by_ast = parse_key_expr(metadata_diff.new_sampling_expression);
+                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, getContext());
+            }
+            else /// SAMPLE BY was removed
+            {
+                new_metadata.sampling_key = {};
+            }
+        }
+
+        if (metadata_diff.skip_indices_changed)
+            new_metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, getContext());
+
+        if (metadata_diff.statistics_changed)
+            new_metadata.statistics = StatisticDescriptions::parse(metadata_diff.new_statistics, new_columns, getContext());
+
+        if (metadata_diff.constraints_changed)
+            new_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
+
+        if (metadata_diff.projections_changed)
+            new_metadata.projections = ProjectionsDescription::parse(metadata_diff.new_projections, new_columns, getContext());
+
+        if (metadata_diff.ttl_table_changed)
+        {
+            if (!metadata_diff.new_ttl_table.empty())
+            {
+                ParserTTLExpressionList parser;
+                auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                    ttl_for_table_ast, new_metadata.columns, getContext(), new_metadata.primary_key);
+            }
+            else /// TTL was removed
+            {
+                new_metadata.table_ttl = TTLTableDescription{};
+            }
+        }
+    }
+
+    /// Changes in columns may affect following metadata fields
+    new_metadata.column_ttls_by_name.clear();
+    for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
+    {
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, getContext(), new_metadata.primary_key);
+        new_metadata.column_ttls_by_name[name] = new_ttl_entry;
+    }
+
+    if (new_metadata.partition_key.definition_ast != nullptr)
+        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, getContext());
+
+    if (!metadata_diff.sorting_key_changed) /// otherwise already updated
+        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, getContext());
+
+    /// Primary key is special, it exists even if not defined
+    if (new_metadata.primary_key.definition_ast != nullptr)
+    {
+        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, getContext());
+    }
+    else
+    {
+        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, getContext());
+        new_metadata.primary_key.definition_ast = nullptr;
+    }
+
+    if (!metadata_diff.sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
+        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, getContext());
+
+    if (!metadata_diff.skip_indices_changed) /// otherwise already updated
+    {
+        for (auto & index : new_metadata.secondary_indices)
+            index.recalculateWithNewColumns(new_metadata.columns, getContext());
+    }
+
+    if (!metadata_diff.ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
+        new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            new_metadata.table_ttl.definition_ast, new_metadata.columns, getContext(), new_metadata.primary_key);
+>>>>>>> 32a9c1d592c (x)
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
@@ -8392,8 +8513,48 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         }
     }
 
+<<<<<<< HEAD
     MergeTreeData::MutableDataPartPtr new_data_part = createEmptyPart(new_part_info, partition, lost_part_name, NO_TRANSACTION_PTR);
     new_data_part->name = lost_part_name;
+=======
+    new_data_part->minmax_idx = std::move(minmax_idx);
+    new_data_part->is_temp = true;
+
+    SyncGuardPtr sync_guard;
+    if (new_data_part->isStoredOnDisk())
+    {
+        /// The name could be non-unique in case of stale files from previous runs.
+        String full_path = new_data_part->getFullRelativePath();
+
+        if (new_data_part->volume->getDisk()->exists(full_path))
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
+            new_data_part->volume->getDisk()->removeRecursive(full_path);
+        }
+
+        const auto disk = new_data_part->volume->getDisk();
+        disk->createDirectories(full_path);
+
+        if (getSettings()->fsync_part_directory)
+            sync_guard = disk->getDirectorySyncGuard(full_path);
+    }
+
+    /// This effectively chooses minimal compression method:
+    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
+    auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
+
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), columns, metadata_snapshot->getStatistics(), compression_codec, NO_TRANSACTION_PTR);
+
+    bool sync_on_insert = settings->fsync_after_insert;
+
+    out.write(block);
+    /// TODO(ab): What projections should we add to the empty part? How can we make sure that it
+    /// won't block future merges? Perhaps we should also check part emptiness when selecting parts
+    /// to merge.
+    out.finalizePart(new_data_part, sync_on_insert);
+>>>>>>> 32a9c1d592c (x)
 
     try
     {

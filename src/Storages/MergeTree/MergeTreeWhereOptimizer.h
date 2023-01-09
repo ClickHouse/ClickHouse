@@ -5,9 +5,13 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <boost/noncopyable.hpp>
+#include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
+#include "base/types.h"
 
 #include <memory>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 
 
@@ -36,26 +40,55 @@ public:
     MergeTreeWhereOptimizer(
         SelectQueryInfo & query_info,
         ContextPtr context,
+        const Settings & settings,
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
+        const StoragePtr & storage_,
         const Names & queried_columns_,
         Poco::Logger * log_);
 
 private:
     void optimize(ASTSelectQuery & select) const;
 
+    void optimizeBySize(ASTSelectQuery & select) const;
+    void optimizeByRanks(ASTSelectQuery & select) const;
+
+    // Description of simple expression (ident <=> lit).
+    // Used by new planner.
+    struct ConditionDescription
+    {
+        enum class Type
+        {
+            LESS_OR_EQUAL,
+            GREATER_OR_EQUAL,
+            EQUAL,
+            NOT_EQUAL,
+        };
+
+        String identifier;
+        Type type;
+        Field constant;
+    };
+
+    using ConditionDescriptionOptional = std::optional<ConditionDescription>;
+
     struct Condition
     {
         ASTPtr node;
         UInt64 columns_size = 0;
+
         NameSet identifiers;
+
+        ConditionDescriptionOptional description;
 
         /// Can condition be moved to prewhere?
         bool viable = false;
 
         /// Does the condition presumably have good selectivity?
+        /// old algorithm
         bool good = false;
 
+        /// used by old algorithm
         auto tuple() const
         {
             return std::make_tuple(!viable, !good, columns_size, identifiers.size());
@@ -70,8 +103,11 @@ private:
 
     using Conditions = std::list<Condition>;
 
-    bool tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const;
+    bool tryAnalyzeTupleEquals(Conditions & res, const ASTFunction * func, bool is_final) const;
+    bool tryAnalyzeTupleCompare(Conditions & res, const ASTFunction * func, bool is_final) const;
     void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
+
+    static ConditionDescriptionOptional parseCondition(const ASTPtr & condition);
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
     Conditions analyze(const ASTPtr & expression, bool is_final) const;
@@ -103,6 +139,53 @@ private:
 
     void determineArrayJoinedNames(ASTSelectQuery & select);
 
+    struct ColumnWithRank
+    {
+        ColumnWithRank(
+            double rank_,
+            double selectivity_,
+            std::string name_)
+            : rank(rank_)
+            , selectivity(selectivity_)
+            , name(name_)
+        {
+        }
+
+        bool operator<(const ColumnWithRank & other) const;
+        bool operator==(const ColumnWithRank & other) const;
+
+        double rank;
+        double selectivity;
+        std::string name;
+    };
+
+    std::vector<ColumnWithRank> getSimpleColumns(const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const;
+    double scoreSelectivity(const std::optional<ConditionDescription> & condition_description) const;
+
+    std::optional<double> analyzeComplexSelectivity(const ASTPtr & node) const;
+
+    struct ConditionWithRank
+    {
+        explicit ConditionWithRank(
+            Condition condition_)
+            : rank(0)
+            , selectivity(0)
+            , condition(condition_)
+        {
+        }
+
+        bool operator<(const ConditionWithRank & other) const;
+        bool operator==(const ConditionWithRank & other) const;
+
+        double rank;
+        double selectivity;
+        Condition condition;
+    };
+
+    static const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type>& getCompareFuncsSwaps();
+    static const std::unordered_map<ConditionDescription::Type, std::string>& getCompareTypeToString();
+    static const std::unordered_map<std::string, ConditionDescription::Type>& getStringToCompareFuncs();
+
     using StringSet = std::unordered_set<std::string>;
 
     String first_primary_key_column;
@@ -112,6 +195,8 @@ private:
     const Block block_with_constants;
     Poco::Logger * log;
     std::unordered_map<std::string, UInt64> column_sizes;
+    IStatisticsPtr statistics;
+    bool use_new_scoring;
     UInt64 total_size_of_queried_columns = 0;
     NameSet array_joined_names;
 };

@@ -1,13 +1,32 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
+<<<<<<< HEAD
 #include <Backups/BackupEntriesCollector.h>
+=======
+#include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Backups/BackupEntryFromImmutableFile.h>
+>>>>>>> 32a9c1d592c (x)
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
+<<<<<<< HEAD
 #include <Backups/RestorerFromBackup.h>
+=======
+#include <Backups/IRestoreTask.h>
+#include <Columns/ColumnObject.h>
+#include <Common/escapeForFileName.h>
+#include <Common/Exception.h>
+#include <Common/Increment.h>
+#include <Common/quoteString.h>
+#include <Common/SimpleIncrement.h>
+#include <Common/Stopwatch.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/typeid_cast.h>
+>>>>>>> 32a9c1d592c (x)
 #include <Compression/CompressedReadBuffer.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+<<<<<<< HEAD
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
@@ -16,19 +35,32 @@
 #include <Disks/createVolume.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Functions/IFunction.h>
+=======
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/hasNullable.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Disks/TemporaryFileOnDisk.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TreeRewriter.h>
+#include <IO/ConcatReadBuffer.h>
+>>>>>>> 32a9c1d592c (x)
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -38,11 +70,16 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/localBackup.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+<<<<<<< HEAD
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageMergeTree.h>
@@ -61,11 +98,23 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Common/scope_guard_safe.h>
+=======
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/StatisticsDescription.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/VirtualColumnUtils.h>
+>>>>>>> 32a9c1d592c (x)
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>
+<<<<<<< HEAD
+=======
+#include <Common/scope_guard_safe.h>
+#include <base/sort.h>
+>>>>>>> 32a9c1d592c (x)
 
 #include <algorithm>
 #include <atomic>
@@ -919,6 +968,123 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     return res;
 }
 
+MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
+    const SelectQueryInfo & query_info, ContextPtr local_context) const
+{
+    auto parts = getDataPartsVectorForInternalUsage();
+    std::unordered_set<String> partitions;
+
+    /// TODO: get rid of copy-paste
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    if (parts.empty())
+    {
+        return MergeTreeStatisticFactory::instance().get(
+               metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
+    }
+
+    ASTPtr expression_ast;
+    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
+
+    // Generate valid expressions for filtering
+    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
+
+    PartitionPruner partition_pruner(metadata_snapshot, query_info, local_context, true /* strict */);
+    if (partition_pruner.isUseless() && !valid)
+    {
+        for (const auto & part : parts)
+        {
+            partitions.emplace(part->info.partition_id);
+        }
+    }
+    else
+    {
+        for (const auto & part : parts)
+        {
+            if (!partition_pruner.canBePruned(*part))
+            {
+                partitions.emplace(part->info.partition_id);
+            }
+        }
+    }
+
+    std::vector<MergeTreeStatisticsPtr> stats_for_merge;
+    {
+        std::shared_lock lock(partition_to_stats_mutex);
+        for (const auto & partition : partitions)
+        {
+            auto it = partition_to_stats.find(partition);
+            if (it != std::end(partition_to_stats))
+            {
+                stats_for_merge.push_back(it->second);
+            }
+        }
+    }
+
+    MergeTreeStatisticsPtr res = MergeTreeStatisticFactory::instance().get(
+        metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
+    for (const auto& stat : stats_for_merge)
+        res->merge(stat);
+    return res;
+}
+
+void MergeTreeData::reloadStatistics()
+{
+    if (getInMemoryMetadataPtr()->hasStatistics())
+    {
+        updateStatisticsByPartition();
+    }
+}
+
+void MergeTreeData::updateStatisticsByPartition()
+{
+    LOG_DEBUG(log, "Update stats by partitions");
+    std::unordered_map<String, MergeTreeStatisticsPtr> partition_to_stats_new;
+
+    auto parts = getDataPartsVectorForInternalUsage();
+
+    for (const auto & part : parts)
+    {
+        const String & partition_id = part->info.partition_id;
+        const auto loaded_stats = part->loadStatistics();
+        if (loaded_stats != nullptr)
+        {
+            if (partition_to_stats_new.contains(partition_id))
+                partition_to_stats_new[partition_id]->merge(loaded_stats);
+            else
+                partition_to_stats_new[partition_id] = loaded_stats;
+        }
+    }
+
+    StatisticSizeByName statistic_sizes_in_memory;
+    for (const auto & [partition, stat] : partition_to_stats_new)
+    {
+        if (!stat->empty())
+        {
+            const auto distribution_statistics = stat->getDistributionStatistics();
+            for (const auto& statistic_name : distribution_statistics->getStatisticsNames())
+            {
+                statistic_sizes_in_memory[statistic_name].data_ram += distribution_statistics->getSizeInMemoryByName(statistic_name);
+            }
+            const auto string_hash_statistics = stat->getStringSearchStatistics();
+            for (const auto& statistic_name : string_hash_statistics->getStatisticsNames())
+            {
+                statistic_sizes_in_memory[statistic_name].data_ram += string_hash_statistics->getSizeInMemoryByName(statistic_name);
+            }
+        }
+    }
+
+    {
+        std::unique_lock lock(partition_to_stats_mutex);
+        std::swap(partition_to_stats, partition_to_stats_new);
+    }
+    {
+        auto lock = lockParts();
+        for (const auto& [name, size] : statistic_sizes_in_memory)
+        {
+            statistics_sizes[name].data_ram = size.data_ram;
+        }
+    }
+}
 
 String MergeTreeData::MergingParams::getModeName() const
 {
@@ -1585,6 +1751,24 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     resetObjectColumnsFromActiveParts(part_lock);
     calculateColumnAndSecondaryIndexSizesImpl();
+    if (getContext()->getSettingsRef().allow_experimental_stats_for_prewhere_optimization)
+    {
+        stats_merger_task = getContext()->getSchedulePool().createTask(
+            "MergeTreeStatisticsMerger",
+            [this, period = settings->experimantal_stats_update_period]
+            {
+                try
+                {
+                    reloadStatistics();
+                }
+                catch (...)
+                {
+                    LOG_ERROR(log, "Exception during statistics update: {}", getCurrentExceptionMessage(true));
+                }
+                stats_merger_task->scheduleAfter(period);
+            });
+        stats_merger_task->activateAndSchedule();
+    }
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
     data_parts_loading_finished = true;
@@ -4040,6 +4224,14 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
         IndexSize part_index_size = part->getSecondaryIndexSize(index.name);
         total_secondary_index_size.add(part_index_size);
     }
+
+    auto statistics_descriptions = getInMemoryMetadataPtr()->getStatistics();
+    for (const auto & statistic : statistics_descriptions)
+    {
+        auto& statistic_size = statistics_sizes[statistic.name];
+        const auto part_statistic_size = part->getStatisticSize(statistic.name);
+        statistic_size.add(part_statistic_size);
+    }
 }
 
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part)
@@ -4081,6 +4273,25 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
         log_subtract(total_secondary_index_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed");
         log_subtract(total_secondary_index_size.marks, part_secondary_index_size.marks, ".marks");
+    }
+
+    auto statistics_descriptions = getInMemoryMetadataPtr()->getStatistics();
+    for (const auto & statistic : statistics_descriptions)
+    {
+        auto& statistic_size = statistics_sizes[statistic.name];
+        const auto part_statistic_size = part->getStatisticSize(statistic.name);
+
+        auto log_subtract = [&](size_t & from, size_t value, const char * field)
+        {
+            if (value > from)
+                LOG_ERROR(log, "Possibly incorrect statistic size subtraction: {} - {} = {}, index: {}, field: {}",
+                    from, value, from - value, statistic.name, field);
+
+            from -= value;
+        };
+
+        log_subtract(statistic_size.data_compressed, part_statistic_size.data_compressed, ".data_compressed");
+        log_subtract(statistic_size.data_uncompressed, part_statistic_size.data_uncompressed, ".data_uncompressed");
     }
 }
 

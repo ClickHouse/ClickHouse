@@ -1,3 +1,4 @@
+#include <memory>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -9,7 +10,11 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+<<<<<<< HEAD
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
+=======
+#include <Parsers/ASTStatisticDeclaration.h>
+>>>>>>> 32a9c1d592c (x)
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -18,6 +23,7 @@
 #include <Parsers/ParserProjectionSelectQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Poco/Logger.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
 
@@ -147,6 +153,43 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
+bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_type("TYPE");
+
+    ParserIdentifier name_p;
+    ParserDataType data_type_p;
+    ParserExpression expression_p;
+
+    ASTPtr name;
+    ASTPtr columns;
+    ASTPtr type;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!expression_p.parse(pos, columns, expected))
+        return false;
+
+    if (s_type.ignore(pos, expected))
+    {
+        if (!data_type_p.parse(pos, type, expected))
+            return false;
+    }
+    else
+    {
+        type = makeASTFunction("AUTO");
+    }
+
+    auto stat = std::make_shared<ASTStatisticDeclaration>();
+    stat->name = name->as<ASTIdentifier &>().name();
+    stat->set(stat->columns, columns);
+    stat->set(stat->type, type);
+    node = stat;
+
+    return true;
+}
+
 bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_check("CHECK");
@@ -216,11 +259,13 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_index("INDEX");
+    ParserKeyword s_stat("STATISTIC");
     ParserKeyword s_constraint("CONSTRAINT");
     ParserKeyword s_projection("PROJECTION");
     ParserKeyword s_primary_key("PRIMARY KEY");
 
     ParserIndexDeclaration index_p;
+    ParserStatisticDeclaration stat_p;
     ParserConstraintDeclaration constraint_p;
     ParserProjectionDeclaration projection_p;
     ParserColumnDeclaration column_p{true, true};
@@ -231,6 +276,11 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     if (s_index.ignore(pos, expected))
     {
         if (!index_p.parse(pos, new_node, expected))
+            return false;
+    }
+    else if (s_stat.ignore(pos, expected))
+    {
+        if (!stat_p.parse(pos, new_node, expected))
             return false;
     }
     else if (s_constraint.ignore(pos, expected))
@@ -287,6 +337,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
 
     ASTPtr columns = std::make_shared<ASTExpressionList>();
     ASTPtr indices = std::make_shared<ASTExpressionList>();
+    ASTPtr stats = std::make_shared<ASTExpressionList>();
     ASTPtr constraints = std::make_shared<ASTExpressionList>();
     ASTPtr projections = std::make_shared<ASTExpressionList>();
     ASTPtr primary_key;
@@ -297,6 +348,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             columns->children.push_back(elem);
         else if (elem->as<ASTIndexDeclaration>())
             indices->children.push_back(elem);
+        else if (elem->as<ASTStatisticDeclaration>())
+            stats->children.push_back(elem);
         else if (elem->as<ASTConstraintDeclaration>())
             constraints->children.push_back(elem);
         else if (elem->as<ASTProjectionDeclaration>())
@@ -320,6 +373,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         res->set(res->columns, columns);
     if (!indices->children.empty())
         res->set(res->indices, indices);
+    if (!stats->children.empty())
+        res->set(res->stats, stats);
     if (!constraints->children.empty())
         res->set(res->constraints, constraints);
     if (!projections->children.empty())

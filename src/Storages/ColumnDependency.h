@@ -20,6 +20,9 @@ struct ColumnDependency
         /// Exists any projection, that requires @column_name
         PROJECTION,
 
+        /// Exists any statistic, that requires @column_name
+        STATISTIC,
+
         /// Exists any TTL expression, that requires @column_name
         TTL_EXPRESSION,
 
@@ -35,7 +38,7 @@ struct ColumnDependency
 
     bool isReadOnly() const
     {
-        return kind == SKIP_INDEX || kind == PROJECTION || kind == TTL_EXPRESSION;
+        return kind == SKIP_INDEX || kind == PROJECTION || kind == STATISTIC || kind == TTL_EXPRESSION;
     }
 
     bool operator==(const ColumnDependency & other) const

@@ -729,6 +729,22 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             new_part_info, part_uuid, metadata_snapshot,
             context, in, 0, true, throttler);
 
+<<<<<<< HEAD
+=======
+        MergedBlockOutputStream part_out(
+            new_projection_part,
+            metadata_snapshot->projections.get(projection_name).metadata,
+            block.getNamesAndTypesList(),
+            {},
+            block.getNamesAndTypesList(),
+            {},
+            CompressionCodecFactory::instance().get("NONE", {}),
+            NO_TRANSACTION_PTR);
+
+        part_out.write(block);
+        part_out.finalizePart(new_projection_part, false);
+        new_projection_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
+>>>>>>> 32a9c1d592c (x)
         new_data_part->addProjectionPart(projection_name, std::move(new_projection_part));
     }
 
@@ -752,7 +768,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     }
 
     MergedBlockOutputStream part_out(
-        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {},
+        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, block.getNamesAndTypesList(), {},
         CompressionCodecFactory::instance().get("NONE", {}), NO_TRANSACTION_PTR);
 
     part_out.write(block);

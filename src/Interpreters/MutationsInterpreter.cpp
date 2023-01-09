@@ -1,12 +1,35 @@
+#include <Interpreters/MutationsInterpreter.h>
+#include <Common/Exception.h>
+#include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
+#include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
+<<<<<<< HEAD
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -30,6 +53,8 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/LightweightDeleteDescription.h>
+=======
+>>>>>>> 32a9c1d592c (x)
 
 
 namespace DB
@@ -437,6 +462,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
+    const StatisticDescriptions & statistics_desc = metadata_snapshot->getStatistics();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
@@ -619,7 +645,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             auto it = std::find_if(
                     std::cbegin(indices_desc), std::end(indices_desc),
                     [&](const IndexDescription & index)
@@ -636,9 +662,25 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
             materialized_indices.emplace(command.index_name);
         }
+        else if (command.type == MutationCommand::MATERIALIZE_STATISTIC)
+        {
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            auto it = std::find_if(
+                    std::cbegin(statistics_desc), std::end(statistics_desc),
+                    [&](const StatisticDescription & statistic)
+                    {
+                        return statistic.name == command.statistic_name;
+                    });
+            if (it == std::cend(statistics_desc))
+                throw Exception("Unknown statistic: " + command.statistic_name, ErrorCodes::BAD_ARGUMENTS);
+
+            for (const auto & column : it->column_names)
+                dependencies.emplace(column, ColumnDependency::STATISTIC);
+            materialized_statistics.emplace(command.statistic_name);
+        }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
             for (const auto & column : projection.required_columns)
                 dependencies.emplace(column, ColumnDependency::PROJECTION);
@@ -646,12 +688,17 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             materialized_indices.erase(command.index_name);
+        }
+        else if (command.type == MutationCommand::DROP_STATISTIC)
+        {
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            materialized_statistics.erase(command.statistic_name);
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             materialized_projections.erase(command.projection_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
@@ -698,7 +745,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
                 for (const auto & dependency : new_dependencies)
                 {
-                    if (dependency.kind == ColumnDependency::SKIP_INDEX || dependency.kind == ColumnDependency::PROJECTION)
+                    if (dependency.kind == ColumnDependency::SKIP_INDEX
+                        || dependency.kind == ColumnDependency::STATISTIC
+                        || dependency.kind == ColumnDependency::PROJECTION)
                         dependencies.insert(dependency);
                 }
             }
@@ -770,7 +819,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     stages_copy.back().output_columns = stage.output_columns;
                     stages_copy.back().filters = stage.filters;
                 }
-
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
                 InterpreterSelectQuery interpreter{
                     select_query, context, storage, metadata_snapshot,
@@ -784,7 +832,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 updated_header = std::make_unique<Block>(pipeline.getHeader());
             }
 
-            /// Special step to recalculate affected indices, projections and TTL expressions.
+            /// Special step to recalculate affected indices, statistics, projections and TTL expressions.
             stages.emplace_back(context);
             for (const auto & column : unchanged_columns)
                 stages.back().column_to_updated.emplace(
@@ -793,7 +841,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     }
 
     is_prepared = true;
-
     return prepareInterpreterSelectQuery(stages, dry_run);
 }
 
@@ -832,6 +879,10 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
     /// Now, calculate `expressions_chain` for each stage except the first.
     /// Do it backwards to propagate information about columns required as input for a stage to the previous stage.
+    if (prepared_stages.empty())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: prepared_stages is empty");
+    }
     for (size_t i = prepared_stages.size() - 1; i > 0; --i)
     {
         auto & stage = prepared_stages[i];
@@ -1051,8 +1102,8 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
 Block MutationsInterpreter::getUpdatedHeader() const
 {
-    // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : *updated_header;
+    // If it's an index/statistic/projection materialization, we don't write any data columns, thus empty header is used
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION ? Block{} : *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const

@@ -1,3 +1,6 @@
+#include <Common/Exception.h>
+#include <Common/randomSeed.h>
+#include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -7,28 +10,33 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTStatisticDeclaration.h>
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+<<<<<<< HEAD
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
+=======
+#include <Storages/StatisticsDescription.h>
+>>>>>>> 32a9c1d592c (x)
 
 namespace DB
 {
@@ -231,6 +239,25 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::ADD_STATISTIC)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.statistic_decl = command_ast->statistic_decl;
+        command.type = AlterCommand::ADD_STATISTIC;
+
+        const auto & ast_statistic_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
+
+        command.statistic_name = ast_statistic_decl.name;
+
+        if (command_ast->index)
+            command.after_statistic_name = command_ast->statistic->as<ASTIdentifier &>().name();
+
+        command.if_not_exists = command_ast->if_not_exists;
+        command.first = command_ast->first;
+
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         AlterCommand command;
@@ -283,6 +310,21 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.index_name = command_ast->index->as<ASTIdentifier &>().name();
         command.if_exists = command_ast->if_exists;
         if (command_ast->clear_index)
+            command.clear = true;
+
+        if (command_ast->partition)
+            command.partition = command_ast->partition;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_STATISTIC)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::DROP_STATISTIC;
+        command.statistic_name = command_ast->statistic->as<ASTIdentifier &>().name();
+        command.if_exists = command_ast->if_exists;
+        if (command_ast->clear_statistic)
             command.clear = true;
 
         if (command_ast->partition)
@@ -555,6 +597,70 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             metadata.secondary_indices.erase(erase_it);
         }
     }
+    else if (type == ADD_STATISTIC)
+    {
+        if (std::any_of(
+                metadata.statistics.cbegin(),
+                metadata.statistics.cend(),
+                [this](const auto & statistic)
+                {
+                    return statistic.name == statistic_name;
+                }))
+        {
+            if (if_not_exists)
+                return;
+            else
+                throw Exception{"Cannot add statistic " + statistic_name + ": statistic with this name already exists",
+                                ErrorCodes::ILLEGAL_COLUMN};
+        }
+
+        auto insert_it = metadata.statistics.end();
+
+        /// insert the index in the beginning of the indices list
+        if (first)
+            insert_it = metadata.statistics.begin();
+
+        if (!after_statistic_name.empty())
+        {
+            insert_it = std::find_if(
+                    metadata.statistics.begin(),
+                    metadata.statistics.end(),
+                    [this](const auto & statistic)
+                    {
+                        return statistic.name == after_statistic_name;
+                    });
+
+            if (insert_it == metadata.statistics.end())
+                throw Exception("Wrong statistic name. Cannot find statistic " + backQuote(after_statistic_name) + " to insert after.",
+                        ErrorCodes::BAD_ARGUMENTS);
+
+            ++insert_it;
+        }
+
+        metadata.statistics.emplace(insert_it, StatisticDescription::getStatisticFromAST(statistic_decl, metadata.columns, context));
+    }
+    else if (type == DROP_STATISTIC)
+    {
+        if (!partition && !clear)
+        {
+            auto erase_it = std::find_if(
+                    metadata.statistics.begin(),
+                    metadata.statistics.end(),
+                    [this](const auto & statistic)
+                    {
+                        return statistic.name == statistic_name;
+                    });
+
+            if (erase_it == metadata.statistics.end())
+            {
+                if (if_exists)
+                    return;
+                throw Exception("Wrong statistic name. Cannot find statistic " + backQuote(statistic_name) + " to drop.", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            metadata.statistics.erase(erase_it);
+        }
+    }
     else if (type == ADD_CONSTRAINT)
     {
         auto constraints = metadata.constraints.getConstraints();
@@ -681,6 +787,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         for (auto & index : metadata.secondary_indices)
             rename_visitor.visit(index.definition_ast);
+        for (auto & statistic : metadata.statistics)
+            rename_visitor.visit(statistic.definition_ast);
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
@@ -779,7 +887,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
+    if (type == DROP_INDEX || type == DROP_STATISTIC || type == DROP_PROJECTION || type == RENAME_COLUMN)
         return true;
 
     /// Drop alias is metadata alter, in other case mutation is required.
@@ -878,7 +986,16 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
             result.clear = true;
         if (partition)
             result.partition = partition;
-
+        result.predicate = nullptr;
+    }
+    else if (type == DROP_STATISTIC)
+    {
+        result.type = MutationCommand::Type::DROP_STATISTIC;
+        result.column_name = statistic_name;
+        if (clear)
+            result.clear = true;
+        if (partition)
+            result.partition = partition;
         result.predicate = nullptr;
     }
     else if (type == DROP_PROJECTION)
@@ -946,6 +1063,20 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         catch (Exception & exception)
         {
             exception.addMessage("Cannot apply mutation because it breaks skip index " + index.name);
+            throw;
+        }
+    }
+
+    /// Changes in columns may lead to changes in statistics
+    for (auto & statistic : metadata_copy.statistics)
+    {
+        try
+        {
+            statistic = StatisticDescription::getStatisticFromAST(statistic.definition_ast, metadata_copy.columns, context);
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage("Cannot apply mutation because it breaks statistic " + statistic.name);
             throw;
         }
     }

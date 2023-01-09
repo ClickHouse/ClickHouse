@@ -549,8 +549,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer{
                     current_info,
                     context,
+                    settings,
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
+                    storage,
                     syntax_analyzer_result->requiredSourceColumns(),
                     log};
             }
@@ -1912,6 +1914,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             if (does_storage_support_prewhere && shouldMoveToPrewhere())
             {
                 /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
+                // TODO: prewhere infos
                 expressions.prewhere_info = std::make_shared<PrewhereInfo>(
                     std::move(expressions.filter_info->actions),
                     std::move(expressions.filter_info->column_name));

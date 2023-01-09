@@ -1,6 +1,8 @@
 #include "IMergeTreeDataPart.h"
 #include "Storages/MergeTree/IDataPartStorage.h"
 
+#include <filesystem>
+#include <memory>
 #include <optional>
 #include <boost/algorithm/string/join.hpp>
 #include <string_view>
@@ -25,6 +27,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/JSON.h>
 #include <Common/logger_useful.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -646,7 +649,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
         loadIndexGranularity();
-        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk();
         loadIndex(); /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
         loadPartitionAndMinMaxIndex();
@@ -774,6 +777,37 @@ void IMergeTreeDataPart::loadIndex()
 
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
+}
+
+MergeTreeStatisticsPtr IMergeTreeDataPart::loadStatistics() const
+{
+    const auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+
+    auto total_statistics = MergeTreeStatisticFactory::instance().get(
+        metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
+    std::vector<String> file_names;
+    volume->getDisk()->listFiles(getFullRelativePath(), file_names);
+    for (const String & file_name : file_names)
+    {
+        if (file_name.ends_with(PART_STATS_FILE_EXT))
+        {
+            const String statistics_file_path = String(fs::path(getFullRelativePath()) / file_name);
+
+            if (volume->getDisk()->exists(statistics_file_path))
+            {
+                auto statistics = MergeTreeStatisticFactory::instance().get(
+                    metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
+                auto statistics_file = openForReading(volume->getDisk(), statistics_file_path);
+                CompressedReadBuffer compressed_buffer(*statistics_file);
+                statistics->deserializeBinary(compressed_buffer);
+                if (!statistics_file->eof())
+                    throw Exception("Stats file " + fullPath(volume->getDisk(), statistics_file_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+
+                total_statistics->merge(statistics);
+            }
+        }
+    }
+    return total_statistics;
 }
 
 void IMergeTreeDataPart::appendFilesOfIndex(Strings & files) const
@@ -1841,10 +1875,11 @@ void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) cons
     throw Exception("Method 'checkConsistency' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk()
 {
     calculateColumnsSizesOnDisk();
     calculateSecondaryIndicesSizesOnDisk();
+    calculateStatisticsSizesOnDisk();
 }
 
 void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
@@ -1890,6 +1925,29 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
     }
 }
 
+void IMergeTreeDataPart::calculateStatisticsSizesOnDisk()
+{
+    if (checksums.empty())
+        throw Exception("Cannot calculate statistics sizes when columns or checksums are not initialized", ErrorCodes::LOGICAL_ERROR);
+
+    const auto& statistics_descriptions = storage.getInMemoryMetadataPtr()->getStatistics();
+    for (const auto& statistic_description : statistics_descriptions)
+    {
+        StatisticSize statistic_size;
+        for (const auto& column_name : statistic_description.column_names)
+        {
+            const auto filename = generateFileNameForStatistics(statistic_description.name, column_name);
+            const auto it = checksums.files.find(filename);
+            if (it != std::end(checksums.files))
+            {
+                statistic_size.data_compressed += it->second.file_size;
+                statistic_size.data_uncompressed += it->second.uncompressed_size;
+            }
+        }
+        statistic_sizes[statistic_description.name] = statistic_size;
+    }
+}
+
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
 {
     /// For some types of parts columns_size maybe not calculated
@@ -1907,6 +1965,14 @@ IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_ind
         return it->second;
 
     return ColumnSize{};
+}
+
+StatisticSize IMergeTreeDataPart::getStatisticSize(const String & statistic_name) const
+{
+    auto it = statistic_sizes.find(statistic_name);
+    if (it != std::end(statistic_sizes))
+        return it->second;
+    return StatisticSize{};
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

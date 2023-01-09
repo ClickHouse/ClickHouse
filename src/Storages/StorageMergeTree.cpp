@@ -231,6 +231,11 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Sele
     return totalRowsByPartitionPredicateImpl(query_info, local_context, parts);
 }
 
+IStatisticsPtr StorageMergeTree::getStatisticsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
+{
+    return getStatisticsByPartitionPredicateImpl(query_info, local_context);
+}
+
 std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
 {
     return getTotalActiveSizeInBytes();
@@ -1035,6 +1040,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             {
                 if (command.type != MutationCommand::Type::DROP_COLUMN
                     && command.type != MutationCommand::Type::DROP_INDEX
+                    && command.type != MutationCommand::Type::DROP_STATISTIC
                     && command.type != MutationCommand::Type::DROP_PROJECTION
                     && command.type != MutationCommand::Type::RENAME_COLUMN)
                 {
