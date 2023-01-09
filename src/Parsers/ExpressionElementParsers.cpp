@@ -1,8 +1,9 @@
+#include <cerrno>
+#include <cstdlib>
 #include <Poco/String.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <IO/readFloatText.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -828,9 +829,12 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto try_read_float = [&](const char * it, const char * end)
     {
-        Float64 float_value = 0;
-        ReadBufferFromMemory buf(it, end - it);
-        if (tryReadFloatTextPrecise(float_value, buf))
+        std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
+        char * str_end;
+        errno = 0;    /// Functions strto* don't clear errno.
+        /// The usage of strtod is needed, because we parse hex floating point literals as well.
+        Float64 float_value = std::strtod(buf.c_str(), &str_end);
+        if (str_end == buf.c_str() + buf.size() && errno != ERANGE)
         {
             if (float_value < 0)
                 throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
