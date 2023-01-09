@@ -1,37 +1,25 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <boost/algorithm/string/replace.hpp>
+#include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
-<<<<<<< HEAD
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
-=======
-#include <Common/logger_useful.h>
-#include <Core/Names.h>
-#include <Core/NamesAndTypes.h>
->>>>>>> 32a9c1d592c (x)
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/SquashingTransform.h>
-#include <Parsers/queryToString.h>
-#include <Poco/Logger.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/TTLTransform.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeTreeStatistic.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/StatisticsDescription.h>
-
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <boost/algorithm/string/replace.hpp>
 
 namespace CurrentMetrics
 {
@@ -805,20 +793,13 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadProjections(false, false);
-<<<<<<< HEAD
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
     /// Also use information from checksums
-    new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    new_data_part->calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk();
 
     new_data_part->default_codec = codec;
-=======
-    new_data_part->setBytesOnDisk(
-        MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), part_path));
-    new_data_part->default_codec = codec;
-    new_data_part->calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk();
->>>>>>> 32a9c1d592c (x)
 }
 
 }
@@ -1809,20 +1790,14 @@ bool MutateTask::prepare()
             ctx->updated_header,
             ctx->indices_to_recalc,
             ctx->mrk_extension,
-<<<<<<< HEAD
-            ctx->projections_to_recalc);
+            ctx->projections_to_recalc,
+            ctx->statistics_to_recalc);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->source_part,
             ctx->new_data_part,
             ctx->for_file_renames,
             ctx->mrk_extension);
-=======
-            ctx->projections_to_recalc,
-            ctx->statistics_to_recalc
-            );
-        ctx->files_to_rename = MutationHelpers::collectFilesForRenames(ctx->source_part, ctx->for_file_renames, ctx->mrk_extension);
->>>>>>> 32a9c1d592c (x)
 
         if (ctx->indices_to_recalc.empty() &&
             ctx->projections_to_recalc.empty() &&
