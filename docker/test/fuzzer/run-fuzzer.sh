@@ -325,8 +325,8 @@ quit
     fi
 
     if test -f core.*; then
-        pigz core.*
-        mv core.*.gz core.gz
+        zstd --threads=0 core.*
+        mv core.*.zst core.zst
     fi
 
     dmesg -T | rg -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
@@ -363,13 +363,13 @@ case "$stage" in
 "report")
 
 CORE_LINK=''
-if [ -f core.gz ]; then
-    CORE_LINK='<a href="core.gz">core.gz</a>'
+if [ -f core.zst ]; then
+    CORE_LINK='<a href="core.zst">core.zst</a>'
 fi
 
 rg --text -F '<Fatal>' server.log > fatal.log ||:
 
-pigz server.log
+zstd --threads=0 server.log
 
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
@@ -394,7 +394,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
 <p class="links">
   <a href="run.log">run.log</a>
   <a href="fuzzer.log">fuzzer.log</a>
-  <a href="server.log.gz">server.log.gz</a>
+  <a href="server.log.zst">server.log.zst</a>
   <a href="main.log">main.log</a>
   ${CORE_LINK}
 </p>
