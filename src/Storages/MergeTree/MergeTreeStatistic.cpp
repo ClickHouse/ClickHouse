@@ -152,10 +152,11 @@ void MergeTreeStatistics::serializeBinary(const String & name, WriteBuffer & ost
 {
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
-    size_serialization->serializeBinary(2, ostr);
-    size_serialization->serializeBinary(static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION), ostr);
+    FormatSettings format_settings;
+    size_serialization->serializeBinary(2, ostr, format_settings);
+    size_serialization->serializeBinary(static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION), ostr, format_settings);
     column_distributions->serializeBinary(name, ostr);
-    size_serialization->serializeBinary(static_cast<size_t>(StatisticType::STRING_SEARCH), ostr);
+    size_serialization->serializeBinary(static_cast<size_t>(StatisticType::STRING_SEARCH), ostr, format_settings);
     string_search->serializeBinary(name, ostr);
 }
 
@@ -164,13 +165,14 @@ void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     Field field;
-    size_serialization->deserializeBinary(field, istr);
+    FormatSettings format_settings;
+    size_serialization->deserializeBinary(field, istr, format_settings);
     const auto stats_count = field.get<size_t>();
     if (stats_count > static_cast<size_t>(StatisticType::LAST))
         throw Exception("Deserialization error: too many stats in file", ErrorCodes::LOGICAL_ERROR);
     for (size_t stat_index = 0; stat_index < stats_count; ++stat_index)
     {
-        size_serialization->deserializeBinary(field, istr);
+        size_serialization->deserializeBinary(field, istr, format_settings);
         switch (field.get<size_t>())
         {
         case static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION):
@@ -237,12 +239,13 @@ void MergeTreeDistributionStatistics::serializeBinary(const String & name, Write
     const size_t count = std::count_if(
         std::begin(column_to_stats), std::end(column_to_stats),
         [&name](const auto & elem) { return name == elem.second->name(); });
-    size_serialization->serializeBinary(count, ostr);
+    FormatSettings format_settings;
+    size_serialization->serializeBinary(count, ostr, format_settings);
     for (const auto & [column, statistic] : column_to_stats)
     {
         if (statistic->name() == name)
         {
-            str_serialization->serializeBinary(column, ostr);
+            str_serialization->serializeBinary(column, ostr, format_settings);
             statistic->serializeBinary(ostr);
         }
     }
@@ -256,26 +259,27 @@ void MergeTreeDistributionStatistics::deserializeBinary(ReadBuffer & istr)
     auto str_serialization = str_type->getDefaultSerialization();
 
     Field field;
-    size_serialization->deserializeBinary(field, istr);
+    FormatSettings format_settings;
+    size_serialization->deserializeBinary(field, istr, format_settings);
     const auto stats_count = field.get<size_t>();
 
     for (size_t index = 0; index < stats_count; ++index)
     {
-        str_serialization->deserializeBinary(field, istr);
+        str_serialization->deserializeBinary(field, istr, format_settings);
         const auto column = field.get<String>();
         auto it = column_to_stats.find(column);
         if (it == std::end(column_to_stats))
         {
-            size_serialization->deserializeBinary(field, istr);
+            size_serialization->deserializeBinary(field, istr, format_settings);
             const auto data_type = field.get<size_t>();
             UNUSED(data_type);
-            size_serialization->deserializeBinary(field, istr);
+            size_serialization->deserializeBinary(field, istr, format_settings);
             const auto data_count = field.get<size_t>();
             istr.ignore(data_count);
         }
         else if (!it->second->validateTypeBinary(istr))
         {
-            size_serialization->deserializeBinary(field, istr);
+            size_serialization->deserializeBinary(field, istr, format_settings);
             const auto data_count = field.get<size_t>();
             istr.ignore(data_count);
         }
@@ -339,12 +343,13 @@ void MergeTreeStringSearchStatistics::serializeBinary(const String & name, Write
     const size_t count = std::count_if(
         std::begin(column_to_stats), std::end(column_to_stats),
         [&name](const auto & elem) { return name == elem.second->name(); });
-    size_serialization->serializeBinary(count, ostr);
+    FormatSettings format_settings;
+    size_serialization->serializeBinary(count, ostr, format_settings);
     for (const auto & [column, statistic] : column_to_stats)
     {
         if (statistic->name() == name)
         {
-            str_serialization->serializeBinary(column, ostr);
+            str_serialization->serializeBinary(column, ostr, format_settings);
             statistic->serializeBinary(ostr);
         }
     }
@@ -358,26 +363,27 @@ void MergeTreeStringSearchStatistics::deserializeBinary(ReadBuffer & istr)
     auto str_serialization = str_type->getDefaultSerialization();
 
     Field field;
-    size_serialization->deserializeBinary(field, istr);
+    FormatSettings format_settings;
+    size_serialization->deserializeBinary(field, istr, format_settings);
     const auto stats_count = field.get<size_t>();
 
     for (size_t index = 0; index < stats_count; ++index)
     {
-        str_serialization->deserializeBinary(field, istr);
+        str_serialization->deserializeBinary(field, istr, format_settings);
         const auto column = field.get<String>();
         auto it = column_to_stats.find(column);
         if (it == std::end(column_to_stats))
         {
-            size_serialization->deserializeBinary(field, istr);
+            size_serialization->deserializeBinary(field, istr, format_settings);
             const auto data_type = field.get<size_t>();
             UNUSED(data_type);
-            size_serialization->deserializeBinary(field, istr);
+            size_serialization->deserializeBinary(field, istr, format_settings);
             const auto data_count = field.get<size_t>();
             istr.ignore(data_count);
         }
         else if (!it->second->validateTypeBinary(istr))
         {
-            size_serialization->deserializeBinary(field, istr);
+            size_serialization->deserializeBinary(field, istr, format_settings);
             const auto data_count = field.get<size_t>();
             istr.ignore(data_count);
         }
