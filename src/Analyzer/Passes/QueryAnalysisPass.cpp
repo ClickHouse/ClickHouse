@@ -5503,9 +5503,15 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
             std::unordered_set<String> array_join_column_names;
 
-            /// Wrap array join expressions into column nodes, where array join expression is inner expression.
+            /// Wrap array join expressions into column nodes, where array join expression is inner expression
 
-            for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
+            auto & array_join_nodes = array_join_node.getJoinExpressions().getNodes();
+            size_t array_join_nodes_size = array_join_nodes.size();
+
+            std::vector<QueryTreeNodePtr> array_join_column_expressions;
+            array_join_column_expressions.reserve(array_join_nodes_size);
+
+            for (auto & array_join_expression : array_join_nodes)
             {
                 auto array_join_expression_alias = array_join_expression->getAlias();
                 if (!array_join_expression_alias.empty() && scope.alias_name_to_expression_node.contains(array_join_expression_alias))
@@ -5556,12 +5562,26 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 array_join_column_names.emplace(array_join_column_name);
 
                 auto array_join_column = std::make_shared<ColumnNode>(NameAndTypePair{array_join_column_name, result_type}, array_join_expression, join_tree_node);
-                array_join_expression = std::move(array_join_column);
-                array_join_expression->setAlias(array_join_expression_alias);
+                array_join_column->setAlias(array_join_expression_alias);
+                array_join_column_expressions.push_back(std::move(array_join_column));
+            }
 
-                auto it = scope.alias_name_to_expression_node.find(array_join_expression_alias);
+            /** Allow to resolve ARRAY JOIN columns from aliases with types after ARRAY JOIN only after ARRAY JOIN expression list is resolved, because
+              * during resolution of ARRAY JOIN expression list we must use column type before ARRAY JOIN.
+              *
+              * Example: SELECT id, value_element FROM test_table ARRAY JOIN [[1,2,3]] AS value_element, value_element AS value
+              * It is expected that `value_element AS value` expression inside ARRAY JOIN expression list will be
+              * resolved as `value_element` expression with type before ARRAY JOIN.
+              * And it is expected that `value_element` inside projection expression list will be resolved as `value_element` expression
+              * with type after ARRAY JOIN.
+              */
+            for (size_t i = 0; i < array_join_nodes_size; ++i)
+            {
+                auto & array_join_expression = array_join_nodes[i];
+                array_join_expression = std::move(array_join_column_expressions[i]);
+                auto it = scope.alias_name_to_expression_node.find(array_join_expression->getAlias());
                 if (it != scope.alias_name_to_expression_node.end())
-                    it->second = array_join_expression;
+                    it->second = array_join_nodes[i];
             }
 
             break;
