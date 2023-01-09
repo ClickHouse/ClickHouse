@@ -136,7 +136,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     }
 }
 
-void ASTIdentifier::appendColumnNameImpl(WriteBuffer & ostr) const
+void ASTIdentifier::appendColumnNameImpl(WriteBuffer & ostr, bool /* prefer_alias */) const
 {
     writeString(name(), ostr);
 }

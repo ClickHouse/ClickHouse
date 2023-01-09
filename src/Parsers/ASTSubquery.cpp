@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
+void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr, bool /* prefer_alias */) const
 {
     /// This is a hack. We use alias, if available, because otherwise tree could change during analysis.
     if (!alias.empty())

@@ -364,7 +364,7 @@ namespace
 }
 
 
-void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
+void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, bool prefer_alias) const
 {
     if (name == "view")
         throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -374,7 +374,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     /// To avoid it we check whether we can convert function to literal.
     if (auto literal = toLiteral())
     {
-        literal->appendColumnName(ostr);
+        literal->appendColumnName(ostr, prefer_alias);
         return;
     }
 
@@ -388,7 +388,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
             if (it != parameters->children.begin())
                 writeCString(", ", ostr);
 
-            (*it)->appendColumnName(ostr);
+            (*it)->appendColumnName(ostr, prefer_alias);
         }
         writeChar(')', ostr);
     }
@@ -401,7 +401,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
             if (it != arguments->children.begin())
                 writeCString(", ", ostr);
 
-            (*it)->appendColumnName(ostr);
+            (*it)->appendColumnName(ostr, prefer_alias);
         }
     }
 

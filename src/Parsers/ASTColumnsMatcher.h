@@ -22,7 +22,7 @@ public:
     String getID(char) const override { return "ColumnsRegexpMatcher"; }
     ASTPtr clone() const override;
 
-    void appendColumnName(WriteBuffer & ostr) const override;
+    void appendColumnName(WriteBuffer & ostr, bool prefer_alias) const override;
     void setPattern(String pattern);
     const std::shared_ptr<re2::RE2> & getMatcher() const;
     bool isColumnMatching(const String & column_name) const;
@@ -42,7 +42,7 @@ class ASTColumnsListMatcher : public IAST
 public:
     String getID(char) const override { return "ColumnsListMatcher"; }
     ASTPtr clone() const override;
-    void appendColumnName(WriteBuffer & ostr) const override;
+    void appendColumnName(WriteBuffer & ostr, bool prefer_alias) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
     ASTPtr column_list;
@@ -57,7 +57,7 @@ public:
     String getID(char) const override { return "QualifiedColumnsRegexpMatcher"; }
     ASTPtr clone() const override;
 
-    void appendColumnName(WriteBuffer & ostr) const override;
+    void appendColumnName(WriteBuffer & ostr, bool prefer_alias) const override;
     const std::shared_ptr<re2::RE2> & getMatcher() const;
     void setPattern(String pattern);
     void setMatcher(std::shared_ptr<re2::RE2> matcher);
@@ -77,7 +77,7 @@ class ASTQualifiedColumnsListMatcher : public IAST
 public:
     String getID(char) const override { return "QualifiedColumnsListMatcher"; }
     ASTPtr clone() const override;
-    void appendColumnName(WriteBuffer & ostr) const override;
+    void appendColumnName(WriteBuffer & ostr, bool prefer_alias) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
     ASTPtr column_list;

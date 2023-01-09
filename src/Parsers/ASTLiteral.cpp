@@ -57,7 +57,7 @@ String FieldVisitorToColumnName::operator() (const Tuple & x) const
 
 }
 
-void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
+void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr, bool /* prefer_alias */) const
 {
     if (use_legacy_column_name_of_tuple)
     {

@@ -14,7 +14,7 @@ class ASTAsterisk : public IAST
 public:
     String getID(char) const override { return "Asterisk"; }
     ASTPtr clone() const override;
-    void appendColumnName(WriteBuffer & ostr) const override;
+    void appendColumnName(WriteBuffer & ostr, bool prefer_alias) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

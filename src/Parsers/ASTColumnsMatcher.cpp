@@ -22,7 +22,7 @@ ASTPtr ASTColumnsRegexpMatcher::clone() const
     return clone;
 }
 
-void ASTColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
+void ASTColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr, bool /* prefer_alias */) const
 {
     writeCString("COLUMNS(", ostr);
     writeQuotedString(original_pattern, ostr);
@@ -84,7 +84,7 @@ void ASTColumnsListMatcher::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
+void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr, bool prefer_alias) const
 {
     writeCString("COLUMNS(", ostr);
     for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
@@ -92,7 +92,7 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
         if (it != column_list->children.begin())
             writeCString(", ", ostr);
 
-        (*it)->appendColumnName(ostr);
+        (*it)->appendColumnName(ostr, prefer_alias);
     }
     writeChar(')', ostr);
 }
@@ -126,10 +126,10 @@ ASTPtr ASTQualifiedColumnsRegexpMatcher::clone() const
     return clone;
 }
 
-void ASTQualifiedColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
+void ASTQualifiedColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr, bool prefer_alias) const
 {
     const auto & qualifier = children.at(0);
-    qualifier->appendColumnName(ostr);
+    qualifier->appendColumnName(ostr, prefer_alias);
     writeCString(".COLUMNS(", ostr);
     writeQuotedString(original_pattern, ostr);
     writeChar(')', ostr);
@@ -192,10 +192,10 @@ ASTPtr ASTQualifiedColumnsListMatcher::clone() const
     return clone;
 }
 
-void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
+void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr, bool prefer_alias) const
 {
     const auto & qualifier = children.at(0);
-    qualifier->appendColumnName(ostr);
+    qualifier->appendColumnName(ostr, prefer_alias);
     writeCString(".COLUMNS(", ostr);
 
     for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
@@ -203,7 +203,7 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
         if (it != column_list->children.begin())
             writeCString(", ", ostr);
 
-        (*it)->appendColumnName(ostr);
+        (*it)->appendColumnName(ostr, prefer_alias);
     }
     writeChar(')', ostr);
 }

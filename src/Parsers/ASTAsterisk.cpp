@@ -12,7 +12,7 @@ ASTPtr ASTAsterisk::clone() const
     return clone;
 }
 
-void ASTAsterisk::appendColumnName(WriteBuffer & ostr) const { ostr.write('*'); }
+void ASTAsterisk::appendColumnName(WriteBuffer & ostr, bool /* prefer_alias */) const { ostr.write('*'); }
 
 void ASTAsterisk::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {

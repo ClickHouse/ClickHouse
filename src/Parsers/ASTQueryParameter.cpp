@@ -18,7 +18,7 @@ void ASTQueryParameter::formatImplWithoutAlias(const FormatSettings & settings, 
         << (settings.hilite ? hilite_none : "");
 }
 
-void ASTQueryParameter::appendColumnNameImpl(WriteBuffer & ostr) const
+void ASTQueryParameter::appendColumnNameImpl(WriteBuffer & ostr, bool /* prefer_alias */) const
 {
     writeString(name, ostr);
 }

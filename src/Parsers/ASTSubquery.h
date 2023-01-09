@@ -38,7 +38,7 @@ public:
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void appendColumnNameImpl(WriteBuffer & ostr) const override;
+    void appendColumnNameImpl(WriteBuffer & ostr, bool prefer_alias) const override;
 };
 
 }

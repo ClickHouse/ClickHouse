@@ -5,10 +5,10 @@
 namespace DB
 {
 
-void ASTQualifiedAsterisk::appendColumnName(WriteBuffer & ostr) const
+void ASTQualifiedAsterisk::appendColumnName(WriteBuffer & ostr, bool prefer_alias) const
 {
     const auto & qualifier = children.at(0);
-    qualifier->appendColumnName(ostr);
+    qualifier->appendColumnName(ostr, prefer_alias);
     writeCString(".*", ostr);
 }
 

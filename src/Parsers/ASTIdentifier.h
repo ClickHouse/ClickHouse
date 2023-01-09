@@ -57,7 +57,7 @@ protected:
     std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void appendColumnNameImpl(WriteBuffer & ostr) const override;
+    void appendColumnNameImpl(WriteBuffer & ostr, bool prefer_alias) const override;
 
 private:
     using ASTWithAlias::children; /// ASTIdentifier is child free

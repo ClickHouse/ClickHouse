@@ -20,7 +20,7 @@ public:
         clone->cloneChildren();
         return clone;
     }
-    void appendColumnName(WriteBuffer & ostr) const override;
+    void appendColumnName(WriteBuffer & ostr, bool prefer_alias) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

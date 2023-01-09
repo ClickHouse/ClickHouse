@@ -111,20 +111,20 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
     }
 }
 
-void ASTColumnsApplyTransformer::appendColumnName(WriteBuffer & ostr) const
+void ASTColumnsApplyTransformer::appendColumnName(WriteBuffer & ostr, bool prefer_alias) const
 {
     writeCString("APPLY ", ostr);
     if (!column_name_prefix.empty())
         writeChar('(', ostr);
 
     if (lambda)
-        lambda->appendColumnName(ostr);
+        lambda->appendColumnName(ostr, prefer_alias);
     else
     {
         writeString(func_name, ostr);
 
         if (parameters)
-            parameters->appendColumnName(ostr);
+            parameters->appendColumnName(ostr, prefer_alias);
     }
 
     if (!column_name_prefix.empty())
@@ -177,7 +177,7 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
         settings.ostr << ")";
 }
 
-void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
+void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr, bool prefer_alias) const
 {
     writeCString("EXCEPT ", ostr);
     if (is_strict)
@@ -190,7 +190,7 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
     {
         if (it != children.begin())
             writeCString(", ", ostr);
-        (*it)->appendColumnName(ostr);
+        (*it)->appendColumnName(ostr, prefer_alias);
     }
 
     if (!original_pattern.empty())
@@ -287,9 +287,9 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
 }
 
-void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
+void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr, bool prefer_alias) const
 {
-    expr->appendColumnName(ostr);
+    expr->appendColumnName(ostr, prefer_alias);
     writeCString(" AS ", ostr);
     writeProbablyBackQuotedString(name, ostr);
 }
@@ -321,7 +321,7 @@ void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, F
         settings.ostr << ")";
 }
 
-void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr) const
+void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr, bool prefer_alias) const
 {
     writeCString("REPLACE ", ostr);
     if (is_strict)
@@ -334,7 +334,7 @@ void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr) const
     {
         if (it != children.begin())
             writeCString(", ", ostr);
-        (*it)->appendColumnName(ostr);
+        (*it)->appendColumnName(ostr, prefer_alias);
     }
 
     if (children.size() > 1)

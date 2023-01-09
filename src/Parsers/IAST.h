@@ -40,16 +40,21 @@ public:
     IAST(const IAST &) = default;
     IAST & operator=(const IAST &) = default;
 
-    /** Get the canonical name of the column if the element is a column */
-    String getColumnName() const;
+    /** If `prefer_alias = false`, get the canonical name of the column if the element is a column.
+      * If `prefer_alias = true`, try to use non-empty aliases for all children with
+      * `ASTWithAlias::prefer_alias_to_column_name = true` when building column name. */
+    String getColumnName(bool prefer_alias = false) const;
 
-    virtual void appendColumnName(WriteBuffer &) const
+    virtual void appendColumnName(WriteBuffer &, bool) const
     {
         throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }
 
     /** Get the alias, if any, or the canonical name of the column, if it is not. */
     virtual String getAliasOrColumnName() const { return getColumnName(); }
+
+    /** Same as above, except passing `prefer_alias = true`. See comments of `getColumnName()` for more detail. */
+    virtual String getAliasOrColumnNamePreferAlias() const { return getColumnName(true); }
 
     /** Get the alias, if any, or an empty string if it does not exist, or if the element does not support aliases. */
     virtual String tryGetAlias() const { return String(); }

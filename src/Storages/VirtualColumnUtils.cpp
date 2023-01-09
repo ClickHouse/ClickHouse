@@ -114,17 +114,17 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     {
         auto literal = std::make_shared<ASTLiteral>(value);
         literal->alias = column_name;
-        literal->prefer_alias_to_column_name = true;
+        literal->force_alias = true;
         select.with()->children.push_back(literal);
     }
     else
     {
         auto literal = std::make_shared<ASTLiteral>(value);
-        literal->prefer_alias_to_column_name = true;
+        literal->force_alias = true;
 
         auto function = makeASTFunction(func, literal);
         function->alias = column_name;
-        function->prefer_alias_to_column_name = true;
+        function->force_alias = true;
         select.with()->children.push_back(function);
     }
 }

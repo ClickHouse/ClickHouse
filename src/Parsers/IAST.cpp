@@ -195,10 +195,10 @@ void IAST::cloneChildren()
 }
 
 
-String IAST::getColumnName() const
+String IAST::getColumnName(bool prefer_alias) const
 {
     WriteBufferFromOwnString write_buffer;
-    appendColumnName(write_buffer);
+    appendColumnName(write_buffer, prefer_alias);
     return write_buffer.str();
 }
 

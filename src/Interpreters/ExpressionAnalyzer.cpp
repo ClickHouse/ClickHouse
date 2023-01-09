@@ -1673,11 +1673,11 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     ASTs asts = select_query->select()->children;
     for (const auto & ast : asts)
     {
-        String result_name = ast->getAliasOrColumnName();
+        String result_name = ast->getAliasOrColumnNamePreferAlias();
 
         if (required_result_columns_set.empty() || required_result_columns_set.contains(result_name))
         {
-            std::string source_name = ast->getColumnName();
+            String source_name = ast->getColumnName();
 
             /*
              * For temporary columns created by ExpressionAnalyzer for literals,
@@ -1716,7 +1716,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     {
         result_columns.clear();
         for (const auto & column : required_result_columns)
-            result_columns.emplace_back(column, std::string{});
+            result_columns.emplace_back(column, String{});
         actions->project(result_columns);
     }
 

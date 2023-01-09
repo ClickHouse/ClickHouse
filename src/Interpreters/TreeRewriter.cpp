@@ -495,7 +495,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     {
         /// Even if we have no requirements there could be duplicates cause of asterisks. SELECT *, t.*
         for (const auto & elem : elements)
-            required_columns_with_duplicate_count.emplace(elem->getAliasOrColumnName(), 1);
+            required_columns_with_duplicate_count.emplace(elem->getAliasOrColumnNamePreferAlias(), 1);
     }
     else
         return;
@@ -507,7 +507,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
 
     for (const auto & elem : elements)
     {
-        String name = elem->getAliasOrColumnName();
+        String name = elem->getAliasOrColumnNamePreferAlias();
 
         /// Columns that are presented in output_columns_positions should
         /// appears in the same order in the new_elements, hence default

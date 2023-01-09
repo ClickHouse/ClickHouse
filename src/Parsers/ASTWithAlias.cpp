@@ -40,9 +40,12 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
     }
 }
 
-void ASTWithAlias::appendColumnName(WriteBuffer & ostr) const
+void ASTWithAlias::appendColumnName(WriteBuffer & ostr, bool prefer_alias) const
 {
-    appendColumnNameImpl(ostr);
+    if (!alias.empty() && ((prefer_alias && prefer_alias_to_column_name) || force_alias))
+        writeString(alias, ostr);
+    else
+        appendColumnNameImpl(ostr, prefer_alias);
 }
 
 }
