@@ -23,7 +23,7 @@ class IRestoreCoordination;
 class BackupsWorker
 {
 public:
-    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads);
+    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
 
     /// Waits until all tasks have been completed.
     void shutdown();
@@ -113,6 +113,8 @@ private:
     std::atomic<size_t> num_active_restores = 0;
     mutable std::mutex infos_mutex;
     Poco::Logger * log;
+    const bool allow_concurrent_backups;
+    const bool allow_concurrent_restores;
 };
 
 }
