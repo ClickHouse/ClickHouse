@@ -243,30 +243,32 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
             return Field(DecimalField<DateTime64>(decimal_value, scale));
         }
+
+        if (which_type.isIPv4() && src.getType() == Field::Types::IPv4)
+        {
+            /// Already in needed type.
+            return src;
+        }
+
+        if (which_type.isIPv6())
+        {
+            /// Already in needed type.
+            if (src.getType() == Field::Types::IPv6)
+                return src;
+            /// Treat FixedString(16) as a binary representation of IPv6
+            if (which_from_type.isFixedString() && assert_cast<const DataTypeFixedString *>(from_type_hint)->getN() == IPV6_BINARY_LENGTH)
+            {
+                const auto col = type.createColumn();
+                ReadBufferFromString in_buffer(src.get<String>());
+                type.getDefaultSerialization()->deserializeBinary(*col, in_buffer, {});
+                return (*col)[0];
+            }
+        }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
     {
         /// Already in needed type.
         return src;
-    }
-    else if (which_type.isIPv4() && src.getType() == Field::Types::IPv4)
-    {
-        /// Already in needed type.
-        return src;
-    }
-    else if (which_type.isIPv6())
-    {
-        /// Already in needed type.
-        if (src.getType() == Field::Types::IPv6)
-            return src;
-        /// Treat FixedString(16) as a binary representation of IPv6
-        if (which_from_type.isFixedString() && assert_cast<const DataTypeFixedString *>(from_type_hint)->getN() == IPV6_BINARY_LENGTH)
-        {
-            const auto col = type.createColumn();
-            ReadBufferFromString in_buffer(src.get<String>());
-            type.getDefaultSerialization()->deserializeBinary(*col, in_buffer, {});
-            return (*col)[0];
-        }
     }
     else if (which_type.isStringOrFixedString())
     {
