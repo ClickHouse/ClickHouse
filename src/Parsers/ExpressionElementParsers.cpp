@@ -850,7 +850,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto literal = std::make_shared<ASTLiteral>(res);
             literal->begin = literal_begin;
             literal->end = ++pos;
-            node = literal;
+            node = literal;entrypoint.sh
 
             return true;
         }
