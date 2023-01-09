@@ -251,5 +251,3 @@ slug: /zh/sql-reference/functions/functions-for-nulls
     ┌─toTypeName(toNullable(10))─┐
     │ Nullable(UInt8)            │
     └────────────────────────────┘
-
-

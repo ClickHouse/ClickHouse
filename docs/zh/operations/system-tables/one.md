@@ -22,5 +22,3 @@ slug: /zh/operations/system-tables/one
 
 1 rows in set. Elapsed: 0.001 sec.
 ```
-
-

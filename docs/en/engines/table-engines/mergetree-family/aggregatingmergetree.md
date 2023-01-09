@@ -122,5 +122,3 @@ FROM test.mv_visits
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
-
-

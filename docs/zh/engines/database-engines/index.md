@@ -27,5 +27,3 @@ sidebar_position: 27
 -   [Replicated](../../engines/database-engines/replicated.md)
 
 -   [SQLite](../../engines/database-engines/sqlite.md)
-
-

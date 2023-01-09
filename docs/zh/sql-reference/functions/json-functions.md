@@ -173,5 +173,3 @@ slug: /zh/sql-reference/functions/json-functions
 示例:
 
     select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
-
-

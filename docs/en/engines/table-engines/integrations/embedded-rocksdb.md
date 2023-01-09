@@ -84,5 +84,3 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
     </tables>
 </rocksdb>
 ```
-
-

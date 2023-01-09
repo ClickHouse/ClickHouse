@@ -55,5 +55,3 @@ SELECT groupArray(y) FROM t_null_big
 ```
 
 在 `groupArray` 生成的数组中不包括 `NULL`。
-
-

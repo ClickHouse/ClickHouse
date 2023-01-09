@@ -26,5 +26,3 @@ slug: /zh/operations/system-tables/disks
 
 1 rows in set. Elapsed: 0.001 sec.
 ```
-
-

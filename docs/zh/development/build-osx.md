@@ -81,5 +81,3 @@ $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 然后重启。
 
 可以通过 `ulimit -n` 命令来检查是否生效。
-
-

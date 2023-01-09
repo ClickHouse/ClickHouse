@@ -40,5 +40,3 @@ DROP TABLE IF EXISTS t;
 См. также:
 
 -   [Движок таблиц Null](../../engines/table-engines/special/null.md)
-
-

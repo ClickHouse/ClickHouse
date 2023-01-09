@@ -86,4 +86,3 @@ SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
 
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlogisticregression)
 -   [Отличие линейной от логистической регрессии.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
-

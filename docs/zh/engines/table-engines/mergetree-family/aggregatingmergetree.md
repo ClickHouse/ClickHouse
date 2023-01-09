@@ -97,5 +97,3 @@ FROM test.basic
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
-
-

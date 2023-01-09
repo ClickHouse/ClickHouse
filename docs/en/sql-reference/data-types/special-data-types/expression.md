@@ -7,5 +7,3 @@ sidebar_label: Expression
 # Expression
 
 Expressions are used for representing lambdas in high-order functions.
-
-

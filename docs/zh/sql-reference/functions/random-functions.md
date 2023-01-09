@@ -20,5 +20,3 @@ slug: /zh/sql-reference/functions/random-functions
 ## randConstant {#randconstant}
 
 返回一个UInt32类型的随机数字，该函数不同之处在于仅为每个数据块参数一个随机数。
-
-

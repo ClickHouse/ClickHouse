@@ -67,5 +67,3 @@ SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
     ┌─toTypeName(CAST(from, 'FixedString(16)'))─┬─i───────┐
     │ FixedString(16)                           │  ��� │
     └───────────────────────────────────────────┴─────────┘
-
-

@@ -88,5 +88,3 @@ LIFETIME(MIN 300 MAX 360)
 SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
 ...
 ```
-
-

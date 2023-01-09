@@ -14,6 +14,3 @@ sidebar_position: 2
 
 -   [QuickStart教程](tutorial.md)  快速了解Clickhouse的操作流程
 -   [示例数据集-航班飞行数据](example-datasets/ontime.md) 示例数据，提供了常用的SQL查询场景
-
-
-

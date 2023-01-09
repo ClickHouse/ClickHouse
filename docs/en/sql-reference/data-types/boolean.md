@@ -37,5 +37,3 @@ SELECT * FROM test_bool;
 │ 2 │ false │
 └───┴───────┘
 ```
-
-

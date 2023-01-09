@@ -32,5 +32,3 @@ sidebar_label: 比较函数
 ## 小于等于, &lt;= 运算符 {#lessorequals-operator}
 
 ## 大于等于, &gt;= 运算符 {#greaterorequals-operator}
-
-

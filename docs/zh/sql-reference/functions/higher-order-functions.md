@@ -137,5 +137,3 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])
     ┌─arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
     │ [4,3,2,1,nan,nan,NULL,NULL]                          │
     └──────────────────────────────────────────────────────┘
-
-

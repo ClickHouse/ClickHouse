@@ -41,5 +41,3 @@ Features:
 -   Basic authentication.
 
 Implemented in Go.
-
-

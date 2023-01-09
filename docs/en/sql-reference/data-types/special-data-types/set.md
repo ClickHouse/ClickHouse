@@ -7,5 +7,3 @@ sidebar_label: Set
 # Set
 
 Used for the right half of an [IN](../../../sql-reference/operators/in.md#select-in-operators) expression.
-
-

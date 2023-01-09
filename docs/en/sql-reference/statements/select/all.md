@@ -18,5 +18,3 @@ equals to
 ```sql
 SELECT sum(number) FROM numbers(10);
 ```
-
-

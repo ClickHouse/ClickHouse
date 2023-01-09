@@ -29,5 +29,3 @@ Used for tests.
 
 10 rows in set. Elapsed: 0.001 sec.
 ```
-
-
