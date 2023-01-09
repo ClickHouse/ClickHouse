@@ -14,6 +14,7 @@
 #include <IO/NFS/WriteBufferFromNFS.h>
 
 #include <Interpreters/Context.h>
+#include <aws/core/utils/DateTime.h>
 
 
 namespace CurrentMetrics
@@ -58,13 +59,13 @@ std::string NFSObjectStorage::generateBlobNameForPath(const std::string & /* pat
 
     /// Total length is 32 a-z characters for enough randomness.
     /// First 3 characters are used as a prefix for
-    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
-
     constexpr size_t key_name_total_size = 32;
     constexpr size_t key_name_prefix_size = 3;
+    const String & date = Aws::Utils::DateTime::CalculateLocalTimestampAsString("%Y%m%d");
 
     /// Path to store new NFS object.
-    return fmt::format("{}/{}",
+    return fmt::format("{}/{}/{}",
+                       date,
                        getRandomASCIIString(key_name_prefix_size),
                        getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 }
