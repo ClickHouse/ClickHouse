@@ -1,35 +1,12 @@
-#include <Interpreters/MutationsInterpreter.h>
-#include <Common/Exception.h>
-#include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
-#include <IO/WriteHelpers.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/CheckSortedTransform.h>
-#include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
-<<<<<<< HEAD
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -53,8 +30,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/LightweightDeleteDescription.h>
-=======
->>>>>>> 32a9c1d592c (x)
 
 
 namespace DB
