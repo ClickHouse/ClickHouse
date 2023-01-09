@@ -3,6 +3,7 @@
 #ifdef OS_LINUX /// Because of futex
 
 #include <base/types.h>
+#include <base/defines.h>
 #include <atomic>
 #include <shared_mutex> // for std::unique_lock and std::shared_lock
 
@@ -10,7 +11,7 @@ namespace DB
 {
 
 // Faster implementation of `std::shared_mutex` based on a pair of futexes
-class SharedMutex
+class TSA_CAPABILITY("SharedMutex") SharedMutex
 {
 public:
     SharedMutex();
@@ -19,14 +20,14 @@ public:
     SharedMutex & operator=(const SharedMutex &) = delete;
 
     // Exclusive ownership
-    void lock();
-    bool try_lock();
-    void unlock();
+    void lock() TSA_ACQUIRE();
+    bool try_lock() TSA_TRY_ACQUIRE(true);
+    void unlock() TSA_RELEASE();
 
     // Shared ownership
-    void lock_shared();
-    bool try_lock_shared();
-    void unlock_shared();
+    void lock_shared() TSA_ACQUIRE_SHARED();
+    bool try_lock_shared() TSA_TRY_ACQUIRE_SHARED(true);
+    void unlock_shared() TSA_RELEASE_SHARED();
 
 private:
     static constexpr UInt64 readers = (1ull << 32ull) - 1ull; // Lower 32 bits of state

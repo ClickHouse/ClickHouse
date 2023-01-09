@@ -4,6 +4,7 @@
 
 #include <Common/CancelToken.h>
 #include <base/types.h>
+#include <base/defines.h>
 #include <atomic>
 #include <shared_mutex> // for std::unique_lock and std::shared_lock
 
@@ -13,7 +14,7 @@ namespace DB
 // Reimplementation of `std::shared_mutex` that can interoperate with thread cancelation via `CancelToken::signal()`.
 // It has cancelation point on waiting during `lock()` and `shared_lock()`.
 // NOTE: It has NO cancelation points on fast code path, when locking does not require waiting.
-class CancelableSharedMutex
+class TSA_CAPABILITY("CancelableSharedMutex") CancelableSharedMutex
 {
 public:
     CancelableSharedMutex();
@@ -22,14 +23,14 @@ public:
     CancelableSharedMutex & operator=(const CancelableSharedMutex &) = delete;
 
     // Exclusive ownership
-    void lock();
-    bool try_lock();
-    void unlock();
+    void lock() TSA_ACQUIRE();
+    bool try_lock() TSA_TRY_ACQUIRE(true);
+    void unlock() TSA_RELEASE();
 
     // Shared ownership
-    void lock_shared();
-    bool try_lock_shared();
-    void unlock_shared();
+    void lock_shared() TSA_ACQUIRE_SHARED();
+    bool try_lock_shared() TSA_TRY_ACQUIRE_SHARED(true);
+    void unlock_shared() TSA_RELEASE_SHARED();
 
 private:
     // State 64-bits layout:
