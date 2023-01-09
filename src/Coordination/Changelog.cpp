@@ -613,7 +613,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
     if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before writting records");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before writing records");
 
     {
 
