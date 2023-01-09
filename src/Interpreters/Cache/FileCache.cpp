@@ -369,6 +369,18 @@ KeyTransactionPtr FileCache::createKeyTransaction(const Key & key, KeyNotFoundPo
 {
     std::lock_guard lock(files_mutex);
 
+    /// TODO: Add cleanup thread instead of doing this in createKeyTransaction?
+    remove_files_metadata.removeIfExists(key);
+    remove_files_metadata.iterate([this](const Key & remove_metadata_key)
+    {
+        [[maybe_unused]] const bool erased = files.erase(remove_metadata_key);
+        chassert(erased);
+
+        const fs::path prefix_path = fs::path(getPathInLocalCache(remove_metadata_key)).parent_path();
+        if (fs::exists(prefix_path) && fs::is_empty(prefix_path))
+            fs::remove(prefix_path);
+    });
+
     auto it = files.find(key);
     if (it == files.end())
     {
@@ -385,13 +397,13 @@ KeyTransactionPtr FileCache::createKeyTransaction(const Key & key, KeyNotFoundPo
             }
             case KeyNotFoundPolicy::CREATE_EMPTY:
             {
-                it = files.emplace(key, CachedFilesMetadata()).first;
+                it = files.emplace(key, std::make_shared<CacheCells>()).first;
                 break;
             }
         }
     }
 
-    return std::make_unique<KeyTransaction>(it->second.guard, it->second.cells);
+    return std::make_unique<KeyTransaction>(key, it->second, this);
 }
 
 FileSegmentsHolderPtr FileCache::set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
@@ -868,25 +880,6 @@ bool FileCache::tryReserveInCache(
     return true;
 }
 
-void FileCache::removeKeyDirectoryIfExists(const Key & key, const KeyGuard::Lock &) const
-{
-    /// Note: it is guaranteed that there is no concurrency here with files deletion
-    /// because cache key directories are create only in FileCache class under cache_lock.
-
-    auto key_str = key.toString();
-    auto key_prefix_path = fs::path(cache_base_path) / key_str.substr(0, 3);
-    auto key_path = key_prefix_path / key_str;
-
-    if (!fs::exists(key_path))
-        return;
-
-    fs::remove_all(key_path);
-
-    if (fs::is_empty(key_prefix_path))
-        fs::remove(key_prefix_path);
-}
-
-
 void FileCache::removeIfExists(const Key & key)
 {
     assertInitialized();
@@ -897,8 +890,6 @@ void FileCache::removeIfExists(const Key & key)
         return;
 
     auto & offsets = key_transaction->getOffsets();
-    // bool remove_directory = true;
-
     if (!offsets.empty())
     {
         std::vector<FileSegmentCell *> remove_cells;
@@ -913,20 +904,11 @@ void FileCache::removeIfExists(const Key & key)
             /// it became possible to start removing something from cache when it is used
             /// by other "zero-copy" tables. That is why it's not an error.
             if (!cell->releasable())
-            {
-                // remove_directory = false;
                 continue;
-            }
 
             key_transaction->remove(cell->file_segment, queue_lock);
         }
     }
-
-    // if (remove_directory)
-    // {
-    //     files.erase(key);
-    //     removeKeyDirectoryIfExists(key, lock);
-    // }
 }
 
 void FileCache::removeAllReleasable()
@@ -965,10 +947,26 @@ void FileCache::removeAllReleasable()
     }
 }
 
+KeyTransaction::KeyTransaction(const Key & key_, FileCache::CacheCellsPtr offsets_, const FileCache * cache_)
+    : key(key_)
+    , cache(cache_)
+    , guard(offsets_->guard)
+    , lock(guard->lock())
+    , offsets(offsets_)
+    , log(&Poco::Logger::get("KeyTransaction"))
+{
+}
+
+KeyTransaction::~KeyTransaction()
+{
+    cleanupKeyDirectory();
+}
+
 void KeyTransaction::remove(FileSegmentPtr file_segment, const CachePriorityQueueGuard::Lock & queue_lock)
 {
     /// We must hold pointer to file segment while removing it.
-    remove(file_segment->key(), file_segment->offset(), file_segment->lock(), queue_lock);
+    chassert(file_segment->key() == key);
+    remove(file_segment->offset(), file_segment->lock(), queue_lock);
 }
 
 bool KeyTransaction::isLastHolder(size_t offset)
@@ -978,7 +976,6 @@ bool KeyTransaction::isLastHolder(size_t offset)
 }
 
 void KeyTransaction::remove(
-    const Key & key,
     size_t offset,
     const FileSegmentGuard::Lock & segment_lock,
     const CachePriorityQueueGuard::Lock & queue_lock)
@@ -1002,12 +999,6 @@ void KeyTransaction::remove(
         try
         {
             fs::remove(cache_file_path);
-
-            // if (is_initialized && offsets.empty())
-            // {
-            //     files.erase(key);
-            //     removeKeyDirectoryIfExists(key, cache_lock);
-            // }
         }
         catch (...)
         {
@@ -1017,6 +1008,31 @@ void KeyTransaction::remove(
                 key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
         }
     }
+}
+
+void KeyTransaction::cleanupKeyDirectory() const
+{
+    /// We cannot remove key directory, because if cache is not initialized,
+    /// it means we are currently iterating it.
+    if (!cache->is_initialized)
+        return;
+
+    /// Someone might still need this directory.
+    if (!offsets->empty())
+        return;
+
+    /// Now `offsets` empty and the key lock is still locked.
+    /// So it is guaranteed that no one will add something.
+
+    fs::path key_path = cache->getPathInLocalCache(key);
+    fs::path prefix_path = key_path.parent_path();
+
+    if (fs::exists(key_path))
+    {
+        offsets->created_base_directory = false;
+        fs::remove_all(key_path);
+    }
+    cache->remove_files_metadata.add(key);
 }
 
 void FileCache::loadMetadata()
@@ -1141,7 +1157,6 @@ void FileCache::loadMetadata()
 }
 
 void KeyTransaction::reduceSizeToDownloaded(
-    const Key & key,
     size_t offset,
     const FileSegmentGuard::Lock & segment_lock,
     const CachePriorityQueueGuard::Lock & queue_lock)
@@ -1194,7 +1209,7 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
     FileSegments file_segments;
     for (const auto & [key, metadata] : files)
     {
-        for (const auto & [_, cell] : *metadata.cells)
+        for (const auto & [_, cell] : *metadata)
             file_segments.push_back(FileSegment::getSnapshot(cell.file_segment));
     }
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
@@ -1233,10 +1248,10 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
 
     std::lock_guard lock(files_mutex);
 
-    const auto & cells_by_offset = files[key].cells;
+    const auto & cells_by_offset = *files[key];
     std::vector<String> cache_paths;
 
-    for (const auto & [offset, cell] : *cells_by_offset)
+    for (const auto & [offset, cell] : cells_by_offset)
     {
         if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
             cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->getKind()));
@@ -1344,19 +1359,11 @@ std::string FileCache::CacheCells::toString() const
     return result;
 }
 
-KeyTransaction::KeyTransaction(KeyGuardPtr guard_, FileCache::CacheCellsPtr offsets_)
-    : guard(guard_)
-    , lock(guard->lock())
-    , offsets(offsets_)
-    , log(&Poco::Logger::get("KeyTransaction"))
-{
-}
-
 void FileCache::assertCacheCorrectness()
 {
     for (const auto & [key, metadata] : files)
     {
-        for (const auto & [_, cell] : *metadata.cells)
+        for (const auto & [_, cell] : *metadata)
         {
             const auto & file_segment = cell.file_segment;
             file_segment->assertCorrectness();
@@ -1538,7 +1545,7 @@ void FileCache::QueryLimit::QueryContext::use(const Key & key, size_t offset, co
 
 KeyTransactionPtr KeyTransactionCreator::create()
 {
-    return std::make_unique<KeyTransaction>(guard, offsets);
+    return std::make_unique<KeyTransaction>(key, offsets, cache);
 }
 
 }

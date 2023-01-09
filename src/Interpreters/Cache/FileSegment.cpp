@@ -588,7 +588,7 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction, const Cache
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
         detach(segment_lock, key_transaction);
         setDownloadState(State::SKIP_CACHE, segment_lock);
-        key_transaction.remove(key(), offset(), segment_lock, queue_lock);
+        key_transaction.remove(offset(), segment_lock, queue_lock);
         return;
     }
 
@@ -620,7 +620,7 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction, const Cache
                     LOG_TEST(log, "Remove cell {} (nothing downloaded)", range().toString());
 
                     setDownloadState(State::SKIP_CACHE, segment_lock);
-                    key_transaction.remove(key(), offset(), segment_lock, queue_lock);
+                    key_transaction.remove(offset(), segment_lock, queue_lock);
                 }
                 else
                 {
@@ -638,7 +638,7 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction, const Cache
                     /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
                     /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
                     /// (this will be crucial for other file segment holder, not for current one).
-                    key_transaction.reduceSizeToDownloaded(key(), offset(), segment_lock, queue_lock);
+                    key_transaction.reduceSizeToDownloaded(offset(), segment_lock, queue_lock);
                 }
 
                 detachAssumeStateFinalized(segment_lock);

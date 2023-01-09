@@ -160,6 +160,7 @@ private:
 
         std::string toString() const;
 
+        KeyGuardPtr guard = std::make_shared<KeyGuard>();
         bool created_base_directory = false;
     };
     using CacheCellsPtr = std::shared_ptr<CacheCells>;
@@ -168,17 +169,9 @@ private:
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
 
-    struct CachedFilesMetadata
-    {
-        CacheCellsPtr cells;
-        KeyGuardPtr guard;
-
-        CachedFilesMetadata() : cells(std::make_shared<CacheCells>()), guard(std::make_shared<KeyGuard>()) {}
-    };
-    using CachedFiles = std::unordered_map<Key, CachedFilesMetadata>;
+    using CachedFiles = std::unordered_map<Key, CacheCellsPtr>;
     CachedFiles files;
-
-    mutable std::mutex files_mutex; /// Protects `files` and `keys_locks`
+    mutable std::mutex files_mutex;
 
     enum class KeyNotFoundPolicy
     {
@@ -190,6 +183,35 @@ private:
     KeyTransactionPtr createKeyTransaction(const Key & key, KeyNotFoundPolicy key_not_found_policy);
 
     KeyTransactionCreatorPtr getKeyTransactionCreator(const Key & key, KeyTransaction & key_transaction);
+
+    struct PendingRemoveFilesMetadata
+    {
+        std::unordered_set<Key> keys;
+        std::mutex mutex;
+
+        void removeIfExists(const Key & key)
+        {
+            std::lock_guard lock(mutex);
+            keys.erase(key);
+        }
+
+        void add(const Key & key)
+        {
+            std::lock_guard lock(mutex);
+            keys.insert(key);
+        }
+
+        void iterate(std::function<void(const Key &)> && func)
+        {
+            std::lock_guard lock(mutex);
+            for (auto it = keys.begin(); it != keys.end();)
+            {
+                func(*it);
+                it = keys.erase(it);
+            }
+        }
+    };
+    mutable PendingRemoveFilesMetadata remove_files_metadata;
 
     FileCachePriorityPtr main_priority;
 
@@ -337,8 +359,6 @@ private:
         KeyTransactionPtr key_transaction,
         const CachePriorityQueueGuard::Lock &);
 
-    void removeKeyDirectoryIfExists(const Key & key, const KeyGuard::Lock & lock) const;
-
     struct IterateAndLockResult
     {
         IFileCachePriority::IterationResult iteration_result;
@@ -355,13 +375,14 @@ private:
 struct KeyTransactionCreator
 {
     KeyTransactionCreator(
-        KeyGuardPtr guard_, FileCache::CacheCellsPtr offsets_)
-        : guard(guard_) , offsets(offsets_) {}
+        const FileCacheKey & key_, FileCache::CacheCellsPtr offsets_, const FileCache * cache_)
+        : key(key_), offsets(offsets_), cache(cache_) {}
 
     KeyTransactionPtr create();
 
-    KeyGuardPtr guard;
+    FileCacheKey key;
     FileCache::CacheCellsPtr offsets;
+    const FileCache * cache;
 };
 using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
 
@@ -369,15 +390,17 @@ struct KeyTransaction : private boost::noncopyable
 {
     using Key = FileCacheKey;
 
-    KeyTransaction(KeyGuardPtr guard_, FileCache::CacheCellsPtr offsets_);
+    KeyTransaction(const Key & key_, FileCache::CacheCellsPtr offsets_, const FileCache * cache_);
 
-    KeyTransactionCreatorPtr getCreator() const { return std::make_unique<KeyTransactionCreator>(guard, offsets); }
+    ~KeyTransaction();
 
-    void reduceSizeToDownloaded(const Key & key, size_t offset, const FileSegmentGuard::Lock &, const CachePriorityQueueGuard::Lock &);
+    KeyTransactionCreatorPtr getCreator() const { return std::make_unique<KeyTransactionCreator>(key, offsets, cache); }
+
+    void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, const CachePriorityQueueGuard::Lock &);
 
     void remove(FileSegmentPtr file_segment, const CachePriorityQueueGuard::Lock &);
 
-    void remove(const Key & key, size_t offset, const FileSegmentGuard::Lock &, const CachePriorityQueueGuard::Lock &);
+    void remove(size_t offset, const FileSegmentGuard::Lock &, const CachePriorityQueueGuard::Lock &);
 
     bool isLastHolder(size_t offset);
 
@@ -387,8 +410,14 @@ struct KeyTransaction : private boost::noncopyable
     std::vector<size_t> delete_offsets;
 
 private:
+    void cleanupKeyDirectory() const;
+    void relockWithLockedCache();
+
+    Key key;
+    const FileCache * cache;
+
     KeyGuardPtr guard;
-    const KeyGuard::Lock lock;
+    KeyGuard::Lock lock;
 
     FileCache::CacheCellsPtr offsets;
 
