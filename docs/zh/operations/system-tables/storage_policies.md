@@ -17,4 +17,4 @@ slug: /zh/operations/system-tables/storage_policies
 
 如果存储策略包含多个卷，则每个卷的信息将在表中作为单独一行存储。
 
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/storage_policies) <!--hide-->
+

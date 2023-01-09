@@ -478,4 +478,4 @@ Result:
 The validation is not complete, so a successfull query does not guarantee that the override would not cause issues.
 :::
 
-[Оriginal article](https://clickhouse.com/docs/en/sql-reference/statements/explain/) <!--hide-->
+

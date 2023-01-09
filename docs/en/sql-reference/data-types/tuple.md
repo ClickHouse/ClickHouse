@@ -184,4 +184,4 @@ ORDER BY key ASC;
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/data_types/tuple/) <!--hide-->
+

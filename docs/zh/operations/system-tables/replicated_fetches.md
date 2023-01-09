@@ -70,4 +70,4 @@ thread_id:                   54
 
 -   [管理 ReplicatedMergeTree 表](../../sql-reference/statements/system/#query-language-system-replicated)
 
-[原始文章](https://clickhouse.com/docs/en/operations/system_tables/replicated_fetches) <!--hide-->
+

@@ -16,4 +16,4 @@ sidebar_label: Lazy
 CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 ```
 
-[来源文章](https://clickhouse.com/docs/en/database_engines/lazy/) <!--hide-->
+

@@ -2345,4 +2345,4 @@ Query id: 17d59664-ebce-4053-bb79-d46a516fb590
 └───┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/interfaces/formats) <!--hide-->
+

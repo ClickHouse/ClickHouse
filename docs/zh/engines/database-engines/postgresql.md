@@ -137,4 +137,4 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-[来源文章](https://clickhouse.com/docs/en/database-engines/postgresql/) <!--hide-->
+

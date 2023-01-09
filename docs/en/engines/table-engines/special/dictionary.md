@@ -99,4 +99,4 @@ select * from products limit 1;
 
 -   [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/dictionary/) <!--hide-->
+

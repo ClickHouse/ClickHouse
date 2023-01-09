@@ -217,4 +217,4 @@ SELECT
     │ 20010438FFFF000000000000407D1BC1  │ 20010438FFFF000000000000407D1BC1 │
     └───────────────────────────────────┴──────────────────────────────────┘
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/ip_address_functions/) <!--hide-->
+

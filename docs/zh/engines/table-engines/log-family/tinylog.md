@@ -13,4 +13,4 @@ slug: /zh/engines/table-engines/log-family/tinylog
 
 在 Yandex.Metrica 中，TinyLog 表用于小批量处理的中间数据。
 
-[原始文章](https://clickhouse.com/docs/zh/operations/table_engines/tinylog/) <!--hide-->
+

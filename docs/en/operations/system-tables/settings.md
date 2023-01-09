@@ -53,4 +53,4 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Constraints on Settings](../../operations/settings/constraints-on-settings.md)
 -   [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings) statement
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/settings) <!--hide-->
+

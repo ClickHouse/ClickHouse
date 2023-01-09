@@ -17,4 +17,4 @@ Columns:
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/storage_policies) <!--hide-->
+

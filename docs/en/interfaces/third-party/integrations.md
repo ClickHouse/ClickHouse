@@ -114,4 +114,4 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->
+

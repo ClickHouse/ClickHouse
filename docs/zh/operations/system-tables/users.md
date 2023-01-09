@@ -34,4 +34,4 @@ slug: /zh/operations/system-tables/users
 
 -   [查看用户信息](../../sql-reference/statements/show.md#show-users-statement)
 
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/users) <!--hide-->
+

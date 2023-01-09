@@ -241,4 +241,4 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[原始文章](https://clickhouse.com/docs/en/query_language/agg_functions/combinators/) <!--hide-->
+

@@ -108,4 +108,4 @@ It is possible to set constraints for [merge tree settings](merge-tree-settings.
 </profiles>
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/settings/constraints_on_settings/) <!--hide-->
+

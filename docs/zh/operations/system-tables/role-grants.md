@@ -21,4 +21,4 @@ slug: /zh/operations/system-tables/role-grants
     -   1 — 该角色具有 `ADMIN OPTION` 权限.
     -   0 — 该角色不具有  `ADMIN OPTION` 权限.
 
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/role-grants) <!--hide-->
+

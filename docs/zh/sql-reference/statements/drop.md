@@ -98,4 +98,4 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-[原始文章](https://clickhouse.com/docs/zh/sql-reference/statements/drop/) <!--hide-->
+

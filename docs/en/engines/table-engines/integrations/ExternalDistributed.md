@@ -53,4 +53,4 @@ You can specify any number of shards and any number of replicas for each shard.
 -   [Distributed table engine](../../../engines/table-engines/special/distributed.md)
 
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/ExternalDistributed/) <!--hide-->
+

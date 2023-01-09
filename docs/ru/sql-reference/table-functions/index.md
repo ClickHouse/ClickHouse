@@ -36,4 +36,4 @@ sidebar_position: 34
 | [hdfs](hdfs.md)       | Создаёт таблицу с движком [HDFS](../../engines/table-engines/integrations/hdfs.md).                                                       |
 | [s3](s3.md)           | Создаёт таблицу с движком [S3](../../engines/table-engines/integrations/s3.md).                                                       |
 
-[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/table-functions/) <!--hide-->
+

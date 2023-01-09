@@ -71,4 +71,4 @@ estimated_recovery_time: 0
 -   [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
 -   [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/clusters) <!--hide-->
+

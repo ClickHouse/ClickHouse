@@ -130,4 +130,4 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 4. Чтобы проверить, как это работает, выполните команду `ulimit -n`.
 
-[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->
+

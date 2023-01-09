@@ -27,5 +27,5 @@ slug: /zh/operations/system-tables/quotas
 
 -   [查看配额信息](../../sql-reference/statements/show.md#show-quotas-statement)
 
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/quotas) <!--hide-->
+
 

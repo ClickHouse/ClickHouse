@@ -65,4 +65,4 @@ SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 
 -   [View Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/view/)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/view/) <!--hide-->
+

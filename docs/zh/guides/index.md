@@ -10,4 +10,4 @@ sidebar_label: ClickHouse指南
 
 -   [关于简单集群设置的教程](../getting-started/tutorial.md)
 
-[原始文章](https://clickhouse.com/docs/en/guides/) <!--hide-->
+

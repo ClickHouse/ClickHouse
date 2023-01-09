@@ -15,4 +15,4 @@ slug: /zh/operations/system-tables/roles
 
 -   [查看角色信息](../../sql-reference/statements/show.md#show-roles-statement)
 
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/roles) <!--hide-->
+

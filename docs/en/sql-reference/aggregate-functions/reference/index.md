@@ -75,4 +75,4 @@ ClickHouse-specific aggregate functions:
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->
+

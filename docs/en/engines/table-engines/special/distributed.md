@@ -257,4 +257,4 @@ Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](.
 -   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) and [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) functions
 
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/distributed/) <!--hide-->
+

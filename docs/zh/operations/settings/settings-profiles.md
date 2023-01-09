@@ -77,4 +77,4 @@ SET profile = 'web'
 
 `web` 配置是一个常规的配置，它可以通过 `SET` 查询进行设定，也可以通过在HTTP查询中使用URL参数进行设定。
 
-[原始文章](https://clickhouse.com/docs/en/operations/settings/settings_profiles/) <!--hide-->
+

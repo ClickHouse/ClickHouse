@@ -55,4 +55,4 @@ SELECT COUNT() FROM mongo_table;
 └─────────┘
 ```
 
-[原始文章](https://clickhouse.com/docs/en/engines/table-engines/integrations/mongodb/) <!--hide-->
+

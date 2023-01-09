@@ -202,4 +202,4 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - Отслеживание изменений таблицы для запуска других запросов `SELECT`.
 - Отслеживание показателей из системных таблиц с помощью периодических обновлений.
 
-[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/statements/create/view) <!--hide-->
+

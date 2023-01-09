@@ -104,4 +104,4 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/remote/) <!--hide-->
+

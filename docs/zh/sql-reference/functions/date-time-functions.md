@@ -1224,4 +1224,4 @@ SELECT fromModifiedJulianDayOrNull(58849);
 └────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/query_language/functions/date_time_functions/) <!--hide-->
+

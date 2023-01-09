@@ -21,4 +21,4 @@ Columns:
     -   1 — The role has `ADMIN OPTION` privilege.
     -   0 — The role without `ADMIN OPTION` privilege.
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/role-grants) <!--hide-->
+

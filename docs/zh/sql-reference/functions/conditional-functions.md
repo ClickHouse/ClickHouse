@@ -207,4 +207,4 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/conditional_functions/) <!--hide-->
+

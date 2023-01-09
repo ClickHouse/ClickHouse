@@ -123,4 +123,4 @@ GROUP BY StartDate
 ORDER BY StartDate;
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->
+

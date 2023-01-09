@@ -239,4 +239,4 @@ SELECT * FROM UAct FINAL
 
 This is a very inefficient way to select data. Don’t use it for large tables.
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->
+

@@ -145,4 +145,4 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 
 -   [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/file/) <!--hide-->
+

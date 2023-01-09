@@ -1570,4 +1570,4 @@ DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_ex
 └──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/interfaces/schema-inference) <!--hide-->
+

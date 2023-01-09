@@ -12,4 +12,4 @@ slug: /zh/operations/system-tables/enabled-roles
 - `is_current` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 显示  `enabled_role` 是否是当前用户的当前角色的标志.
 - `is_default` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 显示 `enabled_role` 是否为默认角色的标志.
 
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/enabled-roles) <!--hide-->
+

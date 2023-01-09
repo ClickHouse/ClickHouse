@@ -234,4 +234,4 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 -   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) 和 [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) 方法
 
 
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/distributed/) <!--hide-->
+

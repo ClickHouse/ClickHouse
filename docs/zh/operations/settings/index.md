@@ -28,4 +28,4 @@ slug: /zh/operations/settings/
 
 本节不介绍只能在服务器配置文件中进行的设置。
 
-[原始文章](https://clickhouse.com/docs/en/operations/settings/) <!--hide-->
+

@@ -150,4 +150,4 @@ cd ClickHouse
 ./build/programs/clickhouse-server --config-file ./programs/server/config.xml
 ```
 
-[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->
+

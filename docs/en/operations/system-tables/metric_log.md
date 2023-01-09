@@ -51,4 +51,4 @@ CurrentMetric_DistributedFilesToInsert:                          0
 -   [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
 -   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/metric_log) <!--hide-->
+

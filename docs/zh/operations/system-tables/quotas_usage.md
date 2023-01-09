@@ -35,4 +35,4 @@ slug: /zh/operations/system-tables/quotas_usage
 
 -   [查看配额信息](../../sql-reference/statements/show.md#show-quota-statement)
 
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/quotas_usage) <!--hide-->
+

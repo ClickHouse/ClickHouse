@@ -21,4 +21,4 @@ sidebar_position: 14
 -   [OnTime](../../getting-started/example-datasets/ontime.md)
 -   [Вышки сотовой связи](../../getting-started/example-datasets/cell-towers.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets) <!--hide-->
+

@@ -21,4 +21,4 @@ slug: /zh/sql-reference/functions/random-functions
 
 返回一个UInt32类型的随机数字，该函数不同之处在于仅为每个数据块参数一个随机数。
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/random_functions/) <!--hide-->
+
