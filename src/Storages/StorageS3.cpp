@@ -658,7 +658,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
 
     auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
-        StoredObjects{StoredObject{key, object_size}},
+        StoredObjects{StoredObject{key, "", object_size}},
         read_settings);
 
     auto & pool_reader = getContext()->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
@@ -666,7 +666,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
 
     async_reader->setReadUntilEnd();
     if (read_settings.remote_fs_prefetch)
-        async_reader->prefetch();
+        async_reader->prefetch(0);
 
     return async_reader;
 }
