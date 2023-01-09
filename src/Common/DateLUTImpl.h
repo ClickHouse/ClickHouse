@@ -628,6 +628,7 @@ public:
     template <typename DateOrTime>
     inline Int16 toYear(DateOrTime v) const { return lut[toLUTIndex(v)].year; }
 
+    /// 1-based, starts on Monday
     template <typename DateOrTime>
     inline UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
 
@@ -635,7 +636,7 @@ public:
     inline UInt8 toDayOfWeek(DateOrTime v, UInt8 week_day_mode) const
     {
         WeekDayMode mode = check_week_day_mode(week_day_mode);
-        auto res = toDayOfWeek(v);
+        UInt8 res = toDayOfWeek(v);
 
         bool start_from_sunday = (mode == WeekDayMode::WeekStartsSunday0 || mode == WeekDayMode::WeekStartsSunday1);
         bool zero_based = (mode == WeekDayMode::WeekStartsMonday0 || mode == WeekDayMode::WeekStartsSunday0);
