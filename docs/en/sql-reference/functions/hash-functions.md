@@ -606,7 +606,8 @@ Type:  [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 Query:
 
 ```sql
-SELECT xxh3('Hello', 'world')```
+SELECT xxh3('Hello', 'world')
+```
 
 Result:
 
