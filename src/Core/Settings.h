@@ -5,6 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/Defines.h>
 #include <IO/ReadSettings.h>
+#include <base/unit.h>
 
 
 namespace Poco::Util
@@ -21,11 +22,6 @@ namespace boost::program_options
 namespace DB
 {
 class IColumn;
-
-static constexpr UInt64 operator""_GiB(unsigned long long value)
-{
-    return value * 1024 * 1024 * 1024;
-}
 
 /** List of settings: type, name, default value, description, flags
   *
@@ -679,15 +675,14 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, enable_experimental_query_result_cache, false, "Store and retrieve results of SELECT queries in/from the query result cache", 0) \
     M(Bool, enable_experimental_query_result_cache_passive_usage, false, "Retrieve results of SELECT queries from the query result cache", 0) \
     M(Bool, query_result_cache_store_results_of_queries_with_nondeterministic_functions, false, "Store results of queries with non-deterministic functions (e.g. rand(), now()) in the query result cache", 0) \
-    M(UInt64, query_result_cache_size, (1ull << 30), "Maximum size of the query result cache in bytes. 0 means disabled.", 0) \
+    M(UInt64, query_result_cache_size, 1_GiB, "Maximum size of the query result cache in bytes. 0 means disabled.", 0) \
     M(UInt64, query_result_cache_min_query_runs, 0, "Minimum number a SELECT query must run before its result is stored in the query result cache", 0) \
-    M(UInt64, query_result_cache_max_entries, (1ull << 10), "Maximum number of SELECT query results in the query result cache", 0) \
-    M(UInt64, query_result_cache_max_entry_size, (1ull << 20), "Maximum size in bytes SELECT query results may have to be saved in the query result cache", 0) \
-    M(UInt64, query_result_cache_max_entry_records, (1ull << 20), "Maximum number of records SELECT query results may have to be saved in the query result cache", 0) \
+    M(UInt64, query_result_cache_max_entries, 1024, "Maximum number of SELECT query results in the query result cache", 0) \
+    M(UInt64, query_result_cache_max_entry_size, 1_MiB, "Maximum size in bytes SELECT query results may have to be saved in the query result cache", 0) \
+    M(UInt64, query_result_cache_max_entry_records, 30'000'000, "Maximum number of records SELECT query results may have to be saved in the query result cache", 0) \
     M(Milliseconds, query_result_cache_min_query_duration, 0, "Minimum time in milliseconds for a query to run for its result to be stored in the query result cache.", 0) \
     M(Seconds, query_result_cache_ttl, 60, "After this time in seconds entries in the query result cache become stale", 0) \
-    M(Bool, query_result_cache_share_between_users, false, "Allow other users to access entry in the query result cache", 0) \
-    M(String, query_result_cache_partition_key, "", "Represents a partition of the query result cache", 0) \
+    M(Bool, query_result_cache_share_between_users, false, "Allow other users to read entry in the query result cache", 0) \
     M(UInt64, insert_keeper_max_retries, 0, "Max retries for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_max_backoff_ms, 10000, "Max backoff timeout for keeper operations during insert", 0) \

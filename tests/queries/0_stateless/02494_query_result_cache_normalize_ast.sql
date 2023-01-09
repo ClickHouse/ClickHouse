@@ -17,7 +17,7 @@ INSERT INTO old SELECT event, value FROM system.events WHERE event LIKE 'QueryRe
 -- Besides "enable_experimental_query_result_cache", pass two knobs. We just care *that* they are passed and not about their effect.
 -- One QRC-specific knob and one non-QRC-specific knob
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true, query_result_cache_store_results_of_queries_with_nondeterministic_functions = true, max_threads = 16;
-SELECT COUNT(*) FROM system.queryresult_cache;
+SELECT COUNT(*) FROM system.query_result_cache;
 
 SELECT '---';
 

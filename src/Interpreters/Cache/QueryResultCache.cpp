@@ -5,10 +5,13 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/IAST.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Core/Settings.h>
+#include <base/defines.h> /// chassert
 
 namespace ProfileEvents
 {
@@ -26,7 +29,7 @@ struct HasNonDeterministicFunctionsMatcher
 {
     struct Data
     {
-        ContextPtr context;
+        const ContextPtr context;
         bool has_non_deterministic_functions = false;
     };
 
@@ -69,9 +72,9 @@ public:
 
     static void visit(ASTPtr & ast, Data &)
     {
-        if (auto * func = ast->as<ASTSetQuery>())
+        if (auto * set_clause = ast->as<ASTSetQuery>())
         {
-            assert(!func->is_standalone);
+            chassert(!set_clause->is_standalone);
 
             auto is_query_result_cache_related_setting = [](const auto & change)
             {
@@ -79,7 +82,7 @@ public:
                     || change.name.starts_with("query_result_cache");
             };
 
-            std::erase_if(func->changes, is_query_result_cache_related_setting);
+            std::erase_if(set_clause->changes, is_query_result_cache_related_setting);
         }
     }
 
@@ -114,11 +117,10 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 }
 
 QueryResultCache::Key::Key(
-    ASTPtr ast_, String partition_key_,
+    ASTPtr ast_,
     Block header_, const std::optional<String> & username_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_)
     : ast(removeQueryResultCacheSettings(ast_))
-    , partition_key(partition_key_)
     , header(header_)
     , username(username_)
     , expires_at(expires_at_)
@@ -127,8 +129,7 @@ QueryResultCache::Key::Key(
 
 bool QueryResultCache::Key::operator==(const Key & other) const
 {
-    return ast->getTreeHash() == other.ast->getTreeHash()
-        && partition_key == other.partition_key;
+    return ast->getTreeHash() == other.ast->getTreeHash();
 }
 
 String QueryResultCache::Key::queryStringFromAst() const
@@ -143,7 +144,6 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
 {
     SipHash hash;
     hash.update(key.ast->getTreeHash());
-    hash.update(key.partition_key);
     auto res = hash.get64();
     return res;
 }
@@ -185,12 +185,12 @@ void QueryResultCache::Writer::finalizeWrite()
     if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
         return;
 
-    auto to_single_chunk = [](const Chunks & chunks_) -> Chunk
+    auto to_single_chunk = [](Chunks & chunks_) -> Chunk
     {
         if (chunks_.empty())
             return {};
 
-        Chunk res = chunks_[0].clone();
+        Chunk res = std::move(chunks_[0]);
         for (size_t i = 1; i != chunks_.size(); ++i)
             res.append(chunks_[i]);
         return res;
@@ -198,6 +198,11 @@ void QueryResultCache::Writer::finalizeWrite()
 
     auto query_result = to_single_chunk(partial_query_results);
     new_entry_size_in_bytes = query_result.allocatedBytes(); // updated because compression potentially affects the size of the single chunk vs the aggregate size of individual chunks
+
+    /// ^^ Here, the partial result chunks are concatenated during cache insert. This potentially wastes computation if the cached entry is
+    /// not retrieved later on. The alternative is to cache the partial result chunks and to concatenate them lazily during cache read, at
+    /// the risk of repeating that for each read.
+    /// TODO Implement a more balanced strategy, e.g. insert partial results + concatenate after > N reads.
 
     std::lock_guard lock(mutex);
 
@@ -222,7 +227,7 @@ void QueryResultCache::Writer::finalizeWrite()
             }
             else
                 ++it;
-        LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Removed {} stale entries", removed_items);
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Removed {} stale entries", removed_items);
     }
 
     /// Insert or replace if enough space
@@ -236,7 +241,7 @@ void QueryResultCache::Writer::finalizeWrite()
         cache.erase(key);
         cache[key] = std::move(query_result);
 
-        LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Stored result of query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Stored result of query {}", key.queryStringFromAst());
     }
 }
 
@@ -254,19 +259,19 @@ void QueryResultCache::Writer::buffer(Chunk && partial_query_result)
         skip_insert = true;
 }
 
-QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_)
+QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_, const std::lock_guard<std::mutex> &)
 {
     auto it = cache_.find(key);
 
     if (it == cache_.end())
     {
-        LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "No entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "No entry found for query {}", key.queryStringFromAst());
         return;
     }
 
     if (it->first.username.has_value() && it->first.username != key.username)
     {
-        LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
         return;
     }
 
@@ -274,11 +279,11 @@ QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t &
     {
         cache_size_in_bytes_ -= it->second.allocatedBytes();
         const_cast<Cache &>(cache_).erase(it);
-        LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Stale entry found and removed for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Stale entry found and removed for query {}", key.queryStringFromAst());
         return;
     }
 
-    LOG_DEBUG(&Poco::Logger::get("QueryResultCache"), "Entry found for query {}", key.queryStringFromAst());
+    LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Entry found for query {}", key.queryStringFromAst());
     pipe = Pipe(std::make_shared<SourceFromSingleChunk>(key.header, it->second.clone()));
 }
 
@@ -296,7 +301,7 @@ bool QueryResultCache::Reader::hasCacheEntryForKey() const
 
 Pipe && QueryResultCache::Reader::getPipe()
 {
-    assert(!pipe.empty()); // cf. hasCacheEntryForKey()
+    chassert(!pipe.empty()); // cf. hasCacheEntryForKey()
     return std::move(pipe);
 }
 
@@ -311,7 +316,7 @@ QueryResultCache::QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_c
 QueryResultCache::Reader QueryResultCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
-    return Reader(cache, key, cache_size_in_bytes);
+    return Reader(cache, key, cache_size_in_bytes, lock);
 }
 
 QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime)
