@@ -3225,6 +3225,40 @@ class ClickHouseInstance:
             database=database,
         )
 
+    def query_and_get_error_with_retry(
+        self,
+        sql,
+        stdin=None,
+        timeout=None,
+        settings=None,
+        user=None,
+        password=None,
+        database=None,
+        retry_count=20,
+        sleep_time=0.5,
+    ):
+        logging.debug(f"Executing query {sql} on {self.name}")
+        result = None
+        for i in range(retry_count):
+            try:
+                result = self.client.query_and_get_error(
+                    sql,
+                    stdin=stdin,
+                    timeout=timeout,
+                    settings=settings,
+                    user=user,
+                    password=password,
+                    database=database,
+                )
+                time.sleep(sleep_time)
+            except QueryRuntimeException as ex:
+                logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                time.sleep(sleep_time)
+
+        if result is not None:
+            return result
+        raise Exception("Query {sql} did not fail".format(sql))
+
     # The same as query_and_get_error but ignores successful query.
     def query_and_get_answer_with_error(
         self,
