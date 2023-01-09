@@ -89,21 +89,25 @@ def create_and_fill_table():
 # The same works with different backup names too. Since concurrency
 # check comes before backup name check, separate tests are not added for different names
 
+
 def test_concurrent_backups_on_same_node():
     create_and_fill_table()
 
     backup_name = new_backup_name()
 
-    id = nodes[0].query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
-    ).split("\t")[0]
+    id = (
+        nodes[0]
+        .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
+        .split("\t")[0]
+    )
     assert_eq_with_retry(
         nodes[0],
         f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
         "CREATING_BACKUP",
     )
     assert "Concurrent backups not supported" in nodes[0].query_and_get_error(
-    f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+    )
 
     assert_eq_with_retry(
         nodes[0],
@@ -123,25 +127,27 @@ def test_concurrent_backups_on_different_nodes():
 
     backup_name = new_backup_name()
 
-    nodes[1].query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
-    )
+    nodes[1].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
     assert_eq_with_retry(
         nodes[1],
         f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP'",
         "CREATING_BACKUP",
     )
     assert "Concurrent backups not supported" in nodes[2].query_and_get_error(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+    )
+
 
 def test_concurrent_restores_on_same_node():
     create_and_fill_table()
 
     backup_name = new_backup_name()
 
-    id = nodes[0].query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
-    ).split("\t")[0]
+    id = (
+        nodes[0]
+        .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
+        .split("\t")[0]
+    )
     assert_eq_with_retry(
         nodes[0],
         f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
@@ -162,16 +168,20 @@ def test_concurrent_restores_on_same_node():
         "RESTORING",
     )
     assert "Concurrent restores not supported" in nodes[0].query_and_get_error(
-        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+
 
 def test_concurrent_restores_on_different_node():
     create_and_fill_table()
 
     backup_name = new_backup_name()
 
-    id = nodes[0].query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
-    ).split("\t")[0]
+    id = (
+        nodes[0]
+        .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
+        .split("\t")[0]
+    )
     assert_eq_with_retry(
         nodes[0],
         f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
@@ -192,4 +202,5 @@ def test_concurrent_restores_on_different_node():
         "RESTORING",
     )
     assert "Concurrent restores not supported" in nodes[1].query_and_get_error(
-        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+    )
