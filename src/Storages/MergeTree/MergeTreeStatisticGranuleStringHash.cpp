@@ -163,8 +163,9 @@ void MergeTreeGranuleStringHashStatistic::serializeBinary(WriteBuffer & ostr) co
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
-    size_serialization->serializeBinary(static_cast<size_t>(MergeTreeStringSearchStatisticType::GRANULE_COUNT_MIN_SKETCH_HASH), ostr);
-    size_serialization->serializeBinary(wb.str().size(), ostr);
+    FormatSettings format_settings;
+    size_serialization->serializeBinary(static_cast<size_t>(MergeTreeStringSearchStatisticType::GRANULE_COUNT_MIN_SKETCH_HASH), ostr, format_settings);
+    size_serialization->serializeBinary(wb.str().size(), ostr, format_settings);
     ostr.write(wb.str().data(), wb.str().size());
 }
 
@@ -173,7 +174,8 @@ bool MergeTreeGranuleStringHashStatistic::validateTypeBinary(ReadBuffer & istr) 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     Field ftype;
-    size_serialization->deserializeBinary(ftype, istr);
+    FormatSettings format_settings;
+    size_serialization->deserializeBinary(ftype, istr, format_settings);
     return ftype.get<size_t>() == static_cast<size_t>(MergeTreeStringSearchStatisticType::GRANULE_COUNT_MIN_SKETCH_HASH);
 }
 
@@ -182,7 +184,8 @@ void MergeTreeGranuleStringHashStatistic::deserializeBinary(ReadBuffer & istr)
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     Field unused_size;
-    size_serialization->deserializeBinary(unused_size, istr);
+    FormatSettings format_settings;
+    size_serialization->deserializeBinary(unused_size, istr, format_settings);
 
     readIntBinary(total_granules, istr);
     sketch.deserialize(istr);
