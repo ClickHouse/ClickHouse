@@ -623,6 +623,25 @@ public:
     inline UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
 
     template <typename DateOrTime>
+    inline UInt8 toDayOfWeek(DateOrTime v, UInt8 week_day_mode) const
+    {
+        /// 0: Sun = 7, Mon = 1
+        /// 1: Sun = 6, Mon = 0
+        /// 2: Sun = 0, Mon = 1
+        /// 3: Sun = 1, Mon = 2
+        week_day_mode = check_week_day_mode(week_day_mode);
+        auto res = toDayOfWeek(v);
+
+        bool start_from_sunday = week_day_mode & (1 << 1);
+        bool zero_based = (week_day_mode == 1 || week_day_mode == 2);
+        if (start_from_sunday)
+            res = res % 7 + 1;
+        if (zero_based)
+            --res;
+        return res;
+    }
+
+    template <typename DateOrTime>
     inline UInt8 toDayOfMonth(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_month; }
 
     template <typename DateOrTime>
@@ -843,6 +862,13 @@ public:
             week_format ^= static_cast<UInt8>(WeekModeFlag::FIRST_WEEKDAY);
         return week_format;
     }
+
+    /// Check and change mode to effective.
+    inline UInt8 check_week_day_mode(UInt8 mode) const /// NOLINT
+    {
+        return mode & 3;
+    }
+
 
     /** Calculate weekday from d.
       * Returns 0 for monday, 1 for tuesday...
