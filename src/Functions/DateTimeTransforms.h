@@ -786,21 +786,25 @@ struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
 
-    static inline UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int64 t, const DateLUTImpl & time_zone) { return time_zone.toDayOfWeek(t); }
+    static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone) { return time_zone.toDayOfWeek(t); }
+    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone) { return time_zone.toDayOfWeek(ExtendedDayNum(d)); }
+    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone) { return time_zone.toDayOfWeek(DayNum(d)); }
+    static inline UInt8 execute(Int64 t, UInt8 week_day_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t);
+        return time_zone.toDayOfWeek(t, week_day_mode);
     }
-    static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt32 t, UInt8 week_day_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t);
+        return time_zone.toDayOfWeek(t, week_day_mode);
     }
-    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int32 d, UInt8 week_day_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(ExtendedDayNum(d));
+        return time_zone.toDayOfWeek(ExtendedDayNum(d), week_day_mode);
     }
-    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt16 d, UInt8 week_day_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(DayNum(d));
+        return time_zone.toDayOfWeek(DayNum(d), week_day_mode);
     }
 
     using FactorTransform = ToMondayImpl;
