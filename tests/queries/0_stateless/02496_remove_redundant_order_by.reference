@@ -129,6 +129,11 @@ Header: any(number) UInt64
         Header: number_1 UInt64
           ReadFromStorage (SystemNumbers)
           Header: number UInt64
+-- query with aggregation function but w/o GROUP BY -> remove sorting
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))
+      ReadFromStorage (SystemNumbers)
 -- check that optimization is applied recursively to subqueries as well
 -- GROUP BY with aggregation function which does NOT depend on order -> eliminate ORDER BY in most inner subquery here
 Expression (Project names)
