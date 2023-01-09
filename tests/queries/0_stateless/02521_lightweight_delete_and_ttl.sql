@@ -30,6 +30,12 @@ SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentData
 SELECT 'Count', count() FROM lwd_test_02521;
 
 
+ALTER TABLE lwd_test_02521 DELETE WHERE id >= 40000 SETTINGS mutations_sync = 1;
+
+SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test_02521' AND active;
+SELECT 'Count', count() FROM lwd_test_02521;
+
+
 OPTIMIZE TABLE lwd_test_02521 FINAL SETTINGS mutations_sync = 1;
 
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test_02521' AND active;
