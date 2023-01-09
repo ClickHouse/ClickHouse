@@ -7,7 +7,7 @@ pagination_next: en/operations/settings/settings
 
 # Settings Overview
 
-There are multiple ways define ClickHouse settings. Settings are configured in layers, and each subsequent layer redefines the previous values of a setting.
+There are multiple ways to define ClickHouse settings. Settings are configured in layers, and each subsequent layer redefines the previous values of a setting.
 
 The order of priority for defining a setting is:
 
