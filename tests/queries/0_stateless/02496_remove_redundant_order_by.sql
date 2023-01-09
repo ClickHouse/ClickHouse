@@ -1,8 +1,8 @@
 SET allow_experimental_analyzer=1;
 SET optimize_duplicate_order_by_and_distinct=0;
 
-SELECT '-- Disable query_plan_remove_redundant_order_by';
-SET query_plan_remove_redundant_order_by=0;
+SELECT '-- Disable query_plan_remove_redundant_sorting';
+SET query_plan_remove_redundant_sorting=0;
 
 SELECT '-- ORDER BY clauses in subqueries are untouched';
 EXPLAIN header=1
@@ -20,8 +20,8 @@ FROM
 )
 ORDER BY number ASC;
 
-SELECT '-- Enable query_plan_remove_redundant_order_by';
-SET query_plan_remove_redundant_order_by=1;
+SELECT '-- Enable query_plan_remove_redundant_sorting';
+SET query_plan_remove_redundant_sorting=1;
 
 SELECT '-- ORDER BY removes ORDER BY clauses in subqueries';
 EXPLAIN header=1

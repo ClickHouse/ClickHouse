@@ -1,4 +1,4 @@
--- Disable query_plan_remove_redundant_order_by
+-- Disable query_plan_remove_redundant_sorting
 -- ORDER BY clauses in subqueries are untouched
 Expression (Project names)
 Header: number UInt64
@@ -16,7 +16,7 @@ Header: number UInt64
             Header: number_2 UInt64
               ReadFromStorage (SystemNumbers)
               Header: number UInt64
--- Enable query_plan_remove_redundant_order_by
+-- Enable query_plan_remove_redundant_sorting
 -- ORDER BY removes ORDER BY clauses in subqueries
 Expression (Project names)
 Header: number UInt64

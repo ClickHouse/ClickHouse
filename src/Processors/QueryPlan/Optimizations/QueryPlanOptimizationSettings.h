@@ -31,7 +31,7 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order = false;
 
     /// true if removing redundant ORDER BY clauses in subqueries is enabled
-    bool remove_redundant_order_by = true;
+    bool remove_redundant_sorting = true;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);

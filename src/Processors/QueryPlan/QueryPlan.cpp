@@ -447,8 +447,10 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    /// optimizations which remove expressions need to applied before "mergeExpressions" optimization
-    if (optimization_settings.remove_redundant_order_by)
+    /// optimization need to be applied before "mergeExpressions" optimization
+    /// it removes redundant sorting steps, but keep underlying expressions,
+    /// so "mergeExpressions" optimization handles them afterwards
+    if (optimization_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantOrderBy(root);
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
