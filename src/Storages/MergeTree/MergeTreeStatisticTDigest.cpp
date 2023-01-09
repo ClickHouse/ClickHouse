@@ -15,7 +15,7 @@ namespace DB
 
 namespace
 {
-constexpr float EPS = 1e-5;
+constexpr float EPS = 1e-5f;
 }
 
 namespace ErrorCodes
@@ -83,8 +83,9 @@ void MergeTreeColumnDistributionStatisticTDigest::serializeBinary(WriteBuffer & 
     sketch.serialize(wb);
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
-    size_serialization->serializeBinary(static_cast<size_t>(MergeTreeDistributionStatisticType::TDIGEST), ostr);
-    size_serialization->serializeBinary(wb.str().size(), ostr);
+    FormatSettings format_settings;
+    size_serialization->serializeBinary(static_cast<size_t>(MergeTreeDistributionStatisticType::TDIGEST), ostr, format_settings);
+    size_serialization->serializeBinary(wb.str().size(), ostr, format_settings);
     ostr.write(wb.str().data(), wb.str().size());
 }
 
@@ -93,7 +94,8 @@ bool MergeTreeColumnDistributionStatisticTDigest::validateTypeBinary(ReadBuffer 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     Field ftype;
-    size_serialization->deserializeBinary(ftype, istr);
+    FormatSettings format_settings;
+    size_serialization->deserializeBinary(ftype, istr, format_settings);
     return ftype.get<size_t>() == static_cast<size_t>(MergeTreeDistributionStatisticType::TDIGEST);
 }
 
@@ -102,7 +104,8 @@ void MergeTreeColumnDistributionStatisticTDigest::deserializeBinary(ReadBuffer &
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     Field unused;
-    size_serialization->deserializeBinary(unused, istr);
+    FormatSettings format_settings;
+    size_serialization->deserializeBinary(unused, istr, format_settings);
 
     sketch.deserialize(istr);
     is_empty = false;
@@ -142,7 +145,7 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileLower(double
         || threshold > std::numeric_limits<Float32>::max())
         return 0.0;
     else
-        return sketch.cdf(threshold);
+        return sketch.cdf(static_cast<float>(threshold));
 }
 
 double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(double threshold) const
@@ -156,7 +159,7 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(double
         || threshold > std::numeric_limits<Float32>::max())
         return 1.0;
     else
-        return sketch.cdf(threshold);
+        return sketch.cdf(static_cast<float>(threshold));
 }
 
 double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Field& lower, const Field& upper) const
