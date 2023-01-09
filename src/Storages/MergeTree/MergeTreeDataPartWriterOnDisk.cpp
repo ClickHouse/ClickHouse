@@ -19,7 +19,6 @@ void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
     compressed_hashing.next();
     compressor.next();
     plain_hashing.next();
-<<<<<<< HEAD
 
     if (compress_marks)
     {
@@ -28,14 +27,12 @@ void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
     }
 
     marks_hashing.next();
-=======
-    if (use_marks)
-        marks->next();
->>>>>>> 32a9c1d592c (x)
+    /// if (use_marks)
+    ///     marks->next();
 
     plain_file->preFinalize();
-    if (use_marks)
-        marks_file->preFinalize();
+    /// if (use_marks)
+    marks_file->preFinalize();
 
     is_prefinalized = true;
 }
@@ -46,14 +43,14 @@ void MergeTreeDataPartWriterOnDisk::Stream::finalize()
         preFinalize();
 
     plain_file->finalize();
-    if (use_marks)
+    /// if (use_marks)
         marks_file->finalize();
 }
 
 void MergeTreeDataPartWriterOnDisk::Stream::sync() const
 {
     plain_file->sync();
-    if (use_marks)
+    /// if (use_marks)
         marks_file->sync();
 }
 
@@ -66,20 +63,15 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     const std::string & marks_file_extension_,
     const CompressionCodecPtr & compression_codec_,
     size_t max_compress_block_size_,
-<<<<<<< HEAD
     const CompressionCodecPtr & marks_compression_codec_,
     size_t marks_compress_block_size_,
-    const WriteSettings & query_write_settings) :
-=======
     const WriteSettings & query_write_settings,
-    bool use_marks_) :
->>>>>>> 32a9c1d592c (x)
+    [[maybe_unused]] bool use_marks_) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
-<<<<<<< HEAD
     compressor(plain_hashing, compression_codec_, max_compress_block_size_),
     compressed_hashing(compressor),
     marks_file(data_part_storage->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)),
@@ -87,19 +79,13 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_),
     marks_compressed_hashing(marks_compressor),
     compress_marks(MarkType(marks_file_extension).compressed)
-=======
-    compressed_buf(plain_hashing, compression_codec_, max_compress_block_size_),
-    compressed(compressed_buf),
-    marks_file(nullptr),
-    marks(nullptr),
-    use_marks(use_marks_)
->>>>>>> 32a9c1d592c (x)
+    /// use_marks(use_marks_)
 {
-    if (use_marks)
-    {
-        marks_file = disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite, query_write_settings);
-        marks = std::make_unique<HashingWriteBuffer>(*marks_file);
-    }
+    /// if (use_marks)
+    /// {
+    ///     marks_file = disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite, query_write_settings);
+    ///     marks = std::make_unique<HashingWriteBuffer>(*marks_file);
+    /// }
 }
 
 void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
@@ -112,7 +98,6 @@ void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPa
     checksums.files[name + data_file_extension].file_size = plain_hashing.count();
     checksums.files[name + data_file_extension].file_hash = plain_hashing.getHash();
 
-<<<<<<< HEAD
     if (compress_marks)
     {
         checksums.files[name + marks_file_extension].is_compressed = true;
@@ -122,13 +107,13 @@ void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPa
 
     checksums.files[name + marks_file_extension].file_size = marks_hashing.count();
     checksums.files[name + marks_file_extension].file_hash = marks_hashing.getHash();
-=======
-    if (use_marks)
-    {
-        checksums.files[name + marks_file_extension].file_size = marks->count();
-        checksums.files[name + marks_file_extension].file_hash = marks->getHash();
-    }
->>>>>>> 32a9c1d592c (x)
+
+    /// if (use_marks)
+    /// {
+        checksums.files[name + marks_file_extension].file_size = marks_hashing.count();
+        checksums.files[name + marks_file_extension].file_hash = marks_hashing.getHash();
+///     }
+/// >>>>>>> 32a9c1d592c (x)
 }
 
 MergeTreeDataPartWriterOnDisk::StatisticsStream::StatisticsStream(
@@ -182,12 +167,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(data_part_, columns_list_, metadata_snapshot_, settings_, index_granularity_)
     , skip_indices(indices_to_recalc_)
-<<<<<<< HEAD
-=======
     , statistics_columns(statistics_columns_)
     , statistics_descriptions(statistics_descriptions_)
-    , part_path(data_part_->getFullRelativePath())
->>>>>>> 32a9c1d592c (x)
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
     , compute_granularity(index_granularity.empty())
@@ -378,21 +359,10 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                 writeIntBinary(stream.plain_hashing.count(), marks_out);
                 writeIntBinary(stream.compressed_hashing.offset(), marks_out);
 
-<<<<<<< HEAD
-=======
-                if (!stream.use_marks)
-                    throw Exception("skip index stream must have use_marks=true", ErrorCodes::LOGICAL_ERROR);
-                writeIntBinary(stream.plain_hashing.count(), *stream.marks);
-                writeIntBinary(stream.compressed.offset(), *stream.marks);
->>>>>>> 32a9c1d592c (x)
                 /// Actually this numbers is redundant, but we have to store them
                 /// to be compatible with the normal .mrk2 file format
                 if (settings.can_use_adaptive_granularity)
-<<<<<<< HEAD
                     writeIntBinary(1UL, marks_out);
-=======
-                    writeIntBinary(1UL, *stream.marks);
->>>>>>> 32a9c1d592c (x)
             }
 
             size_t pos = granule.start_row;
@@ -502,7 +472,7 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
     skip_index_accumulated_marks.clear();
 }
 
-void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
+void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums([[maybe_unused]] MergeTreeData::DataPart::Checksums & checksums)
 {
     // One statistic can be stored in several files
     // in order not to interfere with vertical merges.
@@ -540,17 +510,17 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
 
             if (statistic_and_column_to_stream.emplace(std::pair<String, String>{statistic_name, stats_collector->column()}, nullptr).second)
             {
-                auto& stream = statistic_and_column_to_stream.at(std::pair<String, String>{statistic_name, stats_collector->column()});
-                stream = std::make_unique<StatisticsStream>(
-                    filename,
-                    data_part->volume->getDisk(),
-                    part_path + filename,
-                    default_codec,
-                    settings.max_compress_block_size,
-                    settings.query_write_settings);
+                /// auto& stream = statistic_and_column_to_stream.at(std::pair<String, String>{statistic_name, stats_collector->column()});
+                /// stream = std::make_unique<StatisticsStream>(
+                ///     filename,
+                ///     data_part->volume->getDisk(),
+                ///     part_path + filename,
+                ///     default_codec,
+                ///     settings.max_compress_block_size,
+                ///     settings.query_write_settings);
 
-                stats.serializeBinary(statistic_name, stream->compressed_hashing_buffer);
-                stream->prefinalizeAndAddToChecksums(checksums);
+                /// stats.serializeBinary(statistic_name, stream->compressed_hashing_buffer);
+                /// stream->prefinalizeAndAddToChecksums(checksums);
             }
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: Statistic {}:{} already exists.", statistic_name, stats_collector->column());

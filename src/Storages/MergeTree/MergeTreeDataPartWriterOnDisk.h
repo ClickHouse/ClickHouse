@@ -1,22 +1,15 @@
 #pragma once
 
-#include <unordered_map>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Disks/IDisk.h>
-#include <IO/HashingWriteBuffer.h>
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <IO/HashingWriteBuffer.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-<<<<<<< HEAD
 #include <Disks/IDisk.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-=======
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeStatistic.h>
-
->>>>>>> 32a9c1d592c (x)
 
 namespace DB
 {
@@ -64,14 +57,10 @@ public:
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
             size_t max_compress_block_size_,
-<<<<<<< HEAD
             const CompressionCodecPtr & marks_compression_codec_,
             size_t marks_compress_block_size_,
-            const WriteSettings & query_write_settings);
-=======
             const WriteSettings & query_write_settings,
             bool use_marks = true);
->>>>>>> 32a9c1d592c (x)
 
         String escaped_column_name;
         std::string data_file_extension;
@@ -85,15 +74,12 @@ public:
 
         /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
-<<<<<<< HEAD
         HashingWriteBuffer marks_hashing;
+        /// std::unique_ptr<HashingWriteBuffer> marks;
         CompressedWriteBuffer marks_compressor;
         HashingWriteBuffer marks_compressed_hashing;
         bool compress_marks;
-=======
-        std::unique_ptr<HashingWriteBuffer> marks;
-        bool use_marks;
->>>>>>> 32a9c1d592c (x)
+        /// bool use_marks;
 
         bool is_prefinalized = false;
 
