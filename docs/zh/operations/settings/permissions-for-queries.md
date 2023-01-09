@@ -55,5 +55,3 @@ ClickHouse中的查询可以分为几种类型:
 如果对当前会话 `allow_ddl = 0` ，你就不能执行 `SET allow_ddl = 1` 。
 
 默认值：1
-
-

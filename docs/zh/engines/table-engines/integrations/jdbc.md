@@ -95,5 +95,3 @@ FROM system.numbers
 ## 参见 {#see-also}
 
 -   [JDBC表函数](../../../sql-reference/table-functions/jdbc.md).
-
-

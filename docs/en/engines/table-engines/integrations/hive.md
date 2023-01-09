@@ -407,5 +407,3 @@ f_char:      hello world
 f_bool:      true
 day:         2021-09-18
 ```
-
-

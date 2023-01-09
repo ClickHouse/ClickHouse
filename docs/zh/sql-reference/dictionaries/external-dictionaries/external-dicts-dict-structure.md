@@ -172,5 +172,3 @@ CREATE DICTIONARY somename (
 ## 另请参阅 {#see-also}
 
 -   [使用外部字典的函数](../../../sql-reference/functions/ext-dict-functions.md).
-
-

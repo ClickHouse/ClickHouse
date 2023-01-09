@@ -238,5 +238,3 @@ SELECT * FROM UAct FINAL
 ```
 
 This is a very inefficient way to select data. Don’t use it for large tables.
-
-

@@ -22,5 +22,3 @@ This is similar to the `DUAL` table found in other DBMSs.
 
 1 rows in set. Elapsed: 0.001 sec.
 ```
-
-

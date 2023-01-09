@@ -27,5 +27,3 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
     │   2 │ Hello     │ [1,2,3] │
     │   3 │ Hello     │ [1,2,3] │
     └─────┴───────────┴─────────┘
-
-

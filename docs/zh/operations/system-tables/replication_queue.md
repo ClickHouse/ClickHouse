@@ -90,5 +90,3 @@ last_postpone_time:     1970-01-01 03:00:00
 **另请参阅**
 
 -   [管理 ReplicatedMergeTree 表](../../sql-reference/statements/system.md#query-language-system-replicated)
-
-

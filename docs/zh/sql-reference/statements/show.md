@@ -166,5 +166,3 @@ SHOW CREATE QUOTA [name | CURRENT]
 ``` sql
 SHOW CREATE [SETTINGS] PROFILE name
 ```
-
-

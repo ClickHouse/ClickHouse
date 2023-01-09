@@ -17,5 +17,3 @@ sidebar_label: 逻辑函数
 ## 非，`NOT` 运算符 {#not-not-operator}
 
 ## 异或，`XOR` 运算符 {#xor}
-
-

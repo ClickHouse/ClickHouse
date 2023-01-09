@@ -49,5 +49,3 @@ last_exception:
 **另请参阅**
 
 -   [分布式表引擎](../../engines/table-engines/special/distributed.md)
-
-

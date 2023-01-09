@@ -103,5 +103,3 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 -   [ODBC外部字典](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
 -   [ODBC表引擎](../../engines/table-engines/integrations/odbc.md).
-
-

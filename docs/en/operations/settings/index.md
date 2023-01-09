@@ -55,5 +55,3 @@ SELECT getSetting('custom_a');
 **See Also**
 
 -   [Server Configuration Settings](../../operations/server-configuration-parameters/settings.md)
-
-

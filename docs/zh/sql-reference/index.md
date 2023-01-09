@@ -14,5 +14,3 @@ ClickHouse支持以下形式的查询:
 -   [CREATE](statements/create.md)
 -   [ALTER](statements/alter.md#query_language_queries_alter)
 -   [其他类型的查询](statements/misc.md)
-
-

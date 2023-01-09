@@ -24,5 +24,3 @@ Columns:
 -   `thread_id` (UInt64) — Thread ID of the merge process.
 -   `merge_type` — The type of current merge. Empty if it's an mutation.
 -   `merge_algorithm` — The algorithm used in current merge. Empty if it's an mutation.
-
-

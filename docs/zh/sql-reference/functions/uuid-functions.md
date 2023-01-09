@@ -106,5 +106,3 @@ SELECT
 ## 另请参阅 {#ling-qing-can-yue}
 
 -   [dictgetuid](ext-dict-functions.md)
-
-

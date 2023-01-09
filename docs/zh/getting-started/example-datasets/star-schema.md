@@ -362,5 +362,3 @@ ORDER BY
     S_CITY ASC,
     P_BRAND ASC;
 ```
-
-

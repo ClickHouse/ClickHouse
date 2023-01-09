@@ -107,5 +107,3 @@ SELECT 0 / 0
 ```
 
 See the rules for `NaN` sorting in the section [ORDER BY clause](../../sql-reference/statements/select/order-by.md).
-
-

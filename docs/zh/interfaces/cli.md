@@ -147,5 +147,3 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
     <secure>False</secure>
 </config>
 ```
-
-

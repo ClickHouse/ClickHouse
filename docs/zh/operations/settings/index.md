@@ -27,5 +27,3 @@ slug: /zh/operations/settings/
     -   使用HTTP API时，请传递CGI参数 (`URL?setting_1=value&setting_2=value...`).
 
 本节不介绍只能在服务器配置文件中进行的设置。
-
-

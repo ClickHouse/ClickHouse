@@ -23,5 +23,3 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
-
-

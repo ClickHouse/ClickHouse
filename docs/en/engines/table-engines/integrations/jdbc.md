@@ -92,5 +92,3 @@ FROM system.numbers
 ## See Also {#see-also}
 
 -   [JDBC table function](../../../sql-reference/table-functions/jdbc.md).
-
-

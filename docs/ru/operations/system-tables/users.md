@@ -33,4 +33,3 @@ slug: /ru/operations/system-tables/users
 ## Смотрите также {#see-also}
 
 -   [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
-

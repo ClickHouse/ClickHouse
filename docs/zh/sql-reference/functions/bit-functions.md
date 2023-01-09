@@ -438,6 +438,3 @@ SELECT bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat
 │                                                                            5 │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
-
-
-

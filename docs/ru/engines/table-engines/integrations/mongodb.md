@@ -68,5 +68,3 @@ SELECT COUNT() FROM mongo_table;
 │       4 │
 └─────────┘
 ```
-
-

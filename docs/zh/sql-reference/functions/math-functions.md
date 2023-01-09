@@ -106,5 +106,3 @@ SELECT erf(3 / sqrt(2))
 ## intExp10 {#intexp10}
 
 接受一个数值类型的参数并返回它的10的x次幂（UInt64）。
-
-

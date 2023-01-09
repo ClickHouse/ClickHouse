@@ -97,5 +97,3 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ``` sql
 DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
-
-

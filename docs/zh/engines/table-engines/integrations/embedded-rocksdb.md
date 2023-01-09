@@ -80,5 +80,3 @@ FROM system.rocksdb
     </tables>
 </rocksdb>
 ```
-
-

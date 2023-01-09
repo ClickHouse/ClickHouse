@@ -32,5 +32,3 @@ Columns:
 
 10 rows in set. Elapsed: 0.002 sec.
 ```
-
-

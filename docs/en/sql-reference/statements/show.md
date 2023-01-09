@@ -510,5 +510,3 @@ Result:
 **See Also**
 
 -   [system.settings](../../operations/system-tables/settings.md) table
-
-

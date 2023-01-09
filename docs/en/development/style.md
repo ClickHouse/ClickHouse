@@ -870,5 +870,3 @@ function(
       const & RangesInDataParts ranges,
       size_t limit)
 ```
-
-

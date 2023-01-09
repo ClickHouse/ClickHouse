@@ -130,6 +130,3 @@ WHERE
 ```
 
 If this query does not return anything, it means that everything is fine.
-
-
-

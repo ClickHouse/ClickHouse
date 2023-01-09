@@ -17,5 +17,3 @@ sidebar_position: 12
 -   [AMPLab Big Data Benchmark](../../getting-started/example-datasets/amplab-benchmark.md)
 -   [New York Taxi Data](../../getting-started/example-datasets/nyc-taxi.md)
 -   [OnTime](../../getting-started/example-datasets/ontime.md)
-
-

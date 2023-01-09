@@ -628,5 +628,3 @@ ORDER BY k ASC
 ## throwIf(x) {#throwifx}
 
 如果参数不为零则抛出异常。
-
-

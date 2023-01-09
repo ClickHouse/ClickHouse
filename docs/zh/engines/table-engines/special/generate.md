@@ -54,5 +54,3 @@ SELECT * FROM generate_engine_table LIMIT 3
     -   `INSERT`
     -   Indices
     -   Replication
-
-

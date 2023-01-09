@@ -94,5 +94,3 @@ SELECT a.values FROM t_map;
 
 -   функция [map()](../../sql-reference/functions/tuple-map-functions.md#function-map)
 -   функция [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast)
-
-

@@ -437,6 +437,3 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions;
 │ [0,1,2,3,4,5,6,7] │
 └───────────────────┘
 ```
-
-
-

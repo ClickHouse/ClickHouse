@@ -69,5 +69,3 @@ thread_id:                   54
 **另请参阅**
 
 -   [管理 ReplicatedMergeTree 表](../../sql-reference/statements/system/#query-language-system-replicated)
-
-

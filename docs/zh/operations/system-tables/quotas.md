@@ -26,6 +26,3 @@ slug: /zh/operations/system-tables/quotas
 ## 另请参阅 {#see-also}
 
 -   [查看配额信息](../../sql-reference/statements/show.md#show-quotas-statement)
-
-
-
