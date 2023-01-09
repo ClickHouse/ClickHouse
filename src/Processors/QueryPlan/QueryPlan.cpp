@@ -451,7 +451,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards
     if (optimization_settings.remove_redundant_sorting)
-        QueryPlanOptimizations::tryRemoveRedundantOrderBy(root);
+        QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
