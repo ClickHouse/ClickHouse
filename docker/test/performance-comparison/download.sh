@@ -29,7 +29,7 @@ function download
     # Test all of them.
     declare -a urls_to_try=(
         "https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/$BUILD_NAME/performance.tar.zst"
-        "https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/performance/performance.tar.zst"
+        "https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/$BUILD_NAME/performance.tgz"
     )
 
     for path in "${urls_to_try[@]}"
