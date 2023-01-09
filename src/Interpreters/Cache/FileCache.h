@@ -165,18 +165,9 @@ private:
     };
     using CacheCellsPtr = std::shared_ptr<CacheCells>;
 
-    mutable CacheGuard cache_guard;
-
-    enum class InitializationState
-    {
-        NOT_INITIALIZED,
-        INITIALIZING,
-        INITIALIZED,
-        FAILED,
-    };
-    InitializationState initialization_state = InitializationState::NOT_INITIALIZED;
-    mutable std::condition_variable initialization_cv;
-    std::exception_ptr initialization_exception;
+    std::exception_ptr init_exception;
+    std::atomic<bool> is_initialized = false;
+    mutable std::mutex init_mutex;
 
     using CachedFiles = std::unordered_map<Key, CacheCellsPtr>;
     CachedFiles files;
@@ -185,6 +176,8 @@ private:
     using KeysLocksMap = std::unordered_map<KeyPrefix, KeyPrefixGuardPtr>;
     KeysLocksMap keys_locks;
 
+    mutable std::mutex key_locks_and_files_mutex; /// Protects `files` and `keys_locks`
+
     enum class KeyNotFoundPolicy
     {
         THROW,
@@ -192,7 +185,7 @@ private:
         RETURN_NULL,
     };
 
-    KeyTransactionPtr createKeyTransaction(const Key & key, KeyNotFoundPolicy key_not_found_policy, bool assert_initialized = true);
+    KeyTransactionPtr createKeyTransaction(const Key & key, KeyNotFoundPolicy key_not_found_policy);
 
     KeyTransactionCreatorPtr getKeyTransactionCreator(const Key & key, KeyTransaction & key_transaction);
 
@@ -285,7 +278,7 @@ public:
     };
 
 private:
-    void assertInitializedUnlocked(CacheGuard::Lock &) const;
+    void assertInitialized() const;
 
     void loadCacheInfoIntoMemory();
 
