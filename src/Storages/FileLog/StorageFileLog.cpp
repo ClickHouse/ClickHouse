@@ -72,6 +72,21 @@ StorageFileLog::StorageFileLog(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
+    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
+    {
+        if (attach)
+        {
+            LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
+            return;
+        }
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The absolute data path should be inside `user_files_path`({})",
+                getContext()->getUserFilesPath());
+    }
+
+    bool created_metadata_directory = false;
     try
     {
         if (!attach)
@@ -84,6 +99,7 @@ StorageFileLog::StorageFileLog(
                     metadata_base_path);
             }
             disk->createDirectories(metadata_base_path);
+            created_metadata_directory = true;
         }
 
         loadMetaFiles(attach);
@@ -101,7 +117,12 @@ StorageFileLog::StorageFileLog(
     catch (...)
     {
         if (!attach)
+        {
+            if (created_metadata_directory)
+                disk->removeRecursive(metadata_base_path);
             throw;
+        }
+
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
@@ -124,12 +145,6 @@ void StorageFileLog::loadMetaFiles(bool attach)
 
 void StorageFileLog::loadFiles()
 {
-    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
-    }
-
     auto absolute_path = std::filesystem::absolute(path);
     absolute_path = absolute_path.lexically_normal(); /// Normalize path.
 
@@ -372,42 +387,25 @@ void StorageFileLog::drop()
 
 void StorageFileLog::startup()
 {
-    try
-    {
-        if (task)
-        {
-            task->holder->activateAndSchedule();
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (task)
+        task->holder->activateAndSchedule();
 }
 
 void StorageFileLog::shutdown()
 {
-    try
+    if (task)
     {
-        if (task)
-        {
-            task->stream_cancelled = true;
+        task->stream_cancelled = true;
 
-            /// Reader thread may wait for wake up
-            wakeUp();
+        /// Reader thread may wait for wake up
+        wakeUp();
 
-            LOG_TRACE(log, "Waiting for cleanup");
-            task->holder->deactivate();
-        }
+        LOG_TRACE(log, "Waiting for cleanup");
+        task->holder->deactivate();
         /// If no reading call and threadFunc, the log files will never
         /// be opened, also just leave the work of close files and
         /// store meta to streams. because if we close files in here,
         /// may result in data race with unfinishing reading pipeline
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        task->holder->deactivate();
     }
 }
 

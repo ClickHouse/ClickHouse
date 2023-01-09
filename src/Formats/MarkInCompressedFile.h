@@ -28,6 +28,11 @@ struct MarkInCompressedFile
         return !(*this == rhs);
     }
 
+    auto asTuple() const
+    {
+        return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block);
+    }
+
     String toString() const
     {
         return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";

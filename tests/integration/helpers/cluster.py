@@ -224,6 +224,15 @@ def check_kerberos_kdc_is_available(kerberos_kdc_id):
     return p.returncode == 0
 
 
+def check_postgresql_java_client_is_available(postgresql_java_client_id):
+    p = subprocess.Popen(
+        ("docker", "exec", "-i", postgresql_java_client_id, "java", "-version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+
 def check_rabbitmq_is_available(rabbitmq_id):
     p = subprocess.Popen(
         ("docker", "exec", "-i", rabbitmq_id, "rabbitmqctl", "await_startup"),
@@ -276,11 +285,7 @@ def enable_consistent_hash_plugin(rabbitmq_id):
 def get_instances_dir(name):
     instances_dir_name = "_instances"
 
-    worker_name = os.environ.get("PYTEST_XDIST_WORKER", "")
     run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
-
-    if worker_name:
-        instances_dir_name += "_" + worker_name
 
     if name:
         instances_dir_name += "_" + name
@@ -404,6 +409,7 @@ class ClickHouseCluster:
         self.with_mysql_cluster = False
         self.with_postgres = False
         self.with_postgres_cluster = False
+        self.with_postgresql_java_client = False
         self.with_kafka = False
         self.with_kerberized_kafka = False
         self.with_kerberos_kdc = False
@@ -423,9 +429,11 @@ class ClickHouseCluster:
         self.with_hive = False
         self.with_coredns = False
 
+        # available when with_minio == True
         self.with_minio = False
         self.minio_dir = os.path.join(self.instances_dir, "minio")
         self.minio_certs_dir = None  # source for certificates
+        self.minio_data_dir = p.join(self.minio_dir, "data")
         self.minio_host = "minio1"
         self.minio_ip = None
         self.minio_bucket = "root"
@@ -539,6 +547,13 @@ class ClickHouseCluster:
         self.postgres2_logs_dir = os.path.join(self.postgres_dir, "postgres2")
         self.postgres3_logs_dir = os.path.join(self.postgres_dir, "postgres3")
         self.postgres4_logs_dir = os.path.join(self.postgres_dir, "postgres4")
+        self.postgres_id = self.get_instance_docker_id(self.postgres_host)
+
+        # available when with_postgresql_java_client = True
+        self.postgresql_java_client_host = "java"
+        self.postgresql_java_client_docker_id = self.get_instance_docker_id(
+            self.postgresql_java_client_host
+        )
 
         # available when with_mysql_client == True
         self.mysql_client_host = "mysql_client"
@@ -596,7 +611,6 @@ class ClickHouseCluster:
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
-        os.mkdir(self.instances_dir)
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -987,6 +1001,28 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgres_cluster.yml"),
         ]
 
+    def setup_postgresql_java_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgresql_java_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"
+                ),
+            ]
+        )
+        self.base_postgresql_java_client_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
+        ]
+
     def setup_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hdfs = True
         env_variables["HDFS_HOST"] = self.hdfs_host
@@ -1256,6 +1292,7 @@ class ClickHouseCluster:
         self.with_minio = True
         cert_d = p.join(self.minio_dir, "certs")
         env_variables["MINIO_CERTS_DIR"] = cert_d
+        env_variables["MINIO_DATA_DIR"] = self.minio_data_dir
         env_variables["MINIO_PORT"] = str(self.minio_port)
         env_variables["SSL_CERT_FILE"] = p.join(self.base_dir, cert_d, "public.crt")
 
@@ -1380,6 +1417,7 @@ class ClickHouseCluster:
         with_odbc_drivers=False,
         with_postgres=False,
         with_postgres_cluster=False,
+        with_postgresql_java_client=False,
         with_hdfs=False,
         with_kerberized_hdfs=False,
         with_mongo=False,
@@ -1405,6 +1443,7 @@ class ClickHouseCluster:
         tmpfs=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
+        minio_data_dir=None,
         use_keeper=True,
         main_config_name="config.xml",
         users_config_name="users.xml",
@@ -1486,6 +1525,7 @@ class ClickHouseCluster:
             with_odbc_drivers=with_odbc_drivers,
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
+            with_postgresql_java_client=with_postgresql_java_client,
             hostname=hostname,
             env_variables=env_variables,
             image=image,
@@ -1568,6 +1608,13 @@ class ClickHouseCluster:
         if with_postgres_cluster and not self.with_postgres_cluster:
             cmds.append(
                 self.setup_postgres_cluster_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_postgresql_java_client and not self.with_postgresql_java_client:
+            cmds.append(
+                self.setup_postgresql_java_client_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -1684,6 +1731,12 @@ class ClickHouseCluster:
                 self.minio_certs_dir = minio_certs_dir
             else:
                 raise Exception("Overwriting minio certs dir")
+
+        if minio_data_dir is not None:
+            if self.minio_data_dir is None:
+                self.minio_data_dir = minio_data_dir
+            else:
+                raise Exception("Overwriting minio data dir")
 
         if with_cassandra and not self.with_cassandra:
             cmds.append(
@@ -2058,6 +2111,21 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
+    def wait_postgresql_java_client(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_postgresql_java_client_is_available(
+                    self.postgresql_java_client_docker_id
+                ):
+                    logging.debug("PostgreSQL Java Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find PostgreSQL Java Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait PostgreSQL Java Client container")
+
     def wait_rabbitmq_to_start(self, timeout=180, throw=True):
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2369,7 +2437,12 @@ class ClickHouseCluster:
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
-
+        if not os.path.exists(self.instances_dir):
+            os.mkdir(self.instances_dir)
+        else:
+            logging.warning(
+                "Instance directory already exists. Did you call cluster.start() for second time?"
+            )
         logging.debug(f"Cluster start called. is_up={self.is_up}")
         self.print_all_docker_pieces()
 
@@ -2504,7 +2577,7 @@ class ClickHouseCluster:
                 self.wait_postgres_to_start()
 
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
-                print("Setup Postgres")
+                logging.debug("Setup Postgres")
                 os.makedirs(self.postgres2_logs_dir)
                 os.chmod(self.postgres2_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres3_logs_dir)
@@ -2514,6 +2587,17 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
                 self.up_called = True
                 self.wait_postgres_cluster_to_start()
+
+            if (
+                self.with_postgresql_java_client
+                and self.base_postgresql_java_client_cmd
+            ):
+                logging.debug("Setup Postgres Java Client")
+                subprocess_check_call(
+                    self.base_postgresql_java_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_postgresql_java_client()
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug("Setup Kafka")
@@ -2646,6 +2730,8 @@ class ClickHouseCluster:
                         os.path.join(self.base_dir, self.minio_certs_dir),
                         os.path.join(self.minio_dir, "certs"),
                     )
+                os.mkdir(self.minio_data_dir)
+                os.chmod(self.minio_data_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
@@ -2964,6 +3050,7 @@ class ClickHouseInstance:
         with_odbc_drivers,
         with_postgres,
         with_postgres_cluster,
+        with_postgresql_java_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         main_config_name="config.xml",
         users_config_name="users.xml",
@@ -3025,6 +3112,7 @@ class ClickHouseInstance:
         self.with_mysql_cluster = with_mysql_cluster
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
+        self.with_postgresql_java_client = with_postgresql_java_client
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_kerberos_kdc = with_kerberos_kdc
@@ -3207,6 +3295,40 @@ class ClickHouseInstance:
             password=password,
             database=database,
         )
+
+    def query_and_get_error_with_retry(
+        self,
+        sql,
+        stdin=None,
+        timeout=None,
+        settings=None,
+        user=None,
+        password=None,
+        database=None,
+        retry_count=20,
+        sleep_time=0.5,
+    ):
+        logging.debug(f"Executing query {sql} on {self.name}")
+        result = None
+        for i in range(retry_count):
+            try:
+                result = self.client.query_and_get_error(
+                    sql,
+                    stdin=stdin,
+                    timeout=timeout,
+                    settings=settings,
+                    user=user,
+                    password=password,
+                    database=database,
+                )
+                time.sleep(sleep_time)
+            except QueryRuntimeException as ex:
+                logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                time.sleep(sleep_time)
+
+        if result is not None:
+            return result
+        raise Exception("Query {sql} did not fail".format(sql))
 
     # The same as query_and_get_error but ignores successful query.
     def query_and_get_answer_with_error(
