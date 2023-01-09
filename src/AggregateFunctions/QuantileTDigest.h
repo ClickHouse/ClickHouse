@@ -494,7 +494,7 @@ public:
             if (value <= c.mean)
             {
                 // Add interpolation???
-                return current_x / count;
+                return static_cast<Float32>(current_x / count);
             }
 
             sum += c.count;

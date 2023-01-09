@@ -13,7 +13,7 @@ namespace DB
 
 namespace
 {
-constexpr float EPS = 1e-5;
+constexpr float EPS = 1e-5f;
 }
 
 namespace ErrorCodes
@@ -87,8 +87,9 @@ void MergeTreeGranuleDistributionStatisticTDigest::serializeBinary(WriteBuffer &
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
-    size_serialization->serializeBinary(static_cast<size_t>(MergeTreeDistributionStatisticType::GRANULE_TDIGEST), ostr);
-    size_serialization->serializeBinary(wb.str().size(), ostr);
+    FormatSettings format_settings;
+    size_serialization->serializeBinary(static_cast<size_t>(MergeTreeDistributionStatisticType::GRANULE_TDIGEST), ostr, format_settings);
+    size_serialization->serializeBinary(wb.str().size(), ostr, format_settings);
     ostr.write(wb.str().data(), wb.str().size());
 }
 
@@ -97,7 +98,8 @@ bool MergeTreeGranuleDistributionStatisticTDigest::validateTypeBinary(ReadBuffer
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     Field ftype;
-    size_serialization->deserializeBinary(ftype, istr);
+    FormatSettings format_settings;
+    size_serialization->deserializeBinary(ftype, istr, format_settings);
     return ftype.get<size_t>() == static_cast<size_t>(MergeTreeDistributionStatisticType::GRANULE_TDIGEST);
 }
 
@@ -106,7 +108,8 @@ void MergeTreeGranuleDistributionStatisticTDigest::deserializeBinary(ReadBuffer 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     Field unused_size;
-    size_serialization->deserializeBinary(unused_size, istr);
+    FormatSettings format_settings;
+    size_serialization->deserializeBinary(unused_size, istr, format_settings);
 
     min_sketch.deserialize(istr);
     max_sketch.deserialize(istr);
@@ -149,7 +152,7 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileLower(doubl
         return 0.0;
     }
     else
-        return min_sketch.cdf(threshold);
+        return min_sketch.cdf(static_cast<float>(threshold));
 }
 
 double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileUpper(double threshold) const
@@ -165,7 +168,7 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileUpper(doubl
         return 1.0;
     }
     else
-        return max_sketch.cdf(threshold);
+        return max_sketch.cdf(static_cast<float>(threshold));
 }
 
 double MergeTreeGranuleDistributionStatisticTDigest::estimateProbability(const Field& lower, const Field& upper) const
