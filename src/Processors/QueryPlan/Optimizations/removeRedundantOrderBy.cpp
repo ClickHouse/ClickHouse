@@ -108,7 +108,7 @@ protected:
 
 constexpr bool debug_logging_enabled = false;
 
-class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy, debug_logging_enabled>
+class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting, debug_logging_enabled>
 {
     /// stack with nodes which affect order
     /// nodes added when traversing top-down
@@ -116,7 +116,7 @@ class RemoveRedundantOrderBy : public QueryPlanVisitor<RemoveRedundantOrderBy, d
     std::vector<QueryPlan::Node *> nodes_affect_order;
 
 public:
-    explicit RemoveRedundantOrderBy(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantOrderBy, debug_logging_enabled>(root_) { }
+    explicit RemoveRedundantSorting(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantSorting, debug_logging_enabled>(root_) { }
 
     bool visitTopDownImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
@@ -292,9 +292,9 @@ private:
     }
 };
 
-void tryRemoveRedundantOrderBy(QueryPlan::Node * root)
+void tryRemoveRedundantSorting(QueryPlan::Node * root)
 {
-    RemoveRedundantOrderBy(root).visit();
+    RemoveRedundantSorting(root).visit();
 }
 
 }
