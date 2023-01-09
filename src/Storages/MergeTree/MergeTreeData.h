@@ -1,10 +1,6 @@
 #pragma once
 
-<<<<<<< HEAD
 #include <base/defines.h>
-=======
-#include <unordered_map>
->>>>>>> 32a9c1d592c (x)
 #include <Common/SimpleIncrement.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
@@ -41,6 +37,7 @@
 #include <boost/multi_index/global_fun.hpp>
 #include <boost/range/iterator_range_core.hpp>
 
+#include <unordered_map>
 
 namespace DB
 {
@@ -1054,15 +1051,13 @@ public:
     /// Mutex for currently_submerging_parts and currently_emerging_parts
     mutable std::mutex currently_submerging_emerging_mutex;
 
-<<<<<<< HEAD
     /// Used for freezePartitionsByMatcher and unfreezePartitionsByMatcher
     using MatcherFn = std::function<bool(const String &)>;
 
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
-=======
+
     void reloadStatistics() override;
->>>>>>> 32a9c1d592c (x)
 
 protected:
     /// Get Statistics for prewhere planning

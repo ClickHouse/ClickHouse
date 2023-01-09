@@ -1,32 +1,13 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
-<<<<<<< HEAD
 #include <Backups/BackupEntriesCollector.h>
-=======
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include <Backups/BackupEntryFromImmutableFile.h>
->>>>>>> 32a9c1d592c (x)
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
-<<<<<<< HEAD
 #include <Backups/RestorerFromBackup.h>
-=======
-#include <Backups/IRestoreTask.h>
-#include <Columns/ColumnObject.h>
-#include <Common/escapeForFileName.h>
-#include <Common/Exception.h>
-#include <Common/Increment.h>
-#include <Common/quoteString.h>
-#include <Common/SimpleIncrement.h>
-#include <Common/Stopwatch.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
->>>>>>> 32a9c1d592c (x)
 #include <Compression/CompressedReadBuffer.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-<<<<<<< HEAD
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
@@ -35,32 +16,19 @@
 #include <Disks/createVolume.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Functions/IFunction.h>
-=======
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/hasNullable.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/ObjectUtils.h>
-#include <Disks/TemporaryFileOnDisk.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/TreeRewriter.h>
-#include <IO/ConcatReadBuffer.h>
->>>>>>> 32a9c1d592c (x)
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -70,16 +38,11 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/localBackup.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
-<<<<<<< HEAD
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageMergeTree.h>
@@ -98,23 +61,11 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Common/scope_guard_safe.h>
-=======
-#include <Storages/MergeTree/MergeTreeSequentialSource.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/VirtualColumnUtils.h>
->>>>>>> 32a9c1d592c (x)
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>
-<<<<<<< HEAD
-=======
-#include <Common/scope_guard_safe.h>
-#include <base/sort.h>
->>>>>>> 32a9c1d592c (x)
 
 #include <algorithm>
 #include <atomic>
@@ -129,6 +80,7 @@
 #include <filesystem>
 
 #include <fmt/format.h>
+
 
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
@@ -7787,7 +7739,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec, txn);
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), columns, {}, compression_codec, txn);
 
     bool sync_on_insert = settings->fsync_after_insert;
 
