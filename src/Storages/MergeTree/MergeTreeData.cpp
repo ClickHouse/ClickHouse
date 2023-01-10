@@ -3739,7 +3739,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             toString(parts_count_in_total));
     }
 
-    size_t outdated_parts_over_threshold = [&]() -> size_t
+    size_t outdated_parts_over_threshold = 0;
     {
         size_t outdated_parts_count_in_partition = 0;
         if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
@@ -3754,10 +3754,8 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
                 outdated_parts_count_in_partition);
         }
         if (settings->inactive_parts_to_delay_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_delay_insert)
-            return outdated_parts_count_in_partition - settings->inactive_parts_to_delay_insert + 1;
-
-        return 0;
-    }();
+            outdated_parts_over_threshold = outdated_parts_count_in_partition - settings->inactive_parts_to_delay_insert + 1;
+    }
 
     auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
@@ -3765,50 +3763,56 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         = query_settings.parts_to_delay_insert ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
     const auto active_parts_to_throw_insert
         = query_settings.parts_to_throw_insert ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
-    size_t active_parts_over_threshold = [&](size_t parts_count) -> size_t
+    size_t active_parts_over_threshold = 0;
     {
         bool parts_are_large_enough_in_average
             = settings->max_avg_part_size_for_too_many_parts && average_part_size > settings->max_avg_part_size_for_too_many_parts;
 
-        if (parts_count >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
+        if (parts_count_in_partition >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTS,
                 "Too many parts ({} with average size of {}). Merges are processing significantly slower than inserts",
-                parts_count,
+                parts_count_in_partition,
                 ReadableSize(average_part_size));
         }
-        if (active_parts_to_delay_insert > 0 && parts_count >= active_parts_to_delay_insert && !parts_are_large_enough_in_average)
+        if (active_parts_to_delay_insert > 0 && parts_count_in_partition >= active_parts_to_delay_insert
+            && !parts_are_large_enough_in_average)
             /// if parts_count == parts_to_delay_insert -> we're 1 part over threshold
-            return parts_count - active_parts_to_delay_insert + 1;
-
-        return 0;
-    }(parts_count_in_partition);
+            active_parts_over_threshold = parts_count_in_partition - active_parts_to_delay_insert + 1;
+    }
 
     /// no need for delay
     if (!active_parts_over_threshold && !outdated_parts_over_threshold)
         return;
 
-    const UInt64 delay_milliseconds = [&]() -> UInt64
+    UInt64 delay_milliseconds = 0;
     {
-        size_t parts_over_threshold = std::max(active_parts_over_threshold, outdated_parts_over_threshold);
+        size_t parts_over_threshold = 0;
         size_t allowed_parts_over_threshold = 1;
         if (active_parts_over_threshold >= outdated_parts_over_threshold)
+        {
+            parts_over_threshold =  active_parts_over_threshold;
             allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+        }
         else
-            allowed_parts_over_threshold
-                = (settings->inactive_parts_to_throw_insert > 0
-                       ? settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert
-                       : outdated_parts_over_threshold);
+        {
+            parts_over_threshold = outdated_parts_over_threshold;
+            allowed_parts_over_threshold = outdated_parts_over_threshold;
+            if (settings->inactive_parts_to_throw_insert > 0)
+                allowed_parts_over_threshold = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
+        }
 
-        chassert(parts_over_threshold <= allowed_parts_over_threshold);
+        chassert(allowed_parts_over_threshold > 0 && parts_over_threshold <= allowed_parts_over_threshold);
 
         const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
         double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
+        UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
         /// min() as a save guard here
-        return std::min(max_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
-    }();
+        delay_milliseconds = std::max(
+            min_delay_milliseconds, std::min(max_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor)));
+    }
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
     ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_milliseconds);
