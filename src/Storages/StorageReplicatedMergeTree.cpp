@@ -87,6 +87,7 @@
 
 #include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
+#include "Storages/MergeTree/AsyncBlockIDsCache.h"
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -278,6 +279,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
     , cleanup_thread(*this)
+    , async_block_ids_cache(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
     , part_moves_between_shards_orchestrator(*this)
@@ -4337,6 +4339,7 @@ void StorageReplicatedMergeTree::partialShutdown()
     mutations_finalizing_task->deactivate();
 
     cleanup_thread.stop();
+    async_block_ids_cache.stop();
     part_check_thread.stop();
 
     /// Stop queue processing
