@@ -38,5 +38,3 @@ SELECT * FROM system.databases;
 │ system             │ Atomic │ /var/lib/clickhouse/store/ │ /var/lib/clickhouse/store/1d1/1d1c869d-e465-4b1b-a51f-be033436ebf9/ │ 03e9f3d1-cc88-4a49-83e9-f3d1cc881a49 │         │
 └────────────────────┴────────┴────────────────────────────┴─────────────────────────────────────────────────────────────────────┴──────────────────────────────────────┴─────────┘
 ```
-
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/databases) <!--hide-->

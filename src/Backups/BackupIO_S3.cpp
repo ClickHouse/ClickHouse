@@ -8,6 +8,7 @@
 #include <IO/IOThreadPool.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
@@ -35,7 +36,7 @@ namespace
         auto settings = context->getStorageS3Settings().getSettings(s3_uri.uri.toString());
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-        HeaderCollection headers;
+        HTTPHeaderEntries headers;
         if (access_key_id.empty())
         {
             credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key);
