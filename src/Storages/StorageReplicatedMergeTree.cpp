@@ -48,11 +48,13 @@
 
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -62,6 +64,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sinks/EmptySink.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
@@ -75,6 +78,7 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/JoinedTables.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
@@ -164,6 +168,7 @@ namespace ErrorCodes
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int NOT_INITIALIZED;
+    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
 }
 
 namespace ActionLocks
@@ -3418,7 +3423,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 }
 
 
-void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children)
+void StorageReplicatedMergeTree::getRemovePartFromZooKeeperOps(const String & part_name, Coordination::Requests & ops, bool has_children)
 {
     String part_path = fs::path(replica_path) / "parts" / part_name;
 
@@ -3442,11 +3447,11 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
 
     Coordination::Requests ops;
 
-    removePartFromZooKeeper(part_name, ops, stat.numChildren > 0);
+    getRemovePartFromZooKeeperOps(part_name, ops, stat.numChildren > 0);
     zookeeper->multi(ops);
 }
 
-void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
+void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name, bool storage_init)
 {
     auto zookeeper = getZooKeeper();
 
@@ -3480,39 +3485,76 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
     String part_path = fs::path(replica_path) / "parts" / part_name;
 
-    Coordination::Requests ops;
-
-    time_t part_create_time = 0;
-    Coordination::Stat stat;
-    if (zookeeper->exists(part_path, &stat))
+    while (true)
     {
-        /// Update version of /is_lost node to avoid race condition with cloneReplica(...).
-        /// cloneReplica(...) expects that if some entry was executed, then its new_part_name is added to /parts,
-        /// but we are going to remove it from /parts and add to queue again.
-        Coordination::Stat is_lost_stat;
-        String is_lost_value = zookeeper->get(replica_path + "/is_lost", &is_lost_stat);
-        assert(is_lost_value == "0");
-        ops.emplace_back(zkutil::makeSetRequest(replica_path + "/is_lost", is_lost_value, is_lost_stat.version));
 
-        part_create_time = stat.ctime / 1000;
-        removePartFromZooKeeper(part_name, ops, stat.numChildren > 0);
+        Coordination::Requests ops;
+
+        time_t part_create_time = 0;
+        Coordination::Stat stat;
+        if (zookeeper->exists(part_path, &stat))
+        {
+            /// Update version of /is_lost node to avoid race condition with cloneReplica(...).
+            /// cloneReplica(...) expects that if some entry was executed, then its new_part_name is added to /parts,
+            /// but we are going to remove it from /parts and add to queue again.
+            Coordination::Stat is_lost_stat;
+            String is_lost_value = zookeeper->get(replica_path + "/is_lost", &is_lost_stat);
+            assert(is_lost_value == "0");
+            ops.emplace_back(zkutil::makeSetRequest(replica_path + "/is_lost", is_lost_value, is_lost_stat.version));
+
+            part_create_time = stat.ctime / 1000;
+            getRemovePartFromZooKeeperOps(part_name, ops, stat.numChildren > 0);
+        }
+
+
+        LogEntryPtr log_entry = std::make_shared<LogEntry>();
+        log_entry->type = LogEntry::GET_PART;
+        log_entry->create_time = part_create_time;
+        log_entry->source_replica = "";
+        log_entry->new_part_name = part_name;
+
+        if (!storage_init)
+        {
+            /// We use merge predicate + version check here, because DROP RANGE update log version and we are trying to avoid race with it. We must be sure, that our part
+            /// was not dropped, otherwise we will have fetch entry, but no virtual part for it (DROP RANGE will remove it). So bad sequence is the following:
+            /// 1) Create DROP PART in log for broken_part (for example because it's not only broken, but also empty)
+            /// 1.5) Pull to log and start execution (removePartProducingOpsInRange)
+            /// 2) Execute this method (create GET PART for broken part)
+            /// 3) Finish DROP PART execution (remove part from virtual parts)
+            /// 4) Now we get GET PART for broken part which is absent in virtual parts == bug
+            ///
+            /// Because of version check this method will never create FETCH if drop part exists
+
+            ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
+            if (merge_pred.hasDropRange(broken_part_info))
+            {
+                LOG_INFO(log, "Broken part {} is covered by DROP RANGE, don't need to fetch it", part_name);
+                return;
+            }
+            /// Check that our version of log (and queue) is the most fresh. Otherwise don't create new entry fetch entry.
+            ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion()));
+        }
+
+        ops.emplace_back(zkutil::makeCreateRequest(
+            fs::path(replica_path) / "queue/queue-", log_entry->toString(),
+            zkutil::CreateMode::PersistentSequential));
+
+        Coordination::Responses results;
+        auto rc = zookeeper->tryMulti(ops, results);
+
+        if (rc == Coordination::Error::ZBADVERSION)
+        {
+            LOG_TRACE(log, "Log updated, cannot create fetch entry for part {}, will retry.", part_name);
+            continue;
+        }
+
+        zkutil::KeeperMultiException::check(rc, ops, results);
+
+        String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
+        log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+        queue.insert(zookeeper, log_entry);
+        break;
     }
-
-    LogEntryPtr log_entry = std::make_shared<LogEntry>();
-    log_entry->type = LogEntry::GET_PART;
-    log_entry->create_time = part_create_time;
-    log_entry->source_replica = "";
-    log_entry->new_part_name = part_name;
-
-    ops.emplace_back(zkutil::makeCreateRequest(
-        fs::path(replica_path) / "queue/queue-", log_entry->toString(),
-        zkutil::CreateMode::PersistentSequential));
-
-    auto results = zookeeper->multi(ops);
-
-    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
-    log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-    queue.insert(zookeeper, log_entry);
 }
 
 
@@ -4597,6 +4639,106 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
         deduplicate,
         query_settings.insert_quorum.is_auto,
         local_context);
+}
+
+
+std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context)
+{
+    const auto & settings = local_context->getSettingsRef();
+    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, local_context);
+
+    /// Here we won't check that the cluster formed from table replicas is a subset of a cluster specified in s3Cluster/hdfsCluster table function
+    auto src_cluster = src_storage_cluster->getCluster(local_context);
+
+    /// Actually the query doesn't change, we just serialize it to string
+    String query_str;
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
+        ast_format_settings.always_quote_identifiers = true;
+        query.IAST::format(ast_format_settings);
+        query_str = buf.str();
+    }
+
+    QueryPipeline pipeline;
+    ContextMutablePtr query_context = Context::createCopy(local_context);
+    ++query_context->getClientInfo().distributed_depth;
+
+    for (const auto & replicas : src_cluster->getShardsAddresses())
+    {
+        /// There will be only one replica, because we consider each replica as a shard
+        for (const auto & node : replicas)
+        {
+            auto connection = std::make_shared<Connection>(
+                node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                "ParallelInsertSelectInititiator",
+                node.compression,
+                node.secure
+            );
+
+            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                connection,
+                query_str,
+                Block{},
+                query_context,
+                /*throttler=*/nullptr,
+                Scalars{},
+                Tables{},
+                QueryProcessingStage::Complete,
+                extension);
+
+            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote));
+            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
+
+            pipeline.addCompletedPipeline(std::move(remote_pipeline));
+        }
+    }
+
+    return pipeline;
+}
+
+std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
+{
+    /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
+    if (local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return {};
+
+    const Settings & settings = local_context->getSettingsRef();
+    if (settings.max_distributed_depth && local_context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
+        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
+
+    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+
+    StoragePtr src_storage;
+
+    if (select.list_of_selects->children.size() == 1)
+    {
+        if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+        {
+            JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
+
+            if (joined_tables.tablesCount() == 1)
+            {
+                src_storage = joined_tables.getLeftTableStorage();
+            }
+        }
+    }
+
+    if (!src_storage)
+        return {};
+
+    if (auto src_distributed = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
+    {
+        return distributedWriteFromClusterStorage(src_distributed, query, local_context);
+    }
+    else if (local_context->getClientInfo().distributed_depth == 0)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. Reason: distributed "
+            "reading into Replicated table is supported only from *Cluster table functions, but got {} storage", src_storage->getName());
+    }
+
+    return {};
 }
 
 
@@ -6078,7 +6220,7 @@ void StorageReplicatedMergeTree::fetchPartition(
 }
 
 
-void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
+void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, bool force_wait)
 {
     /// Overview of the mutation algorithm.
     ///
@@ -6191,7 +6333,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
             throw Coordination::Exception("Unable to create a mutation znode", rc);
     }
 
-    waitMutation(mutation_entry.znode_name, query_context->getSettingsRef().mutations_sync);
+    const size_t mutations_sync = force_wait ? 2 : query_context->getSettingsRef().mutations_sync;
+    waitMutation(mutation_entry.znode_name, mutations_sync);
 }
 
 void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t mutations_sync) const
@@ -6415,7 +6558,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(const Strin
                 if (exists_resp.error == Coordination::Error::ZOK)
                 {
                     Coordination::Requests ops;
-                    removePartFromZooKeeper(part_names[i], ops, exists_resp.stat.numChildren > 0);
+                    getRemovePartFromZooKeeperOps(part_names[i], ops, exists_resp.stat.numChildren > 0);
                     remove_futures.emplace_back(zookeeper->asyncTryMultiNoThrow(ops));
                 }
             }
@@ -6478,7 +6621,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
             if (exists_resp.error == Coordination::Error::ZOK)
             {
                 Coordination::Requests ops;
-                removePartFromZooKeeper(part_names[i], ops, exists_resp.stat.numChildren > 0);
+                getRemovePartFromZooKeeperOps(part_names[i], ops, exists_resp.stat.numChildren > 0);
                 remove_futures.emplace_back(zookeeper->asyncTryMultiNoThrow(ops));
             }
             else
@@ -7448,6 +7591,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size + 1]).path_created;
         entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
+        LOG_TRACE(log, "DROP RANGE for part {} inserted with znode name {}", part_name, entry.znode_name);
         return true;
     }
 }
