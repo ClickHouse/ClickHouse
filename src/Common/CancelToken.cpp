@@ -112,7 +112,7 @@ bool CancelToken::wait(UInt32 * address, UInt32 value)
     // Start cancelable wait. Spurious wake-up is possible.
     futexWait(address, value);
 
-    // "Release" futex and check for cancelation
+    // "Release" futex and check for cancellation
     s = state.load();
     while (true)
     {
@@ -128,7 +128,7 @@ bool CancelToken::wait(UInt32 * address, UInt32 value)
             }
         }
         if (state.compare_exchange_strong(s, 0))
-            return true; // There was no cancelation; futex "released"
+            return true; // There was no cancellation; futex "released"
     }
 
     // Reset signaled bit
@@ -182,7 +182,7 @@ void CancelToken::signalImpl(int code, const String & message)
     exception_message = message;
 
     if ((s & disabled) == disabled)
-        return; // Cancelation is disabled - just signal token for later, but don't wake
+        return; // cancellation is disabled - just signal token for later, but don't wake
     std::atomic<UInt32> * address = reinterpret_cast<std::atomic<UInt32> *>(s & disabled);
     if (address == nullptr)
         return; // Thread is currently not waiting on futex - wake-up not required

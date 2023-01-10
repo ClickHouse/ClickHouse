@@ -15,8 +15,8 @@
 namespace DB
 {
 
-// Scoped object, enabling thread cancelation (cannot be nested).
-// Intended to be used once per cancelable task. It erases any previously held cancelation signal.
+// Scoped object, enabling thread cancellation (cannot be nested).
+// Intended to be used once per cancelable task. It erases any previously held cancellation signal.
 // Note that by default thread is not cancelable.
 struct Cancelable
 {
@@ -24,14 +24,14 @@ struct Cancelable
     ~Cancelable();
 };
 
-// Scoped object, disabling thread cancelation (cannot be nested; must be inside `Cancelable` region)
+// Scoped object, disabling thread cancellation (cannot be nested; must be inside `Cancelable` region)
 struct NonCancelable
 {
     NonCancelable();
     ~NonCancelable();
 };
 
-// Responsible for synchronization needed to deliver thread cancelation signal.
+// Responsible for synchronization needed to deliver thread cancellation signal.
 // Basic building block for cancelable synchronization primitives.
 // Allows to perform cancelable wait on memory addresses (think futex)
 class CancelToken
@@ -54,14 +54,14 @@ public:
     // Cancelable wait on memory address (futex word).
     //   Thread will do atomic compare-and-sleep `*address == value`. Waiting will continue until `notify_one()`
     //   or `notify_all()` will be called with the same `address` or calling thread will be canceled using `signal()`.
-    //   Note that spurious wake-ups are also possible due to cancelation of other waiters on the same `address`.
+    //   Note that spurious wake-ups are also possible due to cancellation of other waiters on the same `address`.
     //   WARNING: `address` must be 2-byte aligned and `value` highest bit must be zero.
     // Return value:
     //   true - woken by either notify or spurious wakeup;
-    //   false - iff cancelation signal has been received.
+    //   false - iff cancellation signal has been received.
     // Implementation details:
-    //   It registers `address` inside token's `state` to allow other threads to wake this thread and deliver cancelation signal.
-    //   Highest bit of `*address` is used for guaranteed delivery of the signal, but is guaranteed to be zero on return due to cancelation.
+    //   It registers `address` inside token's `state` to allow other threads to wake this thread and deliver cancellation signal.
+    //   Highest bit of `*address` is used for guaranteed delivery of the signal, but is guaranteed to be zero on return due to cancellation.
     // Intended to be called only by thread associated with this token.
     bool wait(UInt32 * address, UInt32 value);
 
@@ -75,12 +75,12 @@ public:
     static void notifyAll(UInt32 * address);
 
     // Send cancel signal to thread with specified `tid`.
-    // If thread was waiting using `wait()` it will be woken up (unless cancelation is disabled).
+    // If thread was waiting using `wait()` it will be woken up (unless cancellation is disabled).
     // Can be called from any thread.
     static void signal(UInt64 tid);
     static void signal(UInt64 tid, int code, const String & message);
 
-    // Flag used to deliver cancelation into memory address to wake a thread.
+    // Flag used to deliver cancellation into memory address to wake a thread.
     // Note that most significant bit at `addresses` to be used with `wait()` is reserved.
     static constexpr UInt32 signaled = 1u << 31u;
 
@@ -95,7 +95,7 @@ private:
         state.store(0);
     }
 
-    // Enable thread cancelation. See `NonCancelable` struct.
+    // Enable thread cancellation. See `NonCancelable` struct.
     // Intended to be called only by thread associated with this token.
     void enable()
     {
@@ -103,7 +103,7 @@ private:
         state.fetch_and(~disabled);
     }
 
-    // Disable thread cancelation. See `NonCancelable` struct.
+    // Disable thread cancellation. See `NonCancelable` struct.
     // Intended to be called only by thread associated with this token.
     void disable()
     {
@@ -143,11 +143,11 @@ private:
     // All signal handling logic should be globally serialized using this mutex
     static std::mutex signal_mutex;
 
-    // Cancelation state
+    // Cancellation state
     alignas(64) std::atomic<UInt64> state;
     [[maybe_unused]] char padding[64 - sizeof(state)];
 
-    // Cancelation exception
+    // Cancellation exception
     int exception_code;
     String exception_message;
 

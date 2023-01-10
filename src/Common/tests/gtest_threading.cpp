@@ -154,9 +154,9 @@ void TestSharedMutexCancelReader()
 
             // This sync is crucial. It is needed to hold `lock` long enough.
             // It guarantees that every canceled thread will find `sm` blocked by writer, and thus will begin to wait.
-            // Wait() call is required for cancelation. Otherwise, fastpath acquire w/o wait will not generate exception.
+            // Wait() call is required for cancellation. Otherwise, fastpath acquire w/o wait will not generate exception.
             // And this is the desired behaviour.
-            cancel_sync.arrive_and_wait(); // (C) wait for cancelation to finish, before unlock.
+            cancel_sync.arrive_and_wait(); // (C) wait for cancellation to finish, before unlock.
         }
     }
 
@@ -206,9 +206,9 @@ void TestSharedMutexCancelWriter()
 
                 // This sync is crucial. It is needed to hold `lock` long enough.
                 // It guarantees that every canceled thread will find `sm` blocked, and thus will begin to wait.
-                // Wait() call is required for cancelation. Otherwise, fastpath acquire w/o wait will not generate exception.
+                // Wait() call is required for cancellation. Otherwise, fastpath acquire w/o wait will not generate exception.
                 // And this is the desired behaviour.
-                sync.arrive_and_wait(); // (B) wait for cancelation to finish, before unlock.
+                sync.arrive_and_wait(); // (B) wait for cancellation to finish, before unlock.
             }
             catch (DB::Exception & e)
             {
@@ -363,7 +363,7 @@ TEST(Threading, PerfTestSharedMutexRWCancelableDisabled) { PerfTestSharedMutexRW
 TEST(Threading, PerfTestSharedMutexRWFast) { PerfTestSharedMutexRW<DB::SharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexRWStd) { PerfTestSharedMutexRW<std::shared_mutex>(); }
 
-#ifdef OS_LINUX /// These tests require cancelability
+#ifdef OS_LINUX /// These tests require cancellability
 
 TEST(Threading, SharedMutexCancelReaderCancelableEnabled) { TestSharedMutexCancelReader<DB::CancelableSharedMutex, DB::Cancelable>(); }
 TEST(Threading, SharedMutexCancelWriterCancelableEnabled) { TestSharedMutexCancelWriter<DB::CancelableSharedMutex, DB::Cancelable>(); }
