@@ -11,6 +11,15 @@ namespace DB
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
+class DataTypeArray;
+class ColumnArray;
+std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type);
+const ColumnArray * getArrayJoinColumnRawPtr(const ColumnPtr & column);
+
+/// If input array join column has map type, convert it to array type.
+/// Otherwise do nothing.
+ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_col);
+
 class ArrayJoinAction
 {
 public:
@@ -21,7 +30,7 @@ public:
     /// For unaligned [LEFT] ARRAY JOIN
     FunctionOverloadResolverPtr function_length;
     FunctionOverloadResolverPtr function_greatest;
-    FunctionOverloadResolverPtr function_arrayResize;
+    FunctionOverloadResolverPtr function_array_resize;
 
     /// For LEFT ARRAY JOIN.
     FunctionOverloadResolverPtr function_builder;

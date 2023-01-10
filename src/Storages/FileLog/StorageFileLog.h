@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Disks/IDisk.h>
+
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
@@ -147,6 +149,8 @@ private:
     const String format_name;
     Poco::Logger * log;
 
+    DiskPtr disk;
+
     uint64_t milliseconds_to_wait;
 
     /// In order to avoid data race, using a naive trick to forbid execute two select
@@ -198,7 +202,7 @@ private:
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
-    static void checkOffsetIsValid(const String & full_name, UInt64 offset);
+    void checkOffsetIsValid(const String & full_name, UInt64 offset) const;
 };
 
 }

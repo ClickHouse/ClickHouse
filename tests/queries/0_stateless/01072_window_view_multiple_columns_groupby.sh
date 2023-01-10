@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-random-settings, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,13 +13,13 @@ DROP TABLE IF EXISTS wv;
 
 CREATE TABLE dst(time DateTime, colA String, colB String) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(colA String, colB String) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW wv TO dst AS SELECT tumbleStart(w_id) AS time, colA, colB FROM mt GROUP BY tumble(now(), INTERVAL '1' SECOND, 'US/Samoa') AS w_id, colA, colB;
+CREATE WINDOW VIEW wv TO dst AS SELECT tumbleStart(w_id) AS time, colA, colB FROM mt GROUP BY tumble(now(), INTERVAL '10' SECOND, 'US/Samoa') AS w_id, colA, colB;
 
 INSERT INTO mt VALUES ('test1', 'test2');
 EOF
 
 while true; do
-	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .5 ||:
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .1 ||:
 done
 
 $CLICKHOUSE_CLIENT --query="SELECT colA, colB FROM dst"

@@ -45,8 +45,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -671,9 +672,23 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
 {
     trySetStorageInTableJoin(right_table_expression, table_join);
 
+    auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
+
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
+    {
+        for (const auto & result_column : right_table_expression_header)
+        {
+            const auto * source_column_name = right_table_expression_data.getColumnNameOrNull(result_column.name);
+            if (!source_column_name)
+                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+                    "JOIN with 'Join' table engine should be performed by storage keys [{}], but column '{}' was found",
+                    fmt::join(storage->getKeyNames(), ", "), result_column.name);
+
+            table_join->setRename(*source_column_name, result_column.name);
+        }
         return storage->getJoinLocked(table_join, planner_context->getQueryContext());
+    }
 
     /** JOIN with constant.
       * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;

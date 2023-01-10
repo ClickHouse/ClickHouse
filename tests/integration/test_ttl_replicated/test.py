@@ -449,8 +449,8 @@ def test_ttl_empty_parts(started_cluster):
     assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "3000\n"
 
     # Wait for cleanup thread
-    wait_for_delete_inactive_parts(node1, "test_ttl_empty_parts")
     wait_for_delete_empty_parts(node1, "test_ttl_empty_parts")
+    wait_for_delete_inactive_parts(node1, "test_ttl_empty_parts")
 
     assert (
         node1.query(
