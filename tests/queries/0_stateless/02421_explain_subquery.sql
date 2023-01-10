@@ -32,8 +32,30 @@ SELECT count() > 0 FROM (EXPLAIN SELECT * FROM system.numbers ORDER BY number DE
 SELECT count() > 0 FROM (EXPLAIN CURRENT TRANSACTION);
 SELECT count() == 1 FROM (EXPLAIN SYNTAX SELECT number FROM system.numbers ORDER BY number DESC) WHERE explain ILIKE 'SELECT%';
 
--- Note: here we have `Identifier number` instead of `Asterisk` because it's resolved in analyzer.
--- Without subsquery it still would be `Asterisk`, because in that case analyzer it's not used by InterpreterExplainQuery.
+-- We have `Identifier number` instead of `Asterisk` because query argument of `viewExplain` table function was analyzed.
+-- Compare:
+-- :) EXPLAIN AST SELECT *;
+-- ┌─explain───────────────────────────┐
+-- │ SelectWithUnionQuery (children 1) │
+-- │  ExpressionList (children 1)      │
+-- │   SelectQuery (children 1)        │
+-- │    ExpressionList (children 1)    │
+-- │     Asterisk                      │
+-- └───────────────────────────────────┘
+-- :) SELECT * FROM (EXPLAIN AST SELECT *);
+-- ┌─explain─────────────────────────────────────┐
+-- │ SelectWithUnionQuery (children 1)           │
+-- │  ExpressionList (children 1)                │
+-- │   SelectQuery (children 2)                  │
+-- │    ExpressionList (children 1)              │
+-- │     Identifier dummy                        │
+-- │    TablesInSelectQuery (children 1)         │
+-- │     TablesInSelectQueryElement (children 1) │
+-- │      TableExpression (children 1)           │
+-- │       TableIdentifier system.one            │
+-- └─────────────────────────────────────────────┘
+-- TODO: argument of `viewExplain` (and subquery in `EXAPLAN ...`) should not be analyzed.
+-- See _Support query tree in table functions_ in https://github.com/ClickHouse/ClickHouse/issues/42648
 SELECT trim(explain) == 'Identifier number' FROM (EXPLAIN AST SELECT * FROM system.numbers LIMIT 10) WHERE explain LIKE '%Identifier number%';
 
 SELECT * FROM (
