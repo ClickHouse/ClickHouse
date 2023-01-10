@@ -47,5 +47,5 @@ LIMIT 2
 
 **See Also**
 
-- [deltaLake engine](/docs/en/engines/table-engines/integrations/deltalake.md)
+- [DeltaLake engine](/docs/en/engines/table-engines/integrations/deltalake.md)
 
