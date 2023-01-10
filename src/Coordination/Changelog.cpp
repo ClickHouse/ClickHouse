@@ -341,6 +341,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                     min_log_id = last_commited_log_index;
                     max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
                     rotate(max_log_id + 1, writer_lock);
+                    initialized = true;
                     return;
                 }
                 else if (changelog_description.from_log_index > start_to_read_from)
@@ -611,7 +612,11 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before writing records");
+
     {
+
         std::lock_guard lock(writer_mutex);
         /// This write_at require to overwrite everything in this file and also in previous file(s)
         const bool go_to_previous_file = index < current_writer->getStartIndex();
@@ -650,6 +655,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
 void Changelog::compact(uint64_t up_to_log_index)
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before compacting records");
+
     std::lock_guard lock(writer_mutex);
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
 
@@ -810,6 +818,9 @@ void Changelog::flush()
 
 bool Changelog::flushAsync()
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before flushing records");
+
     bool pushed = write_operations.push(Flush{max_log_id});
     if (!pushed)
         LOG_WARNING(log, "Changelog is shut down");
@@ -846,17 +857,14 @@ Changelog::~Changelog()
 
 void Changelog::cleanLogThread()
 {
-    while (!log_files_to_delete_queue.isFinishedAndEmpty())
+    std::string path;
+    while (log_files_to_delete_queue.pop(path))
     {
-        std::string path;
-        if (log_files_to_delete_queue.pop(path))
-        {
-            std::error_code ec;
-            if (std::filesystem::remove(path, ec))
-                LOG_INFO(log, "Removed changelog {} because of compaction.", path);
-            else
-                LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
-        }
+        std::error_code ec;
+        if (std::filesystem::remove(path, ec))
+            LOG_INFO(log, "Removed changelog {} because of compaction.", path);
+        else
+            LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
     }
 }
 
