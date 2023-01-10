@@ -6,7 +6,7 @@ title: "RegExp Tree Dictionary"
 ---
 import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
-Regexp Tree dictionary stores multiple trees of regular expressions with attributions. Users can trieve strings in the dictionary. If a string matches the root of the regexp tree, we will collect the corresponding attributions of the matched root and continue to walk the children. If any of the children matches the string, we will collect attributions and rewrite the old ones if conflicts occur, then continue the traverse util we reach leaf nodes.
+Regexp Tree dictionary stores multiple trees of regular expressions with attributions. Users can retrieve strings in the dictionary. If a string matches the root of the regexp tree, we will collect the corresponding attributes of the matched root and continue to walk the children. If any of the children matches the string, we will collect attributes and rewrite the old ones if conflicts occur, then continue the traverse until we reach leaf nodes.
 
 Example of the ddl query for creating Regexp Tree dictionary:
 
