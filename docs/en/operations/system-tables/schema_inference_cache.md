@@ -1,7 +1,7 @@
 ---
 slug: /en/operations/system-tables/schema_inference_cache
 ---
-# Schema inference cache
+# schema_inference_cache
 
 Contains information about all cached file schemas.
 
