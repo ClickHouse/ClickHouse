@@ -31,5 +31,3 @@ slug: /zh/operations/system-tables/numbers
 
 10 rows in set. Elapsed: 0.001 sec.
 ```
-
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/numbers) <!--hide-->

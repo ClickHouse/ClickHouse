@@ -59,7 +59,12 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
 {
     switch (type->getTypeId())
     {
-        case TypeIndex::UInt8: [[fallthrough]];
+        case TypeIndex::UInt8:
+        {
+            if (isBool(type))
+                return orc::createPrimitiveType(orc::TypeKind::BOOLEAN);
+            return orc::createPrimitiveType(orc::TypeKind::BYTE);
+        }
         case TypeIndex::Int8:
         {
             return orc::createPrimitiveType(orc::TypeKind::BYTE);
