@@ -107,7 +107,7 @@ bool GinFilter::matchInRange(const PostingsCache& postings_cache, UInt32 segment
 
     for (const auto& term_postings : postings_cache)
     {
-        /// Check if it is in the same segement by searching for segment_id
+        /// Check if it is in the same segment by searching for segment_id
         const SegmentedPostingsListContainer& container = term_postings.second;
         auto container_it = container.find(segment_id);
         if (container_it == container.cend())
