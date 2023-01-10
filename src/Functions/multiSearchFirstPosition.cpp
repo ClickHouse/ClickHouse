@@ -19,7 +19,7 @@ using FunctionMultiSearchFirstPosition
 
 }
 
-void registerFunctionMultiSearchFirstPosition(FunctionFactory & factory)
+REGISTER_FUNCTION(MultiSearchFirstPosition)
 {
     factory.registerFunction<FunctionMultiSearchFirstPosition>();
 }

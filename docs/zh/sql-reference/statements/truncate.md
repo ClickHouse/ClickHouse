@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/truncate
 sidebar_position: 52
 sidebar_label: TRUNCATE
 ---
@@ -27,5 +28,3 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 !!! info  "注意"
     如果`replication_alter_partitions_sync` 被设置为`2`，并且某些复制集超过 `replication_wait_for_inactive_replica_timeout`设置的时间不激活，那么将抛出一个异常`UNFINISHED`。
-
-

@@ -291,20 +291,26 @@ def test_secure_insert_buffer_async():
 
 
 def test_secure_disagree():
-    with pytest.raises(QueryRuntimeException, match=".*Hash mismatch.*"):
+    with pytest.raises(
+        QueryRuntimeException, match=".*Interserver authentication failed.*"
+    ):
         n1.query("SELECT * FROM dist_secure_disagree")
 
 
 def test_secure_disagree_insert():
     n1.query("TRUNCATE TABLE data")
     n1.query("INSERT INTO dist_secure_disagree SELECT * FROM numbers(2)")
-    with pytest.raises(QueryRuntimeException, match=".*Hash mismatch.*"):
+    with pytest.raises(
+        QueryRuntimeException, match=".*Interserver authentication failed.*"
+    ):
         n1.query(
             "SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure_disagree dist_secure_disagree"
         )
     # check the the connection will be re-established
     # IOW that we will not get "Unknown BlockInfo field"
-    with pytest.raises(QueryRuntimeException, match=".*Hash mismatch.*"):
+    with pytest.raises(
+        QueryRuntimeException, match=".*Interserver authentication failed.*"
+    ):
         assert int(n1.query("SELECT count() FROM dist_secure_disagree")) == 0
 
 

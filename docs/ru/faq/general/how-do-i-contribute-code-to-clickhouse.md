@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/general/how-do-i-contribute-code-to-clickhouse
 title: How do I contribute code to ClickHouse?
 sidebar_position: 120
 ---

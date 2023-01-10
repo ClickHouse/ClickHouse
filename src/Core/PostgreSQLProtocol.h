@@ -175,7 +175,7 @@ public:
     FrontMessageType receiveMessageType()
     {
         char type = 0;
-        in->read(type);
+        in->readStrict(type);
         return static_cast<FrontMessageType>(type);
     }
 
@@ -336,7 +336,12 @@ public:
     Int32 size() const override
     {
         // message length part + (1 + sizes of other fields + 1) + null byte in the end of the message
-        return 4 + (1 + enum_to_string[severity].size() + 1) + (1 + sql_state.size() + 1) + (1 + message.size() + 1) + 1;
+        return static_cast<Int32>(
+            4 +
+            (1 + enum_to_string[severity].size() + 1) +
+            (1 + sql_state.size() + 1) +
+            (1 + message.size() + 1) +
+            1);
     }
 
     MessageType getMessageType() const override
@@ -518,7 +523,7 @@ public:
 
     Int32 size() const override
     {
-        return 4 + name.size() + 1 + value.size() + 1;
+        return static_cast<Int32>(4 + name.size() + 1 + value.size() + 1);
     }
 
     MessageType getMessageType() const override
@@ -633,7 +638,7 @@ public:
         // + object ID of the table (Int32 and always zero) + attribute number of the column (Int16 and always zero)
         // + type object id (Int32) + data type size (Int16)
         // + type modifier (Int32 and always -1) + format code (Int16)
-        return (name.size() + 1) + 4 + 2 + 4 + 2 + 4 + 2;
+        return static_cast<Int32>((name.size() + 1) + 4 + 2 + 4 + 2 + 4 + 2);
     }
 };
 
@@ -682,7 +687,7 @@ public:
 
     Int32 size() const override
     {
-        return str.size();
+        return static_cast<Int32>(str.size());
     }
 };
 
@@ -762,7 +767,7 @@ public:
 
     Int32 size() const override
     {
-        return 4 + value.size() + 1;
+        return static_cast<Int32>(4 + value.size() + 1);
     }
 
     MessageType getMessageType() const override

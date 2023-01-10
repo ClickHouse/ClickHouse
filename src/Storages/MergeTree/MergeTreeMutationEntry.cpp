@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/TransactionLog.h>
+#include <Backups/BackupEntryFromMemory.h>
 
 #include <utility>
 
@@ -60,7 +61,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
         *out << "commands: ";
-        commands.writeText(*out);
+        commands.writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
         if (tid.isPrehistoric())
         {
@@ -165,6 +166,18 @@ MergeTreeMutationEntry::~MergeTreeMutationEntry()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
+{
+    WriteBufferFromOwnString out;
+    out << "block number: " << block_number << "\n";
+
+    out << "commands: ";
+    commands.writeText(out, /* with_pure_metadata_commands = */ false);
+    out << "\n";
+
+    return std::make_shared<BackupEntryFromMemory>(out.str());
 }
 
 }

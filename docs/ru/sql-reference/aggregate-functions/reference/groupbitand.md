@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/groupbitand
 sidebar_position: 125
 ---
 
@@ -44,4 +45,3 @@ SELECT groupBitAnd(num) FROM t
 binary     decimal
 00000100 = 4
 ```
-

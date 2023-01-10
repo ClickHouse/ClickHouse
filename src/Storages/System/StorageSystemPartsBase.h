@@ -23,8 +23,9 @@ struct StoragesInfo
     MergeTreeData * data = nullptr;
 
     explicit operator bool() const { return storage != nullptr; }
-    MergeTreeData::DataPartsVector
-    getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
+
+    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
+    MergeTreeData::ProjectionPartsVector getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */
@@ -62,7 +63,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     NamesAndTypesList getVirtuals() const override;
 
@@ -72,7 +73,7 @@ private:
     static bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 protected:
-    const FormatSettings format_settings;
+    const FormatSettings format_settings = {};
 
     StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
 

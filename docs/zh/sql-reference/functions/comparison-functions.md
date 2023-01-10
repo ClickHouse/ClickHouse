@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/functions/comparison-functions
 sidebar_position: 36
 sidebar_label: 比较函数
 ---
@@ -31,5 +32,3 @@ sidebar_label: 比较函数
 ## 小于等于, &lt;= 运算符 {#lessorequals-operator}
 
 ## 大于等于, &gt;= 运算符 {#greaterorequals-operator}
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/comparison_functions/) <!--hide-->

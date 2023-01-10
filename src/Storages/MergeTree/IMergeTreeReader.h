@@ -4,6 +4,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 namespace DB
 {
@@ -20,7 +22,7 @@ public:
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
-        const MergeTreeData::DataPartPtr & data_part_,
+        MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
         const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
@@ -37,7 +39,7 @@ public:
 
     virtual bool canReadIncompleteGranules() const = 0;
 
-    virtual ~IMergeTreeReader();
+    virtual ~IMergeTreeReader() = default;
 
     const ValueSizeMap & getAvgValueSizeHints() const;
 
@@ -52,19 +54,21 @@ public:
     /// try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
-    const NamesAndTypesList & getColumns() const { return columns; }
-    size_t numColumnsInResult() const { return columns.size(); }
+    const NamesAndTypesList & getColumns() const { return requested_columns; }
+    size_t numColumnsInResult() const { return requested_columns.size(); }
 
-    size_t getFirstMarkToRead() const
-    {
-        return all_mark_ranges.front().begin;
-    }
+    size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
-    MergeTreeData::DataPartPtr data_part;
+    MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
 
 protected:
-    /// Returns actual column type in part, which can differ from table metadata.
-    NameAndTypePair getColumnFromPart(const NameAndTypePair & required_column) const;
+    /// Returns actual column name in part, which can differ from table metadata.
+    String getColumnNameInPart(const NameAndTypePair & required_column) const;
+
+    /// Returns actual column name and type in part, which can differ from table metadata.
+    NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
+    /// Returns actual serialization in part, which can differ from table metadata.
+    SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
@@ -73,32 +77,34 @@ protected:
     /// Stores states for IDataType::deserializeBinaryBulk
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
 
-    /// Columns that are read.
-    NamesAndTypesList columns;
-    NamesAndTypesList part_columns;
+    /// Actual column names and types of columns in part,
+    /// which may differ from table metadata.
+    NamesAndTypes columns_to_read;
+    /// Actual serialization of columns in part.
+    Serializations serializations;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
 
     MergeTreeReaderSettings settings;
 
-    const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
     MarkRanges all_mark_ranges;
 
     using ColumnPosition = std::optional<size_t>;
-    ColumnPosition findColumnForOffsets(const String & column_name) const;
+    ColumnPosition findColumnForOffsets(const NameAndTypePair & column) const;
 
-    friend class MergeTreeRangeReader::DelayedStream;
+    NameSet partially_read_columns;
 
 private:
     /// Alter conversions, which must be applied on fly if required
-    MergeTreeData::AlterConversions alter_conversions;
+    AlterConversions alter_conversions;
 
-    /// Actual data type of columns in part
+    /// Columns that are requested to read.
+    NamesAndTypesList requested_columns;
 
-    using ColumnsFromPart = HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash>;
-    ColumnsFromPart columns_from_part;
+    /// Actual columns description in part.
+    ColumnsDescription part_columns;
 };
 
 }

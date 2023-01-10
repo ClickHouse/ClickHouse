@@ -7,8 +7,9 @@
 
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/config.h>
 #include <Common/GuardedPoolAllocator.h>
+
+#include "config.h"
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>

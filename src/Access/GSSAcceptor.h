@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #include <Access/Credentials.h>
 #include <base/types.h>

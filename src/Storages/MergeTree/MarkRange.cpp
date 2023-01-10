@@ -36,4 +36,16 @@ size_t getLastMark(const MarkRanges & ranges)
     return current_task_last_mark;
 }
 
+std::string toString(const MarkRanges & ranges)
+{
+    std::string result;
+    for (const auto & mark_range : ranges)
+    {
+        if (!result.empty())
+            result += ", ";
+        result += "(" + std::to_string(mark_range.begin) + ", " + std::to_string(mark_range.end) + ")";
+    }
+    return result;
+}
+
 }

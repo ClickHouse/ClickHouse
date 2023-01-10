@@ -28,13 +28,7 @@ public:
 
     bool useDefaultImplementationForNothing() const override { return false; }
 
-    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
-    {
-        settings.enable_lazy_execution_for_first_argument = true;
-        settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
-        settings.force_enable_lazy_execution = true;
-        return true;
-    }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -61,7 +55,7 @@ public:
 
 }
 
-void registerFunctionToColumnTypeName(FunctionFactory & factory)
+REGISTER_FUNCTION(ToColumnTypeName)
 {
     factory.registerFunction<FunctionToColumnTypeName>();
 }

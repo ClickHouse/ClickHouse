@@ -156,7 +156,7 @@ ComparisonGraph::CompareResult ComparisonGraph::pathToCompareResult(Path path, b
         case Path::GREATER: return inverse ? CompareResult::LESS : CompareResult::GREATER;
         case Path::GREATER_OR_EQUAL: return inverse ? CompareResult::LESS_OR_EQUAL : CompareResult::GREATER_OR_EQUAL;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 std::optional<ComparisonGraph::Path> ComparisonGraph::findPath(size_t start, size_t finish) const

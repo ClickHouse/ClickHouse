@@ -1,10 +1,11 @@
 ---
+slug: /en/development/adding_test_queries
 sidebar_label: Adding Test Queries
 sidebar_position: 63
+title: How to add test queries to ClickHouse CI
 description: Instructions on how to add a test case to ClickHouse continuous integration
 ---
 
-# How to add test queries to ClickHouse CI
 
 ClickHouse has hundreds (or even thousands) of features. Every commit gets checked by a complex set of tests containing many thousands of test cases.
 
@@ -138,7 +139,7 @@ It's important to name tests correctly, so one could turn some tests subset off 
 
 | Tester flag| What should be in test name | When flag should be added |
 |---|---|---|---|
-| `--[no-]zookeeper`| "zookeeper" or "replica" | Test uses tables from ReplicatedMergeTree family |
+| `--[no-]zookeeper`| "zookeeper" or "replica" | Test uses tables from `ReplicatedMergeTree` family |
 | `--[no-]shard` | "shard" or "distributed" or "global"| Test using connections to 127.0.0.2 or similar |
 | `--[no-]long` | "long" or "deadlock" or "race" | Test runs longer than 60 seconds |
 

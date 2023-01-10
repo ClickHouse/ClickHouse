@@ -25,7 +25,7 @@ struct PlusImpl
             return static_cast<Result>(static_cast<CastA>(a)) + static_cast<Result>(static_cast<CastB>(b));
         }
         else
-            return static_cast<Result>(a) + b;
+            return static_cast<Result>(a) + static_cast<Result>(b);
     }
 
     /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false otherwise.
@@ -48,7 +48,7 @@ struct PlusImpl
 struct NamePlus { static constexpr auto name = "plus"; };
 using FunctionPlus = BinaryArithmeticOverloadResolver<PlusImpl, NamePlus>;
 
-void registerFunctionPlus(FunctionFactory & factory)
+REGISTER_FUNCTION(Plus)
 {
     factory.registerFunction<FunctionPlus>();
 }

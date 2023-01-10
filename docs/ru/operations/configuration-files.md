@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/configuration-files
 sidebar_position: 50
 sidebar_label: "Конфигурационные файлы"
 ---

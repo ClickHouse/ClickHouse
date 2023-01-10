@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_NLP
 
@@ -83,7 +83,10 @@ struct FunctionDetectLanguageImpl
 
             if (UTF8::isValidUTF8(str, str_len))
             {
-                auto lang = CLD2::DetectLanguage(reinterpret_cast<const char *>(str), str_len, true, &is_reliable);
+                auto lang = CLD2::DetectLanguage(
+                    reinterpret_cast<const char *>(str),
+                    static_cast<int>(str_len),
+                    true, &is_reliable);
                 res = codeISO(LanguageCode(lang));
             }
             else
@@ -178,7 +181,10 @@ public:
 
             if (UTF8::isValidUTF8(str, str_len))
             {
-                CLD2::DetectLanguageSummary(reinterpret_cast<const char *>(str), str_len, true, result_lang_top3, pc, bytes, &is_reliable);
+                CLD2::DetectLanguageSummary(
+                    reinterpret_cast<const char *>(str),
+                    static_cast<int>(str_len),
+                    true, result_lang_top3, pc, bytes, &is_reliable);
 
                 for (size_t j = 0; j < top_N; ++j)
                 {
@@ -221,7 +227,7 @@ struct NameDetectLanguage
 
 using FunctionDetectLanguage = FunctionTextClassificationString<FunctionDetectLanguageImpl, NameDetectLanguage>;
 
-void registerFunctionsDetectLanguage(FunctionFactory & factory)
+REGISTER_FUNCTION(DetectLanguage)
 {
     factory.registerFunction<FunctionDetectLanguage>();
     factory.registerFunction<FunctionDetectLanguageMixed>();

@@ -1,4 +1,5 @@
 ---
+slug: /ru/commercial/
 sidebar_position: 70
 sidebar_label: "Коммерческие услуги"
 ---

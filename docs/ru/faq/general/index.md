@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/general/
 title: Общие вопросы о ClickHouse
 toc_hidden_folder: true
 sidebar_position: 1
@@ -20,5 +21,4 @@ sidebar_label: Общие вопросы
 
 :::info "Если вы не нашли то, что искали:"
     Загляните в другие категории F.A.Q. или поищите в остальных разделах документации, ориентируясь по оглавлению слева.
-
-[Original article](https://clickhouse.com/docs/ru/faq/general/) <!--hide-->
+:::

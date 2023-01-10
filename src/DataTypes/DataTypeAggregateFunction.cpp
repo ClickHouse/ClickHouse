@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -66,7 +67,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (!parameters.empty())
     {
         stream << '(';
-        for (size_t i = 0; i < parameters.size(); ++i)
+        for (size_t i = 0, size = parameters.size(); i < size; ++i)
         {
             if (i)
                 stream << ", ";
@@ -119,7 +120,40 @@ Field DataTypeAggregateFunction::getDefault() const
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
-    return typeid(rhs) == typeid(*this) && getNameWithoutVersion() == typeid_cast<const DataTypeAggregateFunction &>(rhs).getNameWithoutVersion();
+    if (typeid(rhs) != typeid(*this))
+        return false;
+
+    auto lhs_state_type = function->getNormalizedStateType();
+    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
+
+    if (typeid(lhs_state_type.get()) != typeid(rhs_state_type.get()))
+        return false;
+
+    if (const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get()))
+    {
+        const auto & rhs_state = typeid_cast<const DataTypeAggregateFunction &>(*rhs_state_type);
+
+        if (lhs_state->function->getName() != rhs_state.function->getName())
+            return false;
+
+        if (lhs_state->parameters.size() != rhs_state.parameters.size())
+            return false;
+
+        for (size_t i = 0; i < lhs_state->parameters.size(); ++i)
+            if (lhs_state->parameters[i] != rhs_state.parameters[i])
+                return false;
+
+        if (lhs_state->argument_types.size() != rhs_state.argument_types.size())
+            return false;
+
+        for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
+            if (!lhs_state->argument_types[i]->equals(*rhs_state.argument_types[i]))
+                return false;
+
+        return true;
+    }
+
+    return lhs_state_type->equals(*rhs_state_type);
 }
 
 
@@ -206,6 +240,23 @@ static DataTypePtr create(const ASTPtr & arguments)
     AggregateFunctionProperties properties;
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
+}
+
+void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+{
+    auto callback = [revision, if_empty](DataTypePtr & column_type)
+    {
+        const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
+        if (aggregate_function_type && aggregate_function_type->isVersioned())
+        {
+            if (revision)
+                aggregate_function_type->updateVersionFromRevision(*revision, if_empty);
+            else
+                aggregate_function_type->setVersion(0, if_empty);
+        }
+    };
+
+    callOnNestedSimpleTypes(type, callback);
 }
 
 

@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_CASSANDRA
 
@@ -25,14 +25,14 @@ CassandraSource::CassandraSource(
     const String & query_str,
     const Block & sample_block,
     size_t max_block_size_)
-    : SourceWithProgress(sample_block)
+    : ISource(sample_block)
     , session(session_)
     , statement(query_str.c_str(), /*parameters count*/ 0)
     , max_block_size(max_block_size_)
     , has_more_pages(cass_true)
 {
     description.init(sample_block);
-    cassandraCheck(cass_statement_set_paging_size(statement, max_block_size));
+    cassandraCheck(cass_statement_set_paging_size(statement, static_cast<int>(max_block_size)));
 }
 
 void CassandraSource::insertValue(IColumn & column, ValueType type, const CassValue * cass_value)

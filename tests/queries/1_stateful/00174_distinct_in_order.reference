@@ -1,0 +1,3 @@
+-- check that distinct with and w/o optimization produce the same result
+-- DISTINCT colums are the same as in ORDER BY
+-- DISTINCT colums has prefix in ORDER BY columns

@@ -117,10 +117,11 @@ if (OS_DARWIN)
 endif ()
 
 add_library(_jemalloc ${SRCS})
+
 # First include jemalloc-cmake files, to override anything that jemalloc has.
 # (for example if you were trying to build jemalloc inside contrib/jemalloc you
 # will have some files that may be out of date)
-target_include_directories(_jemalloc PUBLIC include)
+target_include_directories(_jemalloc SYSTEM PUBLIC include)
 target_include_directories(_jemalloc PRIVATE "${LIBRARY_DIR}/include")
 
 set (JEMALLOC_INCLUDE_PREFIX)
@@ -180,7 +181,6 @@ if (USE_UNWIND)
     target_link_libraries (_jemalloc PRIVATE unwind)
 endif ()
 
-target_compile_options(_jemalloc PRIVATE -Wno-redundant-decls)
 # for RTLD_NEXT
 target_compile_options(_jemalloc PRIVATE -D_GNU_SOURCE)
 

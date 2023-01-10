@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/table-engines/special/file
 sidebar_position: 40
 sidebar_label:  File
 ---
 
-# File Table Engine {#table_engines-file}
+# File Table Engine
 
 The File table engine keeps the data in a file in one of the supported [file formats](../../../interfaces/formats.md#formats) (`TabSeparated`, `Native`, etc.).
 
@@ -85,5 +86,3 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   `SELECT ... SAMPLE`
     -   Indices
     -   Replication
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/file/) <!--hide-->

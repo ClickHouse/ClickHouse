@@ -2,8 +2,8 @@
 
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/PreparedSets.h>
 
 namespace DB
 {
@@ -27,6 +27,8 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
+    void updateOutputStream() override;
+
     String description;
     SubqueryForSet subquery_for_set;
     SizeLimits network_transfer_limits;
@@ -42,15 +44,10 @@ public:
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
-
-private:
-    Processors processors;
 };
 
-void addCreatingSetsStep(
-    QueryPlan & query_plan,
-    SubqueriesForSets subqueries_for_sets,
-    const SizeLimits & limits,
-    ContextPtr context);
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context);
+
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
 
 }

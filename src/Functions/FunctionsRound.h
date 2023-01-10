@@ -16,7 +16,6 @@
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <base/bit_cast.h>
 #include <base/sort.h>
 #include <algorithm>
 
@@ -151,7 +150,7 @@ struct IntegerRoundingComputation
             }
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -165,10 +164,10 @@ struct IntegerRoundingComputation
                 return computeImpl(x, scale);
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
-    static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
+    static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out) requires std::integral<T>
     {
         if constexpr (sizeof(T) <= sizeof(scale) && scale_mode == ScaleMode::Negative)
         {
@@ -178,9 +177,13 @@ struct IntegerRoundingComputation
                 return;
             }
         }
-        *out = compute(*in, scale);
+        *out = compute(*in, static_cast<T>(scale));
     }
 
+    static ALWAYS_INLINE void compute(const T * __restrict in, T scale, T * __restrict out) requires(!std::integral<T>)
+    {
+        *out = compute(*in, scale);
+    }
 };
 
 
@@ -245,7 +248,7 @@ inline float roundWithMode(float x, RoundingMode mode)
         case RoundingMode::Trunc: return truncf(x);
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 inline double roundWithMode(double x, RoundingMode mode)
@@ -258,7 +261,7 @@ inline double roundWithMode(double x, RoundingMode mode)
         case RoundingMode::Trunc: return trunc(x);
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 template <typename T>
@@ -432,7 +435,7 @@ public:
         scale_arg = in_scale - scale_arg;
         if (scale_arg > 0)
         {
-            size_t scale = intExp10(scale_arg);
+            auto scale = intExp10OfSize<NativeType>(scale_arg);
 
             const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(in.data());
             const NativeType * end_in = reinterpret_cast<const NativeType *>(in.data()) + in.size();
@@ -741,7 +744,7 @@ private:
         using ValueType = typename Container::value_type;
         std::vector<ValueType> boundary_values(boundaries.size());
         for (size_t i = 0; i < boundaries.size(); ++i)
-            boundary_values[i] = boundaries[i].get<ValueType>();
+            boundary_values[i] = static_cast<ValueType>(boundaries[i].get<ValueType>());
 
         ::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());

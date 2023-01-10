@@ -2,7 +2,7 @@
 #include <csetjmp>
 #include <unistd.h>
 
-#ifdef __linux__
+#ifdef OS_LINUX
 #include <sys/mman.h>
 #endif
 
@@ -78,11 +78,14 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_DISKS
+int mainEntryClickHouseDisks(int argc, char ** argv);
+#endif
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
     /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .note.ClickHouse.hash=<(./clickhouse hash-binary) clickhouse
+    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
@@ -147,6 +150,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"su", mainEntryClickHouseSU},
 #endif
     {"hash-binary", mainEntryClickHouseHashBinary},
+#if ENABLE_CLICKHOUSE_DISKS
+    {"disks", mainEntryClickHouseDisks},
+#endif
 };
 
 int printHelp(int, char **)
@@ -216,7 +222,7 @@ auto instructionFailToString(InstructionFail fail)
         case InstructionFail::AVX512:
             ret("AVX512");
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -336,7 +342,7 @@ struct Checker
         checkRequiredInstructions();
     }
 } checker
-#ifndef __APPLE__
+#ifndef OS_DARWIN
     __attribute__((init_priority(101)))    /// Run before other static initializers.
 #endif
 ;
@@ -358,6 +364,7 @@ struct GuardedPoolAllocator
     clickhouse_gwp_asan::GuardedPoolAllocator allocator;
 } guarded_pool_allocator;
 
+#if !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -378,10 +385,10 @@ void checkHarmfulEnvironmentVariables(char ** argv)
     bool require_reexec = false;
     for (const auto * var : harmful_env_variables)
     {
-        if (const char * value = getenv(var); value && value[0])
+        if (const char * value = getenv(var); value && value[0]) // NOLINT(concurrency-mt-unsafe)
         {
             /// NOTE: setenv() is used over unsetenv() since unsetenv() marked as harmful
-            if (setenv(var, "", true))
+            if (setenv(var, "", true)) // NOLINT(concurrency-mt-unsafe) // this is safe if not called concurrently
             {
                 fmt::print(stderr, "Cannot override {} environment variable", var);
                 _exit(1);
@@ -409,8 +416,41 @@ void checkHarmfulEnvironmentVariables(char ** argv)
         _exit(error);
     }
 }
+#endif
 
 }
+
+
+/// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
+/// We don't use it. But it can be used by some libraries for implementation of "plugins".
+/// We absolutely discourage the ancient technique of loading
+/// 3rd-party uncontrolled dangerous libraries into the process address space,
+/// because it is insane.
+
+#if !defined(USE_MUSL)
+extern "C"
+{
+    void * dlopen(const char *, int)
+    {
+        return nullptr;
+    }
+
+    void * dlmopen(long, const char *, int) // NOLINT
+    {
+        return nullptr;
+    }
+
+    int dlclose(void *)
+    {
+        return 0;
+    }
+
+    const char * dlerror()
+    {
+        return "ClickHouse does not allow dynamic library loading";
+    }
+}
+#endif
 
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
@@ -433,9 +473,12 @@ int main(int argc_, char ** argv_)
     /// PHDR cache is required for query profiler to work reliably
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
+    /// Note: we forbid dlopen in our code.
     updatePHDRCache();
 
+#if !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
+#endif
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.

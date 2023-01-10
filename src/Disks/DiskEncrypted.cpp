@@ -8,6 +8,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <boost/algorithm/hex.hpp>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -207,8 +209,9 @@ DiskEncrypted::DiskEncrypted(
 }
 
 DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
-    : DiskDecorator(settings_->wrapped_disk)
-    , name(name_)
+    : IDisk(name_)
+    , delegate(settings_->wrapped_disk)
+    , encrypted_name(name_)
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
@@ -367,15 +370,19 @@ void DiskEncrypted::applyNewSettings(
     current_settings.set(std::move(new_settings));
 }
 
-void registerDiskEncrypted(DiskFactory & factory)
+void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 {
-    auto creator = [](const String & name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr /*context*/,
-                      const DisksMap & map) -> DiskPtr
+    auto creator = [global_skip_access_check](
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        ContextPtr context,
+        const DisksMap & map) -> DiskPtr
     {
-        return std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
+        disk->startup(context, skip_access_check);
+        return disk;
     };
     factory.registerDiskType("encrypted", creator);
 }

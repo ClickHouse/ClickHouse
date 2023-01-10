@@ -65,6 +65,8 @@ String FieldVisitorToString::operator() (const UInt128 & x) const { return forma
 String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int256 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UUID & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const IPv4 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const IPv6 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
 String FieldVisitorToString::operator() (const bool & x) const { return x ? "true" : "false"; }
 
@@ -145,5 +147,11 @@ String FieldVisitorToString::operator() (const Object & x) const
 
 }
 
+String convertFieldToString(const Field & field)
+{
+    if (field.getType() == Field::Types::Which::String)
+        return field.get<String>();
+    return applyVisitor(FieldVisitorToString(), field);
 }
 
+}

@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/merges
+---
 # system.merges {#system-merges}
 
 Содержит информацию о производящихся прямо сейчас слияниях и мутациях кусков для таблиц семейства MergeTree.
@@ -17,4 +20,3 @@
 -   `rows_read UInt64` — Количество прочитанных строк.
 -   `bytes_written_uncompressed UInt64` — Количество записанных байт, несжатых.
 -   `rows_written UInt64` — Количество записанных строк.
-

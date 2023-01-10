@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/insert-into
 sidebar_position: 33
 sidebar_label: INSERT INTO
 ---
@@ -94,7 +95,7 @@ INSERT INTO t FORMAT TabSeparated
 
 Если в таблице объявлены [ограничения](../../sql-reference/statements/create/table.md#constraints), то их выполнимость будет проверена для каждой вставляемой строки. Если для хотя бы одной строки ограничения не будут выполнены, запрос будет остановлен.
 
-### Вставка результатов `SELECT` {#insert_query_insert-select}
+### Вставка результатов `SELECT` {#inserting-the-results-of-select}
 
 **Синтаксис**
 

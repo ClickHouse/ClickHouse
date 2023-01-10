@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/other-functions
+---
 # 其他函数 {#qi-ta-han-shu}
 
 ## 主机名() {#hostname}
@@ -234,7 +237,7 @@ ORDER BY c DESC
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -622,13 +625,6 @@ ORDER BY k ASC
 
 使用指定的连接键从Join类型引擎的表中获取数据。
 
-## modelEvaluate(model_name, …) {#function-modelevaluate}
-
-使用外部模型计算。
-接受模型的名称以及模型的参数。返回Float64类型的值。
-
 ## throwIf(x) {#throwifx}
 
 如果参数不为零则抛出异常。
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/other_functions/) <!--hide-->

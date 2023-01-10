@@ -34,6 +34,7 @@ public:
 
         void add(const IColumn & column);
         void add(const Data & other);
+        void addDefaults(size_t length);
     };
 
     struct Settings
@@ -45,6 +46,7 @@ public:
     };
 
     SerializationInfo(ISerialization::Kind kind_, const Settings & settings_);
+    SerializationInfo(ISerialization::Kind kind_, const Settings & settings_, const Data & data_);
 
     virtual ~SerializationInfo() = default;
 
@@ -52,7 +54,9 @@ public:
 
     virtual void add(const IColumn & column);
     virtual void add(const SerializationInfo & other);
+    virtual void addDefaults(size_t length);
     virtual void replaceData(const SerializationInfo & other);
+
     virtual std::shared_ptr<SerializationInfo> clone() const;
 
     virtual void serialializeKindBinary(WriteBuffer & out) const;
@@ -61,6 +65,7 @@ public:
     virtual Poco::JSON::Object toJSON() const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
+    void setKind(ISerialization::Kind kind_) { kind = kind_; }
     const Settings & getSettings() const { return settings; }
     const Data & getData() const { return data; }
     ISerialization::Kind getKind() const { return kind; }

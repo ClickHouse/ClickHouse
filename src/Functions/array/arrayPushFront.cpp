@@ -15,7 +15,7 @@ public:
 };
 
 
-void registerFunctionArrayPushFront(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayPushFront)
 {
     factory.registerFunction<FunctionArrayPushFront>();
 }

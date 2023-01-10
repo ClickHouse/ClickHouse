@@ -33,7 +33,7 @@ try
         registerTableFunctions();
         registerStorages();
         registerDictionaries();
-        registerDisks();
+        registerDisks(/* global_skip_access_check= */ true);
         registerFormats();
 
         return true;

@@ -904,6 +904,7 @@ private:
 
             if (cond_col)
             {
+                arg_else_column = arg_else_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_else_column));
                 if (else_is_short)
                     result_column->expand(cond_col->getData(), true);
@@ -941,6 +942,7 @@ private:
 
             if (cond_col)
             {
+                arg_then_column = arg_then_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_then_column));
                 if (then_is_short)
                     result_column->expand(cond_col->getData(), false);
@@ -987,6 +989,8 @@ private:
         if (last_short_circuit_argument_index == -1)
             return;
 
+        executeColumnIfNeeded(arguments[0]);
+
         /// Check if condition is const or null to not create full mask from it.
         if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
         {
@@ -1012,6 +1016,7 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
         settings.enable_lazy_execution_for_first_argument = false;
@@ -1021,6 +1026,7 @@ public:
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1118,9 +1124,9 @@ public:
 
 }
 
-void registerFunctionIf(FunctionFactory & factory)
+REGISTER_FUNCTION(If)
 {
-    factory.registerFunction<FunctionIf>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

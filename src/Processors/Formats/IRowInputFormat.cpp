@@ -26,6 +26,8 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
 }
 
 
@@ -44,7 +46,9 @@ bool isParseError(int code)
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
         || code == ErrorCodes::INCORRECT_DATA              /// For some ReadHelpers
-        || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
+        || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
+        || code == ErrorCodes::CANNOT_PARSE_IPV4
+        || code == ErrorCodes::CANNOT_PARSE_IPV6;
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
@@ -52,6 +56,30 @@ IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
 {
 }
 
+void IRowInputFormat::logError()
+{
+    String diagnostic;
+    String raw_data;
+    try
+    {
+        std::tie(diagnostic, raw_data) = getDiagnosticAndRawData();
+    }
+    catch (const Exception & exception)
+    {
+        diagnostic = "Cannot get diagnostic: " + exception.message();
+        raw_data = "Cannot get raw data: " + exception.message();
+    }
+    catch (...)
+    {
+        /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+    }
+    trimLeft(diagnostic, '\n');
+    trimRight(diagnostic, '\n');
+
+    auto now_time = time(nullptr);
+
+    errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
+}
 
 Chunk IRowInputFormat::generate()
 {
@@ -63,7 +91,6 @@ Chunk IRowInputFormat::generate()
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
 
-    ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
 
     size_t num_rows = 0;
@@ -114,6 +141,9 @@ Chunk IRowInputFormat::generate()
                 if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
                     throw;
 
+                if (errors_logger)
+                    logError();
+
                 ++num_errors;
                 Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
 
@@ -162,7 +192,7 @@ Chunk IRowInputFormat::generate()
         }
 
         e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
-        e.setLineNumber(total_rows);
+        e.setLineNumber(static_cast<int>(total_rows));
         e.addMessage(verbose_diagnostic);
         throw;
     }
@@ -206,7 +236,9 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    finalizeObjectColumns(columns);
+    for (const auto & column : columns)
+        column->finalize();
+
     Chunk chunk(std::move(columns), num_rows);
     return chunk;
 }

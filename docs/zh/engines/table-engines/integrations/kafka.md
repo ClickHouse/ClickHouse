@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/integrations/kafka
+---
 # Kafka {#kafka}
 
 此引擎与 [Apache Kafka](http://kafka.apache.org/) 结合使用。
@@ -71,7 +74,7 @@ Kafka 特性：
 
 消费的消息会被自动追踪，因此每个消息在不同的消费组里只会记录一次。如果希望获得两次数据，则使用另一个组名创建副本。
 
-消费组可以灵活配置并且在集群之间同步。例如，如果群集中有10个主题和5个表副本，则每个副本将获得2个主题。 如果副本数量发生变化，主题将自动在副本中重新分配。了解更多信息请访问 http://kafka.apache.org/intro。
+消费组可以灵活配置并且在集群之间同步。例如，如果群集中有10个主题和5个表副本，则每个副本将获得2个主题。 如果副本数量发生变化，主题将自动在副本中重新分配。了解更多信息请访问 [http://kafka.apache.org/intro](http://kafka.apache.org/intro)。
 
 `SELECT` 查询对于读取消息并不是很有用（调试除外），因为每条消息只能被读取一次。使用物化视图创建实时线程更实用。您可以这样做：
 
@@ -161,5 +164,3 @@ clickhouse也支持自己使用keyfile的方式来维护kerbros的凭证。配�
 
 -   [虚拟列](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 -   [后台消息代理调度池大小](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
-
-[原始文章](https://clickhouse.com/docs/zh/operations/table_engines/kafka/) <!--hide-->

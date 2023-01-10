@@ -42,7 +42,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     if (read_hint.has_value())
         estimated_size = *read_hint;
     else if (file_size.has_value())
-        estimated_size = file_size.has_value() ? *file_size : 0;
+        estimated_size = *file_size;
 
     if (!existing_memory
         && settings.local_fs_method == LocalFSReadMethod::mmap
@@ -52,7 +52,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         try
         {
-            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0);
+            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, file_size.value_or(-1));
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
         }
@@ -77,13 +77,21 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
-            static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
+            auto context = Context::getGlobalContextInstance();
+            if (!context)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+
+            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
-            static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
+            auto context = Context::getGlobalContextInstance();
+            if (!context)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+
+            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
@@ -96,7 +104,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     if (flags == -1)
         flags = O_RDONLY | O_CLOEXEC;
 
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     if (settings.direct_io_threshold && estimated_size >= settings.direct_io_threshold)
     {
         /** O_DIRECT
@@ -150,7 +158,15 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 #endif
 
     ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    return create(settings.local_fs_buffer_size, flags);
+
+    size_t buffer_size = settings.local_fs_buffer_size;
+    /// Check if the buffer can be smaller than default
+    if (read_hint.has_value() && *read_hint > 0 && *read_hint < buffer_size)
+        buffer_size = *read_hint;
+    if (file_size.has_value() && *file_size < buffer_size)
+        buffer_size = *file_size;
+
+    return create(buffer_size, flags);
 }
 
 }

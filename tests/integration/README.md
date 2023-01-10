@@ -31,6 +31,7 @@ sudo -H pip install \
     kafka-python \
     kazoo \
     minio \
+    lz4 \
     protobuf \
     psycopg2-binary \
     pymongo \
@@ -44,7 +45,9 @@ sudo -H pip install \
     dict2xml \
     hypothesis \
     pyhdfs \
-    pika
+    pika \
+    meilisearch \
+    nats-py
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
@@ -77,25 +80,25 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
-$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --base-configs-dir $HOME/ClickHouse/programs/server/ 'test_odbc_interaction -ss'
+$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --odbc-bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --base-configs-dir $HOME/ClickHouse/programs/server/ 'test_ssl_cert_authentication -ss'
 Start tests
-============================= test session starts ==============================
-platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
-rootdir: /ClickHouse/tests/integration, inifile: pytest.ini
-collected 6 items
+====================================================================================================== test session starts ======================================================================================================
+platform linux -- Python 3.8.10, pytest-7.1.2, pluggy-1.0.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /ClickHouse/tests/integration, configfile: pytest.ini
+plugins: repeat-0.9.1, xdist-2.5.0, forked-1.4.0, order-1.0.0, timeout-2.1.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 4 items                                                                                                                                                                                                               
 
-test_odbc_interaction/test.py Removing network clickhouse_default
-...
+test_ssl_cert_authentication/test.py::test_https Copy common default production configuration from /clickhouse-config. Files: config.xml, users.xml
+PASSED
+test_ssl_cert_authentication/test.py::test_https_wrong_cert PASSED
+test_ssl_cert_authentication/test.py::test_https_non_ssl_auth PASSED
+test_ssl_cert_authentication/test.py::test_create_user PASSED
 
-Killing roottestodbcinteraction_node1_1     ... done
-Killing roottestodbcinteraction_mysql1_1    ... done
-Killing roottestodbcinteraction_postgres1_1 ... done
-Removing roottestodbcinteraction_node1_1     ... done
-Removing roottestodbcinteraction_mysql1_1    ... done
-Removing roottestodbcinteraction_postgres1_1 ... done
-Removing network roottestodbcinteraction_default
-
-==================== 6 passed, 1 warnings in 95.21 seconds =====================
+================================================================================================= 4 passed in 118.58s (0:01:58) =================================================================================================
 
 ```
 
@@ -145,7 +148,7 @@ will automagically detect the types of variables and only the small diff of two 
 
 ### Troubleshooting
 
-If tests failing for misterious reasons, this may help:
+If tests failing for mysterious reasons, this may help:
 
 ```
 sudo service docker stop

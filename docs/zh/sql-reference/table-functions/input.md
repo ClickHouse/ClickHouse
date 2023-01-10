@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/table-functions/input
 sidebar_position: 46
 sidebar_label: input
 ---
@@ -39,5 +40,3 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1),
 $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```
-
-[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/input/) <!--hide-->

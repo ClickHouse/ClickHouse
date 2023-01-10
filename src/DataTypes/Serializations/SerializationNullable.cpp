@@ -38,46 +38,45 @@ ColumnPtr SerializationNullable::SubcolumnCreator::create(const ColumnPtr & prev
 }
 
 void SerializationNullable::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
     const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
     const auto * column_nullable = data.column ? &assert_cast<const ColumnNullable &>(*data.column) : nullptr;
 
-    path.push_back(Substream::NullMap);
-    path.back().data =
-    {
-        std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false),
-        type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr,
-        column_nullable ? column_nullable->getNullMapColumnPtr() : nullptr,
-        data.serialization_info,
-    };
+    auto null_map_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false);
 
-    callback(path);
+    settings.path.push_back(Substream::NullMap);
+    auto null_map_data = SubstreamData(null_map_serialization)
+        .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
+        .withColumn(column_nullable ? column_nullable->getNullMapColumnPtr() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
-    path.back() = Substream::NullableElements;
-    path.back().creator = std::make_shared<SubcolumnCreator>(path.back().data.column);
-    path.back().data = data;
+    settings.path.back().data = null_map_data;
+    callback(settings.path);
 
-    SubstreamData next_data =
-    {
-        nested,
-        type_nullable ? type_nullable->getNestedType() : nullptr,
-        column_nullable ? column_nullable->getNestedColumnPtr() : nullptr,
-        data.serialization_info,
-    };
+    settings.path.back() = Substream::NullableElements;
+    settings.path.back().creator = std::make_shared<SubcolumnCreator>(null_map_data.column);
+    settings.path.back().data = data;
 
-    nested->enumerateStreams(path, callback, next_data);
-    path.pop_back();
+    auto next_data = SubstreamData(nested)
+        .withType(type_nullable ? type_nullable->getNestedType() : nullptr)
+        .withColumn(column_nullable ? column_nullable->getNestedColumnPtr() : nullptr)
+        .withSerializationInfo(data.serialization_info);
+
+    nested->enumerateStreams(settings, callback, next_data);
+    settings.path.pop_back();
 }
 
 void SerializationNullable::serializeBinaryBulkStatePrefix(
+        const IColumn & column,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::NullableElements);
-    nested->serializeBinaryBulkStatePrefix(settings, state);
+    const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
+    nested->serializeBinaryBulkStatePrefix(column_nullable.getNestedColumn(), settings, state);
     settings.path.pop_back();
 }
 
@@ -151,7 +150,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
 }
 
 
-void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (field.isNull())
     {
@@ -160,17 +159,17 @@ void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & o
     else
     {
         writeBinary(false, ostr);
-        nested->serializeBinary(field, ostr);
+        nested->serializeBinary(field, ostr, settings);
     }
 }
 
-void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     bool is_null = false;
     readBinary(is_null, istr);
     if (!is_null)
     {
-        nested->deserializeBinary(field, istr);
+        nested->deserializeBinary(field, istr, settings);
     }
     else
     {
@@ -178,14 +177,14 @@ void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr) 
     }
 }
 
-void SerializationNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     bool is_null = col.isNullAt(row_num);
     writeBinary(is_null, ostr);
     if (!is_null)
-        nested->serializeBinary(col.getNestedColumn(), row_num, ostr);
+        nested->serializeBinary(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 /// Deserialize value into ColumnNullable.
@@ -236,11 +235,11 @@ static ReturnType safeDeserialize(
 }
 
 
-void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     safeDeserialize(column, *nested,
         [&istr] { bool is_null = false; readBinary(is_null, istr); return is_null; },
-        [this, &istr] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr); });
+        [this, &istr, settings] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr, settings); });
 }
 
 
@@ -526,7 +525,7 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
     }
 
     /// Check if we have enough data in buffer to check if it's a null.
-    if (istr.available() > null_representation.size())
+    if (settings.csv.custom_delimiter.empty() && istr.available() > null_representation.size())
     {
         auto check_for_null = [&istr, &null_representation, &settings]()
         {
@@ -551,8 +550,21 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
     {
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
-        if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\r' || *buf.position() == '\n'))
-            return true;
+        if (checkString(null_representation, buf))
+        {
+            if (!settings.csv.custom_delimiter.empty())
+            {
+                if (checkString(settings.csv.custom_delimiter, buf))
+                {
+                    /// Rollback to the beginning of custom delimiter.
+                    buf.rollbackToCheckpoint();
+                    assertString(null_representation, buf);
+                    return true;
+                }
+            }
+            else if (buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\r' || *buf.position() == '\n')
+                return true;
+        }
 
         buf.rollbackToCheckpoint();
         return false;

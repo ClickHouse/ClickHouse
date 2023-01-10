@@ -4,8 +4,10 @@
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
 
 #include <consistent_hashing.h>
+
 
 namespace DB
 {
@@ -13,15 +15,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PROTOCOL;
+    extern const int BAD_ARGUMENTS;
 }
 
-static void readMarkRangesBinary(MarkRanges & ranges, ReadBuffer & buf, size_t MAX_RANGES_SIZE = DEFAULT_MAX_STRING_SIZE)
+static void readMarkRangesBinary(MarkRanges & ranges, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
 
-    if (size > MAX_RANGES_SIZE)
-        throw Poco::Exception("Too large ranges size.");
+    if (size > DEFAULT_MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too large ranges size: {}.", size);
 
     ranges.resize(size);
     for (size_t i = 0; i < size; ++i)
@@ -60,19 +63,27 @@ void PartitionReadRequest::serialize(WriteBuffer & out) const
 }
 
 
-void PartitionReadRequest::describe(WriteBuffer & out) const
+String PartitionReadRequest::toString() const
 {
-    String result;
-    result += fmt::format("partition_id: {} \n", partition_id);
-    result += fmt::format("part_name: {} \n", part_name);
-    result += fmt::format("projection_name: {} \n", projection_name);
-    result += fmt::format("block_range: ({}, {}) \n", block_range.begin, block_range.end);
-    result += "mark_ranges: ";
-    for (const auto & range : mark_ranges)
-        result += fmt::format("({}, {}) ", range.begin, range.end);
-    result += '\n';
-    out.write(result.c_str(), result.size());
+    WriteBufferFromOwnString out;
+    out << "partition: " << partition_id << ", part: " << part_name;
+    if (!projection_name.empty())
+        out << ", projection: " << projection_name;
+    out << ", block range: [" << block_range.begin << ", " << block_range.end << "]";
+    out << ", mark ranges: ";
+
+    bool is_first = true;
+    for (const auto & [begin, end] : mark_ranges)
+    {
+        if (!is_first)
+            out << ", ";
+        out << "[" << begin << ", " << end << ")";
+        is_first = false;
+    }
+
+    return out.str();
 }
+
 
 void PartitionReadRequest::deserialize(ReadBuffer & in)
 {
@@ -95,14 +106,21 @@ void PartitionReadRequest::deserialize(ReadBuffer & in)
 
 UInt64 PartitionReadRequest::getConsistentHash(size_t buckets) const
 {
-    auto hash = SipHash();
+    SipHash hash;
+
+    hash.update(partition_id.size());
     hash.update(partition_id);
+
+    hash.update(part_name.size());
     hash.update(part_name);
+
+    hash.update(projection_name.size());
     hash.update(projection_name);
 
     hash.update(block_range.begin);
     hash.update(block_range.end);
 
+    hash.update(mark_ranges.size());
     for (const auto & range : mark_ranges)
     {
         hash.update(range.begin);
@@ -118,7 +136,7 @@ void PartitionReadResponse::serialize(WriteBuffer & out) const
     /// Must be the first
     writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
 
-    writeVarUInt(static_cast<UInt64>(denied), out);
+    writeBinary(denied, out);
     writeMarkRangesBinary(mark_ranges, out);
 }
 

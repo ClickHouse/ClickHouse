@@ -95,12 +95,8 @@ bool VersionMetadata::tryLockRemovalTID(const TransactionID & tid, const Transac
     bool locked = removal_tid_lock.compare_exchange_strong(expected_removal_lock_value, removal_lock_value);
     if (!locked)
     {
-        if (tid == Tx::PrehistoricTID && expected_removal_lock_value == Tx::PrehistoricTID.getHash())
-        {
-            /// Don't need to lock part for queries without transaction
-            LOG_TEST(log, "Assuming removal_tid is locked by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
-            return true;
-        }
+        if (expected_removal_lock_value == removal_lock_value)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to lock part {} for removal second time by {}", context.part_name, tid);
 
         if (locked_by_id)
             *locked_by_id = expected_removal_lock_value;
@@ -247,6 +243,9 @@ bool VersionMetadata::canBeRemoved()
     {
         /// Avoid access to Transaction log if transactions are not involved
 
+        if (creation_csn.load(std::memory_order_relaxed) == Tx::RolledBackCSN)
+            return true;
+
         TIDHash removal_lock = removal_tid_lock.load(std::memory_order_relaxed);
         if (!removal_lock)
             return false;
@@ -384,8 +383,9 @@ void VersionMetadata::read(ReadBuffer & buf)
 
         if (name == CREATION_CSN_STR)
         {
-            chassert(!creation_csn);
-            creation_csn = read_csn();
+            auto new_val = read_csn();
+            chassert(!creation_csn || (creation_csn == new_val && creation_csn == Tx::PrehistoricCSN));
+            creation_csn = new_val;
         }
         else if (name == REMOVAL_TID_STR)
         {

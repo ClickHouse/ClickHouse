@@ -30,7 +30,7 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 }
@@ -122,9 +122,6 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
             values.time_at_offset_change_value = (transition.from - cctz::civil_second(date)) / Values::OffsetChangeFactor;
             values.amount_of_offset_change_value = (transition.to - transition.from) / Values::OffsetChangeFactor;
 
-//            std::cerr << time_zone << ", " << date << ": change from " << transition.from << " to " << transition.to << "\n";
-//            std::cerr << time_zone << ", " << date << ": change at " << values.time_at_offset_change() << " with " << values.amount_of_offset_change() << "\n";
-
             /// We don't support too large changes.
             if (values.amount_of_offset_change_value > 24 * 4)
                 values.amount_of_offset_change_value = 24 * 4;
@@ -152,9 +149,9 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
     /// Fill lookup table for years and months.
     size_t year_months_lut_index = 0;
-    size_t first_day_of_last_month = 0;
+    unsigned first_day_of_last_month = 0;
 
-    for (size_t day = 0; day < DATE_LUT_SIZE; ++day)
+    for (unsigned day = 0; day < DATE_LUT_SIZE; ++day)
     {
         const Values & values = lut[day];
 

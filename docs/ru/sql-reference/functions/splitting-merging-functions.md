@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/splitting-merging-functions
 sidebar_position: 47
 sidebar_label: "Функции разбиения и слияния строк и массивов"
 ---

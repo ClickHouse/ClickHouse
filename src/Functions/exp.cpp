@@ -34,9 +34,9 @@ using FunctionExp = FunctionMathUnary<UnaryFunctionVectorized<ExpName, exp>>;
 
 }
 
-void registerFunctionExp(FunctionFactory & factory)
+REGISTER_FUNCTION(Exp)
 {
-    factory.registerFunction<FunctionExp>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionExp>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/special/url
+---
 # URL(URL,格式) {#table_engines-url}
 
 用于管理远程 HTTP/HTTPS 服务器上的数据。该引擎类似
@@ -67,5 +70,3 @@ SELECT * FROM url_engine_table
     -   `ALTER` 和 `SELECT...SAMPLE` 操作。
     -   索引。
     -   副本。
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/url/) <!--hide-->

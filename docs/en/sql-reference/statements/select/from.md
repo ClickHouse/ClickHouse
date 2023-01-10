@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/statements/select/from
 sidebar_label: FROM
 ---
 
-# FROM Clause {#select-from}
+# FROM Clause
 
 The `FROM` clause specifies the source to read data from:
 
@@ -16,18 +17,17 @@ Subquery is another `SELECT` query that may be specified in parenthesis inside `
 
 `FROM` clause can contain multiple data sources, separated by commas, which is equivalent of performing [CROSS JOIN](../../../sql-reference/statements/select/join.md) on them.
 
-## FINAL Modifier {#select-from-final}
+## FINAL Modifier
 
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
 
-It is applicable when selecting data from tables that use the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-engine family. Also supported for:
+It is applicable when selecting data from ReplacingMergeTree, SummingMergeTree, AggregatingMergeTree, CollapsingMergeTree and VersionedCollapsingMergeTree tables.
 
--   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) versions of `MergeTree` engines.
--   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
+`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
 
-Now `SELECT` queries with `FINAL` are executed in parallel and slightly faster. But there are drawbacks (see below). The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
+There are drawbacks to using `FINAL` (see below). 
 
-### Drawbacks {#drawbacks}
+### Drawbacks
 
 Queries that use `FINAL` are executed slightly slower than similar queries that do not, because:
 
@@ -36,7 +36,7 @@ Queries that use `FINAL` are executed slightly slower than similar queries that 
 
 **In most cases, avoid using `FINAL`.** The common approach is to use different queries that assume the background processes of the `MergeTree` engine have’t happened yet and deal with it by applying aggregation (for example, to discard duplicates).
 
-## Implementation Details {#implementation-details}
+## Implementation Details
 
 If the `FROM` clause is omitted, data will be read from the `system.one` table.
 The `system.one` table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).

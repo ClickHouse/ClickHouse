@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -20,7 +21,6 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
@@ -82,6 +82,20 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     return false;
 }
 
+/** There are no limits on the maximum size of the result for the view.
+  *  Since the result of the view is not the result of the entire query.
+  */
+ContextPtr getViewContext(ContextPtr context)
+{
+    auto view_context = Context::createCopy(context);
+    Settings view_settings = context->getSettings();
+    view_settings.max_result_rows = 0;
+    view_settings.max_result_bytes = 0;
+    view_settings.extremes = false;
+    view_context->setSettings(view_settings);
+    return view_context;
+}
+
 }
 
 StorageView::StorageView(
@@ -104,23 +118,6 @@ StorageView::StorageView(
     setInMemoryMetadata(storage_metadata);
 }
 
-
-Pipe StorageView::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
-}
-
 void StorageView::read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -129,7 +126,7 @@ void StorageView::read(
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
+        const size_t /*num_streams*/)
 {
     ASTPtr current_inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
 
@@ -141,8 +138,19 @@ void StorageView::read(
     }
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, options, column_names);
-    interpreter.buildQueryPlan(query_plan);
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, options, getViewContext(context));
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        query_plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        InterpreterSelectWithUnionQuery interpreter(current_inner_query, getViewContext(context), options, column_names);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        interpreter.buildQueryPlan(query_plan);
+    }
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
@@ -196,10 +204,16 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
     if (!table_expression->database_and_table_name)
     {
-        // If it's a view table function, add a fake db.table name.
-        if (table_expression->table_function && table_expression->table_function->as<ASTFunction>()->name == "view")
-            table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__view");
-        else
+        // If it's a view or merge table function, add a fake db.table name.
+        if (table_expression->table_function)
+        {
+            auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
+            if (table_function_name == "view" || table_function_name == "viewIfPermitted")
+                table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__view");
+            if (table_function_name == "merge")
+                table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__merge");
+        }
+        if (!table_expression->database_and_table_name)
             throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
     }
 

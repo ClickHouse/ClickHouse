@@ -3,7 +3,6 @@
 #include "Epoll.h"
 #include <Common/Exception.h>
 #include <unistd.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

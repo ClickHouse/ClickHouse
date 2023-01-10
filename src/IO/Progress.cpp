@@ -11,38 +11,34 @@ namespace DB
 {
 void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
 {
-    size_t new_read_rows = 0;
-    size_t new_read_bytes = 0;
-    size_t new_total_rows_to_read = 0;
-    size_t new_written_rows = 0;
-    size_t new_written_bytes = 0;
-
-    readVarUInt(new_read_rows, in);
-    readVarUInt(new_read_bytes, in);
-    readVarUInt(new_total_rows_to_read, in);
+    readVarUInt(read_rows, in);
+    readVarUInt(read_bytes, in);
+    readVarUInt(total_rows_to_read, in);
     if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
     {
-        readVarUInt(new_written_rows, in);
-        readVarUInt(new_written_bytes, in);
+        readVarUInt(written_rows, in);
+        readVarUInt(written_bytes, in);
     }
-
-    this->read_rows = new_read_rows;
-    this->read_bytes = new_read_bytes;
-    this->total_rows_to_read = new_total_rows_to_read;
-    this->written_rows = new_written_rows;
-    this->written_bytes = new_written_bytes;
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS)
+    {
+        readVarUInt(elapsed_ns, in);
+    }
 }
 
 
 void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
 {
-    writeVarUInt(this->read_rows, out);
-    writeVarUInt(this->read_bytes, out);
-    writeVarUInt(this->total_rows_to_read, out);
+    writeVarUInt(read_rows, out);
+    writeVarUInt(read_bytes, out);
+    writeVarUInt(total_rows_to_read, out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
     {
-        writeVarUInt(this->written_rows, out);
-        writeVarUInt(this->written_bytes, out);
+        writeVarUInt(written_rows, out);
+        writeVarUInt(written_bytes, out);
+    }
+    if (client_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS)
+    {
+        writeVarUInt(elapsed_ns, out);
     }
 }
 
@@ -52,15 +48,19 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     ///  of 64-bit integers after interpretation by JavaScript.
 
     writeCString("{\"read_rows\":\"", out);
-    writeText(this->read_rows, out);
+    writeText(read_rows, out);
     writeCString("\",\"read_bytes\":\"", out);
-    writeText(this->read_bytes, out);
+    writeText(read_bytes, out);
     writeCString("\",\"written_rows\":\"", out);
-    writeText(this->written_rows, out);
+    writeText(written_rows, out);
     writeCString("\",\"written_bytes\":\"", out);
-    writeText(this->written_bytes, out);
+    writeText(written_bytes, out);
     writeCString("\",\"total_rows_to_read\":\"", out);
-    writeText(this->total_rows_to_read, out);
+    writeText(total_rows_to_read, out);
+    writeCString("\",\"result_rows\":\"", out);
+    writeText(result_rows, out);
+    writeCString("\",\"result_bytes\":\"", out);
+    writeText(result_bytes, out);
     writeCString("\"}", out);
 }
 
@@ -75,6 +75,11 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
     written_rows += rhs.written_rows;
     written_bytes += rhs.written_bytes;
 
+    result_rows += rhs.result_rows;
+    result_bytes += rhs.result_bytes;
+
+    elapsed_ns += rhs.elapsed_ns;
+
     return rhs.read_rows || rhs.written_rows;
 }
 
@@ -88,6 +93,11 @@ void Progress::reset()
 
     written_rows = 0;
     written_bytes = 0;
+
+    result_rows = 0;
+    result_bytes = 0;
+
+    elapsed_ns = 0;
 }
 
 ProgressValues Progress::getValues() const
@@ -102,6 +112,11 @@ ProgressValues Progress::getValues() const
 
     res.written_rows = written_rows.load(std::memory_order_relaxed);
     res.written_bytes = written_bytes.load(std::memory_order_relaxed);
+
+    res.result_rows = result_rows.load(std::memory_order_relaxed);
+    res.result_bytes = result_bytes.load(std::memory_order_relaxed);
+
+    res.elapsed_ns = elapsed_ns.load(std::memory_order_relaxed);
 
     return res;
 }
@@ -119,6 +134,11 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
     res.written_rows = written_rows.fetch_and(0);
     res.written_bytes = written_bytes.fetch_and(0);
 
+    res.result_rows = result_rows.fetch_and(0);
+    res.result_bytes = result_bytes.fetch_and(0);
+
+    res.elapsed_ns = elapsed_ns.fetch_and(0);
+
     return res;
 }
 
@@ -135,6 +155,11 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
     res.written_rows = written_rows.fetch_and(0);
     res.written_bytes = written_bytes.fetch_and(0);
 
+    res.result_rows = result_rows.fetch_and(0);
+    res.result_bytes = result_bytes.fetch_and(0);
+
+    res.elapsed_ns = elapsed_ns.fetch_and(0);
+
     return res;
 }
 
@@ -148,6 +173,11 @@ Progress & Progress::operator=(Progress && other) noexcept
 
     written_rows = other.written_rows.load(std::memory_order_relaxed);
     written_bytes = other.written_bytes.load(std::memory_order_relaxed);
+
+    result_rows = other.result_rows.load(std::memory_order_relaxed);
+    result_bytes = other.result_bytes.load(std::memory_order_relaxed);
+
+    elapsed_ns = other.elapsed_ns.load(std::memory_order_relaxed);
 
     return *this;
 }
@@ -163,6 +193,8 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
 
     written_rows.store(values.written_rows, std::memory_order_relaxed);
     written_bytes.store(values.written_bytes, std::memory_order_relaxed);
+
+    elapsed_ns.store(values.elapsed_ns, std::memory_order_relaxed);
 }
 
 void Progress::write(WriteBuffer & out, UInt64 client_revision) const

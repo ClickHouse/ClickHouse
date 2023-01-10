@@ -20,7 +20,6 @@ public:
     }
 
     static NamesAndTypesList getNamesAndTypes();
-
 };
 
 }

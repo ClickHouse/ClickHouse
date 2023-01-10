@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/use-cases/
 title: 关于ClickHouse使用案例的问题
 toc_hidden_folder: true
 sidebar_position: 2

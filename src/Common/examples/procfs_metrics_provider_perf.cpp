@@ -1,4 +1,4 @@
-#if defined(__linux__)
+#if defined(OS_LINUX)
 #include <Common/ProcfsMetricsProvider.h>
 
 #include <iostream>
@@ -6,7 +6,7 @@
 #endif
 
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 int main(int argc, char ** argv)
 {
     using namespace DB;

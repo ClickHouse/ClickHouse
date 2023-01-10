@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
@@ -28,9 +28,9 @@ public:
         bool allow_missing_columns_,
         bool case_insensitive_matching_ = false);
 
-    void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
+    void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows);
 
-    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr);
+    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows);
 
     /// Get missing columns that exists in header but not in arrow::Schema
     std::vector<size_t> getMissingColumns(const arrow::Schema & schema) const;
@@ -44,6 +44,14 @@ public:
         const Block * hint_header = nullptr,
         bool ignore_case = false);
 
+    struct DictionaryInfo
+    {
+        std::shared_ptr<ColumnWithTypeAndName> values;
+        Int64 default_value_index = -1;
+        UInt64 dictionary_size;
+    };
+
+
 private:
     const Block & header;
     const std::string format_name;
@@ -55,7 +63,7 @@ private:
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
-    std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dictionary_values;
+    std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
 };
 
 }

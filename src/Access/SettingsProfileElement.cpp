@@ -3,6 +3,7 @@
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Core/Settings.h>
+#include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -12,6 +13,17 @@
 
 namespace DB
 {
+
+namespace
+{
+    constexpr const char ALLOW_BACKUP_SETTING_NAME[] = "allow_backup";
+}
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast)
 {
     init(ast, nullptr);
@@ -39,14 +51,20 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     {
         setting_name = ast.setting_name;
 
-        /// Optionally check if a setting with that name is allowed.
         if (access_control)
-            access_control->checkSettingNameIsAllowed(setting_name);
+        {
+            /// Check if a setting with that name is allowed.
+            if (setting_name != ALLOW_BACKUP_SETTING_NAME)
+                access_control->checkSettingNameIsAllowed(setting_name);
+            /// Check if a CHANGEABLE_IN_READONLY is allowed.
+            if (ast.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY && !access_control->doesSettingsConstraintsReplacePrevious())
+                throw Exception("CHANGEABLE_IN_READONLY for " + setting_name + " is not allowed unless settings_constraints_replace_previous is enabled", ErrorCodes::NOT_IMPLEMENTED);
+        }
 
         value = ast.value;
         min_value = ast.min_value;
         max_value = ast.max_value;
-        readonly = ast.readonly;
+        writability = ast.writability;
 
         if (!value.isNull())
             value = Settings::castValueUtil(setting_name, value);
@@ -57,6 +75,10 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     }
 }
 
+bool SettingsProfileElement::isConstraint() const
+{
+    return this->writability || !this->min_value.isNull() || !this->max_value.isNull();
+}
 
 std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
 {
@@ -70,7 +92,7 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
-    ast->readonly = readonly;
+    ast->writability = writability;
 
     return ast;
 }
@@ -91,7 +113,7 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithName
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
-    ast->readonly = readonly;
+    ast->writability = writability;
 
     return ast;
 }
@@ -127,6 +149,36 @@ std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNa
 }
 
 
+std::vector<UUID> SettingsProfileElements::findDependencies() const
+{
+    std::vector<UUID> res;
+    for (const auto & element : *this)
+    {
+        if (element.parent_profile)
+            res.push_back(*element.parent_profile);
+    }
+    return res;
+}
+
+
+void SettingsProfileElements::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
+{
+    for (auto & element : *this)
+    {
+        if (element.parent_profile)
+        {
+            auto id = *element.parent_profile;
+            auto it_new_id = old_to_new_ids.find(id);
+            if (it_new_id != old_to_new_ids.end())
+            {
+                auto new_id = it_new_id->second;
+                element.parent_profile = new_id;
+            }
+        }
+    }
+}
+
+
 void SettingsProfileElements::merge(const SettingsProfileElements & other)
 {
     insert(end(), other.begin(), other.end());
@@ -138,8 +190,11 @@ Settings SettingsProfileElements::toSettings() const
     Settings res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && !elem.value.isNull())
-            res.set(elem.setting_name, elem.value);
+        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
+        {
+            if (!elem.value.isNull())
+                res.set(elem.setting_name, elem.value);
+        }
     }
     return res;
 }
@@ -149,8 +204,11 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     SettingsChanges res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && !elem.value.isNull())
-            res.push_back({elem.setting_name, elem.value});
+        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
+        {
+            if (!elem.value.isNull())
+                res.push_back({elem.setting_name, elem.value});
+        }
     }
     return res;
 }
@@ -159,17 +217,12 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
 {
     SettingsConstraints res{access_control};
     for (const auto & elem : *this)
-    {
-        if (!elem.setting_name.empty())
-        {
-            if (!elem.min_value.isNull())
-                res.setMinValue(elem.setting_name, elem.min_value);
-            if (!elem.max_value.isNull())
-                res.setMaxValue(elem.setting_name, elem.max_value);
-            if (elem.readonly)
-                res.setReadOnly(elem.setting_name, *elem.readonly);
-        }
-    }
+        if (!elem.setting_name.empty() && elem.isConstraint() && elem.setting_name != ALLOW_BACKUP_SETTING_NAME)
+            res.set(
+                elem.setting_name,
+                elem.min_value,
+                elem.max_value,
+                elem.writability ? *elem.writability : SettingConstraintWritability::WRITABLE);
     return res;
 }
 
@@ -189,5 +242,19 @@ std::vector<UUID> SettingsProfileElements::toProfileIDs() const
     return res;
 }
 
+bool SettingsProfileElements::isBackupAllowed() const
+{
+    for (const auto & setting : *this)
+    {
+        if (setting.setting_name == ALLOW_BACKUP_SETTING_NAME)
+            return static_cast<bool>(SettingFieldBool{setting.value});
+    }
+    return true;
+}
+
+bool SettingsProfileElements::isAllowBackupSetting(const String & setting_name)
+{
+    return setting_name == ALLOW_BACKUP_SETTING_NAME;
+}
 
 }

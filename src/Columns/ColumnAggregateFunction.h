@@ -98,6 +98,8 @@ private:
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
+    void insertFromWithOwnership(const IColumn & from, size_t n);
+
 public:
     ~ColumnAggregateFunction() override;
 

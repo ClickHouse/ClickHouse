@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/example-datasets/opensky
 sidebar_position: 20
 sidebar_label: Набор данных о воздушном движении OpenSky Network 2020
 ---
@@ -419,4 +420,3 @@ ORDER BY k ASC;
 ### Online Playground {#playground}
 
 Вы можете протестировать другие запросы к этому набору данным с помощью интерактивного ресурса [Online Playground](https://gh-api.clickhouse.tech/play?user=play). Например, [вот так](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=). Однако обратите внимание, что здесь нельзя создавать временные таблицы.
-

@@ -41,30 +41,26 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 }
 
 void SerializationLowCardinality::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
     const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
 
-    SubstreamData dict_data =
-    {
-        dict_inner_serialization,
-        data.type ? dictionary_type : nullptr,
-        column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr,
-        data.serialization_info,
-    };
+    settings.path.push_back(Substream::DictionaryKeys);
+    auto dict_data = SubstreamData(dict_inner_serialization)
+        .withType(data.type ? dictionary_type : nullptr)
+        .withColumn(column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
-    path.push_back(Substream::DictionaryKeys);
-    path.back().data = dict_data;
+    settings.path.back().data = dict_data;
+    dict_inner_serialization->enumerateStreams(settings, callback, dict_data);
 
-    dict_inner_serialization->enumerateStreams(path, callback, dict_data);
+    settings.path.back() = Substream::DictionaryIndexes;
+    settings.path.back().data = data;
 
-    path.back() = Substream::DictionaryIndexes;
-    path.back().data = data;
-
-    callback(path);
-    path.pop_back();
+    callback(settings.path);
+    settings.path.pop_back();
 }
 
 struct KeysSerializationVersion
@@ -225,6 +221,7 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
 };
 
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
+    const IColumn & /*column*/,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -389,13 +386,13 @@ namespace
                 }
                 else if (map[val] == 0 && val != zero_pos_value)
                 {
-                    map[val] = cur_pos;
+                    map[val] = static_cast<T>(cur_pos);
                     ++cur_pos;
                 }
             }
             else
             {
-                T shifted_val = val - dict_size;
+                T shifted_val = static_cast<T>(val - dict_size);
                 if (cur_overflowed_pos == 0)
                 {
                     zero_pos_overflowed_value = shifted_val;
@@ -403,7 +400,7 @@ namespace
                 }
                 else if (overflow_map[shifted_val] == 0 && shifted_val != zero_pos_overflowed_value)
                 {
-                    overflow_map[shifted_val] = cur_overflowed_pos;
+                    overflow_map[shifted_val] = static_cast<T>(cur_overflowed_pos);
                     ++cur_overflowed_pos;
                 }
             }
@@ -433,7 +430,7 @@ namespace
             if (val < dict_size)
                 val = map[val];
             else
-                val = overflow_map[val - dict_size] + cur_pos;
+                val = overflow_map[val - dict_size] + static_cast<T>(cur_pos);
         }
 
         return {std::move(dictionary_map), std::move(additional_keys_map)};
@@ -511,8 +508,6 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         /// Insert used_keys into global dictionary and update sub_index.
         auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*keys, 0, keys->size(),
                                                                                       settings.low_cardinality_max_dictionary_size);
-        // size_t max_size = settings.low_cardinality_max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
-        // ColumnLowCardinality::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
 
         if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
             throw Exception("Got dictionary with size " + toString(global_dictionary->size()) +
@@ -656,11 +651,6 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         {
             auto maps = mapIndexWithAdditionalKeys(*indexes_column, global_dictionary->size());
 
-            // ColumnLowCardinality::Index(maps.additional_keys_map->getPtr()).check(additional_keys->size());
-
-            // ColumnLowCardinality::Index(indexes_column->getPtr()).check(
-            //         maps.dictionary_map->size() + maps.additional_keys_map->size());
-
             auto used_keys = IColumn::mutate(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0));
 
             if (!maps.additional_keys_map->empty())
@@ -728,22 +718,22 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     column = std::move(mutable_column);
 }
 
-void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr);
+    dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
 }
-void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr);
+    dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
 }
 
-void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeImpl(column, row_num, &ISerialization::serializeBinary, ostr);
+    serializeImpl(column, row_num, &ISerialization::serializeBinary, ostr, settings);
 }
-void SerializationLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeImpl(column, &ISerialization::deserializeBinary, istr);
+    deserializeImpl(column, &ISerialization::deserializeBinary, istr, settings);
 }
 
 void SerializationLowCardinality::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

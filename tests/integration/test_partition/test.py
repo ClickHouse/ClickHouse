@@ -2,9 +2,17 @@ import pytest
 import logging
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.test_tools import assert_eq_with_retry
+from helpers.wait_for_helpers import wait_for_delete_inactive_parts
+from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance")
+instance = cluster.add_instance(
+    "instance",
+    main_configs=[
+        "configs/testkeeper.xml",
+    ],
+)
 q = instance.query
 path_to_data = "/var/lib/clickhouse/"
 
@@ -14,7 +22,8 @@ def started_cluster():
     try:
         cluster.start()
         q(
-            "CREATE DATABASE test ENGINE = Ordinary"
+            "CREATE DATABASE test ENGINE = Ordinary",
+            settings={"allow_deprecated_database_ordinary": 1},
         )  # Different path in shadow/ with Atomic
 
         yield cluster
@@ -29,7 +38,7 @@ def partition_table_simple(started_cluster):
     q(
         "CREATE TABLE test.partition_simple (date MATERIALIZED toDate(0), x UInt64, sample_key MATERIALIZED intHash64(x)) "
         "ENGINE=MergeTree PARTITION BY date SAMPLE BY sample_key ORDER BY (date,x,sample_key) "
-        "SETTINGS index_granularity=8192, index_granularity_bytes=0"
+        "SETTINGS index_granularity=8192, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false"
     )
     q("INSERT INTO test.partition_simple ( x ) VALUES ( now() )")
     q("INSERT INTO test.partition_simple ( x ) VALUES ( now()+1 )")
@@ -108,7 +117,7 @@ def partition_table_complex(started_cluster):
     q("DROP TABLE IF EXISTS test.partition_complex")
     q(
         "CREATE TABLE test.partition_complex (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) "
-        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0"
+        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false"
     )
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(31), 1)")
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(1), 2)")
@@ -146,7 +155,7 @@ def test_partition_complex(partition_table_complex):
 def cannot_attach_active_part_table(started_cluster):
     q("DROP TABLE IF EXISTS test.attach_active")
     q(
-        "CREATE TABLE test.attach_active (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 4) ORDER BY n"
+        "CREATE TABLE test.attach_active (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 4) ORDER BY n SETTINGS compress_marks=false, compress_primary_key=false"
     )
     q("INSERT INTO test.attach_active SELECT number FROM system.numbers LIMIT 16")
 
@@ -174,7 +183,7 @@ def attach_check_all_parts_table(started_cluster):
     q("SYSTEM STOP MERGES")
     q("DROP TABLE IF EXISTS test.attach_partition")
     q(
-        "CREATE TABLE test.attach_partition (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n"
+        "CREATE TABLE test.attach_partition (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n SETTINGS compress_marks=false, compress_primary_key=false"
     )
     q(
         "INSERT INTO test.attach_partition SELECT number FROM system.numbers WHERE number % 2 = 0 LIMIT 8"
@@ -191,6 +200,9 @@ def attach_check_all_parts_table(started_cluster):
 
 def test_attach_check_all_parts(attach_check_all_parts_table):
     q("ALTER TABLE test.attach_partition DETACH PARTITION 0")
+
+    wait_for_delete_empty_parts(instance, "test.attach_partition")
+    wait_for_delete_inactive_parts(instance, "test.attach_partition")
 
     path_to_detached = path_to_data + "data/test/attach_partition/detached/"
     instance.exec_in_container(["mkdir", "{}".format(path_to_detached + "0_5_5_0")])
@@ -219,7 +231,8 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     )
 
     parts = q(
-        "SElECT name FROM system.parts WHERE table='attach_partition' AND database='test' ORDER BY name"
+        "SElECT name FROM system.parts "
+        "WHERE table='attach_partition' AND database='test' AND active ORDER BY name"
     )
     assert TSV(parts) == TSV("1_2_2_0\n1_4_4_0")
     detached = q(
@@ -252,7 +265,7 @@ def drop_detached_parts_table(started_cluster):
     q("SYSTEM STOP MERGES")
     q("DROP TABLE IF EXISTS test.drop_detached")
     q(
-        "CREATE TABLE test.drop_detached (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n"
+        "CREATE TABLE test.drop_detached (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n SETTINGS compress_marks=false, compress_primary_key=false"
     )
     q(
         "INSERT INTO test.drop_detached SELECT number FROM system.numbers WHERE number % 2 = 0 LIMIT 8"
@@ -322,9 +335,15 @@ def test_drop_detached_parts(drop_detached_parts_table):
 
 
 def test_system_detached_parts(drop_detached_parts_table):
-    q("create table sdp_0 (n int, x int) engine=MergeTree order by n")
-    q("create table sdp_1 (n int, x int) engine=MergeTree order by n partition by x")
-    q("create table sdp_2 (n int, x String) engine=MergeTree order by n partition by x")
+    q(
+        "create table sdp_0 (n int, x int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false"
+    )
+    q(
+        "create table sdp_1 (n int, x int) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false"
+    )
+    q(
+        "create table sdp_2 (n int, x String) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false"
+    )
     q(
         "create table sdp_3 (n int, x Enum('broken' = 0, 'all' = 1)) engine=MergeTree order by n partition by x"
     )
@@ -378,7 +397,7 @@ def test_system_detached_parts(drop_detached_parts_table):
         )
 
     res = q(
-        "select * from system.detached_parts where table like 'sdp_%' order by table, name"
+        "select system.detached_parts.* except (bytes_on_disk, `path`) from system.detached_parts where table like 'sdp_%' order by table, name"
     )
     assert (
         res == "default\tsdp_0\tall\tall_1_1_0\tdefault\t\t1\t1\t0\n"
@@ -442,15 +461,29 @@ def test_system_detached_parts(drop_detached_parts_table):
 
 
 def test_detached_part_dir_exists(started_cluster):
-    q("create table detached_part_dir_exists (n int) engine=MergeTree order by n")
+    q(
+        "create table detached_part_dir_exists (n int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false"
+    )
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
-    )  # will move all_1_1_0 to detached/all_1_1_0
+    )  # will move all_1_1_0 to detached/all_1_1_0 and create all_1_1_1
+
+    wait_for_delete_empty_parts(instance, "detached_part_dir_exists")
+    wait_for_delete_inactive_parts(instance, "detached_part_dir_exists")
+
     q("detach table detached_part_dir_exists")
     q("attach table detached_part_dir_exists")
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q("insert into detached_part_dir_exists select 1")  # will create all_2_2_0
+
+    assert (
+        q(
+            "select name from system.parts where table='detached_part_dir_exists' and active order by name"
+        )
+        == "all_1_1_0\nall_2_2_0\n"
+    )
+
     instance.exec_in_container(
         [
             "bash",
@@ -477,3 +510,86 @@ def test_detached_part_dir_exists(started_cluster):
         == "all_1_1_0\nall_1_1_0_try1\nall_2_2_0\nall_2_2_0_try1\n"
     )
     q("drop table detached_part_dir_exists")
+
+
+def test_make_clone_in_detached(started_cluster):
+    q(
+        "create table clone_in_detached (n int, m String) engine=ReplicatedMergeTree('/clone_in_detached', '1') order by n SETTINGS compress_marks=false, compress_primary_key=false"
+    )
+
+    path = path_to_data + "data/default/clone_in_detached/"
+
+    # broken part already detached
+    q("insert into clone_in_detached values (42, '¯-_(ツ)_-¯')")
+    instance.exec_in_container(["rm", path + "all_0_0_0/data.bin"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_0_0_0", path + "detached/broken_all_0_0_0"]
+    )
+    assert_eq_with_retry(instance, "select * from clone_in_detached", "\n")
+    assert ["broken_all_0_0_0",] == sorted(
+        instance.exec_in_container(["ls", path + "detached/"]).strip().split("\n")
+    )
+
+    # there's a directory with the same name, but different content
+    q("insert into clone_in_detached values (43, '¯-_(ツ)_-¯')")
+    instance.exec_in_container(["rm", path + "all_1_1_0/data.bin"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_1_1_0", path + "detached/broken_all_1_1_0"]
+    )
+    instance.exec_in_container(["rm", path + "detached/broken_all_1_1_0/primary.idx"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_1_1_0", path + "detached/broken_all_1_1_0_try0"]
+    )
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'broken' > {}".format(
+                path + "detached/broken_all_1_1_0_try0/checksums.txt"
+            ),
+        ]
+    )
+    assert_eq_with_retry(instance, "select * from clone_in_detached", "\n")
+    assert [
+        "broken_all_0_0_0",
+        "broken_all_1_1_0",
+        "broken_all_1_1_0_try0",
+        "broken_all_1_1_0_try1",
+    ] == sorted(
+        instance.exec_in_container(["ls", path + "detached/"]).strip().split("\n")
+    )
+
+    # there are directories with the same name, but different content, and part already detached
+    q("insert into clone_in_detached values (44, '¯-_(ツ)_-¯')")
+    instance.exec_in_container(["rm", path + "all_2_2_0/data.bin"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_2_2_0", path + "detached/broken_all_2_2_0"]
+    )
+    instance.exec_in_container(["rm", path + "detached/broken_all_2_2_0/primary.idx"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_2_2_0", path + "detached/broken_all_2_2_0_try0"]
+    )
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'broken' > {}".format(
+                path + "detached/broken_all_2_2_0_try0/checksums.txt"
+            ),
+        ]
+    )
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_2_2_0", path + "detached/broken_all_2_2_0_try1"]
+    )
+    assert_eq_with_retry(instance, "select * from clone_in_detached", "\n")
+    assert [
+        "broken_all_0_0_0",
+        "broken_all_1_1_0",
+        "broken_all_1_1_0_try0",
+        "broken_all_1_1_0_try1",
+        "broken_all_2_2_0",
+        "broken_all_2_2_0_try0",
+        "broken_all_2_2_0_try1",
+    ] == sorted(
+        instance.exec_in_container(["ls", path + "detached/"]).strip().split("\n")
+    )

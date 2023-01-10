@@ -15,10 +15,11 @@
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 namespace fs = std::filesystem;
 
@@ -63,11 +64,18 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
     ErrorCodes::increment(code, remote, msg, trace);
 }
 
-Exception::Exception(const std::string & msg, int code, bool remote_)
-    : Poco::Exception(msg, code)
+Exception::MessageMasked::MessageMasked(const std::string & msg_)
+    : msg(msg_)
+{
+    if (auto * masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(msg);
+}
+
+Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
+    : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
 {
-    handle_error_code(msg, code, remote, getStackFramePointers());
+    handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -152,12 +160,12 @@ Exception::FramePointers Exception::getStackFramePointers() const
 
 void throwFromErrno(const std::string & s, int code, int the_errno)
 {
-    throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno);
+    throw ErrnoException(s + ", " + errnoToString(the_errno), code, the_errno);
 }
 
 void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code, int the_errno)
 {
-    throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
+    throw ErrnoException(s + ", " + errnoToString(the_errno), code, the_errno, path);
 }
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
@@ -176,10 +184,10 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
+    /// Under high memory pressure, new allocations throw a
+    /// MEMORY_LIMIT_EXCEEDED exception.
     ///
-    /// And in this case the exception will not be logged, so let's block the
+    /// In this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
@@ -189,8 +197,8 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
 {
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
+    /// Under high memory pressure, new allocations throw a
+    /// MEMORY_LIMIT_EXCEEDED exception.
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
@@ -218,7 +226,7 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
         formatReadableQuantity(fs.f_favail),
         mount_point);
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     msg += "\nFilesystem: " + getFilesystemName(mount_point);
 #endif
 }
@@ -230,7 +238,7 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
   */
 static void getNotEnoughMemoryMessage(std::string & msg)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     try
     {
         static constexpr size_t buf_size = 1024;
@@ -261,7 +269,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
             }
         }
 
-        if (num_maps > max_map_count * 0.99)
+        if (num_maps > max_map_count * 0.90)
         {
             msg += fmt::format(
                 "\nIt looks like that the process is near the limit on number of virtual memory mappings."

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -18,6 +19,10 @@ node3 = cluster.add_instance(
 )
 
 from kazoo.client import KazooClient, KazooState
+
+
+def wait_nodes():
+    keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
 
 @pytest.fixture(scope="module")
@@ -94,6 +99,8 @@ def test_restart_multinode(started_cluster):
     node1.restart_clickhouse(kill=True)
     node2.restart_clickhouse(kill=True)
     node3.restart_clickhouse(kill=True)
+    wait_nodes()
+
     for i in range(100):
         try:
             node1_zk = get_fake_zk("node1")

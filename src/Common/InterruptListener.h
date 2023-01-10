@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int CANNOT_UNBLOCK_SIGNAL;
 }
 
-#ifdef __APPLE__
+#ifdef OS_DARWIN
 // We only need to support timeout = {0, 0} at this moment
 static int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec * /*timeout*/)
 {

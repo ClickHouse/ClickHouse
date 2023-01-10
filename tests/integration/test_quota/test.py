@@ -486,7 +486,7 @@ def test_exceed_quota():
     )
 
     assert re.search(
-        "Quota.*has\ been\ exceeded",
+        "Quota.*has been exceeded",
         instance.query_and_get_error("SELECT * from test_table"),
     )
     system_quota_usage(

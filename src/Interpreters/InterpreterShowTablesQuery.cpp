@@ -5,6 +5,11 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
+#include <DataTypes/DataTypeString.h>
+#include <Storages/ColumnsDescription.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Access/Common/AccessFlags.h>
 #include <Common/typeid_cast.h>
 #include <IO/Operators.h>
 
@@ -106,7 +111,15 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
-    rewritten_query << "SELECT name FROM system.";
+
+    if (query.full)
+    {
+        rewritten_query << "SELECT name, engine FROM system.";
+    }
+    else
+    {
+        rewritten_query << "SELECT name FROM system.";
+    }
 
     if (query.dictionaries)
         rewritten_query << "dictionaries ";
@@ -142,6 +155,24 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
 BlockIO InterpreterShowTablesQuery::execute()
 {
+    const auto & query = query_ptr->as<ASTShowTablesQuery &>();
+    if (query.caches)
+    {
+        getContext()->checkAccess(AccessType::SHOW_FILESYSTEM_CACHES);
+
+        Block sample_block{ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "Caches")};
+        MutableColumns res_columns = sample_block.cloneEmptyColumns();
+        auto caches = FileCacheFactory::instance().getAllByName();
+        for (const auto & [name, _] : caches)
+            res_columns[0]->insert(name);
+        BlockIO res;
+        size_t num_rows = res_columns[0]->size();
+        auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+        res.pipeline = QueryPipeline(std::move(source));
+
+        return res;
+    }
+
     return executeQuery(getRewrittenQuery(), getContext(), true);
 }
 

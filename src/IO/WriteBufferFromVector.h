@@ -26,6 +26,7 @@ template <typename VectorType>
 class WriteBufferFromVector : public WriteBuffer
 {
 public:
+    using ValueType = typename VectorType::value_type;
     explicit WriteBufferFromVector(VectorType & vector_)
         : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_)
     {
@@ -50,9 +51,11 @@ public:
 
     bool isFinished() const { return finalized; }
 
-    void restart()
+    void restart(std::optional<size_t> max_capacity = std::nullopt)
     {
-        if (vector.empty())
+        if (max_capacity && vector.capacity() > max_capacity)
+            VectorType(initial_size, ValueType()).swap(vector);
+        else if (vector.empty())
             vector.resize(initial_size);
         set(reinterpret_cast<Position>(vector.data()), vector.size());
         finalized = false;
@@ -64,12 +67,12 @@ public:
     }
 
 private:
-    void finalizeImpl() override final
+    void finalizeImpl() override
     {
         vector.resize(
             ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
-                + sizeof(typename VectorType::value_type) - 1)  /// Align up.
-            / sizeof(typename VectorType::value_type));
+                + sizeof(ValueType) - 1)  /// Align up.
+            / sizeof(ValueType));
 
         /// Prevent further writes.
         set(nullptr, 0);

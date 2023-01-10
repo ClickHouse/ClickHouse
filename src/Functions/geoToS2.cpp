@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_S2_GEOMETRY
 
@@ -119,7 +119,7 @@ public:
 
 }
 
-void registerFunctionGeoToS2(FunctionFactory & factory)
+REGISTER_FUNCTION(GeoToS2)
 {
     factory.registerFunction<FunctionGeoToS2>();
 }

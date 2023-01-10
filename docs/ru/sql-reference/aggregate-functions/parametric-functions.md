@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/parametric-functions
 sidebar_position: 38
 sidebar_label: "Параметрические агрегатные функции"
 ---
@@ -29,13 +30,13 @@ histogram(number_of_bins)(values)
 
 -   [Массив](../../sql-reference/data-types/array.md) [кортежей](../../sql-reference/data-types/tuple.md) следующего вида:
 
-        ```
-        [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
-        ```
+```
+[(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
+```
 
-        - `lower` — нижняя граница корзины.
-        - `upper` — верхняя граница корзины.
-        - `height` — количество значений в корзине.
+- `lower` — нижняя граница корзины.
+- `upper` — верхняя граница корзины.
+- `height` — количество значений в корзине.
 
 **Пример**
 
@@ -91,6 +92,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 :::danger "Предупреждение"
     События, произошедшие в одну и ту же секунду, располагаются в последовательности в неопределенном порядке, что может повлиять на результат работы функции.
+:::
 
 **Аргументы**
 
@@ -176,6 +178,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 :::danger "Предупреждение"
     События, произошедшие в одну и ту же секунду, располагаются в последовательности в неопределенном порядке, что может повлиять на результат работы функции.
+:::
 
 ``` sql
 sequenceCount(pattern)(timestamp, cond1, cond2, ...)

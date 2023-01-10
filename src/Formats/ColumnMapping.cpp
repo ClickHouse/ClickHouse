@@ -18,7 +18,7 @@ void ColumnMapping::setupByHeader(const Block & header)
 }
 
 void ColumnMapping::addColumns(
-    const Names & column_names, const std::unordered_map<String, size_t> & column_indexes_by_names, const FormatSettings & settings)
+    const Names & column_names, const Block::NameMap & column_indexes_by_names, const FormatSettings & settings)
 {
     std::vector<bool> read_columns(column_indexes_by_names.size(), false);
 
@@ -26,8 +26,8 @@ void ColumnMapping::addColumns(
     {
         names_of_columns.push_back(name);
 
-        const auto column_it = column_indexes_by_names.find(name);
-        if (column_it == column_indexes_by_names.end())
+        const auto * column_it = column_indexes_by_names.find(name);
+        if (!column_it)
         {
             if (settings.skip_unknown_fields)
             {
@@ -41,7 +41,7 @@ void ColumnMapping::addColumns(
                 name, column_indexes_for_input_fields.size());
         }
 
-        const auto column_index = column_it->second;
+        const auto column_index = column_it->getMapped();
 
         if (read_columns[column_index])
             throw Exception("Duplicate field found while parsing format header: " + name, ErrorCodes::INCORRECT_DATA);

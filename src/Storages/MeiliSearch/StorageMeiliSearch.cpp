@@ -1,5 +1,4 @@
 #include <memory>
-#include <Core/Types.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -14,9 +13,11 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
+#include <Common/NamedCollections/NamedCollections.h>
 
 namespace DB
 {
@@ -81,7 +82,7 @@ Pipe StorageMeiliSearch::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned)
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 
@@ -128,13 +129,13 @@ SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const Stora
 
 MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
     {
-        auto [common_configuration, storage_specific_args, _] = named_collection.value();
+        validateNamedCollection(*named_collection, {"url", "index"}, {"key"});
 
-        String url = common_configuration.addresses_expr;
-        String index = common_configuration.table;
-        String key = common_configuration.password;
+        String url = named_collection->get<String>("url");
+        String index = named_collection->get<String>("index");
+        String key = named_collection->getOrDefault<String>("key", "");
 
         if (url.empty() || index.empty())
         {
@@ -156,11 +157,11 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        String index = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        String url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+        String index = checkAndGetLiteralArgument<String>(engine_args[1], "index");
         String key;
         if (engine_args.size() == 3)
-            key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            key = checkAndGetLiteralArgument<String>(engine_args[2], "key");
         return MeiliSearchConfiguration(url, index, key);
     }
 }

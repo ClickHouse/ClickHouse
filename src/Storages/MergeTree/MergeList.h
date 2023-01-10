@@ -74,8 +74,8 @@ private:
     MergeListEntry & merge_list_entry;
     MemoryTracker * background_thread_memory_tracker;
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
-    UInt64 prev_untracked_memory_limit;
-    UInt64 prev_untracked_memory;
+    Int64 prev_untracked_memory_limit;
+    Int64 prev_untracked_memory;
     String prev_query_id;
 };
 
@@ -113,7 +113,6 @@ struct MergeListElement : boost::noncopyable
     /// Updated only for Vertical algorithm
     std::atomic<UInt64> columns_written{};
 
-    MemoryTracker memory_tracker{VariableContext::Process};
     /// Used to adjust ThreadStatus::untracked_memory_limit
     UInt64 max_untracked_memory;
     /// Used to avoid losing any allocation context
@@ -125,6 +124,11 @@ struct MergeListElement : boost::noncopyable
     MergeType merge_type;
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
+
+    /// Description used for logging
+    /// Needs to outlive memory_tracker since it's used in its destructor
+    const String description{"Mutate/Merge"};
+    MemoryTracker memory_tracker{VariableContext::Process};
 
     MergeListElement(
         const StorageID & table_id_,
@@ -195,6 +199,11 @@ public:
     void bookMergeWithTTL()
     {
         ++merges_with_ttl_counter;
+    }
+
+    void cancelMergeWithTTL()
+    {
+        --merges_with_ttl_counter;
     }
 
     size_t getMergesWithTTLCount() const

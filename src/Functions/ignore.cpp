@@ -56,7 +56,7 @@ public:
 
 }
 
-void registerFunctionIgnore(FunctionFactory & factory)
+REGISTER_FUNCTION(Ignore)
 {
     factory.registerFunction<FunctionIgnore>();
 }

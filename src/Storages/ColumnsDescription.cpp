@@ -123,6 +123,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             {
                 default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
                 default_desc.expression = std::move(col_ast->default_expression);
+                default_desc.ephemeral_default = col_ast->ephemeral_default;
             }
 
             if (col_ast->comment)
@@ -173,15 +174,15 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
 {
     String name_with_dot = name_without_dot + ".";
 
-    auto begin = columns.begin();
-    for (; begin != columns.end(); ++begin)
+    /// First we need to check if we have column with name name_without_dot
+    /// and if not - check if we have names that start with name_with_dot
+    for (auto it = columns.begin(); it != columns.end(); ++it)
     {
-        if (begin->name == name_without_dot)
-            return std::make_pair(begin, std::next(begin));
-
-        if (startsWith(begin->name, name_with_dot))
-            break;
+        if (it->name == name_without_dot)
+            return std::make_pair(it, std::next(it));
     }
+
+    auto begin = std::find_if(columns.begin(), columns.end(), [&](const auto & column){ return startsWith(column.name, name_with_dot); });
 
     if (begin == columns.end())
         return std::make_pair(begin, begin);
@@ -490,7 +491,7 @@ static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
         case ColumnDefaultKind::Ephemeral:
             return GetColumnsOptions::Ephemeral;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const
@@ -780,7 +781,7 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
                 "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
 
         subcolumns.get<0>().insert(std::move(subcolumn));
-    }, {type_in_storage->getDefaultSerialization(), type_in_storage, nullptr, nullptr});
+    }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
 }
 
 void ColumnsDescription::removeSubcolumns(const String & name_in_storage)

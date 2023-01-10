@@ -3,16 +3,13 @@ import time
 import os
 
 import pytest
-from helpers.cluster import ClickHouseCluster, get_instances_dir
+
+from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values, replace_config, SafeThread
+from azure.storage.blob import BlobServiceClient
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(
-    SCRIPT_DIR,
-    "./{}/node/configs/config.d/storage_conf.xml".format(get_instances_dir()),
-)
-
 NODE_NAME = "node"
 TABLE_NAME = "blob_storage_table"
 AZURE_BLOB_STORAGE_DISK = "blob_storage_disk"
@@ -51,7 +48,7 @@ def azure_query(node, query, try_num=3):
             return node.query(query)
         except Exception as ex:
             retriable_errors = [
-                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
+                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response"
             ]
             retry = False
             for error in retriable_errors:
@@ -160,13 +157,7 @@ def test_inserts_selects(cluster):
     )
 
 
-@pytest.mark.parametrize(
-    "merge_vertical",
-    [
-        (True),
-        (False),
-    ],
-)
+@pytest.mark.parametrize("merge_vertical", [(True), (False)])
 def test_insert_same_partition_and_merge(cluster, merge_vertical):
     settings = {}
     if merge_vertical:
@@ -498,6 +489,12 @@ def test_freeze_unfreeze(cluster):
 def test_apply_new_settings(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        "./{}/node/configs/config.d/storage_conf.xml".format(
+            cluster.instances_dir_name
+        ),
+    )
 
     azure_query(
         node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}"
@@ -505,7 +502,7 @@ def test_apply_new_settings(cluster):
 
     # Force multi-part upload mode.
     replace_config(
-        CONFIG_PATH,
+        config_path,
         "<max_single_part_upload_size>33554432</max_single_part_upload_size>",
         "<max_single_part_upload_size>4096</max_single_part_upload_size>",
     )
@@ -517,60 +514,45 @@ def test_apply_new_settings(cluster):
     )
 
 
-# NOTE: this test takes a couple of minutes when run together with other tests
-@pytest.mark.long_run
-def test_restart_during_load(cluster):
-    node = cluster.instances[NODE_NAME]
-    create_table(node, TABLE_NAME)
-
-    # Force multi-part upload mode.
-    replace_config(
-        CONFIG_PATH, "<container_already_exists>false</container_already_exists>", ""
-    )
-
-    azure_query(
-        node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}"
-    )
-    azure_query(
-        node,
-        f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 4096, -1)}",
-    )
-
-    def read():
-        for ii in range(0, 5):
-            logging.info(f"Executing {ii} query")
-            assert (
-                azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values")
-                == "(0)"
-            )
-            logging.info(f"Query {ii} executed")
-            time.sleep(0.2)
-
-    def restart_disk():
-        for iii in range(0, 2):
-            logging.info(f"Restarting disk, attempt {iii}")
-            node.query(f"SYSTEM RESTART DISK {AZURE_BLOB_STORAGE_DISK}")
-            logging.info(f"Disk restarted, attempt {iii}")
-            time.sleep(0.5)
-
-    threads = []
-    for _ in range(0, 4):
-        threads.append(SafeThread(target=read))
-
-    threads.append(SafeThread(target=restart_disk))
-
-    for thread in threads:
-        thread.start()
-
-    for thread in threads:
-        thread.join()
-
-
 def test_big_insert(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
+
+    check_query = "SELECT '2020-01-03', number, toString(number) FROM numbers(1000000)"
+
     azure_query(
         node,
-        f"INSERT INTO {TABLE_NAME} select '2020-01-03', number, toString(number) from numbers(5000000)",
+        f"INSERT INTO {TABLE_NAME} {check_query}",
     )
-    assert int(azure_query(node, f"SELECT count() FROM {TABLE_NAME}")) == 5000000
+    assert azure_query(node, f"SELECT * FROM {TABLE_NAME} ORDER BY id") == node.query(
+        check_query
+    )
+
+    blob_container_client = cluster.blob_service_client.get_container_client(
+        CONTAINER_NAME
+    )
+
+    blobs = blob_container_client.list_blobs()
+    max_single_part_upload_size = 100000
+    checked = False
+
+    for blob in blobs:
+        blob_client = cluster.blob_service_client.get_blob_client(
+            CONTAINER_NAME, blob.name
+        )
+        committed, uncommited = blob_client.get_block_list()
+
+        blocks = committed
+        last_id = len(blocks)
+        id = 1
+        if len(blocks) > 1:
+            checked = True
+
+        for block in blocks:
+            print(f"blob: {blob.name}, block size: {block.size}")
+            if id == last_id:
+                assert max_single_part_upload_size >= block.size
+            else:
+                assert max_single_part_upload_size == block.size
+            id += 1
+    assert checked

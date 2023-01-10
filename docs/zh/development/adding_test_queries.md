@@ -1,3 +1,6 @@
+---
+slug: /zh/development/adding_test_queries
+---
 # 如何将测试查询添加到 ClickHouse CI
 
 ClickHouse有数百个（甚至数千个）功能。 每个提交都由包含数千个测试用例的一组复杂测试进行检查。

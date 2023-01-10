@@ -4,6 +4,7 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <bit>
 
 #if defined(__SSE2__)
 #include <emmintrin.h>
@@ -122,7 +123,7 @@ bool SplitTokenExtractor::nextInStringPadded(const char * data, size_t length, s
         const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
                 '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
         // Every bit represents if `haystack` character is in the ranges (1) or not (0)
-        const int result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
+        const unsigned result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
 #else
         // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
         const auto number_begin =      _mm_set1_epi8('0' - 1);
@@ -136,7 +137,7 @@ bool SplitTokenExtractor::nextInStringPadded(const char * data, size_t length, s
         // every bit represents if `haystack` character `c` satisfies condition:
         // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
         // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
-        const int result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
+        const unsigned result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
                 _mm_cmplt_epi8(haystack, zero),
                 _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
                 _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
@@ -152,7 +153,7 @@ bool SplitTokenExtractor::nextInStringPadded(const char * data, size_t length, s
             continue;
         }
 
-        const auto token_start_pos_in_current_haystack = getTrailingZeroBitsUnsafe(result_bitmask);
+        const auto token_start_pos_in_current_haystack = std::countr_zero(result_bitmask);
         if (*token_length == 0)
             // new token
             *token_start = *pos + token_start_pos_in_current_haystack;
@@ -160,7 +161,7 @@ bool SplitTokenExtractor::nextInStringPadded(const char * data, size_t length, s
             // end of token starting in one of previous haystacks
             return true;
 
-        const auto token_bytes_in_current_haystack = getTrailingZeroBitsUnsafe(~(result_bitmask >> token_start_pos_in_current_haystack));
+        const auto token_bytes_in_current_haystack = std::countr_zero(~(result_bitmask >> token_start_pos_in_current_haystack));
         *token_length += token_bytes_in_current_haystack;
 
         *pos += token_start_pos_in_current_haystack + token_bytes_in_current_haystack;

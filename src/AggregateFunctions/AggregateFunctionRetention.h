@@ -44,7 +44,7 @@ struct AggregateFunctionRetentionData
 
     void serialize(WriteBuffer & buf) const
     {
-        UInt32 event_value = events.to_ulong();
+        UInt32 event_value = static_cast<UInt32>(events.to_ulong());
         writeBinary(event_value, buf);
     }
 
@@ -76,7 +76,7 @@ public:
     }
 
     explicit AggregateFunctionRetention(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {})
+        : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {}, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()))
     {
         for (const auto i : collections::range(0, arguments.size()))
         {
@@ -88,12 +88,6 @@ public:
         }
 
         events_size = static_cast<UInt8>(arguments.size());
-    }
-
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
     }
 
     bool allocatesMemoryInArena() const override { return false; }

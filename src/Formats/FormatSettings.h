@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/Defines.h>
 #include <base/types.h>
 
 
@@ -36,7 +37,12 @@ struct FormatSettings
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
-    String column_names_for_schema_inference = "";
+    String column_names_for_schema_inference;
+    String schema_inference_hints;
+
+    bool try_infer_integers = false;
+    bool try_infer_dates = false;
+    bool try_infer_datetimes = false;
 
     enum class DateTimeInputFormat
     {
@@ -65,6 +71,8 @@ struct FormatSettings
         Raw
     };
 
+    bool schema_inference_make_columns_nullable = true;
+
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
     bool input_format_ipv4_default_on_conversion_error = false;
@@ -72,6 +80,10 @@ struct FormatSettings
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
+
+    UInt64 max_binary_string_size = 0;
+
+    UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
     struct
     {
@@ -92,6 +104,7 @@ struct FormatSettings
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
+        bool null_as_default = false;
     } avro;
 
     String bool_true_representation = "true";
@@ -104,11 +117,13 @@ struct FormatSettings
         bool allow_double_quotes = true;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
-        bool input_format_enum_as_number = false;
-        bool input_format_arrays_as_nested_csv = false;
+        bool enum_as_number = false;
+        bool arrays_as_nested_csv = false;
         String null_representation = "\\N";
         char tuple_delimiter = ',';
-        bool input_format_use_best_effort_in_schema_inference = true;
+        bool use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
+        String custom_delimiter;
     } csv;
 
     struct HiveText
@@ -134,12 +149,25 @@ struct FormatSettings
     {
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
+        bool quote_64bit_floats = false;
         bool quote_denormals = true;
+        bool quote_decimals = false;
         bool escape_forward_slashes = true;
         bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
+        bool read_numbers_as_strings = true;
+        bool read_objects_as_strings = true;
+        bool try_infer_numbers_from_strings = false;
+        bool validate_types_from_metadata = true;
+        bool validate_utf8 = false;
+        bool allow_object_type = false;
     } json;
+
+    struct
+    {
+        String column_for_object_name;
+    } json_object_each_row;
 
     struct
     {
@@ -182,6 +210,7 @@ struct FormatSettings
          * because Protobuf without delimiters is not generally useful.
          */
         bool allow_multiple_rows_without_delimiter = false;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } protobuf;
 
     struct
@@ -217,8 +246,9 @@ struct FormatSettings
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         String null_representation = "\\N";
-        bool input_format_enum_as_number = false;
-        bool input_format_use_best_effort_in_schema_inference = true;
+        bool enum_as_number = false;
+        bool use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
     } tsv;
 
     struct
@@ -251,6 +281,7 @@ struct FormatSettings
     struct
     {
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } capn_proto;
 
     enum class MsgPackUUIDRepresentation
@@ -271,6 +302,21 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump;
+
+    struct
+    {
+        UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
+        String table_name = "table";
+        bool include_column_names = true;
+        bool use_replace = false;
+        bool quote_names = true;
+    } sql_insert;
+
+    struct
+    {
+        bool output_string_as_string;
+        bool skip_fields_with_unsupported_types_in_schema_inference;
+    } bson;
 };
 
 }

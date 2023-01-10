@@ -1,4 +1,5 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -10,13 +11,14 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <DataTypes/ObjectUtils.h>
 
+#include <Client/IConnections.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-
 
 namespace ProfileEvents
 {
@@ -63,18 +65,16 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        local_plans.emplace_back(createLocalPlan(query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*coordinator=*/nullptr));
+        local_plans.emplace_back(createLocalPlan(
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
     };
 
-    auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)
+    auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
             .query = query_ast,
             .header = header,
-            .shard_num = shard_info.shard_num,
-            .num_replicas = shard_info.getAllNodeCount(),
-            .pool = shard_info.pool,
-            .per_replica_pools = shard_info.per_replica_pools,
+            .shard_info = shard_info,
             .lazy = lazy,
             .local_delay = local_delay,
         });
@@ -131,7 +131,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        UInt32 local_delay = replicated_storage->getAbsoluteDelay();
+        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
 
         if (local_delay < max_allowed_delay)
         {
@@ -171,6 +171,69 @@ void SelectStreamFactory::createForShard(
     }
     else
         emplace_remote_stream();
+}
+
+
+void SelectStreamFactory::createForShardWithParallelReplicas(
+    const Cluster::ShardInfo & shard_info,
+    const ASTPtr & query_ast,
+    const StorageID & main_table,
+    ContextPtr context,
+    UInt32 shard_count,
+    std::vector<QueryPlanPtr> & local_plans,
+    Shards & remote_shards)
+{
+    if (auto it = objects_by_shard.find(shard_info.shard_num); it != objects_by_shard.end())
+        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
+
+    const auto & settings = context->getSettingsRef();
+
+    auto is_local_replica_obsolete = [&]()
+    {
+        auto resolved_id = context->resolveStorageID(main_table);
+        auto main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+        const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
+
+        if (!replicated_storage)
+            return false;
+
+        UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+
+        if (!max_allowed_delay)
+            return false;
+
+        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
+        return local_delay >= max_allowed_delay;
+    };
+
+    size_t next_replica_number = 0;
+    size_t all_replicas_count = shard_info.getRemoteNodeCount();
+
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
+
+    if (settings.prefer_localhost_replica && shard_info.isLocal())
+    {
+        /// We don't need more than one local replica in parallel reading
+        if (!is_local_replica_obsolete())
+        {
+            ++all_replicas_count;
+
+            local_plans.emplace_back(createLocalPlan(
+                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, next_replica_number, all_replicas_count, coordinator));
+
+            ++next_replica_number;
+        }
+    }
+
+    if (shard_info.hasRemoteConnections())
+        remote_shards.emplace_back(Shard{
+            .query = query_ast,
+            .header = header,
+            .shard_info = shard_info,
+            .lazy = false,
+            .local_delay = 0,
+            .coordinator = coordinator,
+        });
 }
 
 }

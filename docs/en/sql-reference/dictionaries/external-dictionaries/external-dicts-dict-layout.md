@@ -1,7 +1,9 @@
 ---
+slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout
 sidebar_position: 41
 sidebar_label: Storing Dictionaries in Memory
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 # Storing Dictionaries in Memory 
 
@@ -21,7 +23,9 @@ ClickHouse generates an exception for errors with dictionaries. Examples of erro
 -   The dictionary being accessed could not be loaded.
 -   Error querying a `cached` dictionary.
 
-You can view the list of external dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
+You can view the list of dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
+
+<CloudDetails /> 
 
 The configuration looks like this:
 
@@ -77,7 +81,7 @@ Configuration example of a composite key (key has one element with [String](../.
 ...
 ```
 
-## Ways to Store Dictionaries in Memory {#ways-to-store-dictionaries-in-memory}
+## Ways to Store Dictionaries in Memory
 
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
@@ -96,7 +100,7 @@ Configuration example of a composite key (key has one element with [String](../.
 -   [complex_key_direct](#complex-key-direct)
 -   [ip_trie](#ip-trie)
 
-### flat {#flat}
+### flat
 
 The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
 
@@ -123,7 +127,7 @@ or
 LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 ```
 
-### hashed {#dicts-external_dicts_dict_layout-hashed}
+### hashed
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
@@ -152,7 +156,7 @@ or
 LAYOUT(HASHED(PREALLOCATE 0))
 ```
 
-### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse_hashed
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
 
@@ -174,7 +178,7 @@ or
 LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 ```
 
-### complex_key_hashed {#complex-key-hashed}
+### complex_key_hashed
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `hashed`.
 
@@ -192,7 +196,7 @@ or
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### complex_key_sparse_hashed {#complex-key-sparse-hashed}
+### complex_key_sparse_hashed
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed).
 
@@ -210,7 +214,7 @@ or
 LAYOUT(COMPLEX_KEY_SPARSE_HASHED())
 ```
 
-### hashed_array {#dicts-external_dicts_dict_layout-hashed-array}
+### hashed_array
 
 The dictionary is completely stored in memory. Each attribute is stored in an array. The key attribute is stored in the form of a hashed table where value is an index in the attributes array. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
 
@@ -233,7 +237,7 @@ or
 LAYOUT(HASHED_ARRAY())
 ```
 
-### complex_key_hashed_array {#complex-key-hashed-array}
+### complex_key_hashed_array
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to [hashed_array](#dicts-external_dicts_dict_layout-hashed-array).
 
@@ -251,7 +255,7 @@ or
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 ```
 
-### range_hashed {#range-hashed}
+### range_hashed
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
@@ -302,17 +306,25 @@ or
 CREATE DICTIONARY somedict (
     id UInt64,
     first Date,
-    last Date
+    last Date,
+    advertiser_id UInt64
 )
 PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'date_table'))
+LIFETIME(MIN 1 MAX 1000)
 LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
 ```
 
-To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
+To work with these dictionaries, you need to pass an additional argument to the `dictGet` function, for which a range is selected:
 
 ``` sql
-dictGetT('dict_name', 'attr_name', id, date)
+dictGet('dict_name', 'attr_name', id, date)
+```
+Query example:
+
+``` sql
+SELECT dictGet('somedict', 'advertiser_id', 1, '2022-10-20 23:20:10.000'::DateTime64::UInt64);
 ```
 
 This function returns the value for the specified `id`s and the date range that includes the passed date.
@@ -370,7 +382,7 @@ PRIMARY KEY Abcdef
 RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 ```
 
-### complex_key_range_hashed {#complex-key-range-hashed}
+### complex_key_range_hashed
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values (see [range_hashed](#range-hashed)). This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md).
 
@@ -392,7 +404,7 @@ LAYOUT(COMPLEX_KEY_RANGE_HASHED())
 RANGE(MIN StartDate MAX EndDate);
 ```
 
-### cache {#cache}
+### cache
 
 The dictionary is stored in a cache that has a fixed number of cells. These cells contain frequently used elements.
 
@@ -410,7 +422,7 @@ If setting `allow_read_expired_keys` is set to 1, by default 0. Then dictionary 
 
 To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
 
-Supported [sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
+All types of sources are supported.
 
 Example of settings:
 
@@ -450,11 +462,11 @@ Set a large enough cache size. You need to experiment to select the number of ce
 Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 :::
 
-### complex_key_cache {#complex-key-cache}
+### complex_key_cache
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `cache`.
 
-### ssd_cache {#ssd-cache}
+### ssd_cache
 
 Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
 
@@ -484,11 +496,11 @@ LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
     PATH '/var/lib/clickhouse/user_files/test_dict'))
 ```
 
-### complex_key_ssd_cache {#complex-key-ssd-cache}
+### complex_key_ssd_cache
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `ssd_cache`.
 
-### direct {#direct}
+### direct
 
 The dictionary is not stored in memory and directly goes to the source during the processing of a request.
 
@@ -510,11 +522,11 @@ or
 LAYOUT(DIRECT())
 ```
 
-### complex_key_direct {#complex-key-direct}
+### complex_key_direct
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `direct`.
 
-### ip_trie {#ip-trie}
+### ip_trie
 
 This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
 
@@ -595,3 +607,7 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
 Data must completely fit into RAM.
+
+## Related Content
+
+- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/array-functions
+---
 # 数组函数 {#shu-zu-han-shu}
 
 ## empty {#empty函数}
@@ -1692,5 +1695,3 @@ SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as r
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/array_functions/) <!--hide-->

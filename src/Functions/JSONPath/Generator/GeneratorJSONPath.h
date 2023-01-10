@@ -89,7 +89,7 @@ public:
             for (size_t i = current_visitor; i < visitors.size(); ++i)
             {
                 status = visitors[i]->visit(current);
-                current_visitor = i;
+                current_visitor = static_cast<int>(i);
                 if (status == VisitorStatus::Error || status == VisitorStatus::Ignore)
                 {
                     break;

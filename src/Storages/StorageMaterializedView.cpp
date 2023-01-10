@@ -18,15 +18,14 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
-#include <Backups/IBackupEntry.h>
-#include <Backups/IRestoreTask.h>
+#include <Backups/BackupEntriesCollector.h>
 
 namespace DB
 {
@@ -143,22 +142,6 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }
 
-Pipe StorageMaterializedView::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context),
-        BuildQueryPipelineSettings::fromContext(local_context));
-}
-
 void StorageMaterializedView::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -167,7 +150,7 @@ void StorageMaterializedView::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t num_streams)
 {
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
@@ -204,21 +187,8 @@ void StorageMaterializedView::read(
             query_plan.addStep(std::move(converting_step));
         }
 
-        StreamLocalLimits limits;
-        SizeLimits leaf_limits;
-
-        /// Add table lock for destination table.
-        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-                query_plan.getCurrentDataStream(),
-                storage,
-                std::move(lock),
-                limits,
-                leaf_limits,
-                nullptr,
-                nullptr);
-
-        adding_limits_and_quota->setStepDescription("Lock destination table for MaterializedView");
-        query_plan.addStep(std::move(adding_limits_and_quota));
+        query_plan.addStorageHolder(storage);
+        query_plan.addTableLock(std::move(lock));
     }
 }
 
@@ -240,15 +210,15 @@ void StorageMaterializedView::drop()
     auto table_id = getStorageID();
     const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
+        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
 
     dropInnerTableIfAny(true, getContext());
 }
 
-void StorageMaterializedView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
+void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     if (has_inner_table && tryGetTargetTable())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -296,7 +266,7 @@ void StorageMaterializedView::alter(
         const auto & new_select = new_metadata.select;
         const auto & old_select = old_metadata.getSelectQuery();
 
-        DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+        DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
 
         new_metadata.setSelectQuery(new_select);
     }
@@ -350,10 +320,10 @@ void StorageMaterializedView::checkAlterPartitionIsPossible(
     getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
 }
 
-void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
+void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context, bool force_wait)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->mutate(commands, local_context);
+    getTargetTable()->mutate(commands, local_context, force_wait);
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
@@ -394,7 +364,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     }
     const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
-    DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
+    DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::startup()
@@ -402,7 +372,7 @@ void StorageMaterializedView::startup()
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select_query.select_table_id, getStorageID());
+        DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
@@ -411,7 +381,7 @@ void StorageMaterializedView::shutdown()
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, getStorageID());
+        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
@@ -438,18 +408,24 @@ Strings StorageMaterializedView::getDataPaths() const
     return {};
 }
 
-BackupEntries StorageMaterializedView::backupData(ContextPtr context_, const ASTs & partitions_)
+void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    if (!hasInnerTable())
-        return {};
-    return getTargetTable()->backupData(context_, partitions_);
+    /// We backup the target table's data only if it's inner.
+    if (hasInnerTable())
+        getTargetTable()->backupData(backup_entries_collector, data_path_in_backup, partitions);
 }
 
-RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
+void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    if (!hasInnerTable())
-        return {};
-    return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_, restore_coordination_);
+    if (hasInnerTable())
+        return getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+}
+
+bool StorageMaterializedView::supportsBackupPartition() const
+{
+    if (hasInnerTable())
+        return getTargetTable()->supportsBackupPartition();
+    return false;
 }
 
 std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const

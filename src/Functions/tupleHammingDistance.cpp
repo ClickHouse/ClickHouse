@@ -139,7 +139,7 @@ public:
     }
 };
 
-void registerFunctionTupleHammingDistance(FunctionFactory & factory)
+REGISTER_FUNCTION(TupleHammingDistance)
 {
     factory.registerFunction<FunctionTupleHammingDistance>();
 }

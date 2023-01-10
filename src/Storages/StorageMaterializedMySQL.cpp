@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 
@@ -32,19 +32,20 @@ bool StorageMaterializedMySQL::needRewriteQueryWithFinal(const Names & column_na
     return needRewriteQueryWithFinalForStorage(column_names, nested_storage);
 }
 
-Pipe StorageMaterializedMySQL::read(
+void StorageMaterializedMySQL::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned int num_streams)
+    size_t num_streams)
 {
     if (const auto * db = typeid_cast<const DatabaseMaterializedMySQL *>(database))
         db->rethrowExceptionIfNeeded();
 
-    return readFinalFromNestedStorage(nested_storage, column_names,
+    readFinalFromNestedStorage(query_plan, nested_storage, column_names,
             query_info, context, processed_stage, max_block_size, num_streams);
 }
 

@@ -1,0 +1,8 @@
+deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = no, results inconsitent
+18	18	9	18
+deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = no, results inconsitent
+18	9	9	9
+deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = yes, results inconsitent
+18	18	9	18
+deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = yes, results consitent
+18	18	18	18

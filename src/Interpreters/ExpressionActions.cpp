@@ -47,8 +47,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-ExpressionActions::~ExpressionActions() = default;
-
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
 ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
@@ -301,7 +299,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     if (short_circuit_nodes.empty())
         return {};
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
+    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getOutputs());
 
     /// For each node we fill LazyExecutionInfo.
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
@@ -335,10 +333,10 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & index = actions_dag->getIndex();
+    const auto & outputs = actions_dag->getOutputs();
     const auto & inputs = actions_dag->getInputs();
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, index);
+    auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;
     for (const auto & node : nodes)
         data.push_back({.node = &node});
@@ -428,9 +426,9 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         }
     }
 
-    result_positions.reserve(index.size());
+    result_positions.reserve(outputs.size());
 
-    for (const auto & node : index)
+    for (const auto & node : outputs)
     {
         auto pos = data[reverse_info.reverse_index[node]].position;
 
@@ -622,9 +620,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
 
-            const ColumnArray * array = typeid_cast<const ColumnArray *>(array_join_key.column.get());
+            const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)
-                throw Exception("ARRAY JOIN of not array: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
+                throw Exception("ARRAY JOIN of not array nor map: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
 
             for (auto & column : columns)
                 if (column.column)
@@ -637,7 +635,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             auto & res_column = columns[action.result_position];
 
             res_column.column = array->getDataPtr();
-            res_column.type = assert_cast<const DataTypeArray &>(*array_join_key.type).getNestedType();
+            res_column.type = getArrayJoinDataType(array_join_key.type)->getNestedType();
             res_column.name = action.node->result_name;
 
             num_rows = res_column.column->size();
@@ -1010,7 +1008,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
 
         if (array_join->columns.contains(column.name))
         {
-            const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
+            const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
             /// Arrays are materialized
             column.column = nullptr;
@@ -1075,8 +1073,8 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     }
 
     /// Result will also contain joined columns.
-    for (const auto & column_name : analyzed_join->columnsAddedByJoin())
-        required_names.emplace(column_name);
+    for (const auto & column : analyzed_join->columnsAddedByJoin())
+        required_names.emplace(column.name);
 
     for (const auto & column : result_columns)
     {

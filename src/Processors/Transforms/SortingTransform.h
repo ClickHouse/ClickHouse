@@ -24,21 +24,19 @@ private:
     SortDescription description;
     size_t max_merged_block_size;
     UInt64 limit;
+    SortQueueVariants queue_variants;
     size_t total_merged_rows = 0;
 
     SortCursorImpls cursors;
 
     bool has_collation = false;
 
-    SortingHeap<SortCursor> queue_without_collation;
-    SortingHeap<SimpleSortCursor> queue_simple;
-    SortingHeap<SortCursorWithCollation> queue_with_collation;
-
     /** Two different cursors are supported - with and without Collation.
-      *  Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
+      * Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
       */
-    template <typename TSortingHeap>
-    Chunk mergeImpl(TSortingHeap & queue);
+    template <typename TSortingQueue>
+    Chunk mergeBatchImpl(TSortingQueue & queue);
+
 };
 
 
@@ -75,8 +73,8 @@ public:
     ~SortingTransform() override;
 
 protected:
-    Status prepare() override final;
-    void work() override final;
+    Status prepare() final;
+    void work() final;
 
     virtual void consume(Chunk chunk) = 0;
     virtual void generate() = 0;
@@ -84,7 +82,7 @@ protected:
 
     SortDescription description;
     size_t max_merged_block_size;
-    UInt64 limit;
+    const UInt64 limit;
 
     /// Before operation, will remove constant columns from blocks. And after, place constant columns back.
     /// (to avoid excessive virtual function calls and because constants cannot be serialized in Native format for temporary files)

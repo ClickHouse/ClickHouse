@@ -3,6 +3,7 @@
 #include <memory>
 #include <Storages/MergeTree/RequestResponse.h>
 
+
 namespace DB
 {
 
@@ -16,5 +17,7 @@ private:
     class Impl;
     std::unique_ptr<Impl> pimpl;
 };
+
+using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
 }

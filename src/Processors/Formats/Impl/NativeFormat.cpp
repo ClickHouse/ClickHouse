@@ -74,15 +74,6 @@ protected:
         if (chunk)
         {
             auto block = getPort(PortKind::Main).getHeader();
-
-            // const auto & info = chunk.getChunkInfo();
-            // const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
-            // if (agg_info)
-            // {
-            //     block.info.bucket_num = agg_info->bucket_num;
-            //     block.info.is_overflows = agg_info->is_overflows;
-            // }
-
             block.setColumns(chunk.detachColumns());
             writer.write(block);
         }
@@ -124,7 +115,6 @@ void registerOutputFormatNative(FormatFactory & factory)
     factory.registerOutputFormat("Native", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams &,
         const FormatSettings &)
     {
         return std::make_shared<NativeOutputFormat>(buf, sample);

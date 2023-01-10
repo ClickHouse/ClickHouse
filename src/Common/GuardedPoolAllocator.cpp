@@ -162,7 +162,7 @@ void GuardedPoolAllocator::stop()
     stopped.store(true);
 
     /// Lock mutex to lock any in-progress allocations
-    pool_reservation_mutex.lock();
+    //pool_reservation_mutex.lock();
 }
 
 void * GuardedPoolAllocator::allocate(size_t size, size_t alignment)

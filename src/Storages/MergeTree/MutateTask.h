@@ -35,7 +35,8 @@ public:
         const MergeTreeTransactionPtr & txn,
         MergeTreeData & data_,
         MergeTreeDataMergerMutator & mutator_,
-        ActionBlocker & merges_blocker_);
+        ActionBlocker & merges_blocker_,
+        bool need_prefix_);
 
     bool execute();
 

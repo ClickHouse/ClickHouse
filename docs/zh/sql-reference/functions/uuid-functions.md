@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/uuid-functions
+---
 # UUID函数 {#uuidhan-shu}
 
 下面列出了所有UUID的相关函数
@@ -103,5 +106,3 @@ SELECT
 ## 另请参阅 {#ling-qing-can-yue}
 
 -   [dictgetuid](ext-dict-functions.md)
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/uuid_function/) <!--hide-->

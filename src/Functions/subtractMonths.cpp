@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionSubtractMonths = FunctionDateOrDateTimeAddInterval<SubtractMonthsImpl>;
 
-void registerFunctionSubtractMonths(FunctionFactory & factory)
+REGISTER_FUNCTION(SubtractMonths)
 {
     factory.registerFunction<FunctionSubtractMonths>();
 }

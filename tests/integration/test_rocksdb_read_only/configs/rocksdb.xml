@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+  <rocksdb>
+    <options>
+        <max_background_jobs>8</max_background_jobs>
+    </options>
+    <column_family_options>
+      <num_levels>2</num_levels>
+    </column_family_options>
+    <tables>
+      <table>
+        <name>test</name>
+        <options>
+          <max_open_files>10000</max_open_files>
+        </options>
+        <column_family_options>
+          <max_bytes_for_level_base>14</max_bytes_for_level_base>
+        </column_family_options>
+      </table>
+    </tables>
+  </rocksdb>
+</clickhouse>

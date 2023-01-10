@@ -4,6 +4,8 @@ import helpers.client as client
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, exec_query_with_retry
+from helpers.wait_for_helpers import wait_for_delete_inactive_parts
+from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
@@ -342,16 +344,6 @@ def optimize_with_retry(node, table_name, retry=20):
     ],
 )
 def test_ttl_alter_delete(started_cluster, name, engine):
-    """Copyright 2019, Altinity LTD
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-        http://www.apache.org/licenses/LICENSE-2.0
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License."""
     """Check compatibility with old TTL delete expressions to make sure
     that:
     * alter modify of column's TTL delete expression works
@@ -430,7 +422,8 @@ def test_ttl_empty_parts(started_cluster):
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_empty_parts', '{replica}')
             ORDER BY id
             SETTINGS max_bytes_to_merge_at_min_space_in_pool = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
-                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0
+                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, old_parts_lifetime = 1
+
         """.format(
                 replica=node.name
             )
@@ -455,7 +448,10 @@ def test_ttl_empty_parts(started_cluster):
 
     assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "3000\n"
 
-    time.sleep(3)  # Wait for cleanup thread
+    # Wait for cleanup thread
+    wait_for_delete_empty_parts(node1, "test_ttl_empty_parts")
+    wait_for_delete_inactive_parts(node1, "test_ttl_empty_parts")
+
     assert (
         node1.query(
             "SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name"

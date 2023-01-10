@@ -43,6 +43,7 @@ namespace DB
             const typename ColVecArg::Container & vec_end   = col_end->getData();
 
             using ColVecConc = typename ConcurrencyDataType::ColumnType;
+            using FieldType = typename ConcurrencyDataType::FieldType;
             typename ColVecConc::MutablePtr col_concurrency = ColVecConc::create(input_rows_count);
             typename ColVecConc::Container & vec_concurrency = col_concurrency->getData();
 
@@ -56,7 +57,7 @@ namespace DB
 
                 if (unlikely(begin > end))
                 {
-                    const FormatSettings default_format;
+                    const FormatSettings default_format{};
                     WriteBufferFromOwnString buf_begin, buf_end;
                     begin_serializaion->serializeTextQuoted(*(arguments[0].column), i, buf_begin, default_format);
                     end_serialization->serializeTextQuoted(*(arguments[1].column), i, buf_end, default_format);
@@ -74,7 +75,7 @@ namespace DB
                 ongoing_until.erase(
                     ongoing_until.begin(), ongoing_until.upper_bound(begin));
 
-                vec_concurrency[i] = ongoing_until.size();
+                vec_concurrency[i] = static_cast<FieldType>(ongoing_until.size());
             }
 
             return col_concurrency;
@@ -220,7 +221,7 @@ namespace DB
         static constexpr auto name = "runningConcurrency";
     };
 
-    void registerFunctionRunningConcurrency(FunctionFactory & factory)
+    REGISTER_FUNCTION(RunningConcurrency)
     {
         factory.registerFunction<RunningConcurrencyOverloadResolver<NameRunningConcurrency, DataTypeUInt32>>();
     }

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure
 sidebar_position: 44
 sidebar_label: "Ключ и поля словаря"
 ---

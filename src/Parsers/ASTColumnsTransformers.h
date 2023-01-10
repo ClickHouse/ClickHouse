@@ -60,6 +60,7 @@ public:
     }
     void transform(ASTs & nodes) const override;
     void setPattern(String pattern);
+    const std::shared_ptr<re2::RE2> & getMatcher() const;
     bool isColumnMatching(const String & column_name) const;
     void appendColumnName(WriteBuffer & ostr) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;

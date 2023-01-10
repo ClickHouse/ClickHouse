@@ -1,13 +1,14 @@
 ---
+slug: /en/sql-reference/data-types/domains/ipv6
 sidebar_position: 60
 sidebar_label: IPv6
 ---
 
-## IPv6 {#ipv6}
+## IPv6
 
 `IPv6` is a domain based on `FixedString(16)` type and serves as a typed replacement for storing IPv6 values. It provides compact storage with the human-friendly input-output format and column type information on inspection.
 
-### Basic Usage {#basic-usage}
+### Basic Usage
 
 ``` sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
@@ -80,5 +81,3 @@ SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
 │ FixedString(16)                           │  ��� │
 └───────────────────────────────────────────┴─────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/data_types/domains/ipv6) <!--hide-->

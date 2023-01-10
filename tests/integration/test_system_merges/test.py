@@ -26,9 +26,13 @@ def started_cluster():
     try:
         cluster.start()
         node1.query(
-            "CREATE DATABASE test ENGINE=Ordinary"
+            "CREATE DATABASE test ENGINE=Ordinary",
+            settings={"allow_deprecated_database_ordinary": 1},
         )  # Different paths with Atomic
-        node2.query("CREATE DATABASE test ENGINE=Ordinary")
+        node2.query(
+            "CREATE DATABASE test ENGINE=Ordinary",
+            settings={"allow_deprecated_database_ordinary": 1},
+        )
         yield cluster
 
     finally:
@@ -221,7 +225,7 @@ def test_mutation_simple(started_cluster, replicated):
 
         assert (
             node_check.query(
-                "SELECT * FROM system.merges WHERE table = '{name}'".format(
+                "SELECT * FROM system.merges WHERE table = '{name}' and progress < 1".format(
                     name=table_name
                 )
             )

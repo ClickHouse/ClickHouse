@@ -16,7 +16,7 @@ try
         return 1;
     }
 
-    ZooKeeper zk(argv[1], "", 5000);
+    ZooKeeper zk{zkutil::ZooKeeperArgs(argv[1])};
 
     std::cout << "create path" << std::endl;
     zk.create("/test", "old", zkutil::CreateMode::Persistent);

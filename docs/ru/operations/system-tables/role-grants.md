@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/role-grants
+---
 # system.role_grants {#system_tables-role_grants}
 
 Содержит [гранты](../../sql-reference/statements/grant.md) ролей для пользователей и ролей. Чтобы добавить записи в эту таблицу, используйте команду `GRANT role TO user`.
@@ -13,4 +16,3 @@
 - `with_admin_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Флаг, который показывает, обладает ли `granted_role` роль привилегией `ADMIN OPTION`. Возможные значения:
     -   1 — Роль обладает привилегией `ADMIN OPTION`.
     -   0 — Роль не обладает привилегией `ADMIN OPTION`.
-

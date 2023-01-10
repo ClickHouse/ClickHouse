@@ -1,9 +1,10 @@
 ---
+slug: /en/sql-reference/table-functions/generate
 sidebar_position: 47
 sidebar_label: generateRandom
 ---
 
-# generateRandom {#generaterandom}
+# generateRandom
 
 Generates random data with given schema.
 Allows to populate test tables with data.
@@ -25,7 +26,7 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 A table object with requested schema.
 
-## Usage Example {#usage-example}
+## Usage Example
 
 ``` sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -38,4 +39,3 @@ SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(
 │ [68]     │  -67417.0770 │ ('2080-03-12 14:17:31.269','110425e5-413f-10a6-05ba-fa6b3e929f15') │
 └──────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
-

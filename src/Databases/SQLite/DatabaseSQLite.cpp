@@ -173,12 +173,16 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    auto storage = fetchTable(table_name, local_context, false);
+    StoragePtr storage;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        storage = fetchTable(table_name, local_context, false);
+    }
     if (!storage)
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "SQLite table {}.{} does not exist",
-                            database_name, table_name);
+                            getDatabaseName(), table_name);
         return nullptr;
     }
     auto table_storage_define = database_engine_define->clone();
@@ -188,8 +192,10 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     /// Add table_name to engine arguments
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, std::make_shared<ASTLiteral>(table_id.table_name));
 
+    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
     auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
+                                                            max_parser_depth,
+                                                            throw_on_error);
 
     return create_table_query;
 }

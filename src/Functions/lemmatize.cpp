@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_NLP
 
@@ -120,9 +120,9 @@ public:
 
 }
 
-void registerFunctionLemmatize(FunctionFactory & factory)
+REGISTER_FUNCTION(Lemmatize)
 {
-    factory.registerFunction<FunctionLemmatize>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionLemmatize>();
 }
 
 }

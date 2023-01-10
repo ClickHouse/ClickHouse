@@ -108,27 +108,15 @@ public:
         return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
-    {
-        assert(n < size());
-        return StringRef(&chars[offsetAt(n)], sizeAt(n));
-    }
-
     bool isDefaultAt(size_t n) const override
     {
         assert(n < size());
         return sizeAt(n) == 1;
     }
 
-/// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
     void insert(const Field & x) override
     {
-        const String & s = DB::get<const String &>(x);
+        const String & s = x.get<const String &>();
         const size_t old_size = chars.size();
         const size_t size_to_append = s.size() + 1;
         const size_t new_size = old_size + size_to_append;
@@ -137,10 +125,6 @@ public:
         memcpy(chars.data() + old_size, s.c_str(), size_to_append);
         offsets.push_back(new_size);
     }
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
     void insertFrom(const IColumn & src_, size_t n) override
     {
@@ -174,17 +158,6 @@ public:
         if (length)
             memcpy(chars.data() + old_size, pos, length);
         chars[old_size + length] = 0;
-        offsets.push_back(new_size);
-    }
-
-    /// Like getData, but inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
-    void insertDataWithTerminatingZero(const char * pos, size_t length)
-    {
-        const size_t old_size = chars.size();
-        const size_t new_size = old_size + length;
-
-        chars.resize(new_size);
-        memcpy(chars.data() + old_size, pos, length);
         offsets.push_back(new_size);
     }
 
@@ -237,7 +210,7 @@ public:
         offsets.push_back(offsets.back() + 1);
     }
 
-    virtual void insertManyDefaults(size_t length) override
+    void insertManyDefaults(size_t length) override
     {
         chars.resize_fill(chars.size() + length);
         for (size_t i = 0; i < length; ++i)

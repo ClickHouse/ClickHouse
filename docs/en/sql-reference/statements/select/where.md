@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/statements/select/where
 sidebar_label: WHERE
 ---
 
-# WHERE Clause {#select-where}
+# WHERE Clause
 
 `WHERE` clause allows to filter the data that is coming from [FROM](../../../sql-reference/statements/select/from.md) clause of `SELECT`.
 

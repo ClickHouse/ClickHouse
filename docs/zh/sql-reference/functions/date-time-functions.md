@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/date-time-functions
+---
 # 时间日期函数 {#shi-jian-ri-qi-han-shu}
 
 支持时区。
@@ -263,8 +266,8 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 └────────────────┘
 ```
 
-:::注意    
-下面描述的返回类型 `toStartOf` 函数是 `Date` 或 `DateTime`。尽管这些函数可以将 `DateTime64` 作为参数，但将超出正常范围（1925年-2283年）的 `DateTime64` 传递给它们会给出不正确的结果。
+:::注意
+下面描述的返回类型 `toStartOf` 函数是 `Date` 或 `DateTime`。尽管这些函数可以将 `DateTime64` 作为参数，但将超出正常范围（1900年-2299年）的 `DateTime64` 传递给它们会给出不正确的结果。
 :::
 
 ## toStartOfYear {#tostartofyear}
@@ -536,7 +539,7 @@ date_trunc(unit, value[, timezone])
 
 -   按指定的单位向前取整后的DateTime。
 
-类型: [Datetime](../../sql-reference/data-types/datetime.md).
+类型: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **示例**
 
@@ -847,7 +850,7 @@ now([timezone])
 
 -   当前日期和时间。
 
-类型: [Datetime](../../sql-reference/data-types/datetime.md).
+类型: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **示例**
 
@@ -953,7 +956,7 @@ SELECT
 **语法**
 
 ``` sql
-formatDateTime(Time, Format\[, Timezone\])
+formatDateTime(Time, Format[, Timezone])
 ```
 
 **返回值**
@@ -1220,5 +1223,3 @@ SELECT fromModifiedJulianDayOrNull(58849);
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/query_language/functions/date_time_functions/) <!--hide-->

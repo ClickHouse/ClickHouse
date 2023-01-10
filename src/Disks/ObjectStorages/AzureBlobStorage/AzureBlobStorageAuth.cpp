@@ -5,6 +5,7 @@
 #include <optional>
 #include <re2/re2.h>
 #include <azure/identity/managed_identity_credential.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
 
 using namespace Azure::Storage::Blobs;
 
@@ -146,7 +147,8 @@ std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Po
         config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024),
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".max_single_read_retries", 3),
-        config.getInt(config_prefix + ".max_single_download_retries", 3)
+        config.getInt(config_prefix + ".max_single_download_retries", 3),
+        config.getInt(config_prefix + ".list_object_keys_size", 1000)
     );
 }
 

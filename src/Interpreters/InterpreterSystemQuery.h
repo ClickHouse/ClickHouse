@@ -16,6 +16,9 @@ namespace DB
 class Context;
 class AccessRightsElements;
 class ASTSystemQuery;
+class IDatabase;
+
+using DatabasePtr = std::shared_ptr<IDatabase>;
 
 
 /** Implement various SYSTEM queries.
@@ -36,6 +39,10 @@ public:
     InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
 
     BlockIO execute() override;
+
+    static void startStopActionInDatabase(StorageActionBlockType action_type, bool start,
+                                          const String & database_name, const DatabasePtr & database,
+                                          const ContextPtr & local_context, Poco::Logger * log);
 
 private:
     ASTPtr query_ptr;
@@ -59,8 +66,9 @@ private:
 
     void dropReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);
+    void dropDatabaseReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
-    void restartDisk(String & name);
+    [[noreturn]] void restartDisk(String & name);
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/special-data-types/nothing
 sidebar_position: 60
 sidebar_label: Nothing
 ---
@@ -18,4 +19,3 @@ SELECT toTypeName(Array())
 │ Array(Nothing)      │
 └─────────────────────┘
 ```
-

@@ -3,7 +3,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 
-#include "config_core.h"
+#include "config.h"
 
 
 namespace DB
@@ -29,12 +29,14 @@ public:
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
         DROP_FILESYSTEM_CACHE,
+        DROP_SCHEMA_CACHE,
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
         DROP_REPLICA,
+        DROP_DATABASE_REPLICA,
         SYNC_REPLICA,
         SYNC_DATABASE_REPLICA,
         SYNC_TRANSACTION_LOG,
@@ -46,6 +48,7 @@ public:
         RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
+        RELOAD_USERS,
         RELOAD_SYMBOLS,
         RESTART_DISK,
         STOP_MERGES,
@@ -66,6 +69,7 @@ public:
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
+        UNFREEZE,
         END
     };
 
@@ -94,6 +98,10 @@ public:
 
     String filesystem_cache_path;
 
+    String backup_name;
+
+    String schema_cache_storage;
+
     String getID(char) const override { return "SYSTEM query"; }
 
     ASTPtr clone() const override
@@ -112,7 +120,7 @@ public:
         return removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::System; }
+    QueryKind getQueryKind() const override { return QueryKind::System; }
 
 protected:
 

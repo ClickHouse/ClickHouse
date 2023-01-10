@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/mutations
+---
 # system.mutations {#system_tables-mutations}
 
 Таблица содержит информацию о ходе выполнения [мутаций](../../sql-reference/statements/alter/index.md#mutations) таблиц семейства MergeTree. Каждой команде мутации соответствует одна строка таблицы.
@@ -12,7 +15,7 @@
 
 -   `command` ([String](../../sql-reference/data-types/string.md)) — команда мутации (часть запроса после `ALTER TABLE [db.]table`).
 
--   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — дата и время создания мутации.
+-   `create_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время создания мутации.
 
 -   `block_numbers.partition_id` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Для мутаций реплицированных таблиц массив содержит содержит номера партиций (по одной записи для каждой партиции). Для мутаций нереплицированных таблиц массив пустой.
 
@@ -30,12 +33,13 @@
 
 :::info "Замечание"
     Даже если `parts_to_do = 0`, для реплицированной таблицы возможна ситуация, когда мутация ещё не завершена из-за долго выполняющейся операции `INSERT`, которая добавляет данные, которые нужно будет мутировать.
+:::
 
 Если во время мутации какого-либо куска возникли проблемы, заполняются следующие столбцы:
 
 -   `latest_failed_part` ([String](../../sql-reference/data-types/string.md)) — имя последнего куска, мутация которого не удалась.
 
--   `latest_fail_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — дата и время последней ошибки мутации.
+-   `latest_fail_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время последней ошибки мутации.
 
 -   `latest_fail_reason` ([String](../../sql-reference/data-types/string.md)) — причина последней ошибки мутации.
 
@@ -44,4 +48,3 @@
 -   [Мутации](../../sql-reference/statements/alter/index.md#mutations)
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [Репликация данных](../../engines/table-engines/mergetree-family/replication.md) (семейство ReplicatedMergeTree)
-

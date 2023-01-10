@@ -23,7 +23,6 @@ INSERT INTO h3_indexes VALUES (1530240222715969535);
 INSERT INTO h3_indexes VALUES (1602297816753897471);
 INSERT INTO h3_indexes VALUES (1242009915283734527);
 
-SELECT h3ExactEdgeLengthM(h3_index) FROM h3_indexes ORDER BY h3_index;
+SELECT round(h3ExactEdgeLengthM(h3_index), 2) FROM h3_indexes ORDER BY h3_index;
 
 DROP TABLE h3_indexes;
-

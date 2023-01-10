@@ -47,7 +47,7 @@ using FunctionBitRotateRight = BinaryArithmeticOverloadResolver<BitRotateRightIm
 
 }
 
-void registerFunctionBitRotateRight(FunctionFactory & factory)
+REGISTER_FUNCTION(BitRotateRight)
 {
     factory.registerFunction<FunctionBitRotateRight>();
 }

@@ -7,7 +7,7 @@
 
 #include <variant>
 
-#include "config_core.h"
+#include "config.h"
 
 
 namespace DB
@@ -83,7 +83,6 @@ private:
 
 public:
     ExpressionActions() = delete;
-    ~ExpressionActions();
     explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {});
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;

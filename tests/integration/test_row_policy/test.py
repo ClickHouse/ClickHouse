@@ -87,6 +87,11 @@ def reset_policies():
         copy_policy_xml("normal_filters.xml")
         for current_node in nodes:
             current_node.query("DROP POLICY IF EXISTS pA, pB ON mydb.filtered_table1")
+            current_node.query("DROP POLICY IF EXISTS pC ON mydb.other_table")
+            current_node.query("DROP POLICY IF EXISTS all_data ON dist_tbl, local_tbl")
+            current_node.query(
+                "DROP POLICY IF EXISTS role1_data ON dist_tbl, local_tbl"
+            )
 
 
 def test_smoke():
@@ -862,3 +867,30 @@ def test_policy_on_distributed_table_via_role():
     assert node.query(
         "SELECT * FROM dist_tbl SETTINGS prefer_localhost_replica=0", user="user1"
     ) == TSV([[0], [2], [4], [6], [8], [0], [2], [4], [6], [8]])
+
+
+def test_row_policy_filter_with_subquery():
+    copy_policy_xml("no_filters.xml")
+    assert node.query("SHOW POLICIES") == ""
+
+    node.query("DROP ROW POLICY IF EXISTS filter_1 ON table1")
+    node.query("DROP TABLE IF EXISTS table_1")
+    node.query("DROP TABLE IF EXISTS table_2")
+
+    node.query(
+        "CREATE TABLE table_1 (x int, y int) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node.query("INSERT INTO table_1 SELECT number, number * number FROM numbers(10)")
+
+    node.query("CREATE TABLE table_2 (a int) ENGINE=MergeTree ORDER BY tuple()")
+    node.query("INSERT INTO table_2 VALUES (3), (5)")
+
+    node.query(
+        "CREATE ROW POLICY filter_1 ON table_1 USING x IN (SELECT a FROM table_2) TO ALL"
+    )
+
+    assert node.query("SELECT * FROM table_1") == TSV([[3, 9], [5, 25]])
+
+    node.query("DROP ROW POLICY filter_1 ON table_1")
+    node.query("DROP TABLE table_1")
+    node.query("DROP TABLE table_2")

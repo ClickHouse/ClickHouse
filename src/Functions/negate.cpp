@@ -42,11 +42,11 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
     static bool has() { return true; }
     static IFunction::Monotonicity get(const Field &, const Field &)
     {
-        return { .is_monotonic = true, .is_positive = false };
+        return { .is_monotonic = true, .is_positive = false, .is_strict = true };
     }
 };
 
-void registerFunctionNegate(FunctionFactory & factory)
+REGISTER_FUNCTION(Negate)
 {
     factory.registerFunction<FunctionNegate>();
 }

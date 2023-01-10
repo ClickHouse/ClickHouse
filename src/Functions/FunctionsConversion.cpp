@@ -5,11 +5,7 @@
 namespace DB
 {
 
-void registerFunctionFixedString(FunctionFactory & factory);
-
-void registerCastOverloadResolvers(FunctionFactory & factory);
-
-void registerFunctionsConversion(FunctionFactory & factory)
+REGISTER_FUNCTION(Conversion)
 {
     factory.registerFunction<FunctionToUInt8>();
     factory.registerFunction<FunctionToUInt16>();
@@ -32,20 +28,22 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256>();
 
     factory.registerFunction<FunctionToDate>();
-    /// MySQL compatibility alias.
-    factory.registerFunction<FunctionToDate>("DATE", FunctionFactory::CaseInsensitive);
+
+    /// MySQL compatibility alias. Cannot be registered as alias,
+    /// because we don't want it to be normalized to toDate in queries,
+    /// otherwise CREATE DICTIONARY query breaks.
+    factory.registerFunction<FunctionToDate>("DATE", {}, FunctionFactory::CaseInsensitive);
+
     factory.registerFunction<FunctionToDate32>();
     factory.registerFunction<FunctionToDateTime>();
     factory.registerFunction<FunctionToDateTime32>();
     factory.registerFunction<FunctionToDateTime64>();
     factory.registerFunction<FunctionToUUID>();
+    factory.registerFunction<FunctionToIPv4>();
+    factory.registerFunction<FunctionToIPv6>();
     factory.registerFunction<FunctionToString>();
 
-    registerFunctionFixedString(factory);
-
     factory.registerFunction<FunctionToUnixTimestamp>();
-
-    registerCastOverloadResolvers(factory);
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
@@ -72,6 +70,8 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256OrZero>();
 
     factory.registerFunction<FunctionToUUIDOrZero>();
+    factory.registerFunction<FunctionToIPv4OrZero>();
+    factory.registerFunction<FunctionToIPv6OrZero>();
 
     factory.registerFunction<FunctionToUInt8OrNull>();
     factory.registerFunction<FunctionToUInt16OrNull>();
@@ -98,6 +98,8 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256OrNull>();
 
     factory.registerFunction<FunctionToUUIDOrNull>();
+    factory.registerFunction<FunctionToIPv4OrNull>();
+    factory.registerFunction<FunctionToIPv6OrNull>();
 
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
@@ -111,6 +113,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionParseDateTime64BestEffort>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrNull>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortUS>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortUSOrZero>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortUSOrNull>();
 
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalNanosecond, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMicrosecond, PositiveMonotonicity>>();

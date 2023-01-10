@@ -5,7 +5,7 @@ import string
 import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster, get_instances_dir
+from helpers.cluster import ClickHouseCluster
 
 
 COMMON_CONFIGS = ["configs/config.d/clusters.xml"]
@@ -76,7 +76,8 @@ def create_table(node, table_name, schema, attach=False, db_atomic=False, uuid="
         "CREATE DATABASE IF NOT EXISTS s3 {on_cluster} ENGINE = {engine}".format(
             engine="Atomic" if db_atomic else "Ordinary",
             on_cluster="ON CLUSTER '{cluster}'",
-        )
+        ),
+        settings={"allow_deprecated_database_ordinary": 1},
     )
 
     create_table_statement = """
@@ -248,7 +249,7 @@ def test_restore_another_bucket_path(cluster, db_atomic, zero_copy):
     node_another_bucket = cluster.instances["node_another_bucket"]
 
     create_restore_file(node_another_bucket, bucket="root")
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.restart_clickhouse()
     create_table(
         node_another_bucket, "test", schema, attach=True, db_atomic=db_atomic, uuid=uuid
     )

@@ -6,19 +6,19 @@ namespace DB
 {
 
 using FunctionAddNanoseconds = FunctionDateOrDateTimeAddInterval<AddNanosecondsImpl>;
-void registerFunctionAddNanoseconds(FunctionFactory & factory)
+REGISTER_FUNCTION(AddNanoseconds)
 {
     factory.registerFunction<FunctionAddNanoseconds>();
 }
 
 using FunctionAddMicroseconds = FunctionDateOrDateTimeAddInterval<AddMicrosecondsImpl>;
-void registerFunctionAddMicroseconds(FunctionFactory & factory)
+REGISTER_FUNCTION(AddMicroseconds)
 {
     factory.registerFunction<FunctionAddMicroseconds>();
 }
 
 using FunctionAddMilliseconds = FunctionDateOrDateTimeAddInterval<AddMillisecondsImpl>;
-void registerFunctionAddMilliseconds(FunctionFactory & factory)
+REGISTER_FUNCTION(AddMilliseconds)
 {
     factory.registerFunction<FunctionAddMilliseconds>();
 }

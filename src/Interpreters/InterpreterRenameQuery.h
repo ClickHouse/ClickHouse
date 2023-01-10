@@ -63,7 +63,13 @@ private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
     BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
 
-    AccessRightsElements getRequiredAccess() const;
+    enum class RenameType
+    {
+        RenameTable,
+        RenameDatabase
+    };
+
+    AccessRightsElements getRequiredAccess(RenameType type) const;
 
     ASTPtr query_ptr;
     bool renamed_instead_of_exchange{false};

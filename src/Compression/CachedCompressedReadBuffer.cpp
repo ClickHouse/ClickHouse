@@ -47,8 +47,8 @@ bool CachedCompressedReadBuffer::nextImpl()
 
         auto cell = std::make_shared<UncompressedCacheCell>();
 
-        size_t size_decompressed;
-        size_t size_compressed_without_checksum;
+        size_t size_decompressed = 0;
+        size_t size_compressed_without_checksum = 0;
         cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
 
         if (cell->compressed_size)
@@ -89,7 +89,7 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
 {
     /// Nothing to do if we already at required position
     if (!owned_cell && file_pos == offset_in_compressed_file
-        && (offset() == offset_in_decompressed_block ||
+        && ((!buffer().empty() && offset() == offset_in_decompressed_block) ||
             nextimpl_working_buffer_offset == offset_in_decompressed_block))
         return;
 

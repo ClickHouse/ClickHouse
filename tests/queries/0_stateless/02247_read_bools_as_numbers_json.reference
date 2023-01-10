@@ -7,6 +7,12 @@ x	Nullable(Float64)
 x	Nullable(Float64)					
 1
 0.42
+x	Array(Nullable(Float64))					
+[1,0]
+[0.42]
+x	Array(Array(Nullable(Int64)))					
+[[1,2,3],[1,0],[1,1,0]]
+[[1,2,3]]
 c1	Nullable(Bool)					
 true
 false
@@ -16,3 +22,9 @@ c1	Nullable(Float64)
 c1	Nullable(Float64)					
 1
 0.42
+c1	Array(Nullable(Float64))					
+[1,0]
+[0.42]
+c1	Array(Array(Nullable(Int64)))					
+[[1,2,3],[1,0],[1,1,0]]
+[[1,2,3]]

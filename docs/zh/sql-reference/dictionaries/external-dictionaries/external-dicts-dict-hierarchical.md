@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 sidebar_position: 45
@@ -66,5 +67,3 @@ ClickHouse支持 [等级](external-dicts-dict-structure.md#hierarchical-dict-att
     </structure>
 </dictionary>
 ```
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->

@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -n --query="
   DROP DATABASE IF EXISTS 01053_db;
 
   CREATE DATABASE 01053_db Engine = Ordinary;

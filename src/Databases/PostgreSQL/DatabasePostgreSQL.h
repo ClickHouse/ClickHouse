@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 
@@ -30,7 +30,7 @@ public:
         const String & metadata_path_,
         const ASTStorage * database_engine_define,
         const String & dbname_,
-        const StoragePostgreSQLConfiguration & configuration,
+        const StoragePostgreSQL::Configuration & configuration,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_);
 
@@ -45,7 +45,7 @@ public:
 
     bool empty() const override;
 
-    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool skip_startup_tables) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
@@ -53,7 +53,7 @@ public:
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
-    void dropTable(ContextPtr, const String & table_name, bool no_delay) override;
+    void dropTable(ContextPtr, const String & table_name, bool sync) override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
@@ -67,7 +67,7 @@ protected:
 private:
     String metadata_path;
     ASTPtr database_engine_define;
-    StoragePostgreSQLConfiguration configuration;
+    StoragePostgreSQL::Configuration configuration;
     postgres::PoolWithFailoverPtr pool;
     const bool cache_tables;
 
@@ -81,7 +81,7 @@ private:
 
     bool checkPostgresTable(const String & table_name) const;
 
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
+    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
 
     void removeOutdatedTables();
 

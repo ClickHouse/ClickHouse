@@ -1746,3 +1746,4 @@ rsaz_1024_gather5_avx2:
 .long	4,4,4,4, 4,4,4,4
 .align	64
 #endif
+.section	.note.GNU-stack,"",@progbits

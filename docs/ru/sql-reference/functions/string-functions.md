@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/string-functions
 sidebar_position: 40
 sidebar_label: "Функции для работы со строками"
 ---
@@ -15,7 +16,7 @@ sidebar_label: "Функции для работы со строками"
 empty(x)
 ```
 
-Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт. 
+Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт.
 
 Функция также поддерживает работу с типами [Array](array-functions.md#function-empty) и [UUID](uuid-functions.md#empty).
 
@@ -55,7 +56,7 @@ SELECT empty('text');
 notEmpty(x)
 ```
 
-Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт. 
+Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт.
 
 Функция также поддерживает работу с типами [Array](array-functions.md#function-notempty) и [UUID](uuid-functions.md#notempty).
 
@@ -489,6 +490,47 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2);
 ## convertCharset(s, from, to) {#convertcharset}
 
 Возвращает сконвертированную из кодировки from в кодировку to строку s.
+
+## base58Encode(plaintext), base58Decode(encoded_text) {#base58}
+
+Принимает на вход строку или колонку строк и кодирует/раскодирует их с помощью схемы кодирования [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) с использованием стандартного алфавита Bitcoin.
+
+**Синтаксис**
+
+```sql
+base58Encode(decoded)
+base58Decode(encoded)
+```
+
+**Аргументы**
+
+- `decoded` — Колонка или строка типа [String](../../sql-reference/data-types/string.md).
+- `encoded` — Колонка или строка типа [String](../../sql-reference/data-types/string.md). Если входная строка не является корректным кодом для какой-либо другой строки, возникнет исключение.
+
+**Возвращаемое значение**
+
+-   Строка, содержащая раскодированный/закодированный первый аргумент.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример:**
+
+Запрос:
+
+``` sql
+SELECT base58Encode('Encoded');
+SELECT base58Decode('3dc8KtHrwM');
+```
+
+Результат:
+```text
+┌─base58Encode('Encoded')─┐
+│ 3dc8KtHrwM              │
+└─────────────────────────┘
+┌─base58Decode('3dc8KtHrwM')─┐
+│ Encoded                    │
+└────────────────────────────┘
+```
 
 ## base64Encode(s) {#base64encode}
 

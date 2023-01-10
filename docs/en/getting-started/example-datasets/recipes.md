@@ -1,10 +1,10 @@
 ---
+slug: /en/getting-started/example-datasets/recipes
 sidebar_label: Recipes Dataset
+title: "Recipes Dataset"
 ---
 
-# Recipes Dataset
-
-RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.poznan.pl/dataset). It contains 2.2 million recipes. The size is slightly less than 1 GB.
+The RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.poznan.pl/dataset). It contains 2.2 million recipes. The size is slightly less than 1 GB.
 
 ## Download and Unpack the Dataset
 
@@ -335,5 +335,3 @@ Result:
 ### Online Playground
 
 The dataset is also available in the [Online Playground](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
-
-[Original article](https://clickhouse.com/docs/en/getting-started/example-datasets/recipes/) <!--hide-->

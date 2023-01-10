@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/statements/create
+---
 ## CREATE DATABASE {#create-database}
 
 该查询用于根据指定名称创建数据库。
@@ -117,8 +120,6 @@ CREATE TABLE codec_example
 ENGINE = <Engine>
 ...
 ```
-
-如果指定了编解ec，则默认编解码器不适用。 编解码器可以组合在一个流水线中，例如, `CODEC(Delta, ZSTD)`. 要为您的项目选择最佳的编解码器组合，请通过类似于Altinity中描述的基准测试 [新编码提高ClickHouse效率](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) 文章.
 
 !!! warning "警告"
     您无法使用外部实用程序解压缩ClickHouse数据库文件，如 `lz4`. 相反，使用特殊的 [ﾂ环板compressorｮﾂ嘉ｯﾂ偲](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) 实用程序。
@@ -244,7 +245,7 @@ SELECT a, b, c FROM (SELECT ...)
 
 没有单独的删除视图的语法。如果要删除视图，请使用`DROP TABLE`。
 
-[来源文章](https://clickhouse.com/docs/en/query_language/create/) <!--hide-->
+
 
 ## CREATE DICTIONARY {#create-dictionary-query}
 

@@ -15,46 +15,66 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE dst (p UInt64, k String) ENGINE = Repli
 
 function thread1()
 {
-    $CLICKHOUSE_CLIENT --query="ALTER TABLE src MOVE PARTITION 1 TO TABLE dst"
+    while true;
+    do
+        $CLICKHOUSE_CLIENT --query="ALTER TABLE src MOVE PARTITION 1 TO TABLE dst;" --query_id=query1
+    done
 }
 
 function thread2()
 {
-    $CLICKHOUSE_CLIENT --query="INSERT INTO src SELECT number % 2, toString(number) FROM system.numbers LIMIT 100000"
+    while true;
+    do
+        $CLICKHOUSE_CLIENT --query="INSERT INTO src SELECT number % 2, toString(number) FROM system.numbers LIMIT 100000" --query_id=query2
+    done
 }
 
 function thread3()
 {
-    $CLICKHOUSE_CLIENT --query="SELECT * FROM src" > /dev/null
+    while true;
+    do
+        $CLICKHOUSE_CLIENT --query="SELECT * FROM src" --query_id=query3 1> /dev/null
+    done
 }
 
 function thread4()
 {
-    $CLICKHOUSE_CLIENT --query="SELECT * FROM dst" > /dev/null
+    while true;
+    do
+        $CLICKHOUSE_CLIENT --query="SELECT * FROM dst" --query_id=query4 1> /dev/null
+    done
 }
 
 function thread5()
 {
-    $CLICKHOUSE_CLIENT --query="ALTER TABLE src MOVE PARTITION 1 TO TABLE dst"
+    while true;
+    do
+        $CLICKHOUSE_CLIENT --query="ALTER TABLE src MOVE PARTITION 1 TO TABLE dst;" --query_id=query5
+    done
 }
 
-export -f thread1
-export -f thread2
-export -f thread3
-export -f thread4
-export -f thread5
+# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
+export -f thread1;
+export -f thread2;
+export -f thread3;
+export -f thread4;
+export -f thread5;
 
 TIMEOUT=30
 
-clickhouse_client_loop_timeout $TIMEOUT thread1 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT thread2 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT thread3 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT thread4 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT thread5 2> /dev/null &
+timeout $TIMEOUT bash -c thread1 2> /dev/null &
+timeout $TIMEOUT bash -c thread2 2> /dev/null &
+timeout $TIMEOUT bash -c thread3 2> /dev/null &
+timeout $TIMEOUT bash -c thread4 2> /dev/null &
+timeout $TIMEOUT bash -c thread5 2> /dev/null &
 
 wait
 
 echo "DROP TABLE src NO DELAY" | ${CLICKHOUSE_CLIENT}
 echo "DROP TABLE dst NO DELAY" | ${CLICKHOUSE_CLIENT}
+sleep 5
+
+# Check for deadlocks
+echo "SELECT * FROM system.processes WHERE query_id LIKE 'query%'" | ${CLICKHOUSE_CLIENT}
 
 echo 'did not crash'

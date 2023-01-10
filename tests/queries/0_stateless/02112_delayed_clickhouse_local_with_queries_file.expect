@@ -1,6 +1,10 @@
 #!/usr/bin/expect -f
 # Tags: no-parallel
 
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
 log_user 0
 set timeout 20
 match_max 100000
@@ -11,8 +15,6 @@ expect_after {
     # A default timeout action is to do nothing, change it to fail
     timeout { exit 1 }
 }
-
-set basedir [file dirname $argv0]
 
 system "$basedir/helpers/02112_prepare.sh"
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --disable_suggestion --interactive --queries-file $basedir/file_02112"

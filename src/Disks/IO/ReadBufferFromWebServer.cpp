@@ -27,7 +27,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : SeekableReadBuffer(nullptr, 0)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
     , log(&Poco::Logger::get("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
@@ -74,11 +74,27 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
         0,
         buf_size,
         read_settings,
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
+        HTTPHeaderEntries{},
         range,
         &context->getRemoteHostFilter(),
         /* delay_initialization */true,
         use_external_buffer);
+}
+
+
+void ReadBufferFromWebServer::setReadUntilPosition(size_t position)
+{
+    read_until_position = position;
+    impl.reset();
+}
+
+
+SeekableReadBuffer::Range ReadBufferFromWebServer::getRemainingReadRange() const
+{
+    return Range{
+        .left = static_cast<size_t>(offset),
+        .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt
+    };
 }
 
 

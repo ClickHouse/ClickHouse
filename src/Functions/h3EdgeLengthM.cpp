@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -97,7 +97,7 @@ public:
 
 }
 
-void registerFunctionH3EdgeLengthM(FunctionFactory & factory)
+REGISTER_FUNCTION(H3EdgeLengthM)
 {
     factory.registerFunction<FunctionH3EdgeLengthM>();
 }

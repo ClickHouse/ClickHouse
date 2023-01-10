@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/functions/type-conversion-functions
 sidebar_position: 38
 sidebar_label: 类型转换函数
 ---
@@ -424,7 +425,7 @@ parseDateTimeBestEffort(time_string [, time_zone]);
 查询:
 
 ``` sql
-SELECT parseDateTimeBestEffort('12/12/2020 12:12:57')
+SELECT parseDateTimeBestEffort('23/10/2020 12:12:57')
 AS parseDateTimeBestEffort;
 ```
 
@@ -432,7 +433,7 @@ AS parseDateTimeBestEffort;
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2020-12-12 12:12:57 │
+│     2020-10-23 12:12:57 │
 └─────────────────────────┘
 ```
 
@@ -469,7 +470,7 @@ AS parseDateTimeBestEffort
 查询:
 
 ``` sql
-SELECT parseDateTimeBestEffort('2018-12-12 10:12:12')
+SELECT parseDateTimeBestEffort('2018-10-23 10:12:12')
 AS parseDateTimeBestEffort
 ```
 
@@ -477,7 +478,7 @@ AS parseDateTimeBestEffort
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2018-12-12 10:12:12 │
+│     2018-10-23 10:12:12 │
 └─────────────────────────┘
 ```
 
@@ -512,7 +513,7 @@ SELECT parseDateTimeBestEffort('10 20:19')
 
 ## toLowCardinality {#tolowcardinality}
 
-把输入值转换为[LowCardianlity](../data-types/lowcardinality.md)的相同类型的数据。
+把输入值转换为[LowCardinality](../data-types/lowcardinality.md)的相同类型的数据。
 
 如果要把`LowCardinality`类型的数据转换为其他类型，使用[CAST](#type_conversion_function-cast)函数。比如：`CAST(x as String)`。
 
@@ -634,5 +635,3 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 │              2009-02-13 23:31:31.011 │
 └──────────────────────────────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

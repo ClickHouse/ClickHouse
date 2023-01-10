@@ -18,44 +18,56 @@ $CLICKHOUSE_CLIENT --query="insert into test_01054.ints values (3, 3, 3, 3, 3, 3
 
 function thread1()
 {
+  for _ in {1..100}
+  do
     RAND_NUMBER_THREAD1=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD1));"
+  done
 }
 
 
 function thread2()
 {
+  for _ in {1..100}
+  do
     RAND_NUMBER_THREAD2=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD2));"
+  done
 }
 
 
 function thread3()
 {
+  for _ in {1..100}
+  do
     RAND_NUMBER_THREAD3=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD3));"
+  done
 }
 
 
 function thread4()
 {
+  for _ in {1..100}
+  do
     RAND_NUMBER_THREAD4=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD4));"
+  done
 }
 
 
-export -f thread1
-export -f thread2
-export -f thread3
-export -f thread4
+export -f thread1;
+export -f thread2;
+export -f thread3;
+export -f thread4;
 
 TIMEOUT=10
 
 # shellcheck disable=SC2188
-clickhouse_client_loop_timeout $TIMEOUT thread1 > /dev/null 2>&1 &
-clickhouse_client_loop_timeout $TIMEOUT thread2 > /dev/null 2>&1 &
-clickhouse_client_loop_timeout $TIMEOUT thread3 > /dev/null 2>&1 &
-clickhouse_client_loop_timeout $TIMEOUT thread4 > /dev/null 2>&1 &
+timeout $TIMEOUT bash -c thread1 > /dev/null 2>&1 &
+timeout $TIMEOUT bash -c thread2 > /dev/null 2>&1 &
+timeout $TIMEOUT bash -c thread3 > /dev/null 2>&1 &
+timeout $TIMEOUT bash -c thread4 > /dev/null 2>&1 &
 
 wait
 

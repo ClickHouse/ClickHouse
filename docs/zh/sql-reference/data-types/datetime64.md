@@ -1,11 +1,12 @@
 ---
+slug: /zh/sql-reference/data-types/datetime64
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 sidebar_position: 49
 sidebar_label: DateTime64
 ---
 
-# Datetime64 {#data_type-datetime64}
+# DateTime64 {#data_type-datetime64}
 
 此类型允许以日期（date）加时间（time）的形式来存储一个时刻的时间值，具有定义的亚秒精度
 
@@ -19,7 +20,7 @@ DateTime64(precision, [timezone])
 
 在内部，此类型以Int64类型将数据存储为自Linux纪元开始(1970-01-01 00:00:00UTC)的时间刻度数（ticks）。时间刻度的分辨率由precision参数确定。此外，`DateTime64` 类型可以像存储其他数据列一样存储时区信息，时区会影响 `DateTime64` 类型的值如何以文本格式显示，以及如何解析以字符串形式指定的时间数据 (‘2020-01-01 05:00:01.000’)。时区不存储在表的行中（也不在resultset中），而是存储在列的元数据中。详细信息请参考 [DateTime](datetime.md) 数据类型.
 
-值的范围: \[1925-01-01 00:00:00, 2283-11-11 23:59:59.99999999\] (注意: 最大值的精度是8)。
+值的范围: \[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999\] (注意: 最大值的精度是8)。
 
 ## 示例 {#examples}
 

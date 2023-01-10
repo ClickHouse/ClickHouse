@@ -49,14 +49,16 @@ private:
 
 public:
     AggregateFunctionThrow(const DataTypes & argument_types_, const Array & parameters_, Float64 throw_probability_)
-        : IAggregateFunctionDataHelper(argument_types_, parameters_), throw_probability(throw_probability_) {}
+        : IAggregateFunctionDataHelper(argument_types_, parameters_, createResultType())
+        , throw_probability(throw_probability_)
+    {}
 
     String getName() const override
     {
         return "aggThrow";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -76,27 +78,29 @@ public:
         data(place).~Data();
     }
 
-    void add(AggregateDataPtr, const IColumn **, size_t, Arena *) const override
+    bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<Data>; }
+
+    void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override
     {
     }
 
-    void merge(AggregateDataPtr, ConstAggregateDataPtr, Arena *) const override
+    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
     {
     }
 
-    void serialize(ConstAggregateDataPtr, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         char c = 0;
         buf.write(c);
     }
 
-    void deserialize(AggregateDataPtr /* place */, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict /* place */, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         char c = 0;
-        buf.read(c);
+        buf.readStrict(c);
     }
 
-    void insertResultInto(AggregateDataPtr, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict, IColumn & to, Arena *) const override
     {
         to.insertDefault();
     }

@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/revoke
 sidebar_position: 40
 sidebar_label: REVOKE
 ---

@@ -66,7 +66,7 @@ Pipe StorageSystemReplicas::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 
@@ -153,7 +153,7 @@ Pipe StorageSystemReplicas::read(
 
     for (size_t i = 0, size = col_database->size(); i < size; ++i)
     {
-        StorageReplicatedMergeTree::Status status;
+        ReplicatedTableStatus status;
         dynamic_cast<StorageReplicatedMergeTree &>(
             *replicated_tables
                 [(*col_database)[i].safeGet<const String &>()]

@@ -86,6 +86,9 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count, IQue
             doDescribeHeader(*last_header, num_equal_headers, settings);
     }
 
+    if (!processor.getDescription().empty())
+        settings.out << String(settings.offset, settings.indent_char) << "Description: " << processor.getDescription() << '\n';
+
     settings.offset += settings.indent;
 }
 
@@ -108,6 +111,11 @@ void IQueryPlanStep::describePipeline(const Processors & processors, FormatSetti
 
     if (prev)
         doDescribeProcessor(*prev, count, settings);
+}
+
+void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
+{
+    processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
 
 }

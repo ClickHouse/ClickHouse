@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/table-functions/postgresql
 sidebar_position: 42
 sidebar_label: postgresql
 ---
@@ -116,5 +117,3 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 -   [PostgreSQL 表引擎](../../engines/table-engines/integrations/postgresql.md)
 -   [使用 PostgreSQL 作为外部字典的来源](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
-
-[原始文章](https://clickhouse.com/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->

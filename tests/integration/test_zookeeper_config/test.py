@@ -48,7 +48,7 @@ def test_chroot_with_same_root(started_cluster):
         node.query(
             """
         CREATE TABLE simple (date Date, id UInt32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
         """.format(
                 replica=node.name
             )
@@ -68,7 +68,7 @@ def test_chroot_with_different_root(started_cluster):
         node.query(
             """
         CREATE TABLE simple_different (date Date, id UInt32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple_different', '{replica}', date, id, 8192);
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple_different', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
         """.format(
                 replica=node.name
             )

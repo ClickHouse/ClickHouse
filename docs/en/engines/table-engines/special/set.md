@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/table-engines/special/set
 sidebar_position: 60
 sidebar_label: Set
 ---
 
-# Set Table Engine {#set}
+# Set Table Engine
 
 A data set that is always in RAM. It is intended for use on the right side of the `IN` operator (see the section “IN operators”).
 
@@ -18,6 +19,15 @@ For a rough server restart, the block of data on the disk might be lost or damag
 
 When creating a table, the following settings are applied:
 
--   [persistent](../../../operations/settings/settings.md#persistent)
+#### persistent
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/set/) <!--hide-->
+Disables persistency for the Set and [Join](/docs/en/engines/table-engines/special/join.md/#join) table engines.
+
+Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: `1`.

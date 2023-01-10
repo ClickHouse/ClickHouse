@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -98,7 +98,7 @@ public:
     }
 };
 
-void registerFunctionH3ToGeoBoundary(FunctionFactory & factory)
+REGISTER_FUNCTION(H3ToGeoBoundary)
 {
     factory.registerFunction<FunctionH3ToGeoBoundary>();
 }

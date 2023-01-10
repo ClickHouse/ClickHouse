@@ -13,20 +13,22 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
 
+#include <cstring>
 #include <algorithm>
 
 
 namespace DB
 {
 
-void registerFunctionsLogical(FunctionFactory & factory)
+REGISTER_FUNCTION(Logical)
 {
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>(FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
+    factory.registerFunction<FunctionNot>({}, FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
 }
 
 namespace ErrorCodes
@@ -50,17 +52,15 @@ MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data,
     const size_t rows_count = ternary_data.size();
 
     auto new_column = ColumnUInt8::create(rows_count);
-    std::transform(
-            ternary_data.cbegin(), ternary_data.cend(), new_column->getData().begin(),
-            [](const auto x) { return x == Ternary::True; });
+    for (size_t i = 0; i < rows_count; ++i)
+        new_column->getData()[i] = (ternary_data[i] == Ternary::True);
 
     if (!make_nullable)
         return new_column;
 
     auto null_column = ColumnUInt8::create(rows_count);
-    std::transform(
-            ternary_data.cbegin(), ternary_data.cend(), null_column->getData().begin(),
-            [](const auto x) { return x == Ternary::Null; });
+    for (size_t i = 0; i < rows_count; ++i)
+        null_column->getData()[i] = (ternary_data[i] == Ternary::Null);
 
     return ColumnNullable::create(std::move(new_column), std::move(null_column));
 }
@@ -68,13 +68,14 @@ MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data,
 template <typename T>
 bool tryConvertColumnToBool(const IColumn * column, UInt8Container & res)
 {
-    const auto col = checkAndGetColumn<ColumnVector<T>>(column);
-    if (!col)
+    const auto column_typed = checkAndGetColumn<ColumnVector<T>>(column);
+    if (!column_typed)
         return false;
 
-    std::transform(
-            col->getData().cbegin(), col->getData().cend(), res.begin(),
-            [](const auto x) { return !!x; });
+    auto & data = column_typed->getData();
+    size_t data_size = data.size();
+    for (size_t i = 0; i < data_size; ++i)
+        res[i] = static_cast<bool>(data[i]);
 
     return true;
 }
@@ -94,12 +95,12 @@ void convertAnyColumnToBool(const IColumn * column, UInt8Container & res)
 }
 
 
-template <class Op, typename Func>
+template <class Op, bool IsTernary, typename Func>
 bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 {
     bool has_res = false;
 
-    for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
+    for (Int64 i = static_cast<Int64>(in.size()) - 1; i >= 0; --i)
     {
         UInt8 x;
 
@@ -112,7 +113,10 @@ bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
         if (has_res)
         {
-            res = Op::apply(res, x);
+            if constexpr (IsTernary)
+                res = Op::ternaryApply(res, x);
+            else
+                res = Op::apply(res, x);
         }
         else
         {
@@ -129,7 +133,7 @@ bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 template <class Op>
 inline bool extractConstColumnsAsBool(ColumnRawPtrs & in, UInt8 & res)
 {
-    return extractConstColumns<Op>(
+    return extractConstColumns<Op, false>(
         in, res,
         [](const Field & value)
         {
@@ -141,7 +145,7 @@ inline bool extractConstColumnsAsBool(ColumnRawPtrs & in, UInt8 & res)
 template <class Op>
 inline bool extractConstColumnsAsTernary(ColumnRawPtrs & in, UInt8 & res_3v)
 {
-    return extractConstColumns<Op>(
+    return extractConstColumns<Op, true>(
         in, res_3v,
         [](const Field & value)
         {
@@ -168,10 +172,7 @@ public:
     inline ResultValueType apply(const size_t i) const
     {
         const auto a = !!vec[i];
-        if constexpr (Op::isSaturable())
-            return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
-        else
-            return Op::apply(a, next.apply(i));
+        return Op::apply(a, next.apply(i));
     }
 
 private:
@@ -195,47 +196,74 @@ private:
 };
 
 
-/// A helper class used by AssociativeGenericApplierImpl
-/// Allows for on-the-fly conversion of any data type into intermediate ternary representation
-using TernaryValueGetter = std::function<Ternary::ResultType (size_t)>;
-
 template <typename ... Types>
-struct ValueGetterBuilderImpl;
+struct TernaryValueBuilderImpl;
 
 template <typename Type, typename ...Types>
-struct ValueGetterBuilderImpl<Type, Types...>
+struct TernaryValueBuilderImpl<Type, Types...>
 {
-    static TernaryValueGetter build(const IColumn * x)
+    static void build(const IColumn * x, UInt8* __restrict ternary_column_data)
     {
+        size_t size = x->size();
         if (x->onlyNull())
         {
-            return [](size_t){ return Ternary::Null; };
+            memset(ternary_column_data, Ternary::Null, size);
         }
         else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
         {
             if (const auto * nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
             {
-                return [
-                    &null_data = nullable_column->getNullMapData(),
-                    &column_data = nested_column->getData()](size_t i)
+                const auto& null_data = nullable_column->getNullMapData();
+                const auto& column_data = nested_column->getData();
+
+                if constexpr (sizeof(Type) == 1)
                 {
-                    return Ternary::makeValue(column_data[i], null_data[i]);
-                };
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        auto has_value = static_cast<UInt8>(column_data[i] != 0);
+                        auto is_null = !!null_data[i];
+
+                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        auto has_value = static_cast<UInt8>(column_data[i] != 0);
+                        ternary_column_data[i] = has_value;
+                    }
+
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        auto has_value = ternary_column_data[i];
+                        auto is_null = !!null_data[i];
+
+                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                    }
+                }
             }
             else
-                return ValueGetterBuilderImpl<Types...>::build(x);
+                TernaryValueBuilderImpl<Types...>::build(x, ternary_column_data);
         }
         else if (const auto column = typeid_cast<const ColumnVector<Type> *>(x))
-            return [&column_data = column->getData()](size_t i) { return Ternary::makeValue(column_data[i]); };
+        {
+            auto &column_data = column->getData();
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                ternary_column_data[i] = (column_data[i] != 0) << 1;
+            }
+        }
         else
-            return ValueGetterBuilderImpl<Types...>::build(x);
+            TernaryValueBuilderImpl<Types...>::build(x, ternary_column_data);
     }
 };
 
 template <>
-struct ValueGetterBuilderImpl<>
+struct TernaryValueBuilderImpl<>
 {
-    static TernaryValueGetter build(const IColumn * x)
+    [[noreturn]] static void build(const IColumn * x, UInt8 * /* nullable_ternary_column_data */)
     {
         throw Exception(
                 std::string("Unknown numeric column of type: ") + demangle(typeid(*x).name()),
@@ -243,12 +271,12 @@ struct ValueGetterBuilderImpl<>
     }
 };
 
-using ValueGetterBuilder =
-        ValueGetterBuilderImpl<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
+using TernaryValueBuilder =
+        TernaryValueBuilderImpl<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
 
-/// This class together with helper class ValueGetterBuilder can be used with columns of arbitrary data type
-/// Allows for on-the-fly conversion of any type of data into intermediate ternary representation
-/// and eliminates the need to materialize data columns in intermediate representation
+/// This class together with helper class TernaryValueBuilder can be used with columns of arbitrary data type
+/// Converts column of any data type into an intermediate UInt8Column of ternary representation for the
+/// vectorized ternary logic evaluation.
 template <typename Op, size_t N>
 class AssociativeGenericApplierImpl
 {
@@ -257,20 +285,19 @@ class AssociativeGenericApplierImpl
 public:
     /// Remembers the last N columns from `in`.
     explicit AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
-        : val_getter{ValueGetterBuilder::build(in[in.size() - N])}, next{in} {}
+        : vec(in[in.size() - N]->size()), next{in}
+        {
+            TernaryValueBuilder::build(in[in.size() - N], vec.data());
+        }
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
     inline ResultValueType apply(const size_t i) const
     {
-        const auto a = val_getter(i);
-        if constexpr (Op::isSaturable())
-            return Op::isSaturatedValueTernary(a) ? a : Op::apply(a, next.apply(i));
-        else
-            return Op::apply(a, next.apply(i));
+        return Op::ternaryApply(vec[i], next.apply(i));
     }
 
 private:
-    const TernaryValueGetter val_getter;
+    UInt8Container vec;
     const AssociativeGenericApplierImpl<Op, N - 1> next;
 };
 
@@ -283,12 +310,15 @@ class AssociativeGenericApplierImpl<Op, 1>
 public:
     /// Remembers the last N columns from `in`.
     explicit AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
-        : val_getter{ValueGetterBuilder::build(in[in.size() - 1])} {}
+        : vec(UInt8Container(in[in.size() - 1]->size()))
+        {
+            TernaryValueBuilder::build(in[in.size() - 1], vec.data());
+        }
 
-    inline ResultValueType apply(const size_t i) const { return val_getter(i); }
+    inline ResultValueType apply(const size_t i) const { return vec[i]; }
 
 private:
-    const TernaryValueGetter val_getter;
+    UInt8Container vec;
 };
 
 
@@ -321,7 +351,12 @@ struct OperationApplier
         for (size_t i = 0; i < size; ++i)
         {
             if constexpr (CarryResult)
-                result_data[i] = Op::apply(result_data[i], operation_applier_impl.apply(i));
+            {
+                if constexpr (std::is_same_v<OperationApplierImpl<Op, N>, AssociativeApplierImpl<Op, N>>)
+                    result_data[i] = Op::apply(result_data[i], operation_applier_impl.apply(i));
+                else
+                    result_data[i] = Op::ternaryApply(result_data[i], operation_applier_impl.apply(i));
+            }
             else
                 result_data[i] = operation_applier_impl.apply(i);
         }
@@ -386,7 +421,7 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
             std::transform(
                     x.getData().cbegin(), x.getData().cend(),
                     column->getData().cbegin(), result.begin(),
-                    [](const auto a, const auto b) { return Op::apply(!!a, !!b); });
+                    [](const auto a, const auto b) { return Op::apply(static_cast<bool>(a), static_cast<bool>(b)); });
         else
             TypedExecutorInvoker<Op, Types ...>::template apply<T>(x, y, result);
     }
@@ -458,7 +493,9 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
     for (const IColumn * column : arguments)
     {
         if (const auto * uint8_column = checkAndGetColumn<ColumnUInt8>(column))
+        {
             uint8_args.push_back(uint8_column);
+        }
         else
         {
             auto converted_column = ColumnUInt8::create(input_rows_count);
@@ -543,6 +580,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+    executeColumnIfNeeded(arguments[0]);
+
     /// Let's denote x_i' = maskedExecute(x_i, mask).
     /// 1) AND(x_0, x_1, x_2, ..., x_n)
     /// We will support mask_i = x_0 & x_1 & ... & x_i.
@@ -596,14 +635,14 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (nulls)
         applyTernaryLogic<Name>(mask, *nulls);
 
-    MutableColumnPtr res = ColumnUInt8::create();
-    typeid_cast<ColumnUInt8 *>(res.get())->getData() = std::move(mask);
+    auto res = ColumnUInt8::create();
+    res->getData() = std::move(mask);
 
     if (!nulls)
         return res;
 
-    MutableColumnPtr bytemap = ColumnUInt8::create();
-    typeid_cast<ColumnUInt8 *>(bytemap.get())->getData() = std::move(*nulls);
+    auto bytemap = ColumnUInt8::create();
+    bytemap->getData() = std::move(*nulls);
     return ColumnNullable::create(std::move(res), std::move(bytemap));
 }
 
@@ -692,29 +731,14 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
     return result_column;
 }
 
-template <typename A, typename Op>
-struct UnaryOperationImpl
-{
-    using ResultType = typename Op::ResultType;
-    using ArrayA = typename ColumnVector<A>::Container;
-    using ArrayC = typename ColumnVector<ResultType>::Container;
-
-    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
-    {
-        std::transform(
-                a.cbegin(), a.cend(), c.begin(),
-                [](const auto x) { return Op::apply(x); });
-    }
-};
-
 template <template <typename> class Impl, typename Name>
 DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (!isNativeNumber(arguments[0]))
-        throw Exception("Illegal type ("
-            + arguments[0]->getName()
-            + ") of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type ({}) of argument of function {}",
+            arguments[0]->getName(),
+            getName());
 
     return isBool(arguments[0]) ? DataTypeFactory::instance().get("Bool") : std::make_shared<DataTypeUInt8>();
 }
@@ -724,10 +748,9 @@ ColumnPtr functionUnaryExecuteType(const ColumnsWithTypeAndName & arguments)
 {
     if (auto col = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get()))
     {
-        auto col_res = ColumnUInt8::create();
+        auto col_res = ColumnUInt8::create(col->getData().size());
+        auto & vec_res = col_res->getData();
 
-        typename ColumnUInt8::Container & vec_res = col_res->getData();
-        vec_res.resize(col->getData().size());
         UnaryOperationImpl<T, Impl<T>>::vector(col->getData(), vec_res);
 
         return col_res;
@@ -750,9 +773,10 @@ ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAnd
         || (res = functionUnaryExecuteType<Impl, Int64>(arguments))
         || (res = functionUnaryExecuteType<Impl, Float32>(arguments))
         || (res = functionUnaryExecuteType<Impl, Float64>(arguments))))
-       throw Exception("Illegal column " + arguments[0].column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+       throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of argument of function {}",
+            arguments[0].column->getName(),
+            getName());
 
     return res;
 }

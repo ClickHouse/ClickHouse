@@ -34,7 +34,7 @@ struct ExtractBasename
 struct NameBasename { static constexpr auto name = "basename"; };
 using FunctionBasename = FunctionStringToString<ExtractSubstringImpl<ExtractBasename>, NameBasename>;
 
-void registerFunctionBasename(FunctionFactory & factory)
+REGISTER_FUNCTION(Basename)
 {
     factory.registerFunction<FunctionBasename>();
 }
