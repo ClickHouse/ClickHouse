@@ -40,5 +40,3 @@ slug: /zh/sql-reference/data-types/simpleaggregatefunction
 ``` sql
 CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
 ```
-
-[原始文章](https://clickhouse.com/docs/en/data_types/simpleaggregatefunction/) <!--hide-->
