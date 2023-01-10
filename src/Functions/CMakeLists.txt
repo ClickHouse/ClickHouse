@@ -13,7 +13,6 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)
 list (APPEND PUBLIC_LIBS
         ch_contrib::wyhash
         ch_contrib::cityhash
-        ch_contrib::crc32-vpmsum
         ch_contrib::farmhash
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
@@ -85,6 +84,10 @@ endif()
 
 if (TARGET ch_contrib::rapidjson)
     list (APPEND PRIVATE_LIBS ch_contrib::rapidjson)
+endif()
+
+if (TARGET ch_contrib::crc32-vpmsum)
+    list (APPEND PRIVATE_LIBS ch_contrib::crc32-vpmsum)
 endif()
 
 add_subdirectory(GatherUtils)
