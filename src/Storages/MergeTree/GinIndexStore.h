@@ -13,46 +13,26 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 namespace DB
 {
-
-constexpr int MIN_SIZE_FOR_ROARING_ENCODING = 16;
-
-/// Gin Index Segment information, which contains:
-struct GinIndexSegment
+enum : uint8_t
 {
-    /// .gin_post file offset of this segment's postings lists
-    UInt64 postings_start_offset{0};
-
-    /// .gin_dict file offset of this segment's term dictionaries
-    UInt64 item_dict_start_offset{0};
-
-    /// Next row ID for this segment
-    UInt32 next_row_id{1};
-
-    ///  Segment ID retrieved from next available ID from file .gin_sid
-    UInt32 segment_id {0};
+    GIN_VERSION_0 = 0,
+    GIN_VERSION_1 = 1, /// Initial version
 };
 
-using GinIndexSegments = std::vector<GinIndexSegment>;
+static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = GIN_VERSION_1;
 
 /// GinIndexPostingsList which uses 32-bit Roaring
 using GinIndexPostingsList = roaring::Roaring;
 
-using GinIndexPostingsListPtr = std::shared_ptr<roaring::Roaring>;
+using GinIndexPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;
 
 /// Gin Index Postings List Builder.
 class GinIndexPostingsBuilder
 {
 public:
+    constexpr static int MIN_SIZE_FOR_ROARING_ENCODING = 16;
+
     GinIndexPostingsBuilder(UInt64 limit);
-
-    /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'lst' is used
-    std::array<UInt32, MIN_SIZE_FOR_ROARING_ENCODING> lst;
-
-    /// When the list length is greater than MIN_SIZE_FOR_ROARING_ENCODING, Roaring bitmap 'rowid_bitmap' is used
-    roaring::Roaring rowid_bitmap;
-
-    /// lst_length stores the number of row IDs in 'lst' array, can also be a flag(0xFF) indicating that roaring bitmap is used
-    UInt8 lst_length{0};
 
     /// Check whether a row_id is already added
     bool contains(UInt32 row_id) const;
@@ -72,15 +52,19 @@ public:
     /// Deserialize the postings list data from given ReadBuffer, return a pointer to the GinIndexPostingsList created by deserialization
     static GinIndexPostingsListPtr deserialize(ReadBuffer &buffer);
 private:
+    /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'rowid_lst' is used
+    std::array<UInt32, MIN_SIZE_FOR_ROARING_ENCODING> rowid_lst;
+
+    /// When the list length is greater than MIN_SIZE_FOR_ROARING_ENCODING, Roaring bitmap 'rowid_bitmap' is used
+    roaring::Roaring rowid_bitmap;
+
+    /// rowid_lst_length stores the number of row IDs in 'rowid_lst' array, can also be a flag(0xFF) indicating that roaring bitmap is used
+    UInt8 rowid_lst_length{0};
+
     static constexpr UInt8 UsesBitMap = 0xFF;
     /// Clear the postings list and reset it with MATCHALL flags when the size of the postings list is beyond the limit
     UInt64 size_limit;
 };
-
-using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
-
-/// Container for all term's Gin Index Postings List Builder
-using GinIndexPostingsBuilderContainer = std::unordered_map<std::string, GinIndexPostingsBuilderPtr>;
 
 /// Container for postings lists for each segment
 using SegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostingsListPtr>;
@@ -89,63 +73,78 @@ using SegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostin
 using PostingsCache = std::unordered_map<std::string, SegmentedPostingsListContainer>;
 using PostingsCachePtr = std::shared_ptr<PostingsCache>;
 
-/// Term dictionary information, which contains:
-struct TermDictionary
+/// Gin Index Segment information, which contains:
+struct GinIndexSegment
+{
+    ///  Segment ID retrieved from next available ID from file .gin_sid
+    UInt32 segment_id = 0;
+
+    /// Next row ID for this segment
+    UInt32 next_row_id = 1;
+
+    /// .gin_post file offset of this segment's postings lists
+    UInt64 postings_start_offset = 0;
+
+    /// .gin_dict file offset of this segment's term dictionaries
+    UInt64 term_dict_start_offset = 0;
+};
+
+using GinIndexSegments = std::vector<GinIndexSegment>;
+
+using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
+
+/// Container for all term's Gin Index Postings List Builder
+using GinIndexPostingsBuilderContainer = std::unordered_map<std::string, GinIndexPostingsBuilderPtr>;
+struct SegmentTermDictionary
 {
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset;
 
     /// .gin_dict file offset of this segment's term dictionaries
-    UInt64 item_dict_start_offset;
+    UInt64 term_dict_start_offset;
 
-    /// Finite State Transducer, which can be viewed as a map of <term, offset>
+    /// Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
+    /// offset to the term's posting list in postings list file
     FST::FiniteStateTransducer offsets;
 };
 
-using TermDictionaryPtr = std::shared_ptr<TermDictionary>;
-using TermDictionaries = std::unordered_map<UInt32, TermDictionaryPtr>;
+using SegmentTermDictionaryPtr = std::shared_ptr<SegmentTermDictionary>;
+
+/// Term dictionaries indexed by segment ID
+using SegmentTermDictionaries = std::unordered_map<UInt32, SegmentTermDictionaryPtr>;
 
 /// Gin Index Store which has Gin Index meta data for the corresponding Data Part
 class GinIndexStore
 {
 public:
-    explicit GinIndexStore(const String& name_, DataPartStoragePtr storage_)
-        : name(name_),
-        storage(storage_)
-    {
-    }
-    GinIndexStore(const String& name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_)
-        : name(name_),
-        storage(storage_),
-        data_part_storage_builder(data_part_storage_builder_),
-        max_digestion_size(max_digestion_size_)
-    {
-    }
+    explicit GinIndexStore(const String & name_, DataPartStoragePtr storage_);
 
-    bool load();
+    GinIndexStore(const String& name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);
 
-    /// Check existence by checking the existence of file .gin_seg
+    /// Check existence by checking the existence of file .gin_sid
     bool exists() const;
 
-    UInt32 getNextIDRange(const String &file_name, size_t n);
+    /// Get a range of next 'numIDs' available row IDs
+    UInt32 getNextRowIDRange(size_t numIDs);
 
-    UInt32 getNextRowIDRange(size_t n);
-
+    /// Get next available segment ID by updating file .gin_sid
     UInt32 getNextSegmentID();
 
-    UInt32 getSegmentNum();
+    /// Get total number of segments in the store
+    UInt32 getNumOfSegments();
 
-    using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
+    /// Get current postings list builder
+    const GinIndexPostingsBuilderContainer& getPostings() const { return current_postings; }
 
-    GinIndexPostingsBuilderContainer& getPostings() { return current_postings; }
-
+    /// Set postings list builder for given term
+    void setPostingsBuilder(const String & term, GinIndexPostingsBuilderPtr builder) { current_postings[term] = builder; }
     /// Check if we need to write segment to Gin index files
     bool needToWrite() const;
 
     /// Accumulate the size of text data which has been digested
-    void addSize(UInt64 sz) { current_size += sz; }
+    void incrementCurrentSizeBy(UInt64 sz) { current_size += sz; }
 
-    UInt32 getCurrentSegmentID() { return current_segment.segment_id;}
+    UInt32 getCurrentSegmentID() const { return current_segment.segment_id;}
 
     /// Do last segment writing
     void finalize();
@@ -158,7 +157,11 @@ public:
 private:
     friend class GinIndexStoreDeserializer;
 
+    /// Initialize all indexing files for this store
     void initFileStreams();
+
+    /// Get a range of next available segment IDs by updating file .gin_sid
+    UInt32 getNextSegmentIDRange(const String &file_name, size_t n);
 
     String name;
     DataPartStoragePtr storage;
@@ -169,15 +172,15 @@ private:
     std::mutex gin_index_store_mutex;
 
     /// Terms dictionaries which are loaded from .gin_dict files
-    TermDictionaries term_dicts;
+    SegmentTermDictionaries term_dicts;
 
     /// container for building postings lists during index construction
     GinIndexPostingsBuilderContainer current_postings;
 
     /// The following is for segmentation of Gin index
     GinIndexSegment current_segment{};
-    UInt64 current_size{0};
-    UInt64 max_digestion_size{0};
+    UInt64 current_size = 0;
+    const UInt64 max_digestion_size = 0;
 
     /// File streams for segment, term dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> segment_file_stream;
@@ -191,9 +194,14 @@ private:
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
+
+/// GinIndexStores indexed by part file path
 using GinIndexStores = std::unordered_map<std::string, GinIndexStorePtr>;
 
-/// Postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
+/// PostingsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
+/// PostingsCache is per query string(one query can have multiple query strings): when skipping index(row ID ranges) is used for the part during the
+/// query, the postings cache is created and associated with the store where postings lists are read
+/// for the tokenized query string. The postings caches are released automatically when the query is done.
 struct PostingsCacheForStore
 {
     /// Which store to retrieve postings lists
@@ -223,9 +231,9 @@ public:
     static GinIndexStoreFactory& instance();
 
     /// Get GinIndexStore by using index name, disk and part_path (which are combined to create key in stores)
-    GinIndexStorePtr get(const String& name, DataPartStoragePtr storage_);
+    GinIndexStorePtr get(const String& name, DataPartStoragePtr storage);
 
-    /// Remove all GinIndexStores which are under the same part_path
+    /// Remove all Gin index files which are under the same part_path
     void remove(const String& part_path);
 
 private:
@@ -233,29 +241,32 @@ private:
     std::mutex stores_mutex;
 };
 
+/// Term dictionary information, which contains:
+
 /// Gin Index Store Reader which helps to read segments, term dictionaries and postings list
 class GinIndexStoreDeserializer : private boost::noncopyable
 {
 public:
-    GinIndexStoreDeserializer(const GinIndexStorePtr & store_);
+    explicit GinIndexStoreDeserializer(const GinIndexStorePtr & store_);
 
     /// Read all segment information from .gin_seg files
     void readSegments();
 
+    /// Read all term dictionaries from .gin_dict files
+    void readSegmentTermDictionaries();
+
     /// Read term dictionary for given segment id
-    void readTermDictionary(UInt32 segment_id);
+    void readSegmentTermDictionary(UInt32 segment_id);
 
     /// Read postings lists for the term
-    SegmentedPostingsListContainer readSegmentedPostingsLists(const String& token);
+    SegmentedPostingsListContainer readSegmentedPostingsLists(const String& term);
 
     /// Read postings lists for terms(which are created by tokenzing query string)
-    PostingsCachePtr loadPostingsIntoCache(const std::vector<String>& terms);
+    PostingsCachePtr createPostingsCacheFromTerms(const std::vector<String>& terms);
 
 private:
     /// Initialize Gin index files
     void initFileStreams();
-
-private:
 
     /// The store for the reader
     GinIndexStorePtr store;
@@ -268,6 +279,5 @@ private:
     /// Current segment, used in building index
     GinIndexSegment current_segment;
 };
-using GinIndexStoreReaderPtr = std::unique_ptr<GinIndexStoreDeserializer>;
 
 }

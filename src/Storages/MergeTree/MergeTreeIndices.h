@@ -8,7 +8,6 @@
 #include <utility>
 #include <mutex>
 #include <Core/Block.h>
-#include <Disks/IDisk.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>

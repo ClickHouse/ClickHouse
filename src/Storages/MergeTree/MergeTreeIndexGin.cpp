@@ -59,7 +59,7 @@ void MergeTreeIndexGranuleGinFilter::serializeBinary(WriteBuffer & ostr) const
     {
         size_t filter_size = gin_filter.getFilter().size();
         size_serialization->serializeBinary(filter_size, ostr, {});
-        ostr.write(reinterpret_cast<const char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::RowIDRangeContainer::value_type));
+        ostr.write(reinterpret_cast<const char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::GinSegmentWithRowIDRanges::value_type));
     }
 }
 
@@ -81,7 +81,7 @@ void MergeTreeIndexGranuleGinFilter::deserializeBinary(ReadBuffer & istr, MergeT
             continue;
 
         gin_filter.getFilter().assign(filter_size, {});
-        istr.readStrict(reinterpret_cast<char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::RowIDRangeContainer::value_type));
+        istr.readStrict(reinterpret_cast<char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::GinSegmentWithRowIDRanges::value_type));
     }
     has_elems = true;
 }
@@ -157,7 +157,7 @@ void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
                     addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col], rows_read);
-                    store->addSize(ref.size);
+                    store->incrementCurrentSizeBy(ref.size);
                 }
                 current_position += 1;
                 row_id++;
@@ -172,7 +172,7 @@ void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos
             {
                 auto ref = column->getDataAt(current_position + i);
                 addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col], rows_read);
-                store->addSize(ref.size);
+                store->incrementCurrentSizeBy(ref.size);
                 row_id++;
                 if (store->needToWrite())
                     need_to_write = true;
@@ -235,6 +235,7 @@ MergeTreeConditionGinFilter::MergeTreeConditionGinFilter(
 
 }
 
+/// Keep in-sync with MergeTreeConditionFullText::alwaysUnknownOrTrue
 bool MergeTreeConditionGinFilter::alwaysUnknownOrTrue() const
 {
     /// Check like in KeyCondition.
@@ -725,27 +726,20 @@ bool MergeTreeIndexGinFilter::mayBenefitFromIndexForIn(const ASTPtr & node) cons
 MergeTreeIndexPtr ginIndexCreator(
     const IndexDescription & index)
 {
-    if (index.type == GinFilter::getName())
-    {
-        size_t n = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
-        Float64 density = index.arguments.size() < 2 ? 1.0f : index.arguments[1].get<Float64>();
-        GinFilterParameters params(n, density);
+    size_t n = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
+    Float64 density = index.arguments.size() < 2 ? 1.0f : index.arguments[1].get<Float64>();
+    GinFilterParameters params(n, density);
 
-        /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
-        if (n > 0)
-        {
-            auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
-            return std::make_shared<MergeTreeIndexGinFilter>(index, params, std::move(tokenizer));
-        }
-        else
-        {
-            auto tokenizer = std::make_unique<SplitTokenExtractor>();
-            return std::make_shared<MergeTreeIndexGinFilter>(index, params, std::move(tokenizer));
-        }
+    /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
+    if (n > 0)
+    {
+        auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
+        return std::make_shared<MergeTreeIndexGinFilter>(index, params, std::move(tokenizer));
     }
     else
     {
-        throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
+        auto tokenizer = std::make_unique<SplitTokenExtractor>();
+        return std::make_shared<MergeTreeIndexGinFilter>(index, params, std::move(tokenizer));
     }
 }
 

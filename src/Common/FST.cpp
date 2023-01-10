@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 #include <Common/Exception.h>
-#include <Common/HashTable/Hash.h>
+#include <city.h>
 
 namespace DB
 {
@@ -39,10 +39,11 @@ UInt64 Arc::serialize(WriteBuffer& write_buffer) const
 
 bool operator==(const Arc & arc1, const Arc & arc2)
 {
+    assert(arc1.target != nullptr && arc2.target != nullptr);
     return (arc1.output == arc2.output && arc1.target->id == arc2.target->id);
 }
 
-void ArcsAsBitmap::addArc(char label)
+void LabelsAsBitmap::addLabel(char label)
 {
     UInt8 index = label;
     UInt256 bit_label = 1;
@@ -51,9 +52,9 @@ void ArcsAsBitmap::addArc(char label)
     data |= bit_label;
 }
 
-int ArcsAsBitmap::getIndex(char label) const
+UInt64 LabelsAsBitmap::getIndex(char label) const
 {
-    int bit_count = 0;
+    UInt64 bit_count = 0;
 
     UInt8 index = label;
     int which_int64 = 0;
@@ -74,7 +75,20 @@ int ArcsAsBitmap::getIndex(char label) const
     return bit_count;
 }
 
-bool ArcsAsBitmap::hasArc(char label) const
+UInt64 LabelsAsBitmap::serialize(WriteBuffer& write_buffer)
+{
+    writeVarUInt(data.items[0], write_buffer);
+    writeVarUInt(data.items[1], write_buffer);
+    writeVarUInt(data.items[2], write_buffer);
+    writeVarUInt(data.items[3], write_buffer);
+
+    return getLengthOfVarUInt(data.items[0])
+        + getLengthOfVarUInt(data.items[1])
+        + getLengthOfVarUInt(data.items[2])
+        + getLengthOfVarUInt(data.items[3]);
+}
+
+bool LabelsAsBitmap::hasLabel(char label) const
 {
     UInt8 index = label;
     UInt256 bit_label = 1;
@@ -97,6 +111,15 @@ void State::addArc(char label, Output output, StatePtr target)
     arcs[label] = Arc(output, target);
 }
 
+void State::clear()
+{
+    id = 0;
+    state_index = 0;
+    flag = 0;
+
+    arcs.clear();
+}
+
 UInt64 State::hash() const
 {
     std::vector<char> values;
@@ -114,7 +137,7 @@ UInt64 State::hash() const
     return CityHash_v1_0_2::CityHash64(values.data(), values.size());
 }
 
-bool operator== (const State& state1, const State& state2)
+bool operator== (const State & state1, const State & state2)
 {
     if (state1.arcs.size() != state2.arcs.size())
         return false;
@@ -139,11 +162,11 @@ UInt64 State::serialize(WriteBuffer& write_buffer)
     write_buffer.write(flag);
     written_bytes += 1;
 
-    if (flag_values.encoding_method == EncodingMethod::ENCODING_METHOD_SEQUENTIAL)
+    if (getEncodingMethod() == EncodingMethod::Sequential)
     {
         /// Serialize all labels
         std::vector<char> labels;
-        labels.reserve(MAX_ARCS_IN_SEQUENTIAL_METHOD);
+        labels.reserve(arcs.size());
 
         for (auto& [label, state] : arcs)
         {
@@ -168,23 +191,13 @@ UInt64 State::serialize(WriteBuffer& write_buffer)
     else
     {
         /// Serialize bitmap
-        ArcsAsBitmap bmp;
+        LabelsAsBitmap bmp;
         for (auto & [label, state] : arcs)
         {
-            bmp.addArc(label);
+            bmp.addLabel(label);
         }
+        written_bytes += bmp.serialize(write_buffer);
 
-        UInt64 bmp_encoded_size = getLengthOfVarUInt(bmp.data.items[0])
-            + getLengthOfVarUInt(bmp.data.items[1])
-            + getLengthOfVarUInt(bmp.data.items[2])
-            + getLengthOfVarUInt(bmp.data.items[3]);
-
-        writeVarUInt(bmp.data.items[0], write_buffer);
-        writeVarUInt(bmp.data.items[1], write_buffer);
-        writeVarUInt(bmp.data.items[2], write_buffer);
-        writeVarUInt(bmp.data.items[3], write_buffer);
-
-        written_bytes += bmp_encoded_size;
         /// Serialize all arcs
         for (auto & [label, state] : arcs)
         {
@@ -205,7 +218,7 @@ FSTBuilder::FSTBuilder(WriteBuffer& write_buffer_) : write_buffer(write_buffer_)
     }
 }
 
-StatePtr FSTBuilder::getMinimized(const State& state, bool& found)
+StatePtr FSTBuilder::findMinimized(const State & state, bool & found)
 {
     found = false;
     auto hash = state.hash();
@@ -221,7 +234,7 @@ StatePtr FSTBuilder::getMinimized(const State& state, bool& found)
     return p;
 }
 
-size_t FSTBuilder::getCommonPrefix(const std::string& word1, const std::string& word2)
+size_t FSTBuilder::getCommonPrefixLength(const String & word1, const String & word2)
 {
     size_t i = 0;
     while (i < word1.size() && i < word2.size() && word1[i] == word2[i])
@@ -233,8 +246,8 @@ void FSTBuilder::minimizePreviousWordSuffix(Int64 down_to)
 {
     for (Int64 i = static_cast<Int64>(previous_word.size()); i >= down_to; --i)
     {
-        bool found{ false };
-        auto minimized_state = getMinimized(*temp_states[i], found);
+        bool found = false;
+        auto minimized_state = findMinimized(*temp_states[i], found);
 
         if (i != 0)
         {
@@ -256,13 +269,12 @@ void FSTBuilder::minimizePreviousWordSuffix(Int64 down_to)
             minimized_state->state_index = previous_state_index;
 
             previous_written_bytes = minimized_state->serialize(write_buffer);
-            state_count++;
             previous_state_index += previous_written_bytes;
         }
     }
 }
 
-void FSTBuilder::add(const std::string& current_word, Output current_output)
+void FSTBuilder::add(const std::string & current_word, Output current_output)
 {
     /// We assume word size is no greater than MAX_TERM_LENGTH(256).
     /// FSTs without word size limitation would be inefficient and easy to cause memory bloat
@@ -275,12 +287,12 @@ void FSTBuilder::add(const std::string& current_word, Output current_output)
     if (current_word_len > MAX_TERM_LENGTH)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Too long term ({}) passed to FST builder.", current_word_len);
 
-    size_t prefix_length_plus1 = getCommonPrefix(current_word, previous_word) + 1;
+    size_t prefix_length_plus1 = getCommonPrefixLength(current_word, previous_word) + 1;
 
     minimizePreviousWordSuffix(prefix_length_plus1);
 
     /// Initialize the tail state
-    for (size_t  i = prefix_length_plus1; i <= current_word.size(); ++i)
+    for (size_t i = prefix_length_plus1; i <= current_word.size(); ++i)
     {
         temp_states[i]->clear();
         temp_states[i - 1]->addArc(current_word[i - 1], 0, temp_states[i]);
@@ -289,9 +301,9 @@ void FSTBuilder::add(const std::string& current_word, Output current_output)
     /// We assume the current word is different with previous word
     temp_states[current_word_len]->setFinal(true);
     /// Adjust outputs on the arcs
-    for (size_t j = 1; j <= prefix_length_plus1 - 1; ++j)
+    for (size_t i = 1; i <= prefix_length_plus1 - 1; ++i)
     {
-        Arc * arc_ptr = temp_states[j - 1]->getArc(current_word[j - 1]);
+        Arc * arc_ptr = temp_states[i - 1]->getArc(current_word[i - 1]);
         assert(arc_ptr != nullptr);
 
         Output common_prefix = std::min(arc_ptr->output, current_output);
@@ -301,7 +313,7 @@ void FSTBuilder::add(const std::string& current_word, Output current_output)
         /// For each arc, adjust its output
         if (word_suffix != 0)
         {
-            for (auto & [label, arc] : temp_states[j]->arcs)
+            for (auto & [label, arc] : temp_states[i]->arcs)
             {
                 arc.output += word_suffix;
             }
@@ -341,15 +353,18 @@ void FiniteStateTransducer::clear()
     data.clear();
 }
 
-std::pair<UInt64, bool> FiniteStateTransducer::getOutput(const String& term)
+std::pair<UInt64, bool> FiniteStateTransducer::getOutput(const String & term)
 {
-    std::pair<UInt64, bool> result_output{ 0, false };
+    std::pair<UInt64, bool> result{ 0, false };
+
     /// Read index of initial state
     ReadBufferFromMemory read_buffer(data.data(), data.size());
     read_buffer.seek(data.size()-1, SEEK_SET);
 
     UInt8 length{ 0 };
     read_buffer.readStrict(reinterpret_cast<char&>(length));
+
+    /// FST contains no terms
     if (length == 0)
         return { 0, false };
 
@@ -368,12 +383,12 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(const String& term)
         temp_state.readFlag(read_buffer);
         if (i == term.size())
         {
-            result_output.second = temp_state.isFinal();
+            result.second = temp_state.isFinal();
             break;
         }
 
         UInt8 label = term[i];
-        if (temp_state.getEncodingMethod() == State::EncodingMethod::ENCODING_METHOD_SEQUENTIAL)
+        if (temp_state.getEncodingMethod() == State::EncodingMethod::Sequential)
         {
             /// Read number of labels
             UInt8 label_num{ 0 };
@@ -412,14 +427,14 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(const String& term)
         }
         else
         {
-            ArcsAsBitmap bmp;
+            LabelsAsBitmap bmp;
 
             readVarUInt(bmp.data.items[0], read_buffer);
             readVarUInt(bmp.data.items[1], read_buffer);
             readVarUInt(bmp.data.items[2], read_buffer);
             readVarUInt(bmp.data.items[3], read_buffer);
 
-            if (!bmp.hasArc(label))
+            if (!bmp.hasLabel(label))
                 return { 0, false };
 
             /// Read the arc for the label
@@ -437,9 +452,9 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(const String& term)
             }
         }
         /// Accumulate the output value
-        result_output.first += arc_output;
+        result.first += arc_output;
     }
-    return result_output;
+    return result;
 }
 }
 }
