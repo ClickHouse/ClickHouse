@@ -5960,6 +5960,10 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (settings.parallel_replicas_count > 1 || settings.max_parallel_replicas > 1)
         return std::nullopt;
 
+    /// Cannot use projections in case of additional filter.
+    if (query_info.additional_filter_ast)
+        return std::nullopt;
+
     auto query_ptr = query_info.original_query;
     auto * select_query = query_ptr->as<ASTSelectQuery>();
     if (!select_query)
