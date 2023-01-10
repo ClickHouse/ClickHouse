@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
