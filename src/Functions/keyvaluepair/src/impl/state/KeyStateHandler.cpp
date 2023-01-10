@@ -13,7 +13,7 @@ NextState KeyStateHandler::wait(const std::string & file, size_t pos) const
     while (pos < file.size())
     {
         const auto current_character = file[pos];
-        if (isalpha(current_character))
+        if (isalnum(current_character))
         {
             return {pos, State::READING_KEY};
         }
