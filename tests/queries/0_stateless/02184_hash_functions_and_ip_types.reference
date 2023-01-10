@@ -1,7 +1,6 @@
 Row 1:
 ──────
 ipv4:                                        1.2.3.4
-halfMD5(toIPv4('1.2.3.4')):                  14356538739656272800
 farmFingerprint64(toIPv4('1.2.3.4')):        5715546585361069049
 xxh3(toIPv4('1.2.3.4')):                     14355428563589734825
 wyHash64(toIPv4('1.2.3.4')):                 13096729196120951355
@@ -27,7 +26,6 @@ yandexConsistentHash(toIPv4('1.2.3.4'), 42): 0
 Row 1:
 ──────
 ipv6:                                                    fe80::62:5aff:fed1:daf0
-halfMD5(toIPv6('fe80::62:5aff:fed1:daf0')):              9503062220758009199
 hex(MD4(toIPv6('fe80::62:5aff:fed1:daf0'))):             E35A1A4FB3A3953421AB348B2E1A4A1A
 hex(MD5(toIPv6('fe80::62:5aff:fed1:daf0'))):             83E1A8BD8AB7456FC229208409F79798
 hex(SHA1(toIPv6('fe80::62:5aff:fed1:daf0'))):            A6D5DCE882AC44804382DE4639E6001612E1C8B5

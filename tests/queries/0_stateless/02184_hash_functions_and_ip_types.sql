@@ -1,6 +1,5 @@
 SELECT
     toIPv4('1.2.3.4') AS ipv4,
-    halfMD5(ipv4),
     farmFingerprint64(ipv4),
     xxh3(ipv4),
     wyHash64(ipv4),
@@ -27,7 +26,6 @@ FORMAT Vertical;
 
 SELECT
     toIPv6('fe80::62:5aff:fed1:daf0') AS ipv6,
-    halfMD5(ipv6),
     hex(MD4(ipv6)),
     hex(MD5(ipv6)),
     hex(SHA1(ipv6)),
