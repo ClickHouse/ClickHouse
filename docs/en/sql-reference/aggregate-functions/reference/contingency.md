@@ -26,7 +26,7 @@ contingency(column1, column2)
 
 **Example**
 
-The following two columns being compared below have a small association with each other. We have included the result of `cramersV` also (as a comparison):
+The two columns being compared below have a small association with each other. We have included the result of `cramersV` also (as a comparison):
 
 ``` sql
 SELECT
