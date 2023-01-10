@@ -273,6 +273,7 @@ bool CustomSeparatedFormatReader::readField(const String & field, IColumn & colu
 {
     skipSpaces();
     ReadBufferFromString field_buf(field);
+    format_settings.csv.custom_delimiter.clear();
     auto res = deserializeFieldByEscapingRule(type, serialization, column, field_buf, format_settings.custom.escaping_rule, format_settings);
     if (!field_buf.eof())
         throw Exception(ErrorCodes::INCORRECT_DATA, R"(Cannot parse value of column "{}" with type {} here: "{}")", column_name, type->getName(), field);
