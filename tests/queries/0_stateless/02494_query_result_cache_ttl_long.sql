@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest, no-parallel, long
 
 SYSTEM DROP QUERY RESULT CACHE;
 
