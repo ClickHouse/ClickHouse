@@ -39,8 +39,8 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
             getName(), queryToString(kind_arg));
 
-    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromStringToKind(kind_literal->value.get<String>());
-    query = std::make_shared<ASTExplainQuery>(kind);
+    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.get<String>());
+    auto explain_query = std::make_shared<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)
@@ -48,14 +48,16 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a serialized string settings argument, got '{}'",
             getName(), queryToString(function->arguments->children[1]));
 
-    ParserSetQuery settings_parser(true);
     const auto & settings_str = settings_arg->value.get<String>();
     if (!settings_str.empty())
     {
         constexpr UInt64 max_size = 4096;
         constexpr UInt64 max_depth = 16;
+
+        /// parse_only_internals_ = true - we don't want to parse `SET` keyword
+        ParserSetQuery settings_parser(/* parse_only_internals_ = */ true);
         ASTPtr settings_ast = parseQuery(settings_parser, settings_str, max_size, max_depth);
-        query->setSettings(std::move(settings_ast));
+        explain_query->setSettings(std::move(settings_ast));
     }
 
     if (function->arguments->children.size() > 2)
@@ -65,8 +67,10 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}' requires a EXPLAIN SELECT query argument, got EXPLAIN '{}'",
                 getName(), queryToString(query_arg));
-        query->setExplainedQuery(query_arg);
+        explain_query->setExplainedQuery(query_arg);
     }
+
+    query = std::move(explain_query);
 }
 
 ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context) const
