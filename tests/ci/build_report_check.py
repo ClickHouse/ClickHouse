@@ -59,7 +59,7 @@ def group_by_artifacts(build_urls: List[str]) -> Dict[str, List[str]]:
         "performance": [],
     }  # type: Dict[str, List[str]]
     for url in build_urls:
-        if url.endswith("performance.tgz"):
+        if url.endswith("performance.tar.zst"):
             groups["performance"].append(url)
         elif (
             url.endswith(".deb")

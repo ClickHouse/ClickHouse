@@ -67,4 +67,3 @@ schema:                 id Nullable(Float64), age Nullable(Float64), name Nullab
 
 **See also**
 -   [Automatic schema inference from input data](/docs/en/interfaces/schema-inference.md)
-

@@ -123,5 +123,3 @@ ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含
 请求数据时，使用 [sumMap(key,value)](../../../engines/table-engines/mergetree-family/summingmergetree.md) 函数来对 `Map` 进行聚合。
 
 对于嵌套数据结构，你无需在列的元组中指定列以进行汇总。
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

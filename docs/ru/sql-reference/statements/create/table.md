@@ -427,5 +427,3 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘
 ```
-
-<!--hide-->
