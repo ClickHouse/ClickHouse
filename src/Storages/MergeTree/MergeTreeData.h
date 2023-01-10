@@ -1404,8 +1404,8 @@ protected:
     mutable std::condition_variable outdated_data_parts_cv;
 
     BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
-    PartLoadingTreeNodes outdated_unloaded_data_parts;
-    bool outdated_data_parts_loading_canceled = false;
+    PartLoadingTreeNodes outdated_unloaded_data_parts TSA_GUARDED_BY(outdated_data_parts_mutex);
+    bool outdated_data_parts_loading_canceled TSA_GUARDED_BY(outdated_data_parts_mutex) = false;
 
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedDataPartsLoadingTask();
