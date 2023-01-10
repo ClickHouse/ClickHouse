@@ -1515,13 +1515,13 @@ try
         global_context->setMMappedFileCache(mmap_cache_size);
 
     /// A cache for query results.
-    size_t query_result_cache_size = config().getUInt64("query_result_cache_size", settings.query_result_cache_size);
+    size_t query_result_cache_size = config().getUInt64("query_result_cache_size", 1_GiB);
     if (query_result_cache_size)
         global_context->setQueryResultCache(
             query_result_cache_size,
-            config().getUInt64("query_result_cache_max_entries", settings.query_result_cache_max_entries),
-            config().getUInt64("query_result_cache_max_entry_size", settings.query_result_cache_max_entry_size),
-            config().getUInt64("query_result_cache_max_entry_records", settings.query_result_cache_max_entry_records));
+            config().getUInt64("query_result_cache_max_entries", 1024),
+            config().getUInt64("query_result_cache_max_entry_size", 1_MiB),
+            config().getUInt64("query_result_cache_max_entry_records", 30'000'000));
 
 #if USE_EMBEDDED_COMPILER
     /// 128 MB
