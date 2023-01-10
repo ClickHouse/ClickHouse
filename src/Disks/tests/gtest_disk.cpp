@@ -10,11 +10,6 @@ namespace fs = std::filesystem;
 template <typename T>
 DB::DiskPtr createDisk();
 
-template <>
-DB::DiskPtr createDisk<DB::DiskMemory>()
-{
-    return std::make_shared<DB::DiskMemory>("memory_disk");
-}
 
 template <>
 DB::DiskPtr createDisk<DB::DiskLocal>()
@@ -30,11 +25,6 @@ void destroyDisk(DB::DiskPtr & disk)
     disk.reset();
 }
 
-template <>
-void destroyDisk<DB::DiskMemory>(DB::DiskPtr & disk)
-{
-    disk.reset();
-}
 
 template <>
 void destroyDisk<DB::DiskLocal>(DB::DiskPtr & disk)
@@ -55,7 +45,7 @@ public:
 };
 
 
-using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
+using DiskImplementations = testing::Types<DB::DiskLocal>;
 TYPED_TEST_SUITE(DiskTest, DiskImplementations);
 
 

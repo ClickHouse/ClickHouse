@@ -72,4 +72,3 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 -   `OSWriteChars`
 -   `OSReadBytes`
 -   `OSWriteBytes`
-

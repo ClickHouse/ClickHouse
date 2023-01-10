@@ -263,7 +263,7 @@ public:
         return result;
     }
 
-    static void applyFunction(IFunctionBase & function, Field & value)
+    static void applyFunction(const IFunctionBase & function, Field & value)
     {
         const auto & type = function.getArgumentTypes().at(0);
         ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
@@ -338,7 +338,7 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
 
-    auto & function = *node.function_base;
+    const auto & function = *node.function_base;
 
     IFunction::ShortCircuitSettings settings;
     if (function.isShortCircuit(settings, node.children.size()))

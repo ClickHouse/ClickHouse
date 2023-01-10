@@ -16,7 +16,7 @@ import SupersetDocker from '@site/docs/en/_snippets/_add_superset_detail.md';
 ## Goal
 
 In this guide you will learn how to:
-- Load the OpenCelliD data in Clickhouse
+- Load the OpenCelliD data in ClickHouse
 - Connect Apache Superset to ClickHouse
 - Build a dashboard based on data available in the dataset
 
@@ -275,7 +275,7 @@ Here is a description of the columns taken from the OpenCelliD forum:
 To find your MCC check [Mobile network codes](https://en.wikipedia.org/wiki/Mobile_country_code), and use the three digits in the **Mobile country code** column.
 :::
 
-The schema for this table was designed for compact storage on disk and query speed.  
+The schema for this table was designed for compact storage on disk and query speed.
 - The `radio` data is stored as an `Enum8` (`UInt8`) rather than a string.
 - `mcc` or Mobile country code, is stored as a `UInt16` as we know the range is 1 - 999.
 - `lon` and `lat` are `Float64`.
