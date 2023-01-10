@@ -216,7 +216,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
     if (!buffered_row.empty())
     {
         if (buffered_row.size() != column_mapping->column_indexes_for_input_fields.size())
-            throw Exception(
+            throw ParsingException(
                 ErrorCodes::INCORRECT_DATA,
                 "The number of columns ({}) in the row {} differs with the expected number of rows ({})",
                 buffered_row.size(),
