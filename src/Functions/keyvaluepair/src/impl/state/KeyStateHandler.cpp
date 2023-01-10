@@ -30,7 +30,7 @@ NextState KeyStateHandler::wait(const std::string & file, size_t pos) const
     return {pos, State::END};
 }
 
-NextState KeyStateHandler::read(const std::string & file, size_t pos)
+NextState KeyStateHandler::read(const std::string & file, size_t pos, std::string_view & key)
 {
     bool escape = false;
 
@@ -65,7 +65,7 @@ NextState KeyStateHandler::read(const std::string & file, size_t pos)
     return {pos, State::END};
 }
 
-NextState KeyStateHandler::readEnclosed(const std::string & file, size_t pos)
+NextState KeyStateHandler::readEnclosed(const std::string & file, size_t pos, std::string_view & key)
 {
     auto start_index = pos;
     key = {};
@@ -102,11 +102,6 @@ NextState KeyStateHandler::readKeyValueDelimiter(const std::string & file, size_
         const auto current_character = file[pos++];
         return {pos, current_character == key_value_delimiter ? State::WAITING_VALUE : State::WAITING_KEY};
     }
-}
-
-std::string_view KeyStateHandler::getElement() const
-{
-    return key;
 }
 
 }
