@@ -9,6 +9,11 @@
 namespace DB
 {
 
+SharedMutex::SharedMutex()
+    : state(0)
+    , waiters(0)
+{}
+
 void SharedMutex::lock()
 {
     UInt64 value = state.load();
