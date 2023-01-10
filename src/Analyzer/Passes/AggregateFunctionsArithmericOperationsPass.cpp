@@ -156,7 +156,6 @@ private:
             { argument->getResultType() },
             function_aggregate_function->getParameters(),
             properties);
-        auto function_result_type = aggregate_function->getReturnType();
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
