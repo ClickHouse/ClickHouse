@@ -32,7 +32,6 @@
 #include <arrow/builder.h>
 #include <arrow/array.h>
 
-
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
         M(arrow::Type::UINT8, DB::UInt8) \
