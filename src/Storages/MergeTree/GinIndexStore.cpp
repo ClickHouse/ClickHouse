@@ -172,6 +172,9 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String& file_name, size_t n)
         /// Create file and write initial segment id = 1
         std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
 
+        /// Write version
+        writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
+
         writeVarUInt(1, *ostr);
         ostr->sync();
     }
@@ -181,11 +184,17 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String& file_name, size_t n)
     {
         std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(file_name, {}, std::nullopt, std::nullopt);
 
+        /// Skip version
+        istr->seek(1, SEEK_SET);
+
         readVarUInt(result, *istr);
     }
     //save result+n
     {
         std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
+
+        /// Write version
+        writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
 
         writeVarUInt(result + n, *ostr);
         ostr->sync();
@@ -218,6 +227,13 @@ UInt32 GinIndexStore::getNumOfSegments()
     UInt32 result = 0;
     {
         std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(sid_file_name, {}, std::nullopt, std::nullopt);
+
+        uint8_t version = 0;
+        readBinary(version, *istr);
+
+        if (version > CURRENT_GIN_FILE_FORMAT_VERSION)
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported inverted index version {}", version);
+
         readVarUInt(result, *istr);
     }
 
@@ -256,9 +272,6 @@ void GinIndexStore::writeSegment()
     {
         initFileStreams();
     }
-
-    /// Write version
-    writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *segment_file_stream);
 
     /// Write segment
     segment_file_stream->write(reinterpret_cast<char*>(&current_segment), sizeof(GinIndexSegment));
@@ -347,12 +360,6 @@ void GinIndexStoreDeserializer::readSegments()
     GinIndexSegments segments (num_segments);
 
     assert(segment_file_stream != nullptr);
-
-    uint8_t version = 0;
-    readBinary(version, *segment_file_stream);
-
-    if (version > CURRENT_GIN_FILE_FORMAT_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported inverted index version {}", version);
 
     segment_file_stream->readStrict(reinterpret_cast<char*>(segments.data()), num_segments * sizeof(GinIndexSegment));
     for (size_t i = 0; i < num_segments; ++i)
