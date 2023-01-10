@@ -13,6 +13,7 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)
 list (APPEND PUBLIC_LIBS
         ch_contrib::wyhash
         ch_contrib::cityhash
+        ch_contrib::crc32-vpmsum
         ch_contrib::farmhash
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded

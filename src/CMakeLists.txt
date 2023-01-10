@@ -351,6 +351,7 @@ target_link_libraries(clickhouse_common_io
             boost::program_options
             boost::system
             ch_contrib::cityhash
+            ch_contrib::crc32-vpmsum
             ch_contrib::zlib
             pcg_random
             Poco::Foundation
