@@ -34,6 +34,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/UUID.h>
+#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -44,6 +45,8 @@
 #include <IO/WriteBufferFromOStream.h>
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
+#include <Storages/KeyDescription.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -61,6 +64,7 @@ namespace ErrorCodes
     extern const int DUPLICATED_PART_UUIDS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int PROJECTION_NOT_USED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -470,6 +474,25 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     return plan;
 }
 
+namespace
+{
+
+bool supportsSamplingForParallelReplicas(const SelectQueryInfo & select_query_info, const MergeTreeData & data, const Settings & settings)
+{
+    if (settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY)
+    {
+        /// maybe just don't use sampling or try to fallback to SAMPLE_KEY?
+        if (select_query_info.parallel_replica_custom_key_ast == nullptr)
+            throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but no 'parallel_replicas_custom_key' defined");
+
+        return true;
+    }
+
+    return data.supportsSampling();
+}
+
+}
+
 MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     const SelectQueryInfo & select_query_info,
     NamesAndTypesList available_real_columns,
@@ -587,9 +610,10 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
         */
 
+    bool supports_sampling_for_parallel_replicas = supportsSamplingForParallelReplicas(select_query_info, data, settings);
     /// Parallel replicas has been requested but there is no way to sample data.
     /// Select all data from first replica and no data from other replicas.
-    if (settings.parallel_replicas_count > 1 && !data.supportsSampling() && settings.parallel_replica_offset > 0)
+    if (settings.parallel_replicas_count > 1 && !supports_sampling_for_parallel_replicas && settings.parallel_replica_offset > 0)
     {
         LOG_DEBUG(log, "Will use no data on this replica because parallel replicas processing has been requested"
             " (the setting 'max_parallel_replicas') but the table does not support sampling and this replica is not the first.");
@@ -597,8 +621,26 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         return sampling;
     }
 
-    sampling.use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && data.supportsSampling());
+    sampling.use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && supports_sampling_for_parallel_replicas);
     bool no_data = false;   /// There is nothing left after sampling.
+
+    std::optional<KeyDescription> parallel_replicas_custom_key_description;
+    const auto get_sampling_key = [&]() -> const KeyDescription &
+    {
+        if (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY)
+        {
+            assert(select_query_info.parallel_replica_custom_key_ast);
+
+            LOG_INFO(log, "Using custom key for sampling while processing with multiple replicas");
+
+            if (!parallel_replicas_custom_key_description)
+                parallel_replicas_custom_key_description = KeyDescription::getKeyFromAST(select_query_info.parallel_replica_custom_key_ast, metadata_snapshot->columns, context);
+
+            return *parallel_replicas_custom_key_description;
+        }
+
+        return metadata_snapshot->getSamplingKey();
+    };
 
     if (sampling.use_sampling)
     {
@@ -606,7 +648,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             sampling.used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        const auto & sampling_key = metadata_snapshot->getSamplingKey();
+        const auto & sampling_key = get_sampling_key();
         DataTypePtr sampling_column_type = sampling_key.data_types[0];
 
         if (sampling_key.data_types.size() == 1)
@@ -681,7 +723,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             /// If sample and final are used together no need to calculate sampling expression twice.
             /// The first time it was calculated for final, because sample key is a part of the PK.
             /// So, assume that we already have calculated column.
-            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
+            ASTPtr sampling_key_ast = sampling_key.definition_ast;
 
             if (final)
             {
@@ -693,8 +735,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             if (has_lower_limit)
             {
                 if (!key_condition.addCondition(
-                        sampling_key.column_names[0], Range::createLeftBounded(lower, true, sampling_key.data_types[0]->isNullable())))
+                        sampling_key.column_names[0], Range::createLeftBounded(lower, true, sampling_key.data_types[0]->isNullable()))
+                    && (settings.parallel_replicas_count <= 1 || settings.parallel_replicas_mode == ParallelReplicasMode::SAMPLE_KEY))
+                {
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+                }
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -711,8 +756,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             if (has_upper_limit)
             {
                 if (!key_condition.addCondition(
-                        sampling_key.column_names[0], Range::createRightBounded(upper, false, sampling_key.data_types[0]->isNullable())))
+                        sampling_key.column_names[0], Range::createRightBounded(upper, false, sampling_key.data_types[0]->isNullable()))
+                    && (settings.parallel_replicas_count <= 1 || settings.parallel_replicas_mode == ParallelReplicasMode::SAMPLE_KEY))
+                {
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+                }
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);

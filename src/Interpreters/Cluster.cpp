@@ -509,7 +509,6 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     shard_local_addresses.push_back(replica);
                 shard_all_addresses.push_back(replica);
             }
-
             ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
                         all_replicas_pools, settings.load_balancing,
                         settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);

@@ -319,6 +319,15 @@ static ASTPtr parseAdditionalFilterConditionForTable(
     return nullptr;
 }
 
+static ASTPtr parseParallelReplicaCustomKey(const String & setting, const Context & context)
+{
+    ParserExpression parser;
+    const auto & settings = context.getSettingsRef();
+    return parseQuery(
+        parser, setting.data(), setting.data() + setting.size(),
+        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
+}
+
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
 static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 {
@@ -500,6 +509,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (!settings.additional_table_filters.value.empty() && storage && !joined_tables.tablesWithColumns().empty())
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
+
+    if (settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY && !settings.parallel_replicas_custom_key.value.empty())
+    {
+        query_info.parallel_replica_custom_key_ast = parseParallelReplicaCustomKey(
+                settings.parallel_replicas_custom_key, *context);
+    }
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
