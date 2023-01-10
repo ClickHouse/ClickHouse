@@ -55,9 +55,9 @@ public:
     void addStorageLimits(const StorageLimitsList & limits);
 
 private:
-    void buildUnionNodeQueryPlan();
+    void buildPlanForUnionNode();
 
-    void buildQueryNodePlan();
+    void buildPlanForQueryNode();
 
     QueryTreeNodePtr query_tree;
     QueryPlan query_plan;

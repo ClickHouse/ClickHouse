@@ -58,10 +58,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         .setShardInfo(shard_num, shard_count)
         .ignoreASTOptimizations();
 
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    auto update_interpreter = [&](auto & interpreter)
     {
-        auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, context, select_query_options);
-
         interpreter.setProperClientInfo(replica_num, replica_count);
         if (coordinator)
         {
@@ -70,7 +68,12 @@ std::unique_ptr<QueryPlan> createLocalPlan(
                 return coordinator->handleRequest(request);
             });
         }
+    };
 
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, context, select_query_options);
+        update_interpreter(interpreter);
         query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
     }
     else
@@ -78,16 +81,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         auto interpreter = InterpreterSelectQuery(
             query_ast, context,
             select_query_options);
-
-        interpreter.setProperClientInfo(replica_num, replica_count);
-        if (coordinator)
-        {
-            interpreter.setMergeTreeReadTaskCallbackAndClientInfo([coordinator](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
-            {
-                return coordinator->handleRequest(request);
-            });
-        }
-
+        update_interpreter(interpreter);
         interpreter.buildQueryPlan(*query_plan);
     }
 

@@ -659,6 +659,9 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
+namespace
+{
+
 QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const SelectQueryInfo & query_info, StorageID remote_storage_id)
 {
     const auto & query_context = query_info.planner_context->getQueryContext();
@@ -677,6 +680,8 @@ QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const Sele
     replacement_map.emplace(query_info.table_expression.get(), std::move(replacement_table_expression));
 
     return query_info.query_tree->cloneAndReplace(replacement_map);
+}
+
 }
 
 void StorageDistributed::read(

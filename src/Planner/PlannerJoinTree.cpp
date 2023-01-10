@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/CastOverloadResolver.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -473,22 +472,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 continue;
 
             const auto & cast_type = it->second;
-            auto cast_type_name = cast_type->getName();
-            Field cast_type_constant_value(cast_type_name);
-
-            ColumnWithTypeAndName column;
-            column.name = calculateConstantActionNodeName(cast_type_constant_value);
-            column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
-            column.type = std::make_shared<DataTypeString>();
-
-            const auto * cast_type_constant_node = &cast_actions_dag->addColumn(std::move(column));
-
-            FunctionCastBase::Diagnostic diagnostic = {output_node->result_name, output_node->result_name};
-            FunctionOverloadResolverPtr func_builder_cast
-                = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
-
-            ActionsDAG::NodeRawConstPtrs children = {output_node, cast_type_constant_node};
-            output_node = &cast_actions_dag->addFunction(func_builder_cast, std::move(children), output_node->result_name);
+            output_node = &cast_actions_dag->addCast(*output_node, cast_type);
         }
 
         cast_actions_dag->projectInput();

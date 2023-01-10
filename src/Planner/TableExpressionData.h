@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {

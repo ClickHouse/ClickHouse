@@ -384,7 +384,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
 
     const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
     const auto & having_analysis_result = expression_analysis_result.getHaving();
-    bool totals_having_final = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+    bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
 
     if (having_analysis_result.filter_actions)
         result_actions_to_execute.push_back(having_analysis_result.filter_actions);
@@ -398,7 +398,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
         having_analysis_result.remove_filter_column,
         settings.totals_mode,
         settings.totals_auto_threshold,
-        totals_having_final);
+        need_finalize);
     query_plan.addStep(std::move(totals_having_step));
 }
 
@@ -471,11 +471,7 @@ void addDistinctStep(QueryPlan & query_plan,
         pre_distinct,
         settings.optimize_distinct_in_order);
 
-    if (pre_distinct)
-        distinct_step->setStepDescription("Preliminary DISTINCT");
-    else
-        distinct_step->setStepDescription("DISTINCT");
-
+    distinct_step->setStepDescription(pre_distinct ? "Preliminary DISTINCT" : "DISTINCT");
     query_plan.addStep(std::move(distinct_step));
 }
 
@@ -579,14 +575,13 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
                 PlannerActionsVisitor planner_actions_visitor(planner_context);
-                auto expression_to_interpolate_expression_nodes
-                    = planner_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getExpression());
-                auto interpolate_expression_nodes
-                    = planner_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getInterpolateExpression());
-
+                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                    interpolate_node_typed.getExpression());
                 if (expression_to_interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
+                auto interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                    interpolate_node_typed.getInterpolateExpression());
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
@@ -595,25 +590,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
                 if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
-                {
-                    auto cast_type_name = expression_to_interpolate->result_type->getName();
-                    Field cast_type_constant_value(cast_type_name);
-
-                    ColumnWithTypeAndName column;
-                    column.name = calculateConstantActionNodeName(cast_type_name);
-                    column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
-                    column.type = std::make_shared<DataTypeString>();
-
-                    const auto * cast_type_constant_node = &interpolate_actions_dag->addColumn(std::move(column));
-
-                    FunctionCastBase::Diagnostic diagnostic = {interpolate_expression->result_name, interpolate_expression->result_name};
-                    FunctionOverloadResolverPtr func_builder_cast
-                        = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
-
-                    ActionsDAG::NodeRawConstPtrs children = {interpolate_expression, cast_type_constant_node};
-                    interpolate_expression = &interpolate_actions_dag->addFunction(
-                        func_builder_cast, std::move(children), interpolate_expression->result_name);
-                }
+                    interpolate_expression = &interpolate_actions_dag->addCast(*interpolate_expression, expression_to_interpolate->result_type);
 
                 const auto * alias_node = &interpolate_actions_dag->addAlias(*interpolate_expression, expression_to_interpolate_name);
                 interpolate_actions_dag->getOutputs().push_back(alias_node);
@@ -672,11 +649,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
     const Settings & settings = query_context->getSettingsRef();
 
     auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), limit_length, limit_offset, settings.exact_rows_before_limit);
-    if (do_not_skip_offset)
-        limit->setStepDescription("preliminary LIMIT (with OFFSET)");
-    else
-        limit->setStepDescription("preliminary LIMIT (without OFFSET)");
-
+    limit->setStepDescription(do_not_skip_offset ? "preliminary LIMIT (with OFFSET)" : "preliminary LIMIT (without OFFSET)");
     query_plan.addStep(std::move(limit));
 }
 
@@ -991,14 +964,14 @@ void Planner::buildQueryPlanIfNeeded()
         return;
 
     if (query_tree->as<UnionNode>())
-        buildUnionNodeQueryPlan();
+        buildPlanForUnionNode();
     else
-        buildQueryNodePlan();
+        buildPlanForQueryNode();
 
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
-void Planner::buildUnionNodeQueryPlan()
+void Planner::buildPlanForUnionNode()
 {
     const auto & union_node = query_tree->as<UnionNode &>();
     auto union_mode = union_node.getUnionMode();
@@ -1094,7 +1067,7 @@ void Planner::buildUnionNodeQueryPlan()
     }
 }
 
-void Planner::buildQueryNodePlan()
+void Planner::buildPlanForQueryNode()
 {
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
