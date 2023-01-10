@@ -1,9 +1,9 @@
 -- Tags: no-parallel
 
--- run query and cache query result
+-- Cache query result in query result cache
 SELECT 1 SETTINGS enable_experimental_query_result_cache = true;
 SELECT count(*) FROM system.query_result_cache;
 
--- query results are no longer in cache after drop
+-- No query results are cached after DROP
 SYSTEM DROP QUERY RESULT CACHE;
 SELECT count(*) FROM system.query_result_cache;
