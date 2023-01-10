@@ -120,6 +120,8 @@ public:
         explicit Source(StoragePtr storage_);
         Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_);
 
+        const StoragePtr & getStoragePtr() const { return storage; }
+
     private:
         StoragePtr storage;
 

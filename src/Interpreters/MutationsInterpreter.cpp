@@ -523,7 +523,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     /// Add _row_exists column if it is physically present in the part
-    if (auto part_storage = dynamic_pointer_cast<DB::StorageFromMergeTreeDataPart>(storage))
+    if (auto part_storage = dynamic_pointer_cast<DB::StorageFromMergeTreeDataPart>(source.getStoragePtr()))
     {
         if (part_storage->hasLightweightDeletedMask())
             all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
