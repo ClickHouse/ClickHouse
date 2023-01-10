@@ -71,5 +71,3 @@ $$)
 **See Also**
 
 -   [Formats](../../interfaces/formats.md)
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/format) <!--hide-->

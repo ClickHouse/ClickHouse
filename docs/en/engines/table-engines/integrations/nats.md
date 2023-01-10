@@ -172,5 +172,3 @@ The number of rows in one NATS message depends on whether the format is row-base
 
 - For row-based formats the number of rows in one NATS message can be controlled by setting `nats_max_rows_per_message`.
 - For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/nats/) <!--hide-->
