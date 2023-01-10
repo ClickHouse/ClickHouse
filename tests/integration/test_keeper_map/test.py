@@ -47,9 +47,6 @@ def remove_children(client, path):
 
 
 def test_create_keeper_map(started_cluster):
-    node.query("DROP TABLE IF EXISTS test_keeper_map SYNC")
-    node.query("DROP TABLE IF EXISTS test_keeper_map_another SYNC")
-
     node.query(
         "CREATE TABLE test_keeper_map (key UInt64, value UInt64) ENGINE = KeeperMap('/test1') PRIMARY KEY(key);"
     )
@@ -150,8 +147,6 @@ def test_create_drop_keeper_map_concurrent(started_cluster):
 
 
 def test_keeper_map_without_zk(started_cluster):
-    node.query("DROP TABLE IF EXISTS test_keeper_map SYNC")
-
     def assert_keeper_exception_after_partition(query):
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(node)
