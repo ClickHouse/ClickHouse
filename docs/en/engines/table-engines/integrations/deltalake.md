@@ -5,7 +5,7 @@ sidebar_label: DeltaLake
 
 # DeltaLake Table Engine
 
-This engine provides a read-only integration with existing Delta Lake tables in Amazon S3.
+This engine provides a read-only integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3.
 
 ## Create Table
 
