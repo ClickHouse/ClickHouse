@@ -4155,10 +4155,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr);
             function_lambda_arguments_indexes.push_back(function_argument_index);
         }
-        else if (is_special_function_in &&
-            (function_argument->getNodeType() == QueryTreeNodeType::TABLE ||
-            function_argument->getNodeType() == QueryTreeNodeType::QUERY ||
-            function_argument->getNodeType() == QueryTreeNodeType::UNION))
+        else if (is_special_function_in && function_argument_index == 1)
         {
             argument_column.type = std::make_shared<DataTypeSet>();
         }
@@ -4534,16 +4531,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto column_set = ColumnSet::create(1, std::move(set));
             argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
         }
+
+        argument_columns[1].type = std::make_shared<DataTypeSet>();
     }
 
     std::shared_ptr<ConstantValue> constant_value;
 
-    DataTypePtr result_type;
-
     try
     {
         auto function_base = function->build(argument_columns);
-        result_type = function_base->getResultType();
 
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
@@ -4551,6 +4547,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           */
         if (function_base->isSuitableForConstantFolding())
         {
+            auto result_type = function_base->getResultType();
             auto executable_function = function_base->prepare(argument_columns);
 
             ColumnPtr column;
