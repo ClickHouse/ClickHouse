@@ -45,4 +45,3 @@ SELECT groupBitXor(num) FROM t
 binary     decimal
 01101000 = 104
 ```
-

@@ -126,7 +126,7 @@ class Tester:
 
 def main():
     # Set mutations to synchronous mode and enable lightweight DELETE's
-    url = os.environ['CLICKHOUSE_URL'] + '&mutations_sync=2&allow_experimental_lightweight_delete=1&max_threads=1'
+    url = os.environ['CLICKHOUSE_URL'] + '&allow_experimental_lightweight_delete=1&max_threads=1'
 
     default_index_granularity = 10;
     total_rows = 8 * default_index_granularity
