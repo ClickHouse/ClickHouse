@@ -115,10 +115,10 @@ if __name__ == "__main__":
     paths = {
         "run.log": run_log_path,
         "main.log": os.path.join(workspace_path, "main.log"),
-        "server.log.gz": os.path.join(workspace_path, "server.log.gz"),
+        "server.log.zst": os.path.join(workspace_path, "server.log.zst"),
         "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
         "report.html": os.path.join(workspace_path, "report.html"),
-        "core.gz": os.path.join(workspace_path, "core.gz"),
+        "core.zst": os.path.join(workspace_path, "core.zst"),
     }
 
     s3_helper = S3Helper()
