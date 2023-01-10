@@ -179,6 +179,10 @@ add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
 add_contrib (morton-nd-cmake morton-nd)
 
+if (ARCH_S390X)
+    add_contrib(crc32-s390x-cmake crc32-s390x)
+endif()
+
 add_contrib (annoy-cmake annoy)
 
 add_contrib (xxHash-cmake xxHash)

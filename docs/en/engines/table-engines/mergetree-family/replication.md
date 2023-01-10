@@ -325,5 +325,3 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
 -   [execute_merges_on_single_replica_time_threshold](/docs/en/operations/settings/settings.md/#execute-merges-on-single-replica-time-threshold)
 -   [max_replicated_fetches_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
 -   [max_replicated_sends_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->

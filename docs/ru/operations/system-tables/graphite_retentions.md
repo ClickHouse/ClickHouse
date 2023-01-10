@@ -16,4 +16,3 @@ slug: /ru/operations/system-tables/graphite_retentions
 -   `is_default` (UInt8) - Является ли раздел pattern дефолтным.
 -   `Tables.database` (Array(String)) - Массив имён баз данных таблиц, использующих параметр `config_name`.
 -   `Tables.table` (Array(String)) - Массив имён таблиц, использующих параметр `config_name`.
-
