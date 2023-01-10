@@ -47,13 +47,25 @@ def remove_children(client, path):
 
 
 def test_create_keeper_map(started_cluster):
+    node.query("DROP TABLE IF EXISTS test_keeper_map SYNC")
+    node.query("DROP TABLE IF EXISTS test_keeper_map_another SYNC")
+
     node.query(
         "CREATE TABLE test_keeper_map (key UInt64, value UInt64) ENGINE = KeeperMap('/test1') PRIMARY KEY(key);"
     )
     zk_client = get_genuine_zk()
 
     def assert_children_size(path, expected_size):
-        assert len(zk_client.get_children(path)) == expected_size
+        children_size = 0
+        # 4 secs should be more than enough for replica to sync
+        for _ in range(10):
+            children_size = len(zk_client.get_children(path))
+            if children_size == expected_size:
+                return
+            sleep(0.4)
+        assert (
+            False
+        ), f"Invalid number of children for '{path}': actual {children_size}, expected {expected_size}"
 
     def assert_root_children_size(expected_size):
         assert_children_size("/test_keeper_map/test1", expected_size)
@@ -138,6 +150,8 @@ def test_create_drop_keeper_map_concurrent(started_cluster):
 
 
 def test_keeper_map_without_zk(started_cluster):
+    node.query("DROP TABLE IF EXISTS test_keeper_map SYNC")
+
     def assert_keeper_exception_after_partition(query):
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(node)
