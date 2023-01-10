@@ -26,7 +26,7 @@ Images = Dict[str, List[str]]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="The program gets images from changed_images_*.json, merges imeges "
+        description="The program gets images from changed_images_*.json, merges images "
         "with different architectures into one manifest and pushes back to docker hub",
     )
 
