@@ -806,7 +806,8 @@ Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
 
--   `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to subtract. Note: The unit should be unquoted.
+
     Possible values:
 
     - `second`

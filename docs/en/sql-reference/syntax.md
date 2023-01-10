@@ -206,5 +206,3 @@ In a `SELECT` query, an asterisk can replace the expression. For more informatio
 An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
-
-[Original article](https://clickhouse.com/docs/en/sql_reference/syntax/) <!--hide-->
