@@ -30,7 +30,7 @@ IMAGE_NAME = "clickhouse/sqlancer-test"
 
 
 def get_pull_command(docker_image):
-    return f"docker pull --network=host {docker_image}"
+    return f"docker pull {docker_image}"
 
 
 def get_run_command(download_url, workspace_path, image):
