@@ -25,7 +25,7 @@ struct GinSegmentWithRowIDRange
     UInt32 range_end;
 };
 
-/// GinFilter provides underlying funtionalities for building inverted index and also
+/// GinFilter provides underlying functionalities for building inverted index and also
 /// it does filtering the unmatched rows according to its query string.
 /// It also builds and uses skipping index which stores (segmentID, RowIDStart, RowIDEnd) triples.
 class GinFilter
