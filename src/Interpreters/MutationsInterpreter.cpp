@@ -524,7 +524,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     /// Add _row_exists column if it is physically present in the part
     if (source.hasLightweightDeleteMask())
-            all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
+        all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
