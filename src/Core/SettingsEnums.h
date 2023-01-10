@@ -193,5 +193,5 @@ enum class Dialect
 
 DECLARE_SETTING_ENUM(Dialect)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(StorageFileReadMethod, LocalFSReadMethod)
+DECLARE_SETTING_ENUM(LocalFSReadMethod)
 }

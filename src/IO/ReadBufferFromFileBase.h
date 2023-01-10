@@ -3,7 +3,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileName.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/time.h>
 
 #include <functional>
