@@ -147,11 +147,11 @@ private:
         /// https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method
 
         /// calculates a simple cumulative distribution based on weights
-        /// Note: if sum_weight is 0 then subsequent division is inf, so set the value of the exp to 0.
-        for (size_t idx = 0; idx < size; ++idx)
-            value_weight_pairs[idx].second
-                = sum_weight == 0 ? 0 : (weights_cum_sum[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
-
+        if (sum_weight != 0)
+        {
+            for (size_t idx = 0; idx < size; ++idx)
+                value_weight_pairs[idx].second = (weights_cum_sum[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
+        }
 
         /// perform linear interpolation
         size_t idx = 0;
@@ -229,10 +229,11 @@ private:
         /// https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method
 
         /// calculates a simple cumulative distribution based on weights
-        /// Note: if sum_weight is 0 then subsequent division is inf, so set the value of the exp to 0.
-        for (size_t idx = 0; idx < size; ++idx)
-            value_weight_pairs[idx].second
-                = sum_weight == 0 ? 0 : (weights_cum_sum[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
+        if (sum_weight != 0)
+        {
+            for (size_t idx = 0; idx < size; ++idx)
+                value_weight_pairs[idx].second = (weights_cum_sum[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
+        }
 
         for (size_t level_index = 0; level_index < num_levels; ++level_index)
         {
@@ -272,12 +273,12 @@ private:
     /// results since `the quantileInterpolatedWeighted` function itself relies mainly on approximation.
     UnderlyingType NO_SANITIZE_UNDEFINED interpolate(Float64 level, Float64 xl, Float64 xr, UnderlyingType yl, UnderlyingType yr) const
     {
-        UnderlyingType dy = common::subIgnoreOverflow(yr, yl);
-        Float64 dx = common::subIgnoreOverflow(xr, xl);
+        UnderlyingType dy = yr - yl;
+        Float64 dx = xr - xl;
         dx = dx == 0 ? 1 : dx; /// to handle NaN behavior that might arise during integer division below.
 
         /// yl + (dy / dx) * (level - xl)
-        return static_cast<UnderlyingType>(yl + (dy/dx) * (level - xl));
+        return static_cast<UnderlyingType>(yl + (dy / dx) * (level - xl));
     }
 };
 
