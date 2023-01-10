@@ -5,6 +5,7 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
+#include "Storages/MergeTree/AsyncBlockIDsCache.h"
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
@@ -100,7 +101,7 @@ namespace
             String conflict_block_id = p.filename();
             auto it = partition.block_id_to_offset_idx.find(conflict_block_id);
             if (it == partition.block_id_to_offset_idx.end())
-                throw Exception("Unknown conflict path " + conflict_block_id, ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown conflict path {}", conflict_block_id);
             offset_idx.push_back(it->second);
         }
         std::sort(offset_idx.begin(), offset_idx.end());
@@ -611,6 +612,10 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         BlockIDsType block_id_path ;
         if constexpr (async_insert)
         {
+            /// prefilter by cache
+            conflict_block_ids = storage.async_block_ids_cache.detectConflicts(block_id, cache_version);
+            if (!conflict_block_ids.empty())
+                return;
             for (const auto & single_block_id : block_id)
                 block_id_path.push_back(storage.zookeeper_path + "/async_blocks/" + single_block_id);
         }

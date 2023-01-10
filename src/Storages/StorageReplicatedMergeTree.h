@@ -5,6 +5,7 @@
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/RenamingRestrictions.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
@@ -332,6 +333,7 @@ private:
     friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
+    friend class AsyncBlockIDsCache;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreeAttachThread;
@@ -439,6 +441,8 @@ private:
 
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
+
+    AsyncBlockIDsCache async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
