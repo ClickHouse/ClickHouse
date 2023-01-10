@@ -6,6 +6,39 @@ slug: /en/operations/settings/settings
 
 # Settings
 
+## additional_table_filters
+
+An additional filter expression that is applied after reading
+from the specified table.
+
+Default value: 0.
+
+**Example**
+
+``` sql
+insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 2 │ bb   │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+```sql
+SELECT *
+FROM table_1
+SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
@@ -161,6 +194,75 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 ```
 
 Works with tables in the MergeTree family.
+
+## convert_query_to_cnf {#convert_query_to_cnf}
+
+When set to `true`, a `SELECT` query will be converted to conjuctive normal formal (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
+
+For example, notice how the following `SELECT` query is not modified (the default behavior):
+
+```sql
+EXPLAIN SYNTAX
+SELECT *
+FROM
+(
+    SELECT number AS x
+    FROM numbers(20)
+) AS a
+WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
+SETTINGS convert_query_to_cnf = false;
+```
+
+The result is:
+
+```response
+┌─explain────────────────────────────────────────────────────────┐
+│ SELECT x                                                       │
+│ FROM                                                           │
+│ (                                                              │
+│     SELECT number AS x                                         │
+│     FROM numbers(20)                                           │
+│     WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15)) │
+│ ) AS a                                                         │
+│ WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))     │
+│ SETTINGS convert_query_to_cnf = 0                              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Let's set `convert_query_to_cnf` to `true` and see what changes:
+
+```sql
+EXPLAIN SYNTAX
+SELECT *
+FROM
+(
+    SELECT number AS x
+    FROM numbers(20)
+) AS a
+WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
+SETTINGS convert_query_to_cnf = true;
+```
+
+Notice the `WHERE` clause is rewritten in CNF, but the result set is the identical - the Boolean logic is unchanged:
+
+```response
+┌─explain───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SELECT x                                                                                                              │
+│ FROM                                                                                                                  │
+│ (                                                                                                                     │
+│     SELECT number AS x                                                                                                │
+│     FROM numbers(20)                                                                                                  │
+│     WHERE ((x <= 15) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x >= 10) OR (x >= 1)) │
+│ ) AS a                                                                                                                │
+│ WHERE ((x >= 10) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x <= 15) OR (x <= 5))     │
+│ SETTINGS convert_query_to_cnf = 1                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Possible values: true, false
+
+Default value: false
+
 
 ## fsync_metadata {#fsync-metadata}
 
@@ -1010,6 +1112,12 @@ Works for tables with streaming in the case of a timeout, or when a thread gener
 The default value is 7500.
 
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
+
+## stream_poll_timeout_ms {#stream_poll_timeout_ms}
+
+Timeout for polling data from/to streaming storages.
+
+Default value: 500.
 
 ## load_balancing {#settings-load_balancing}
 
@@ -2401,19 +2509,6 @@ Result
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
-
-## persistent {#persistent}
-
-Disables persistency for the [Set](../../engines/table-engines/special/set.md/#set) and [Join](../../engines/table-engines/special/join.md/#join) table engines.
-
-Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-
-Default value: `1`.
 
 ## allow_nullable_key {#allow-nullable-key}
 

@@ -16,5 +16,3 @@ Columns:
 -   `prefer_not_to_merge` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Value of the `prefer_not_to_merge` setting. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/storage_policies) <!--hide-->

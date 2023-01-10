@@ -330,10 +330,10 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         auto pool = shard.shard_info.per_replica_pools[replica_num];
         assert(pool);
 
-        auto pool_with_failover =  std::make_shared<ConnectionPoolWithFailover>(
+        auto pool_with_failover = std::make_shared<ConnectionPoolWithFailover>(
             ConnectionPoolPtrs{pool}, current_settings.load_balancing);
 
-        addPipeForSingeReplica(pipes, pool_with_failover, replica_info);
+        addPipeForSingeReplica(pipes, std::move(pool_with_failover), replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -352,6 +352,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef().async_socket_for_remote;
+
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
@@ -363,18 +364,16 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
-    std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
-
-    remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            pool, query_string, shard.header, context, throttler, scalars, external_tables, stage,
-            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
+    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+        pool, query_string, shard.header, context, throttler, scalars, external_tables, stage,
+        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
 
     remote_query_executor->setLogger(log);
 
     if (!table_func_ptr)
         remote_query_executor->setMainTable(main_table);
 
-    pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
+    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read));
     addConvertingActions(pipes.back(), output_stream->header);
 }
 

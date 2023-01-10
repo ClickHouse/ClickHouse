@@ -16,7 +16,7 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
-from download_release_packets import download_last_release
+from download_release_packages import download_last_release
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
 from commit_status_helper import (
@@ -148,6 +148,7 @@ if __name__ == "__main__":
     stopwatch = Stopwatch()
 
     temp_path = TEMP_PATH
+    post_commit_path = os.path.join(temp_path, "integration_commit_status.tsv")
     repo_path = REPO_COPY
     reports_path = REPORTS_PATH
 
@@ -180,7 +181,7 @@ if __name__ == "__main__":
     if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
-                os.path.join(temp_path, "post_commit_status.tsv"),
+                post_commit_path,
                 f"Skipped (no pr-bugfix in {pr_info.labels})",
                 "success",
                 "null",
@@ -246,6 +247,11 @@ if __name__ == "__main__":
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run tests successfully")
+        elif retcode == 13:
+            logging.warning(
+                "There were issues with infrastructure. Not writing status report to restart job."
+            )
+            sys.exit(1)
         else:
             logging.info("Some tests failed")
 
@@ -275,7 +281,7 @@ if __name__ == "__main__":
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(
-            os.path.join(temp_path, "post_commit_status.tsv"),
+            post_commit_path,
             description,
             state,
             report_url,
