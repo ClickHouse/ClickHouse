@@ -175,7 +175,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
             break;
         }
     }
-        
+
     if (!first_row_is_a_header)
     {
         /// Remember values from the first row to read data from them later.
