@@ -14,7 +14,7 @@ HTML_BASE_TEST_TEMPLATE = """
     --background: hsl(190deg, 90%, 5%) linear-gradient(180deg, hsl(190deg, 90%, 10%), hsl(190deg, 90%, 0%));
     --td-background: hsl(190deg, 90%, 15%);
     --th-background: hsl(180deg, 90%, 15%);
-    --link-color: white;
+    --link-color: #FF5;
     --link-hover-color: #F40;
     --menu-background: hsl(190deg, 90%, 20%);
     --menu-hover-background: hsl(190deg, 100%, 50%);
