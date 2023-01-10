@@ -19,14 +19,12 @@ CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'default')
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
 
-REFFILE_PATH = os.path.abspath(os.getcwd())
-
 from pure_http_client import ClickHouseClient
 
 if platform.machine() == "ppc64le":
-    shutil.copyfile(REFFILE_PATH + "/tests/queries/0_stateless/01016_simhash_minhash.ppc64le.reference", REFFILE_PATH + "/tests/queries/0_stateless/01016_simhash_minhash.reference")
+    shutil.copyfile(CURDIR + "/01016_simhash_minhash.ppc64le.reference", CURDIR + "/01016_simhash_minhash.reference")
 elif platform.machine() == "x86_64" :
-    shutil.copyfile(REFFILE_PATH + "/tests/queries/0_stateless/01016_simhash_minhash.x86_64.reference", REFFILE_PATH + "/tests/queries/0_stateless/01016_simhash_minhash.reference")
+    shutil.copyfile(CURDIR + "/01016_simhash_minhash.x86_64.reference", CURDIR + "/01016_simhash_minhash.reference")
 
 def writeVarUInt(x, ba):
     for _ in range(0, 9):
