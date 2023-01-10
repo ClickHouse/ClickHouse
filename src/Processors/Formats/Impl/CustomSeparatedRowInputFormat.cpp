@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowInputFormat.h>
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/Operators.h>
 
@@ -87,8 +88,7 @@ void CustomSeparatedRowInputFormat::syncAfterError()
 
 void CustomSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
+    buf->setSubBuffer(in_);
 }
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(
@@ -370,12 +370,12 @@ DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypes()
         first_row = false;
 
     auto fields = reader.readRow();
-    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
+    return tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule(), &json_inference_info);
 }
 
-void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredTypesIfNeeded(type, new_type, format_settings, reader.getEscapingRule());
+    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, reader.getEscapingRule(), &json_inference_info);
 }
 
 void registerInputFormatCustomSeparated(FormatFactory & factory)
