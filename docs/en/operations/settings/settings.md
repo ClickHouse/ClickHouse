@@ -2576,6 +2576,60 @@ Default value: `''`.
 
 See examples in [UNION](../../sql-reference/statements/select/union.md).
 
+## default_table_engine {#default_table_engine}
+
+Default table engine to use when `ENGINE` is not set in a `CREATE` statement.
+
+Possible values:
+
+- a string representing any valid table engine name
+
+Default value: `None`
+
+**Example**
+
+Query:
+
+```sql
+SET default_table_engine = 'Log';
+
+SELECT name, value, changed FROM system.settings WHERE name = 'default_table_engine';
+```
+
+Result:
+
+```response
+┌─name─────────────────┬─value─┬─changed─┐
+│ default_table_engine │ Log   │       1 │
+└──────────────────────┴───────┴─────────┘
+```
+
+In this example, any new table that does not specify an `Engine` will use the `Log` table engine:
+
+Query:
+
+```sql
+CREATE TABLE my_table (
+    x UInt32,
+    y UInt32
+);
+
+SHOW CREATE TABLE my_table;
+```
+
+Result:
+
+```response
+┌─statement────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.my_table
+(
+    `x` UInt32,
+    `y` UInt32
+)
+ENGINE = Log
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
 ## data_type_default_nullable {#data_type_default_nullable}
 
 Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md/#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
