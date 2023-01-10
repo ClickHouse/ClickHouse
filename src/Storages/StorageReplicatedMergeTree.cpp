@@ -3423,7 +3423,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 }
 
 
-void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children)
+void StorageReplicatedMergeTree::getRemovePartFromZooKeeperOps(const String & part_name, Coordination::Requests & ops, bool has_children)
 {
     String part_path = fs::path(replica_path) / "parts" / part_name;
 
@@ -3447,11 +3447,11 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
 
     Coordination::Requests ops;
 
-    removePartFromZooKeeper(part_name, ops, stat.numChildren > 0);
+    getRemovePartFromZooKeeperOps(part_name, ops, stat.numChildren > 0);
     zookeeper->multi(ops);
 }
 
-void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
+void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name, bool storage_init)
 {
     auto zookeeper = getZooKeeper();
 
@@ -3485,39 +3485,76 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
     String part_path = fs::path(replica_path) / "parts" / part_name;
 
-    Coordination::Requests ops;
-
-    time_t part_create_time = 0;
-    Coordination::Stat stat;
-    if (zookeeper->exists(part_path, &stat))
+    while (true)
     {
-        /// Update version of /is_lost node to avoid race condition with cloneReplica(...).
-        /// cloneReplica(...) expects that if some entry was executed, then its new_part_name is added to /parts,
-        /// but we are going to remove it from /parts and add to queue again.
-        Coordination::Stat is_lost_stat;
-        String is_lost_value = zookeeper->get(replica_path + "/is_lost", &is_lost_stat);
-        assert(is_lost_value == "0");
-        ops.emplace_back(zkutil::makeSetRequest(replica_path + "/is_lost", is_lost_value, is_lost_stat.version));
 
-        part_create_time = stat.ctime / 1000;
-        removePartFromZooKeeper(part_name, ops, stat.numChildren > 0);
+        Coordination::Requests ops;
+
+        time_t part_create_time = 0;
+        Coordination::Stat stat;
+        if (zookeeper->exists(part_path, &stat))
+        {
+            /// Update version of /is_lost node to avoid race condition with cloneReplica(...).
+            /// cloneReplica(...) expects that if some entry was executed, then its new_part_name is added to /parts,
+            /// but we are going to remove it from /parts and add to queue again.
+            Coordination::Stat is_lost_stat;
+            String is_lost_value = zookeeper->get(replica_path + "/is_lost", &is_lost_stat);
+            assert(is_lost_value == "0");
+            ops.emplace_back(zkutil::makeSetRequest(replica_path + "/is_lost", is_lost_value, is_lost_stat.version));
+
+            part_create_time = stat.ctime / 1000;
+            getRemovePartFromZooKeeperOps(part_name, ops, stat.numChildren > 0);
+        }
+
+
+        LogEntryPtr log_entry = std::make_shared<LogEntry>();
+        log_entry->type = LogEntry::GET_PART;
+        log_entry->create_time = part_create_time;
+        log_entry->source_replica = "";
+        log_entry->new_part_name = part_name;
+
+        if (!storage_init)
+        {
+            /// We use merge predicate + version check here, because DROP RANGE update log version and we are trying to avoid race with it. We must be sure, that our part
+            /// was not dropped, otherwise we will have fetch entry, but no virtual part for it (DROP RANGE will remove it). So bad sequence is the following:
+            /// 1) Create DROP PART in log for broken_part (for example because it's not only broken, but also empty)
+            /// 1.5) Pull to log and start execution (removePartProducingOpsInRange)
+            /// 2) Execute this method (create GET PART for broken part)
+            /// 3) Finish DROP PART execution (remove part from virtual parts)
+            /// 4) Now we get GET PART for broken part which is absent in virtual parts == bug
+            ///
+            /// Because of version check this method will never create FETCH if drop part exists
+
+            ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
+            if (merge_pred.hasDropRange(broken_part_info))
+            {
+                LOG_INFO(log, "Broken part {} is covered by DROP RANGE, don't need to fetch it", part_name);
+                return;
+            }
+            /// Check that our version of log (and queue) is the most fresh. Otherwise don't create new entry fetch entry.
+            ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion()));
+        }
+
+        ops.emplace_back(zkutil::makeCreateRequest(
+            fs::path(replica_path) / "queue/queue-", log_entry->toString(),
+            zkutil::CreateMode::PersistentSequential));
+
+        Coordination::Responses results;
+        auto rc = zookeeper->tryMulti(ops, results);
+
+        if (rc == Coordination::Error::ZBADVERSION)
+        {
+            LOG_TRACE(log, "Log updated, cannot create fetch entry for part {}, will retry.", part_name);
+            continue;
+        }
+
+        zkutil::KeeperMultiException::check(rc, ops, results);
+
+        String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
+        log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+        queue.insert(zookeeper, log_entry);
+        break;
     }
-
-    LogEntryPtr log_entry = std::make_shared<LogEntry>();
-    log_entry->type = LogEntry::GET_PART;
-    log_entry->create_time = part_create_time;
-    log_entry->source_replica = "";
-    log_entry->new_part_name = part_name;
-
-    ops.emplace_back(zkutil::makeCreateRequest(
-        fs::path(replica_path) / "queue/queue-", log_entry->toString(),
-        zkutil::CreateMode::PersistentSequential));
-
-    auto results = zookeeper->multi(ops);
-
-    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
-    log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-    queue.insert(zookeeper, log_entry);
 }
 
 
@@ -6521,7 +6558,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(const Strin
                 if (exists_resp.error == Coordination::Error::ZOK)
                 {
                     Coordination::Requests ops;
-                    removePartFromZooKeeper(part_names[i], ops, exists_resp.stat.numChildren > 0);
+                    getRemovePartFromZooKeeperOps(part_names[i], ops, exists_resp.stat.numChildren > 0);
                     remove_futures.emplace_back(zookeeper->asyncTryMultiNoThrow(ops));
                 }
             }
@@ -6584,7 +6621,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
             if (exists_resp.error == Coordination::Error::ZOK)
             {
                 Coordination::Requests ops;
-                removePartFromZooKeeper(part_names[i], ops, exists_resp.stat.numChildren > 0);
+                getRemovePartFromZooKeeperOps(part_names[i], ops, exists_resp.stat.numChildren > 0);
                 remove_futures.emplace_back(zookeeper->asyncTryMultiNoThrow(ops));
             }
             else
@@ -7554,6 +7591,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size + 1]).path_created;
         entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
+        LOG_TRACE(log, "DROP RANGE for part {} inserted with znode name {}", part_name, entry.znode_name);
         return true;
     }
 }

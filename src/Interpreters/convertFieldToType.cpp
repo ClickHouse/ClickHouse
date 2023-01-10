@@ -243,13 +243,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
             return Field(DecimalField<DateTime64>(decimal_value, scale));
         }
+
+        if (which_type.isIPv4() && src.getType() == Field::Types::IPv4)
+        {
+            /// Already in needed type.
+            return src;
+        }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
-    {
-        /// Already in needed type.
-        return src;
-    }
-    else if (which_type.isIPv4() && src.getType() == Field::Types::IPv4)
     {
         /// Already in needed type.
         return src;
