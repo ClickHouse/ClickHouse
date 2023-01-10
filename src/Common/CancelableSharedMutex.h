@@ -11,9 +11,9 @@
 namespace DB
 {
 
-// Reimplementation of `std::shared_mutex` that can interoperate with thread cancelation via `CancelToken::signal()`.
-// It has cancelation point on waiting during `lock()` and `shared_lock()`.
-// NOTE: It has NO cancelation points on fast code path, when locking does not require waiting.
+// Reimplementation of `std::shared_mutex` that can interoperate with thread cancellation via `CancelToken::signal()`.
+// It has cancellation point on waiting during `lock()` and `shared_lock()`.
+// NOTE: It has NO cancellation points on fast code path, when locking does not require waiting.
 class TSA_CAPABILITY("CancelableSharedMutex") CancelableSharedMutex
 {
 public:
