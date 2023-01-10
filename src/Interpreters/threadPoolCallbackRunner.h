@@ -37,7 +37,7 @@ ThreadPoolCallbackRunner<Result> threadPoolCallbackRunner(ThreadPool & pool, con
         auto future = task->get_future();
 
         /// ThreadPool is using "bigger is higher priority" instead of "smaller is more priority".
-        pool->scheduleOrThrow([task]{ (*task)(); }, -priority);
+        pool->scheduleOrThrow([task = std::move(task)]{ (*task)(); }, -priority);
 
         return future;
     };

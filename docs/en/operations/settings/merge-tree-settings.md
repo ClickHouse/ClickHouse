@@ -311,7 +311,7 @@ Possible values:
 
 Default value: 0.5
 
-## replicated_max_parallel_fetches_for_host 
+## replicated_max_parallel_fetches_for_host
 
 Limit parallel fetches from endpoint (actually pool size).
 
@@ -517,6 +517,26 @@ Possible values:
 -   Any positive integer.
 
 Default value: -1 (unlimited).
+
+## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
+
+Merge parts if every part in the range is older than the value of `min_age_to_force_merge_seconds`.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: 0 — Disabled.
+
+## min_age_to_force_merge_on_partition_only {#min_age_to_force_merge_on_partition_only}
+
+Whether `min_age_to_force_merge_seconds` should be applied only on the entire partition and not on subset.
+
+Possible values:
+
+-   true, false
+
+Default value: false
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 

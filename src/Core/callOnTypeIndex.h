@@ -160,6 +160,9 @@ class DataTypeDate32;
 class DataTypeString;
 class DataTypeFixedString;
 class DataTypeUUID;
+template <typename IPv> class DataTypeIP;
+using DataTypeIPv4 = DataTypeIP<IPv4>;
+using DataTypeIPv6 = DataTypeIP<IPv6>;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 template <typename T> class DataTypeEnum;
@@ -206,6 +209,8 @@ bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
         case TypeIndex::Enum16:         return f(TypePair<DataTypeEnum<Int16>, T>(), std::forward<ExtraArgs>(args)...);
 
         case TypeIndex::UUID:           return f(TypePair<DataTypeUUID, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::IPv4:           return f(TypePair<DataTypeIPv4, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::IPv6:           return f(TypePair<DataTypeIPv6, T>(), std::forward<ExtraArgs>(args)...);
 
         default:
             break;
