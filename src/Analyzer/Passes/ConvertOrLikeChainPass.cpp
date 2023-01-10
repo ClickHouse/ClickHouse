@@ -30,7 +30,7 @@ public:
         , match_function_ref(_match_function_ref)
     {}
 
-    bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
+    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
     {
         ContextPtr context;
         if (auto * query = parent->as<QueryNode>())
