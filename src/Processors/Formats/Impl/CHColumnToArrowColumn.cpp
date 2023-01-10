@@ -734,7 +734,7 @@ namespace DB
                 column.column = recursiveRemoveLowCardinality(column.column);
             }
             bool is_column_nullable = false;
-            auto arrow_type = getArrowType(column.type, column.column, column.name, format_name, &is_column_nullable);
+            auto arrow_type = getArrowType(column.type, column.column, column.name, format_name, output_string_as_string_, &is_column_nullable);
             arrow_fields.emplace_back(std::make_shared<arrow::Field>(column.name, arrow_type, is_column_nullable));
             header_columns.emplace_back(std::move(column));
         }
