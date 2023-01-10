@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Common/Exception.h"
 #include <cstddef>
 #include <type_traits>
 
@@ -43,6 +42,7 @@
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -55,6 +55,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Common/HashTable/HashMap.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Core/Types.h>
 
 
@@ -73,6 +74,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
@@ -120,6 +123,7 @@ struct AccurateOrNullConvertStrategyAdditions
 
 struct ConvertDefaultBehaviorTag {};
 struct ConvertReturnNullOnErrorTag {};
+struct ConvertReturnZeroOnErrorTag {};
 
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
@@ -207,6 +211,17 @@ struct ConvertImpl
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
                     throw Exception("Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted", ErrorCodes::NOT_IMPLEMENTED);
+                }
+                else if constexpr (
+                    (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
+                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
+                )
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported", TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
+                }
+                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6>)
+                {
+                    throw Exception("Conversion between numeric types and IPv6 is not supported. Probably the passed IPv6 is unquoted", ErrorCodes::NOT_IMPLEMENTED);
                 }
                 else
                 {
@@ -993,6 +1008,22 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
     x = tmp.toUnderType();
 }
 
+template <>
+inline void parseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    IPv4 tmp;
+    readIPv4Text(tmp, rb);
+    x = tmp.toUnderType();
+}
+
+template <>
+inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    IPv6 tmp;
+    readIPv6Text(tmp, rb);
+    x = tmp;
+}
+
 template <typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
@@ -1040,6 +1071,28 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
         return false;
 
     x = tmp.toUnderType();
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    IPv4 tmp;
+    if (!tryReadIPv4Text(tmp, rb))
+        return false;
+
+    x = tmp.toUnderType();
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    IPv6 tmp;
+    if (!tryReadIPv6Text(tmp, rb))
+        return false;
+
+    x = tmp;
     return true;
 }
 
@@ -1262,7 +1315,20 @@ struct ConvertThroughParsing
                     }
                     else
                     {
-                        parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                        /// we want to utilize constexpr condition here, which is not mixable with value comparison
+                        do
+                        {
+                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>)
+                            {
+                                if (fixed_string_size == IPV6_BINARY_LENGTH)
+                                {
+                                    readBinary(vec_to[i], read_buffer);
+                                    break;
+                                }
+                            }
+
+                            parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                        } while (false);
                     }
                 }
 
@@ -1317,7 +1383,23 @@ struct ConvertThroughParsing
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
                     }
                     else
-                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                    {
+                        /// we want to utilize constexpr condition here, which is not mixable with value comparison
+                        do
+                        {
+                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>)
+                            {
+                                if (fixed_string_size == IPV6_BINARY_LENGTH)
+                                {
+                                    readBinary(vec_to[i], read_buffer);
+                                    parsed = true;
+                                    break;
+                                }
+                            }
+
+                            parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                        } while (false);
+                    }
                 }
 
                 if (!isAllRead(read_buffer))
@@ -1369,6 +1451,11 @@ template <typename ToDataType, typename Name>
 requires (!std::is_same_v<ToDataType, DataTypeFixedString>)
 struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertReturnNullOnErrorTag>
     : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
+
+template <typename FromDataType, typename ToDataType, typename Name>
+requires (is_any_of<FromDataType, DataTypeString, DataTypeFixedString> && is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
+struct ConvertImpl<FromDataType, ToDataType, Name, ConvertReturnZeroOnErrorTag>
+    : ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::Normal> {};
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
 template <typename StringColumnType>
@@ -1597,8 +1684,11 @@ public:
                                                 std::is_same_v<ToDataType, DataTypeDate32> ||
                                                 std::is_same_v<ToDataType, DataTypeDateTime>;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvert>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
+
+    FunctionConvert() = default;
+    explicit FunctionConvert(ContextPtr context_) : context(context_) {}
 
     String getName() const override
     {
@@ -1763,7 +1853,9 @@ public:
                 || e.code() == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
                 || e.code() == ErrorCodes::CANNOT_PARSE_DATE
                 || e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-                || e.code() == ErrorCodes::CANNOT_PARSE_UUID)
+                || e.code() == ErrorCodes::CANNOT_PARSE_UUID
+                || e.code() == ErrorCodes::CANNOT_PARSE_IPV4
+                || e.code() == ErrorCodes::CANNOT_PARSE_IPV6)
             {
                 e.addMessage("Cannot parse "
                     + result_type->getName() + " from "
@@ -1785,6 +1877,7 @@ public:
     }
 
 private:
+    ContextPtr context;
     mutable bool checked_return_type = false;
     mutable bool to_nullable = false;
 
@@ -1884,19 +1977,27 @@ private:
                 return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count);
         }
 
-        bool done;
+        bool done = false;
         if constexpr (to_string_or_fixed_string)
         {
             done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
         else
         {
-            /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
-            /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
-            if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
-                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
-            else
-                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+            bool cast_ipv4_ipv6_default_on_conversion_error = false;
+            if constexpr (is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
+                if (context && (cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error))
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnZeroOnErrorTag{});
+
+            if (!cast_ipv4_ipv6_default_on_conversion_error)
+            {
+                /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
+                /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
+                if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
+                else
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+            }
         }
 
         if (!done)
@@ -2147,8 +2248,18 @@ struct ToNumberMonotonicity
         if constexpr (std::is_floating_point_v<T>)
             return { .is_monotonic = true, .is_always_monotonic = true };
 
+        const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
+        const IDataType * low_cardinality_dictionary_type = nullptr;
+        if (low_cardinality)
+            low_cardinality_dictionary_type = low_cardinality->getDictionaryType().get();
+
+        WhichDataType which_type(type);
+        WhichDataType which_inner_type = low_cardinality
+            ? WhichDataType(low_cardinality_dictionary_type)
+            : WhichDataType(type);
+
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
-        if (WhichDataType(type).isFloat())
+        if (which_inner_type.isFloat())
         {
             if (left.isNull() || right.isNull())
                 return {};
@@ -2167,15 +2278,18 @@ struct ToNumberMonotonicity
 
         /// Integer cases.
 
+        /// Only support types represented by native integers.
+        /// It can be extended to big integers, decimals and DateTime64 later.
+        /// By the way, NULLs are representing unbounded ranges.
+        if (!((left.isNull() || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
+            && (right.isNull() || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
+            return {};
+
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
         const bool to_is_unsigned = is_unsigned_v<T>;
 
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
-
-        /// Do not support 128 bit integers and decimals for now.
-        if (size_of_from > sizeof(Int64))
-            return {};
 
         const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
@@ -2297,6 +2411,10 @@ struct ToStringMonotonicity
         if (const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
             type_ptr = low_cardinality_type->getDictionaryType().get();
 
+        /// Order on enum values (which is the order on integers) is completely arbitrary in respect to the order on strings.
+        if (WhichDataType(type).isEnum())
+            return not_monotonic;
+
         /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
         if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeString>(type_ptr))
             return positive;
@@ -2340,6 +2458,8 @@ struct NameToInt256 { static constexpr auto name = "toInt256"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
+struct NameToIPv4 { static constexpr auto name = "toIPv4"; };
+struct NameToIPv6 { static constexpr auto name = "toIPv6"; };
 
 using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMonotonicity<UInt8>>;
 using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
@@ -2361,6 +2481,8 @@ using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToD
 using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity>;
 using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity>;
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
+using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
+using FunctionToIPv6 = FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
 using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
@@ -2390,6 +2512,8 @@ template <> struct FunctionTo<DataTypeDate32> { using Type = FunctionToDate32; }
 template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
 template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateTime64; };
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
+template <> struct FunctionTo<DataTypeIPv4> { using Type = FunctionToIPv4; };
+template <> struct FunctionTo<DataTypeIPv6> { using Type = FunctionToIPv6; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
 template <> struct FunctionTo<DataTypeDecimal<Decimal32>> { using Type = FunctionToDecimal32; };
@@ -2425,6 +2549,8 @@ struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero";
 struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; };
 struct NameToDecimal256OrZero { static constexpr auto name = "toDecimal256OrZero"; };
 struct NameToUUIDOrZero { static constexpr auto name = "toUUIDOrZero"; };
+struct NameToIPv4OrZero { static constexpr auto name = "toIPv4OrZero"; };
+struct NameToIPv6OrZero { static constexpr auto name = "toIPv6OrZero"; };
 
 using FunctionToUInt8OrZero = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt16OrZero = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -2449,6 +2575,8 @@ using FunctionToDecimal64OrZero = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal128OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal256OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUUIDOrZero = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToIPv4OrZero = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToIPv6OrZero = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrZero, ConvertFromStringExceptionMode::Zero>;
 
 struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
 struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
@@ -2473,6 +2601,8 @@ struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull";
 struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; };
 struct NameToDecimal256OrNull { static constexpr auto name = "toDecimal256OrNull"; };
 struct NameToUUIDOrNull { static constexpr auto name = "toUUIDOrNull"; };
+struct NameToIPv4OrNull { static constexpr auto name = "toIPv4OrNull"; };
+struct NameToIPv6OrNull { static constexpr auto name = "toIPv6OrNull"; };
 
 using FunctionToUInt8OrNull = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt16OrNull = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
@@ -2497,6 +2627,8 @@ using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal256OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUUIDOrNull = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToIPv4OrNull = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToIPv6OrNull = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrNull, ConvertFromStringExceptionMode::Null>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
@@ -2625,17 +2757,17 @@ class FunctionCast final : public FunctionCastBase
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
-    FunctionCast(const char * cast_name_
+    FunctionCast(ContextPtr context_
+            , const char * cast_name_
             , MonotonicityForRange && monotonicity_for_range_
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<Diagnostic> diagnostic_
-            , CastType cast_type_
-            , bool cast_ipv4_ipv6_default_on_conversion_error_)
+            , CastType cast_type_)
         : cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
         , cast_type(cast_type_)
-        , cast_ipv4_ipv6_default_on_conversion_error(cast_ipv4_ipv6_default_on_conversion_error_)
+        , context(context_)
     {
     }
 
@@ -2660,8 +2792,6 @@ public:
 
     String getName() const override { return cast_name; }
 
-    bool isDeterministic() const override { return true; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool hasInformationAboutMonotonicity() const override
@@ -2684,7 +2814,7 @@ private:
 
     std::optional<Diagnostic> diagnostic;
     CastType cast_type;
-    bool cast_ipv4_ipv6_default_on_conversion_error;
+    ContextPtr context;
 
     static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
     {
@@ -2725,7 +2855,7 @@ private:
         }
         else if (!can_apply_accurate_cast)
         {
-            FunctionPtr function = FunctionTo<ToDataType>::Type::create();
+            FunctionPtr function = FunctionTo<ToDataType>::Type::create(context);
             return createFunctionAdaptor(function, from_type);
         }
 
@@ -3752,7 +3882,9 @@ private:
                 std::is_same_v<ToDataType, DataTypeDate> ||
                 std::is_same_v<ToDataType, DataTypeDate32> ||
                 std::is_same_v<ToDataType, DataTypeDateTime> ||
-                std::is_same_v<ToDataType, DataTypeUUID>)
+                std::is_same_v<ToDataType, DataTypeUUID> ||
+                std::is_same_v<ToDataType, DataTypeIPv4> ||
+                std::is_same_v<ToDataType, DataTypeIPv6>)
             {
                 ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
                 return true;
@@ -3786,9 +3918,11 @@ private:
             return false;
         };
 
-        bool cast_ipv4_ipv6_default_on_conversion_error_value = cast_ipv4_ipv6_default_on_conversion_error;
+        bool cast_ipv4_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error;
+        bool input_format_ipv4_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv4_default_on_conversion_error;
+        bool input_format_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv6_default_on_conversion_error;
 
-        auto make_custom_serialization_wrapper = [&, cast_ipv4_ipv6_default_on_conversion_error_value](const auto & types) -> bool
+        auto make_custom_serialization_wrapper = [&, cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv4_default_on_conversion_error_value, input_format_ipv6_default_on_conversion_error_value](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using ToDataType = typename Types::RightType;
@@ -3796,47 +3930,47 @@ private:
 
             if constexpr (WhichDataType(FromDataType::type_id).isStringOrFixedString())
             {
+                if constexpr (std::is_same_v<ToDataType, DataTypeIPv4>)
+                {
+                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv4_default_on_conversion_error_value, requested_result_is_nullable](
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
+                            -> ColumnPtr
+                    {
+                        if (!WhichDataType(result_type).isIPv4())
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
+
+                        const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
+                        if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv4_default_on_conversion_error_value || requested_result_is_nullable)
+                            return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
+                        else
+                            return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
+                    };
+
+                    return true;
+                }
+
+                if constexpr (std::is_same_v<ToDataType, DataTypeIPv6>)
+                {
+                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv6_default_on_conversion_error_value, requested_result_is_nullable](
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
+                            -> ColumnPtr
+                    {
+                        if (!WhichDataType(result_type).isIPv6())
+                            throw Exception(
+                                ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv6", result_type->getName());
+
+                        const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
+                        if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv6_default_on_conversion_error_value || requested_result_is_nullable)
+                            return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
+                        else
+                            return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
+                    };
+
+                    return true;
+                }
+
                 if (to_type->getCustomSerialization() && to_type->getCustomName())
                 {
-                    if (to_type->getCustomName()->getName() == "IPv4")
-                    {
-                        ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
-                            -> ColumnPtr
-                        {
-                            if (!WhichDataType(result_type).isUInt32())
-                                throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected UInt32", result_type->getName());
-
-                            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                            if (cast_ipv4_ipv6_default_on_conversion_error_value)
-                                return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
-                            else
-                                return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
-                        };
-
-                        return true;
-                    }
-
-                    if (to_type->getCustomName()->getName() == "IPv6")
-                    {
-                        ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
-                            -> ColumnPtr
-                        {
-                            if (!WhichDataType(result_type).isFixedString())
-                                throw Exception(
-                                    ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected FixedString", result_type->getName());
-
-                            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                            if (cast_ipv4_ipv6_default_on_conversion_error_value)
-                                return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
-                            else
-                                return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
-                        };
-
-                        return true;
-                    }
-
                     ret = &ConvertImplGenericFromString<typename FromDataType::ColumnType>::execute;
                     return true;
                 }

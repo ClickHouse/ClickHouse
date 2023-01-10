@@ -100,7 +100,7 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 /** There are no limits on the maximum size of the result for the subquery.
   * Since the result of the query is not the result of the entire query.
   */
-ContextPtr buildSubqueryContext(const ContextPtr & context)
+void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
 {
     /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
       * Because the result of this query is not the result of the entire query.
@@ -109,15 +109,12 @@ ContextPtr buildSubqueryContext(const ContextPtr & context)
       *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
       *  which are checked separately (in the Set, Join objects).
       */
-    auto subquery_context = Context::createCopy(context);
-    Settings subquery_settings = context->getSettings();
+    Settings subquery_settings = mutable_context->getSettings();
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
     subquery_settings.extremes = false;
-    subquery_context->setSettings(subquery_settings);
-
-    return subquery_context;
+    mutable_context->setSettings(subquery_settings);
 }
 
 namespace

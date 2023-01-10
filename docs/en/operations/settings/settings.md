@@ -6,6 +6,39 @@ slug: /en/operations/settings/settings
 
 # Settings
 
+## additional_table_filters
+
+An additional filter expression that is applied after reading
+from the specified table.
+
+Default value: 0.
+
+**Example**
+
+``` sql
+insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 2 │ bb   │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+```sql
+SELECT *
+FROM table_1
+SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
@@ -161,6 +194,75 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 ```
 
 Works with tables in the MergeTree family.
+
+## convert_query_to_cnf {#convert_query_to_cnf}
+
+When set to `true`, a `SELECT` query will be converted to conjuctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
+
+For example, notice how the following `SELECT` query is not modified (the default behavior):
+
+```sql
+EXPLAIN SYNTAX
+SELECT *
+FROM
+(
+    SELECT number AS x
+    FROM numbers(20)
+) AS a
+WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
+SETTINGS convert_query_to_cnf = false;
+```
+
+The result is:
+
+```response
+┌─explain────────────────────────────────────────────────────────┐
+│ SELECT x                                                       │
+│ FROM                                                           │
+│ (                                                              │
+│     SELECT number AS x                                         │
+│     FROM numbers(20)                                           │
+│     WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15)) │
+│ ) AS a                                                         │
+│ WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))     │
+│ SETTINGS convert_query_to_cnf = 0                              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Let's set `convert_query_to_cnf` to `true` and see what changes:
+
+```sql
+EXPLAIN SYNTAX
+SELECT *
+FROM
+(
+    SELECT number AS x
+    FROM numbers(20)
+) AS a
+WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
+SETTINGS convert_query_to_cnf = true;
+```
+
+Notice the `WHERE` clause is rewritten in CNF, but the result set is the identical - the Boolean logic is unchanged:
+
+```response
+┌─explain───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SELECT x                                                                                                              │
+│ FROM                                                                                                                  │
+│ (                                                                                                                     │
+│     SELECT number AS x                                                                                                │
+│     FROM numbers(20)                                                                                                  │
+│     WHERE ((x <= 15) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x >= 10) OR (x >= 1)) │
+│ ) AS a                                                                                                                │
+│ WHERE ((x >= 10) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x <= 15) OR (x <= 5))     │
+│ SETTINGS convert_query_to_cnf = 1                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Possible values: true, false
+
+Default value: false
+
 
 ## fsync_metadata {#fsync-metadata}
 
@@ -668,7 +770,7 @@ log_query_views=1
 
 ## log_formatted_queries {#settings-log-formatted-queries}
 
-Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)). 
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)).
 
 Possible values:
 
@@ -1010,6 +1112,12 @@ Works for tables with streaming in the case of a timeout, or when a thread gener
 The default value is 7500.
 
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
+
+## stream_poll_timeout_ms {#stream_poll_timeout_ms}
+
+Timeout for polling data from/to streaming storages.
+
+Default value: 500.
 
 ## load_balancing {#settings-load_balancing}
 
@@ -1807,6 +1915,41 @@ See also:
 
 -   System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
 
+## memory_profiler_step {#memory_profiler_step}
+
+Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+
+Possible values:
+
+-   A positive integer number of bytes.
+
+-   0 for turning off the memory profiler.
+
+Default value: 4,194,304 bytes (4 MiB).
+
+## memory_profiler_sample_probability {#memory_profiler_sample_probability}
+
+Sets the probability of collecting stacktraces at random allocations and deallocations and writing them into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+
+Possible values:
+
+-   A positive floating-point number in the range [0..1].
+
+-   0.0 for turning off the memory sampling.
+
+Default value: 0.0.
+
+## trace_profile_events {#trace_profile_events}
+
+Enables or disables collecting stacktraces on each update of profile events along with the name of profile event and the value of increment and sending them into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+
+Possible values:
+
+-   1 — Tracing of profile events enabled.
+-   0 — Tracing of profile events disabled.
+
+Default value: 0.
+
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
 Enables or disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
@@ -2367,19 +2510,6 @@ Result
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
 
-## persistent {#persistent}
-
-Disables persistency for the [Set](../../engines/table-engines/special/set.md/#set) and [Join](../../engines/table-engines/special/join.md/#join) table engines.
-
-Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-
-Default value: `1`.
-
 ## allow_nullable_key {#allow-nullable-key}
 
 Allows using of the [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md/#table_engines-mergetree) tables.
@@ -2445,6 +2575,60 @@ Possible values:
 Default value: `''`.
 
 See examples in [UNION](../../sql-reference/statements/select/union.md).
+
+## default_table_engine {#default_table_engine}
+
+Default table engine to use when `ENGINE` is not set in a `CREATE` statement.
+
+Possible values:
+
+- a string representing any valid table engine name
+
+Default value: `None`
+
+**Example**
+
+Query:
+
+```sql
+SET default_table_engine = 'Log';
+
+SELECT name, value, changed FROM system.settings WHERE name = 'default_table_engine';
+```
+
+Result:
+
+```response
+┌─name─────────────────┬─value─┬─changed─┐
+│ default_table_engine │ Log   │       1 │
+└──────────────────────┴───────┴─────────┘
+```
+
+In this example, any new table that does not specify an `Engine` will use the `Log` table engine:
+
+Query:
+
+```sql
+CREATE TABLE my_table (
+    x UInt32,
+    y UInt32
+);
+
+SHOW CREATE TABLE my_table;
+```
+
+Result:
+
+```response
+┌─statement────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.my_table
+(
+    `x` UInt32,
+    `y` UInt32
+)
+ENGINE = Log
+└──────────────────────────────────────────────────────────────────────────┘
+```
 
 ## data_type_default_nullable {#data_type_default_nullable}
 
@@ -3412,12 +3596,44 @@ Default value: 2.
 
 ## compatibility {#compatibility}
 
-This setting changes other settings according to provided ClickHouse version.
-If a behaviour in ClickHouse was changed by using a different default value for some setting, this compatibility setting allows you to use default values from previous versions for all the settings that were not set by the user.
+The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
 
-This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. Empty value means that this setting is disabled.
+If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
+
+This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
 
 Disabled by default.
+
+:::note
+In ClickHouse Cloud the compatibility setting must be set by ClickHouse Cloud support.  Please [open a case](https://clickhouse.cloud/support) to have it set.
+:::
+
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
+
+Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
+
+Example:
+
+```sql
+INSERT INTO FUNCTION null('foo String') SETTINGS max_threads=1 VALUES ('bar');
+```
+
+But the following query will work only with `allow_settings_after_format_in_insert`:
+
+```sql
+SET allow_settings_after_format_in_insert=1;
+INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
+```
+
+Possible values:
+
+-   0 — Disallow.
+-   1 — Allow.
+
+Default value: `0`.
+
+!!! note "Warning"
+    Use this setting only for backward compatibility if your use cases depend on old syntax.
 
 # Format settings {#format-settings}
 
@@ -3552,6 +3768,31 @@ x	UInt8
 y	Nullable(String)
 z	IPv4
 ```
+
+## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
+
+Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
+If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+
+Default value: `true`.
+
+## input_format_try_infer_integers {#input_format_try_infer_integers}
+
+If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
+
+Enabled by default.
+
+## input_format_try_infer_dates {#input_format_try_infer_dates}
+
+If enabled, ClickHouse will try to infer type `Date` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as dates, the result type will be `Date`, if at least one field was not parsed as date, the result type will be `String`.
+
+Enabled by default.
+
+## input_format_try_infer_datetimes {#input_format_try_infer_datetimes}
+
+If enabled, ClickHouse will try to infer type `DateTime64` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as datetimes, the result type will be `DateTime64`, if at least one field was not parsed as datetime, the result type will be `String`.
+
+Enabled by default.
 
 ## date_time_input_format {#date_time_input_format}
 
@@ -3715,6 +3956,29 @@ Enabled by default.
 ### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.
+
+Disabled by default.
+
+### input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
+
+Allow parsing JSON objects as strings in JSON input formats.
+
+Example:
+
+```sql
+SET input_format_json_read_objects_as_strings = 1;
+CREATE TABLE test (id UInt64, obj String, date Date) ENGINE=Memory();
+INSERT INTO test FORMAT JSONEachRow {"id" : 1, "obj" : {"a" : 1, "b" : "Hello"}, "date" : "2020-01-01"};
+SELECT * FROM test;
+```
+
+Result:
+
+```
+┌─id─┬─obj──────────────────────┬───────date─┐
+│  1 │ {"a" : 1, "b" : "Hello"} │ 2020-01-01 │
+└────┴──────────────────────────┴────────────┘
+```
 
 Disabled by default.
 
@@ -4784,7 +5048,7 @@ Possible values:
 
 Default value: 1.
 
-## SQLInsert format settings {$sqlinsert-format-settings}
+## SQLInsert format settings {#sqlinsert-format-settings}
 
 ### output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
 
@@ -4815,3 +5079,25 @@ Default value: `false`.
 Quote column names with "`" characters
 
 Default value: `true`.
+
+## BSONEachRow format settings {#bson-each-row-format-settings}
+
+### output_format_bson_string_as_string {#output_format_bson_string_as_string}
+
+Use BSON String type instead of Binary for String columns.
+
+Disabled by default.
+
+### input_format_bson_skip_fields_with_unsupported_types_in_schema_inference {#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference}
+
+Allow skipping columns with unsupported types while schema inference for format BSONEachRow.
+
+Disabled by default.
+
+## RowBinary format settings {#row-binary-format-settings}
+
+### format_binary_max_string_size {#format_binary_max_string_size}
+
+The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit.
+
+Default value: `1GiB`

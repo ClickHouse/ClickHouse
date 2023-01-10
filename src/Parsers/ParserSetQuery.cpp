@@ -4,10 +4,13 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 #include <Core/Names.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 #include <Common/typeid_cast.h>
@@ -20,21 +23,75 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static NameToNameMap::value_type convertToQueryParameter(SettingChange change)
-{
-    auto name = change.name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
-    if (name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
 
-    auto value = applyVisitor(FieldVisitorToString(), change.value);
-    /// writeQuoted is not always quoted in line with SQL standard https://github.com/ClickHouse/ClickHouse/blob/master/src/IO/WriteHelpers.h
-    if (value.starts_with('\''))
+class ParameterFieldVisitorToString : public StaticVisitor<String>
+{
+public:
+    template <class T>
+    String operator() (const T & x) const
     {
-        ReadBufferFromOwnString buf(value);
-        readQuoted(value, buf);
+        FieldVisitorToString visitor;
+        return visitor(x);
     }
-    return {name, value};
-}
+
+    String operator() (const Array & x) const
+    {
+        WriteBufferFromOwnString wb;
+
+        wb << '[';
+        for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
+        {
+            if (it != x.begin())
+                wb.write(", ", 2);
+            wb << applyVisitor(*this, *it);
+        }
+        wb << ']';
+
+        return wb.str();
+    }
+
+    String operator() (const Map & x) const
+    {
+        WriteBufferFromOwnString wb;
+
+        wb << '{';
+
+        auto it = x.begin();
+        while (it != x.end())
+        {
+            if (it != x.begin())
+                wb << ", ";
+            wb << applyVisitor(*this, *it);
+            ++it;
+
+            if (it != x.end())
+            {
+                wb << ':';
+                wb << applyVisitor(*this, *it);
+                ++it;
+            }
+        }
+        wb << '}';
+
+        return wb.str();
+    }
+
+    String operator() (const Tuple & x) const
+    {
+        WriteBufferFromOwnString wb;
+
+        wb << '(';
+        for (auto it = x.begin(); it != x.end(); ++it)
+        {
+            if (it != x.begin())
+                wb << ", ";
+            wb << applyVisitor(*this, *it);
+        }
+        wb << ')';
+
+        return wb.str();
+    }
+};
 
 
 class ParserLiteralOrMap : public IParserBase
@@ -89,6 +146,48 @@ protected:
     }
 };
 
+/// Parse Identifier, Literal, Array/Tuple/Map of literals
+bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+{
+    ASTPtr node;
+
+    /// 1. Identifier
+    ParserCompoundIdentifier identifier_p;
+
+    if (identifier_p.parse(pos, node, expected))
+    {
+        tryGetIdentifierNameInto(node, value);
+        return true;
+    }
+
+    /// 2. Literal
+    ParserLiteral literal_p;
+    if (literal_p.parse(pos, node, expected))
+    {
+        value = applyVisitor(FieldVisitorToString(), node->as<ASTLiteral>()->value);
+
+        /// writeQuoted is not always quoted in line with SQL standard https://github.com/ClickHouse/ClickHouse/blob/master/src/IO/WriteHelpers.h
+        if (value.starts_with('\''))
+        {
+            ReadBufferFromOwnString buf(value);
+            readQuoted(value, buf);
+        }
+
+        return true;
+    }
+
+    /// 3. Map, Array, Tuple of literals and their combination
+    ParserAllCollectionsOfLiterals all_collections_p;
+
+    if (all_collections_p.parse(pos, node, expected))
+    {
+        value = applyVisitor(ParameterFieldVisitorToString(), node->as<ASTLiteral>()->value);
+        return true;
+    }
+
+    return false;
+}
+
 /// Parse `name = value`.
 bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
 {
@@ -118,36 +217,58 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     return true;
 }
 
-bool ParserSetQuery::parseNameValuePairWithDefault(SettingChange & change, String & default_settings, IParser::Pos & pos, Expected & expected)
+bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
+    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected)
 {
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
     ParserToken s_eq(TokenType::Equals);
 
-    ASTPtr name;
-    ASTPtr value;
-    bool is_default = false;
+    ASTPtr node;
+    String name;
 
-    if (!name_p.parse(pos, name, expected))
+    if (!name_p.parse(pos, node, expected))
         return false;
 
     if (!s_eq.ignore(pos, expected))
         return false;
 
+    tryGetIdentifierNameInto(node, name);
+
+    /// Parameter
+    if (name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
+    {
+        name = name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
+
+        String value;
+
+        if (!parseParameterValueIntoString(pos, value, expected))
+            return false;
+
+        parameter = {std::move(name), std::move(value)};
+        return true;
+    }
+
+    /// Default
+    if (ParserKeyword("DEFAULT").ignore(pos, expected))
+    {
+        default_settings = name;
+        return true;
+    }
+
+    /// Setting
     if (ParserKeyword("TRUE").ignore(pos, expected))
-        value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
+        node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
     else if (ParserKeyword("FALSE").ignore(pos, expected))
-        value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
-    else if (ParserKeyword("DEFAULT").ignore(pos, expected))
-        is_default = true;
-    else if (!value_p.parse(pos, value, expected))
+        node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
+    else if (!value_p.parse(pos, node, expected))
         return false;
 
-    tryGetIdentifierNameInto(name, change.name);
-    if (is_default)
-        default_settings = change.name;
-    else
-        change.value = value->as<ASTLiteral &>().value;
+    change.name = name;
+    change.value = node->as<ASTLiteral &>().value;
 
     return true;
 }
@@ -178,19 +299,19 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if ((!changes.empty() || !query_parameters.empty() || !default_settings.empty()) && !s_comma.ignore(pos))
             break;
 
-        /// Either a setting or a parameter for prepared statement (if name starts with QUERY_PARAMETER_NAME_PREFIX)
-        SettingChange current;
+        SettingChange setting;
         String name_of_default_setting;
+        Parameter parameter;
 
-        if (!parseNameValuePairWithDefault(current, name_of_default_setting, pos, expected))
+        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected))
             return false;
 
-        if (current.name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
-            query_parameters.emplace(convertToQueryParameter(std::move(current)));
+        if (!parameter.first.empty())
+            query_parameters.emplace(std::move(parameter));
         else if (!name_of_default_setting.empty())
             default_settings.emplace_back(std::move(name_of_default_setting));
         else
-            changes.push_back(std::move(current));
+            changes.push_back(std::move(setting));
     }
 
     auto query = std::make_shared<ASTSetQuery>();

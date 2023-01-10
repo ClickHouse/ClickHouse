@@ -30,9 +30,7 @@ def start_cluster():
         pytest.param("wide", "backup_wide", "s3_backup_wide", int(0), id="wide"),
     ],
 )
-def test_attach_compact_part(
-    table_name, backup_name, storage_policy, min_bytes_for_wide_part
-):
+def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide_part):
     node.query(
         f"""
     -- Catch any errors (NOTE: warnings are ok)
@@ -43,16 +41,17 @@ def test_attach_compact_part(
 
     create database ordinary_db engine=Ordinary;
 
-    create table ordinary_db.{table_name} engine=MergeTree() order by tuple() as select * from numbers(100);
+    create table ordinary_db.{table_name} engine=MergeTree() order by key partition by part as select number%5 part, number key from numbers(100);
     -- NOTE: name of backup ("backup") is significant.
-    backup table ordinary_db.{table_name} TO Disk('backup_disk_s3_plain', '{backup_name}');
+    backup table ordinary_db.{table_name} TO Disk('backup_disk_s3_plain', '{backup_name}') settings deduplicate_files=0;
 
     drop table ordinary_db.{table_name};
-    attach table ordinary_db.{table_name} (number UInt64)
+    attach table ordinary_db.{table_name} (part UInt8, key UInt64)
     engine=MergeTree()
-    order by tuple()
+    order by key partition by part
     settings
         min_bytes_for_wide_part={min_bytes_for_wide_part},
+        max_suspicious_broken_parts=0,
         storage_policy='{storage_policy}';
     """
     )
@@ -61,9 +60,6 @@ def test_attach_compact_part(
 
     node.query(
         f"""
-    -- NOTE: be aware not to DROP the table, but DETACH first to keep it in S3.
-    detach table ordinary_db.{table_name};
-
     -- NOTE: DROP DATABASE cannot be done w/o this due to metadata leftovers
     set force_remove_data_recursively_on_drop=1;
     drop database ordinary_db sync;

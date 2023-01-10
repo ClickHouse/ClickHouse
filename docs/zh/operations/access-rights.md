@@ -142,6 +142,3 @@ Management queries:
 - 为至少一个账户开启SQL驱动方式的访问权限和账户管理.
 
      默认情况，SQL驱动方式的访问权限和账户管理对所有用户都是关闭的。你需要在 `users.xml` 中配置至少一个用户，并且把[权限管理](settings/settings-users.md#access_management-user-setting)的值设置为1。
-
-
-[Original article](https://clickhouse.com/docs/en/operations/access_rights/) <!--hide-->

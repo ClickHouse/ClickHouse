@@ -56,6 +56,7 @@ As of November 8th, 2022, each TSV is approximately the following size and numbe
   - [Line by line commit history of a file](#line-by-line-commit-history-of-a-file)
 - [Unsolved Questions](#unsolved-questions)
   - [Git blame](#git-blame)
+- [Related Content](#related-content)
 
 # Generating the data
 
@@ -2497,3 +2498,7 @@ LIMIT 20
 We welcome exact and improved solutions here.
 
 
+# Related Content
+
+- [Git commits and our community](https://clickhouse.com/blog/clickhouse-git-community-commits)
+- [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

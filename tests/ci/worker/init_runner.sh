@@ -46,15 +46,17 @@ curl "${TEAM_KEYS_URL}" > /home/ubuntu/.ssh/authorized_keys2
 chown ubuntu: /home/ubuntu/.ssh -R
 
 
-# Create a pre-run script that will restart docker daemon before the job started
+# Create a pre-run script that will provide diagnostics info
 mkdir -p /tmp/actions-hooks
-cat > /tmp/actions-hooks/pre-run.sh << 'EOF'
+cat > /tmp/actions-hooks/pre-run.sh << EOF
 #!/bin/bash
-set -xuo pipefail
+set -uo pipefail
 
 echo "Runner's public DNS: $(ec2metadata --public-hostname)"
+echo "Runner's labels: ${LABELS}"
 EOF
 
+# Create a post-run script that will restart docker daemon before the job started
 cat > /tmp/actions-hooks/post-run.sh << 'EOF'
 #!/bin/bash
 set -xuo pipefail

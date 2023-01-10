@@ -1223,5 +1223,3 @@ SELECT fromModifiedJulianDayOrNull(58849);
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/query_language/functions/date_time_functions/) <!--hide-->

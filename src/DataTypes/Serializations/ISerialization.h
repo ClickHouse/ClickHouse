@@ -303,17 +303,17 @@ public:
       */
 
     /// There is two variants for binary serde. First variant work with Field.
-    virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
+    virtual void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /// Other variants takes a column, to avoid creating temporary Field object.
     /// Column must be non-constant.
 
     /// Serialize one value of a column at specified row number.
-    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     /// Deserialize one value and insert into a column.
     /// If method will throw an exception, then column will be in same state as before call to method.
-    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization with escaping but without quoting.
       */

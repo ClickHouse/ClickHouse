@@ -105,7 +105,13 @@ public:
         return column_holder->allocatedBytes() + reverse_index.allocatedBytes()
             + (nested_null_mask ? nested_null_mask->allocatedBytes() : 0);
     }
-    void forEachSubcolumn(IColumn::ColumnCallback callback) override
+
+    void forEachSubcolumn(IColumn::ColumnCallback callback) const override
+    {
+        callback(column_holder);
+    }
+
+    void forEachSubcolumn(IColumn::MutableColumnCallback callback) override
     {
         callback(column_holder);
         reverse_index.setColumn(getRawColumnPtr());
@@ -113,9 +119,15 @@ public:
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
-    void forEachSubcolumnRecursively(IColumn::ColumnCallback callback) override
+    void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
     {
-        callback(column_holder);
+        callback(*column_holder);
+        column_holder->forEachSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
+    {
+        callback(*column_holder);
         column_holder->forEachSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
@@ -343,6 +355,8 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         void operator() (const Int128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const Int256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const UUID & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const IPv4 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const IPv6 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const Float64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const DecimalField<Decimal32> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const DecimalField<Decimal64> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }

@@ -57,5 +57,20 @@
                 </replica>
             </shard>
         </test_cluster_interserver_secret>
+        <test_cluster_two_shards_different_databases_with_local>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <default_database>shard_1</default_database>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards_different_databases_with_local>
     </remote_servers>
 </clickhouse>
