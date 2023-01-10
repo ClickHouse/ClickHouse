@@ -303,7 +303,7 @@ start
 
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
-                       && rg -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
+                       && rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
 
 stop
 
@@ -334,7 +334,7 @@ rg -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/c
 [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
 # No such key errors
-rg -Ea "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
+rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
     && echo -e 'S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No lost s3 keys\tOK' >> /test_output/test_results.tsv
 
@@ -477,7 +477,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         start 500
         clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
             || (echo -e 'Backward compatibility check: Server failed to start\tFAIL' >> /test_output/test_results.tsv \
-            && rg -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
+            && rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
 
         clickhouse-client --query="SELECT 'Server version: ', version()"
 
