@@ -162,4 +162,8 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto}})
+
+IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"sample_key", ParallelReplicasMode::SAMPLE_KEY},
+     {"custom_key", ParallelReplicasMode::CUSTOM_KEY}})
 }

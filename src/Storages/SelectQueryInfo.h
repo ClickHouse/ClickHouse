@@ -209,6 +209,8 @@ struct SelectQueryInfo
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
 
+    ASTPtr parallel_replica_custom_key_ast;
+
     /// Filter actions dag for current storage
     ActionsDAGPtr filter_actions_dag;
 

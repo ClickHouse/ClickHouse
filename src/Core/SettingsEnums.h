@@ -191,4 +191,13 @@ enum class Dialect
 };
 
 DECLARE_SETTING_ENUM(Dialect)
+
+enum class ParallelReplicasMode : uint8_t
+{
+    SAMPLE_KEY,
+    CUSTOM_KEY,
+};
+
+DECLARE_SETTING_ENUM(ParallelReplicasMode)
+
 }
