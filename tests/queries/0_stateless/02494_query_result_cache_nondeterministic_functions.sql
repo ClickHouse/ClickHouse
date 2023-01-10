@@ -8,7 +8,7 @@ SELECT COUNT(*) FROM system.query_result_cache;
 
 SELECT '---';
 
--- force an entry
+-- But an entry can be forced using a setting
 SELECT COUNT(RAND(1)) SETTINGS enable_experimental_query_result_cache = true, query_result_cache_store_results_of_queries_with_nondeterministic_functions = true;
 SELECT COUNT(*) FROM system.query_result_cache;
 
