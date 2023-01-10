@@ -260,11 +260,11 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         /// subquery and ast can be the same object and ast will be moved.
         /// Save these fields to avoid use after move.
         auto alias = subquery.alias;
-        auto prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+        auto force_alias = subquery.force_alias;
 
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
         lit->alias = alias;
-        lit->prefer_alias_to_column_name = prefer_alias_to_column_name;
+        lit->force_alias = force_alias;
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
 
         /// If only analyze was requested the expression is not suitable for constant folding, disable it.
@@ -273,7 +273,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             ast->as<ASTFunction>()->alias.clear();
             auto func = makeASTFunction("identity", std::move(ast));
             func->alias = alias;
-            func->prefer_alias_to_column_name = prefer_alias_to_column_name;
+            func->force_alias = force_alias;
             ast = std::move(func);
         }
     }
@@ -281,7 +281,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     {
         auto func = makeASTFunction("__getScalar", std::make_shared<ASTLiteral>(scalar_query_hash_str));
         func->alias = subquery.alias;
-        func->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+        func->force_alias = subquery.force_alias;
         ast = std::move(func);
     }
 

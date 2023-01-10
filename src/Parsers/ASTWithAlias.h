@@ -21,7 +21,7 @@ public:
     bool prefer_alias_to_column_name = false;
 
     /// If true, appendColumnName will return alias if not empty. This is used for virtual columns such as
-    /// _database and _table in StorageMerge.
+    /// _database and _table in StorageMerge, and for scalar subqueries.
     bool force_alias = false;
 
     using IAST::IAST;

@@ -25,7 +25,7 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
     if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
         func->alias = ast_with_alias->alias;
-        func->prefer_alias_to_column_name = ast_with_alias->prefer_alias_to_column_name;
+        func->force_alias = ast_with_alias->force_alias;
         ast_with_alias->alias.clear();
     }
 
