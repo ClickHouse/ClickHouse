@@ -200,7 +200,7 @@ void ReplicatedMergeTreeQueue::createLogEntriesToFetchBrokenParts()
 
     /// It will lock state_mutex
     for (const auto & broken_part_name : broken_parts)
-        storage.removePartAndEnqueueFetch(broken_part_name);
+        storage.removePartAndEnqueueFetch(broken_part_name, /* storage_init = */true);
 
     std::lock_guard lock(state_mutex);
     /// broken_parts_to_enqueue_fetches_on_loading can be assigned only once on table startup,
@@ -1193,7 +1193,7 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
         const LogEntry & another_entry = *entry_for_same_part_it->second;
         out_reason = fmt::format(
             "Not executing log entry {} of type {} for part {} "
-            "because another log entry {} of type {} for the same part ({}) is being processed. This shouldn't happen often.",
+            "because another log entry {} of type {} for the same part ({}) is being processed.",
             entry.znode_name, entry.type, entry.new_part_name,
             another_entry.znode_name, another_entry.type, another_entry.new_part_name);
         LOG_INFO(log, fmt::runtime(out_reason));

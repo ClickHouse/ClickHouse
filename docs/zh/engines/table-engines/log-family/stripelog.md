@@ -81,5 +81,3 @@ SELECT * FROM stripe_log_table ORDER BY timestamp
     │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
     │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
     └─────────────────────┴──────────────┴────────────────────────────┘
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/stripelog/) <!--hide-->

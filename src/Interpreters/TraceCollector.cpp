@@ -32,12 +32,19 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log_)
 
 TraceCollector::~TraceCollector()
 {
-    if (!thread.joinable())
-        LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
-    else
-        stop();
+    try
+    {
+        if (!thread.joinable())
+            LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+        else
+            stop();
 
-    TraceSender::pipe.close();
+        TraceSender::pipe.close();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("TraceCollector");
+    }
 }
 
 
