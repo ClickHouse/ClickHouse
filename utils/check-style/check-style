@@ -244,7 +244,7 @@ find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | 
 find $ROOT_PATH -not -path $ROOT_PATH'/tests/ci*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
 
 # There shouldn't be any docker compose files outside docker directory
-#find $ROOT_PATH -not -path $ROOT_PATH'/tests/testflows*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name '*compose*.yml' -type f 2>/dev/null | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to docker directory:"
+find $ROOT_PATH -name '*compose*.yml' -type f -not -path $ROOT_PATH'/docker' -not -path $ROOT_PATH'/tests/integration*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' 2>/dev/null | grep -vP $EXCLUDE_DIRS | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to the 'docker' or 'tests' directory:"
 
 # Check that every header file has #pragma once in first line
 find $ROOT_PATH/{src,programs,utils} -name '*.h' |
@@ -279,6 +279,8 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
+    # DUMP()
+    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -292,6 +294,7 @@ std_cerr_cout_excludes=(
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
     src/Client/ClientBase.cpp
+    src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
     src/Bridge/IBridge.cpp
@@ -299,7 +302,7 @@ std_cerr_cout_excludes=(
     src/Loggers/Loggers.cpp
 )
 sources_with_std_cerr_cout=( $(
-    find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \
+    find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
         grep -vP $EXCLUDE_DIRS | \
         grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
         xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u

@@ -27,8 +27,8 @@
 #include <Storages/getVirtualsForStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageURL.h>
-#include <Storages/NamedCollections/NamedCollectionsHelpers.h>
-#include <Storages/NamedCollections/NamedCollections.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Storages/ReadFromStorageProgress.h>
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
@@ -82,7 +82,7 @@ static const String PARTITION_ID_WILDCARD = "{_partition_id}";
 static const std::unordered_set<std::string_view> required_configuration_keys = {
     "url",
 };
-static std::unordered_set<std::string_view> optional_configuration_keys = {
+static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
     "compression_method",
@@ -186,7 +186,7 @@ public:
 
     size_t getTotalSize() const
     {
-        return total_size;
+        return total_size.load(std::memory_order_relaxed);
     }
 
     ~Impl()
@@ -283,7 +283,7 @@ private:
             buffer.reserve(block.rows());
             for (UInt64 idx : idxs.getData())
             {
-                total_size += temp_buffer[idx].info->size;
+                total_size.fetch_add(temp_buffer[idx].info->size, std::memory_order_relaxed);
                 buffer.emplace_back(std::move(temp_buffer[idx]));
             }
         }
@@ -291,7 +291,7 @@ private:
         {
             buffer = std::move(temp_buffer);
             for (const auto & [_, info] : buffer)
-                total_size += info->size;
+                total_size.fetch_add(info->size, std::memory_order_relaxed);
         }
 
         /// Set iterator only after the whole batch is processed
@@ -357,7 +357,7 @@ private:
     ThreadPool list_objects_pool;
     ThreadPoolCallbackRunner<ListObjectsOutcome> list_objects_scheduler;
     std::future<ListObjectsOutcome> outcome_future;
-    size_t total_size = 0;
+    std::atomic<size_t> total_size = 0;
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
@@ -765,7 +765,7 @@ public:
             compression_method,
             3);
         writer
-            = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
+            = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, format_settings);
     }
 
     String getName() const override { return "StorageS3Sink"; }
@@ -1196,10 +1196,8 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
-    if (upd.request_settings != settings.request_settings)
-        upd.request_settings = settings.request_settings;
-
-    upd.request_settings.updateFromSettingsIfEmpty(ctx->getSettings());
+    upd.request_settings = settings.request_settings;
+    upd.request_settings.updateFromSettings(ctx->getSettings());
 
     if (upd.client)
     {
@@ -1243,48 +1241,22 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
 void StorageS3::processNamedCollectionResult(StorageS3Configuration & configuration, const NamedCollection & collection)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
-    std::string filename;
 
-    for (const auto & key : collection)
-    {
-        if (key == "url")
-            configuration.url = collection.get<String>(key);
-        else if (key == "access_key_id")
-            configuration.auth_settings.access_key_id = collection.get<String>(key);
-        else if (key == "secret_access_key")
-            configuration.auth_settings.secret_access_key = collection.get<String>(key);
-        else if (key == "filename")
-            filename = collection.get<String>(key);
-        else if (key == "format")
-            configuration.format = collection.get<String>(key);
-        else if (key == "compression" || key == "compression_method")
-            configuration.compression_method = collection.get<String>(key);
-        else if (key == "structure")
-            configuration.structure = collection.get<String>(key);
-        else if (key == "use_environment_credentials")
-            configuration.auth_settings.use_environment_credentials = collection.get<UInt64>(key);
-        else if (key == "max_single_read_retries")
-            configuration.request_settings.max_single_read_retries = collection.get<UInt64>(key);
-        else if (key == "min_upload_part_size")
-            configuration.request_settings.min_upload_part_size = collection.get<UInt64>(key);
-        else if (key == "upload_part_size_multiply_factor")
-            configuration.request_settings.upload_part_size_multiply_factor = collection.get<UInt64>(key);
-        else if (key == "upload_part_size_multiply_parts_count_threshold")
-            configuration.request_settings.upload_part_size_multiply_parts_count_threshold = collection.get<UInt64>(key);
-        else if (key == "max_single_part_upload_size")
-            configuration.request_settings.max_single_part_upload_size = collection.get<UInt64>(key);
-        else if (key == "max_connections")
-            configuration.request_settings.max_connections = collection.get<UInt64>(key);
-        else
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Unknown configuration key `{}` for StorageS3, "
-                "expected: url, [access_key_id, secret_access_key], "
-                "name of used format and [compression_method].",
-                key);
-    }
+    configuration.url = collection.get<String>("url");
+
+    auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
         configuration.url = std::filesystem::path(configuration.url) / filename;
+
+    configuration.auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
+    configuration.auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
+    configuration.auth_settings.use_environment_credentials = collection.getOrDefault<UInt64>("use_environment_credentials", 0);
+
+    configuration.format = collection.getOrDefault<String>("format", "auto");
+    configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+    configuration.structure = collection.getOrDefault<String>("structure", "auto");
+
+    configuration.request_settings = S3Settings::RequestSettings(collection);
 }
 
 StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
@@ -1310,7 +1282,7 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
                 "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto header_it = StorageURL::collectHeaders(engine_args, configuration, local_context);
+        auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers, local_context);
         if (header_it != engine_args.end())
             engine_args.erase(header_it);
 

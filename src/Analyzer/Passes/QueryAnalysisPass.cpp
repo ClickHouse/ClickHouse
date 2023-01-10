@@ -4155,10 +4155,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr);
             function_lambda_arguments_indexes.push_back(function_argument_index);
         }
-        else if (is_special_function_in &&
-            (function_argument->getNodeType() == QueryTreeNodeType::TABLE ||
-            function_argument->getNodeType() == QueryTreeNodeType::QUERY ||
-            function_argument->getNodeType() == QueryTreeNodeType::UNION))
+        else if (is_special_function_in && function_argument_index == 1)
         {
             argument_column.type = std::make_shared<DataTypeSet>();
         }
@@ -4302,10 +4299,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             bool force_grouping_standard_compatibility = scope.context->getSettingsRef().force_grouping_standard_compatibility;
             auto grouping_function = std::make_shared<FunctionGrouping>(force_grouping_standard_compatibility);
             auto grouping_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_function));
-            function_node.resolveAsFunction(std::move(grouping_function_adaptor), std::make_shared<DataTypeUInt64>());
+            function_node.resolveAsFunction(grouping_function_adaptor->build({}));
             return result_projection_names;
         }
     }
+
+    const auto & settings = scope.context->getSettingsRef();
 
     if (function_node.isWindowFunction())
     {
@@ -4324,10 +4323,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Window function '{}' does not support lambda arguments",
                 function_name);
 
-        AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+        bool need_add_or_null = settings.aggregate_functions_null_for_empty && !function_name.ends_with("OrNull");
 
-        function_node.resolveAsWindowFunction(aggregate_function, aggregate_function->getReturnType());
+        AggregateFunctionProperties properties;
+        auto aggregate_function = need_add_or_null
+            ? AggregateFunctionFactory::instance().get(function_name + "OrNull", argument_types, parameters, properties)
+            : AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+
+        function_node.resolveAsWindowFunction(std::move(aggregate_function));
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
@@ -4384,9 +4387,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Aggregate function '{}' does not support lambda arguments",
                 function_name);
 
+        bool need_add_or_null = settings.aggregate_functions_null_for_empty && !function_name.ends_with("OrNull");
+
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
-        function_node.resolveAsAggregateFunction(aggregate_function, aggregate_function->getReturnType());
+        auto aggregate_function = need_add_or_null
+            ? AggregateFunctionFactory::instance().get(function_name + "OrNull", argument_types, parameters, properties)
+            : AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
         return result_projection_names;
     }
 
@@ -4524,16 +4531,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto column_set = ColumnSet::create(1, std::move(set));
             argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
         }
+
+        argument_columns[1].type = std::make_shared<DataTypeSet>();
     }
 
     std::shared_ptr<ConstantValue> constant_value;
 
-    DataTypePtr result_type;
-
     try
     {
         auto function_base = function->build(argument_columns);
-        result_type = function_base->getResultType();
 
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
@@ -4541,6 +4547,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           */
         if (function_base->isSuitableForConstantFolding())
         {
+            auto result_type = function_base->getResultType();
             auto executable_function = function_base->prepare(argument_columns);
 
             ColumnPtr column;
@@ -4563,14 +4570,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 constant_value = std::make_shared<ConstantValue>(std::move(column_constant_value), result_type);
             }
         }
+
+        function_node.resolveAsFunction(std::move(function_base));
     }
     catch (Exception & e)
     {
         e.addMessage("In scope {}", scope.scope_node->formatASTForErrorMessage());
         throw;
     }
-
-    function_node.resolveAsFunction(std::move(function), std::move(result_type));
 
     if (constant_value)
         node = std::make_shared<ConstantNode>(std::move(constant_value), node);
@@ -5493,9 +5500,15 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
             std::unordered_set<String> array_join_column_names;
 
-            /// Wrap array join expressions into column nodes, where array join expression is inner expression.
+            /// Wrap array join expressions into column nodes, where array join expression is inner expression
 
-            for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
+            auto & array_join_nodes = array_join_node.getJoinExpressions().getNodes();
+            size_t array_join_nodes_size = array_join_nodes.size();
+
+            std::vector<QueryTreeNodePtr> array_join_column_expressions;
+            array_join_column_expressions.reserve(array_join_nodes_size);
+
+            for (auto & array_join_expression : array_join_nodes)
             {
                 auto array_join_expression_alias = array_join_expression->getAlias();
                 if (!array_join_expression_alias.empty() && scope.alias_name_to_expression_node.contains(array_join_expression_alias))
@@ -5546,12 +5559,26 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 array_join_column_names.emplace(array_join_column_name);
 
                 auto array_join_column = std::make_shared<ColumnNode>(NameAndTypePair{array_join_column_name, result_type}, array_join_expression, join_tree_node);
-                array_join_expression = std::move(array_join_column);
-                array_join_expression->setAlias(array_join_expression_alias);
+                array_join_column->setAlias(array_join_expression_alias);
+                array_join_column_expressions.push_back(std::move(array_join_column));
+            }
 
-                auto it = scope.alias_name_to_expression_node.find(array_join_expression_alias);
+            /** Allow to resolve ARRAY JOIN columns from aliases with types after ARRAY JOIN only after ARRAY JOIN expression list is resolved, because
+              * during resolution of ARRAY JOIN expression list we must use column type before ARRAY JOIN.
+              *
+              * Example: SELECT id, value_element FROM test_table ARRAY JOIN [[1,2,3]] AS value_element, value_element AS value
+              * It is expected that `value_element AS value` expression inside ARRAY JOIN expression list will be
+              * resolved as `value_element` expression with type before ARRAY JOIN.
+              * And it is expected that `value_element` inside projection expression list will be resolved as `value_element` expression
+              * with type after ARRAY JOIN.
+              */
+            for (size_t i = 0; i < array_join_nodes_size; ++i)
+            {
+                auto & array_join_expression = array_join_nodes[i];
+                array_join_expression = std::move(array_join_column_expressions[i]);
+                auto it = scope.alias_name_to_expression_node.find(array_join_expression->getAlias());
                 if (it != scope.alias_name_to_expression_node.end())
-                    it->second = array_join_expression;
+                    it->second = array_join_nodes[i];
             }
 
             break;

@@ -1203,7 +1203,7 @@ auto DDperformanceTestSequence()
         + generateSeq<ValueType>(G(SameValueGenerator(42)), 0, times); // best
 }
 
-// prime numbers in ascending order with some random repitions hit all the cases of Gorilla.
+// prime numbers in ascending order with some random repetitions hit all the cases of Gorilla.
 auto PrimesWithMultiplierGenerator = [](int multiplier = 1)
 {
     return [multiplier](auto i)

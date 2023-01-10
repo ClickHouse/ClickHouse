@@ -1,5 +1,7 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/Context.h>
+
 
 #if USE_AWS_S3
 
@@ -31,6 +33,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
+#include <Common/Macros.h>
 
 
 namespace ProfileEvents
@@ -512,7 +515,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
     std::vector<String> part_tags;
 
-    size_t upload_part_size = settings_ptr->request_settings.min_upload_part_size;
+    size_t upload_part_size = settings_ptr->request_settings.getUploadSettings().min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
         ProfileEvents::increment(ProfileEvents::S3UploadPartCopy);
@@ -634,10 +637,11 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
 {
     auto new_s3_settings = getSettings(config, config_prefix, context);
     auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
+    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     return std::make_unique<S3ObjectStorage>(
         std::move(new_client), std::move(new_s3_settings),
         version_id, s3_capabilities, new_namespace,
-        config.getString(config_prefix + ".endpoint"));
+        endpoint);
 }
 
 }
