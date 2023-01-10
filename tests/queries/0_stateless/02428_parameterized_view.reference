@@ -1,5 +1,6 @@
 20
 20
+ERROR
 10
 50
 SELECT
@@ -12,9 +13,15 @@ FROM
     FROM default.test_02428_Catalog
     WHERE Price = _CAST(10, \'UInt64\')
 ) AS test_02428_pv1
+ERROR
+ERROR
+ERROR
 50
+ERROR
 10
+ERROR
 20
+ERROR
 30
 20
 30
