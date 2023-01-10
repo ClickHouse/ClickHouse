@@ -17,7 +17,8 @@ void StreamInQueryResultCacheTransform::transform(Chunk & chunk)
 
 void StreamInQueryResultCacheTransform::finalizeWriteInQueryResultCache()
 {
-    cache_writer.finalizeWrite();
+    if (!isCancelled())
+        cache_writer.finalizeWrite();
 }
 
 };

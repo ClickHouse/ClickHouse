@@ -177,6 +177,23 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
 }
 
+void QueryResultCache::Writer::buffer(Chunk && partial_query_result)
+{
+    if (skip_insert)
+        return;
+
+    partial_query_results.emplace_back(std::move(partial_query_result));
+
+    new_entry_size_in_bytes += partial_query_results.back().allocatedBytes();
+    new_entry_size_in_rows += partial_query_results.back().getNumRows();
+
+    if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
+    {
+        partial_query_results.clear(); /// free some space
+        skip_insert = true;
+    }
+}
+
 void QueryResultCache::Writer::finalizeWrite()
 {
     if (skip_insert)
@@ -243,20 +260,6 @@ void QueryResultCache::Writer::finalizeWrite()
 
         LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Stored result of query {}", key.queryStringFromAst());
     }
-}
-
-void QueryResultCache::Writer::buffer(Chunk && partial_query_result)
-{
-    if (skip_insert)
-        return;
-
-    partial_query_results.emplace_back(std::move(partial_query_result));
-
-    new_entry_size_in_bytes += partial_query_results.back().allocatedBytes();
-    new_entry_size_in_rows += partial_query_results.back().getNumRows();
-
-    if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
-        skip_insert = true;
 }
 
 QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_, const std::lock_guard<std::mutex> &)

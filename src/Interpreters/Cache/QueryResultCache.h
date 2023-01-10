@@ -75,9 +75,11 @@ public:
     /// written into the query result cache. Unfortunately, neither the Writer nor the special transform added on top of the query pipeline
     /// which holds the Writer know whether they are destroyed because the query ended successfully or because of an exception (otherwise,
     /// we could simply implement a check in their destructors). To handle exceptions correctly nevertheless, we do the actual insert in
-    /// finalize() (as opposed to the Writer destructor). This function is then called only for successful queries (in finish_callback()
-    /// which runs before the transform and the Writer are destroyed), whereas for unsuccessful queries we do nothing (the Writer is
-    /// destroyed w/o inserting anything).
+    /// finalizeWrite() (as opposed to the Writer destructor). This function is then called only for successful queries (in
+    /// finish_callback() which runs before the transform and the Writer are destroyed), whereas for unsuccessful queries we do nothing (the
+    /// Writer is destroyed w/o inserting anything).
+    /// Queries may also be cancelled by the user, in which case IProcessor's cancel bit is set. FinalizeWrite() is only called if the
+    /// cancel bit is not set.
     class Writer
     {
     public:
@@ -94,7 +96,7 @@ public:
         const size_t max_entry_size_in_bytes;
         size_t new_entry_size_in_rows = 0;
         const size_t max_entry_size_in_rows;
-        const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction/destruction coincides with query start/end
+        const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction and finalizeWrite() coincide with query start/end
         const std::chrono::milliseconds min_query_runtime;
         Chunks partial_query_results;
         std::atomic<bool> skip_insert = false;

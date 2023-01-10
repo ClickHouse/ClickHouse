@@ -13,7 +13,7 @@ NamesAndTypesList StorageSystemQueryResultCache::getNamesAndTypes()
 {
     return {
         {"query", std::make_shared<DataTypeString>()},
-        {"query_hash", std::make_shared<DataTypeUInt64>()},
+        {"key_hash", std::make_shared<DataTypeUInt64>()},
         {"expires_at", std::make_shared<DataTypeDateTime>()},
         {"stale", std::make_shared<DataTypeUInt8>()},
         {"shared", std::make_shared<DataTypeUInt8>()},

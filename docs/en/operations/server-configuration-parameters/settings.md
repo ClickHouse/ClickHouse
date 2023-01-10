@@ -1260,10 +1260,10 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## query_result_cache_size {#server_configuration_parameters_query-result-cache-size}
 
-Maximum size of the [query result cache](../query-result-cache.md) in bytes.
+Maximum size of the [query result cache](../query-result-cache.md) in bytes. 0 means the query result cache is disabled.
 
 :::warning
-Data for the query result cache is alloated in DRAM. If memory is scarce, make sure to set a small limit or disable the query result cache altogether.
+Data for the query result cache is allocated in DRAM. If memory is scarce, make sure to set a small limit or disable the query result cache altogether.
 :::
 
 Possible values:
@@ -1323,7 +1323,7 @@ Default value: `30000000` (30 mil.)
 **Example**
 
 ```xml
-<query_result_cache_max_entry_records>33554432</query_result_cache_max_entry_records>
+<query_result_cache_max_entry_records>30000000</query_result_cache_max_entry_records>
 ```
 
 ## query_thread_log {#server_configuration_parameters-query_thread_log}
