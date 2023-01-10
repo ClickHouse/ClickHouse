@@ -1,4 +1,3 @@
-#include <IO/Progress.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 
