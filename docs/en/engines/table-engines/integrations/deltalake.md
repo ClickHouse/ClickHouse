@@ -18,7 +18,7 @@ CREATE TABLE deltalake
 
 **Engine parameters**
 
--   `path` — Bucket url with path to the existing Delta Lake table.
+-   `url` — Bucket url with path to the existing Delta Lake table.
 -   `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
 
 **Example**
