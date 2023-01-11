@@ -55,6 +55,8 @@ public:
     /// default implementation for Nothing.
     /// Example: arrayMap(x -> CAST(x, 'UInt8'), []);
     bool useDefaultImplementationForNothing() const override { return false; }
+    /// Example: SELECT arrayMap(x -> (x + (arrayMap(y -> ((x + y) + toLowCardinality(1)), [])[1])), [])
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
     ExpressionActionsPtr expression_actions;

@@ -179,10 +179,15 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
                     found_part_with_the_same_min_block = true;
                     parts_found.push_back(part_on_replica);
                 }
+
                 if (part_on_replica_info.max_block == part_info.max_block)
                 {
                     found_part_with_the_same_max_block = true;
-                    parts_found.push_back(part_on_replica);
+
+                    /// If we are looking for part like partition_X_X_level we can add part
+                    /// partition_X_X_(level-1) two times, avoiding it
+                    if (parts_found.empty() || parts_found.back() != part_on_replica)
+                        parts_found.push_back(part_on_replica);
                 }
 
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
@@ -230,7 +235,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
         /// We cannot simply remove part from ZooKeeper, because it may be removed from virtual_part,
         /// so we have to create some entry in the queue. Maybe we will execute it (by fetching part or covering part from somewhere),
         /// maybe will simply replace with empty part.
-        storage.removePartAndEnqueueFetch(part_name);
+        storage.removePartAndEnqueueFetch(part_name, /* storage_init = */false);
     }
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);

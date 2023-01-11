@@ -33,7 +33,7 @@ void TableFunctionHudi::parseArgumentsImpl(
     if (args.empty() || args.size() > 6)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
 
-    auto * header_it = StorageURL::collectHeaders(args, base_configuration, context);
+    auto * header_it = StorageURL::collectHeaders(args, base_configuration.headers, context);
     if (header_it != args.end())
         args.erase(header_it);
 

@@ -144,7 +144,7 @@ bool assertOrParseNaN(ReadBuffer & buf)
 template <typename T, typename ReturnType>
 ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextFastFloatImpl must be float or double");
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextPreciseImpl must be float or double");
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;

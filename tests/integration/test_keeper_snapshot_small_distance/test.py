@@ -36,6 +36,41 @@ def stop_zookeeper(node):
         time.sleep(0.2)
 
 
+def generate_zk_snapshot(node):
+    for _ in range(100):
+        stop_zookeeper(node)
+        start_zookeeper(node)
+        time.sleep(2)
+        stop_zookeeper(node)
+
+        # get last snapshot
+        last_snapshot = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "find /zookeeper/version-2 -name 'snapshot.*' -printf '%T@ %p\n' | sort -n | awk 'END {print $2}'",
+            ]
+        ).strip()
+
+        print(f"Latest snapshot: {last_snapshot}")
+
+        try:
+            # verify last snapshot
+            # zkSnapShotToolkit is a tool to inspect generated snapshots - if it's broken, an exception is thrown
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"/opt/zookeeper/bin/zkSnapShotToolkit.sh {last_snapshot}",
+                ]
+            )
+            return
+        except Exception as err:
+            print(f"Got error while reading snapshot: {err}")
+
+    raise Exception("Failed to generate a ZooKeeper snapshot")
+
+
 def clear_zookeeper(node):
     node.exec_in_container(["bash", "-c", "rm -fr /zookeeper/*"])
 
@@ -62,6 +97,13 @@ def clear_clickhouse_data(node):
 
 
 def convert_zookeeper_data(node):
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "tar -cvzf /var/lib/clickhouse/zk-data.tar.gz /zookeeper/version-2",
+        ]
+    )
     cmd = "/usr/bin/clickhouse keeper-converter --zookeeper-logs-dir /zookeeper/version-2/ --zookeeper-snapshots-dir  /zookeeper/version-2/ --output-dir /var/lib/clickhouse/coordination/snapshots"
     node.exec_in_container(["bash", "-c", cmd])
     return os.path.join(
@@ -79,20 +121,6 @@ def stop_clickhouse(node):
 def start_clickhouse(node):
     node.start_clickhouse()
     keeper_utils.wait_until_connected(cluster, node)
-
-
-def copy_zookeeper_data(make_zk_snapshots, node):
-    stop_zookeeper(node)
-
-    if make_zk_snapshots:  # force zookeeper to create snapshot
-        start_zookeeper(node)
-        stop_zookeeper(node)
-
-    stop_clickhouse(node)
-    clear_clickhouse_data(node)
-    convert_zookeeper_data(node)
-    start_zookeeper(node)
-    start_clickhouse(node)
 
 
 @pytest.fixture(scope="module")
@@ -143,6 +171,7 @@ def test_snapshot_and_load(started_cluster):
     try:
         restart_and_clear_zookeeper(node1)
         genuine_connection = get_genuine_zk(node1)
+
         for node in [node1, node2, node3]:
             print("Stop and clear", node.name, "with dockerid", node.docker_id)
             stop_clickhouse(node)
@@ -153,9 +182,7 @@ def test_snapshot_and_load(started_cluster):
 
         print("Data loaded to zookeeper")
 
-        stop_zookeeper(node1)
-        start_zookeeper(node1)
-        stop_zookeeper(node1)
+        generate_zk_snapshot(node1)
 
         print("Data copied to node1")
         resulted_path = convert_zookeeper_data(node1)
