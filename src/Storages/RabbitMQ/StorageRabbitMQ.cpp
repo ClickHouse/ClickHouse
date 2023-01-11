@@ -621,7 +621,6 @@ void StorageRabbitMQ::prepareChannelForConsumer(RabbitMQConsumerPtr consumer)
         consumer->setupChannel();
 }
 
-
 void StorageRabbitMQ::unbindExchange()
 {
     /* This is needed because with RabbitMQ (without special adjustments) can't, for example, properly make mv if there was insert query
@@ -812,6 +811,8 @@ void StorageRabbitMQ::shutdown()
 {
     shutdown_called = true;
 
+    LOG_TRACE(log, "Deactivating background tasks");
+
     /// In case it has not yet been able to setup connection;
     deactivateTask(connection_task, true, false);
 
@@ -819,6 +820,8 @@ void StorageRabbitMQ::shutdown()
     /// then wait for background event loop to finish.
     deactivateTask(streaming_task, true, false);
     deactivateTask(looping_task, true, true);
+
+    LOG_TRACE(log, "Cleaning up RabbitMQ after table usage");
 
     /// Just a paranoid try catch, it is not actually needed.
     try
@@ -842,6 +845,8 @@ void StorageRabbitMQ::shutdown()
     {
         tryLogCurrentException(log);
     }
+
+    LOG_TRACE(log, "Shutdown finished");
 }
 
 

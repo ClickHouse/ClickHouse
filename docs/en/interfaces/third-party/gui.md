@@ -306,5 +306,3 @@ License: [commercial](https://tablum.io/pricing) product with 3-month free perio
 
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)
-
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->

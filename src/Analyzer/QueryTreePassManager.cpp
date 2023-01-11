@@ -60,10 +60,10 @@ class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
         if (!function->isResolved())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Function {} is not resolved after running {} pass",
-            function->dumpTree(), pass_name);
+            function->toAST()->formatForErrorMessage(), pass_name);
 
-        const auto & expected_arg_types = function->getExpectedArgumentTypes();
-        auto actual_arg_columns = function->getArgumentTypes();
+        const auto & expected_arg_types = function->getArgumentTypes();
+        auto actual_arg_columns = function->getArgumentColumns();
 
         if (expected_arg_types.size() != actual_arg_columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR,

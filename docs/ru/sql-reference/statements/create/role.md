@@ -46,5 +46,3 @@ GRANT accountant TO mira;
 SET ROLE accountant;
 SELECT * FROM db.*;
 ```
-
-<!--hide-->
