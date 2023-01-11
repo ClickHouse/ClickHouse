@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --multiquery --query="CREATE TABLE nullable_low_cardinality_t
 ) ENGINE=TinyLog";
 
 printf '2020-01-01\t\N\t32\t\N\n' | $CLICKHOUSE_CLIENT -q 'insert into nullable_low_cardinality_tsv_test format TSV' 2>&1 \
-    | grep -q "INCORRECT_DATA"
+    | grep -q "Code: 27"
 
 echo $?;
 

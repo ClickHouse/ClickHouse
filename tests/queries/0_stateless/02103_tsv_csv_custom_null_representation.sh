@@ -57,7 +57,7 @@ echo 'Custom NULL representation' > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's Nullable(String)') SETTINGS format_csv_null_representation='Custom NULL representation'"
 
 echo -e 'N,U,L,L' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's Nullable(String)') SETTINGS format_csv_null_representation='N,U,L,L', input_format_csv_detect_header=0"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's Nullable(String)') SETTINGS format_csv_null_representation='N,U,L,L'"
 
 echo -e "\\NSome text" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's Nullable(String)')"
@@ -103,10 +103,10 @@ echo -e "Some text\tCustomNull Some text" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'TSV', 's String, n Nullable(String)') settings max_read_buffer_size=15, format_tsv_null_representation='CustomNull', input_format_parallel_parsing=0"
 
 echo -e "Some text\t123NNN" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'TSV', 's String, n Nullable(Int32)') settings max_read_buffer_size=14, format_tsv_null_representation='123NN', input_format_parallel_parsing=0, input_format_tsv_detect_header=0" 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'TSV', 's String, n Nullable(Int32)') settings max_read_buffer_size=14, format_tsv_null_representation='123NN', input_format_parallel_parsing=0" 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
 
 echo -e "Some text\tNU\tLL" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'TSV', 's String, n Nullable(String)') settings max_read_buffer_size=13, format_tsv_null_representation='NU\tL', input_format_parallel_parsing=0, input_format_tsv_detect_header=0" 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'TSV', 's String, n Nullable(String)') settings max_read_buffer_size=13, format_tsv_null_representation='NU\tL', input_format_parallel_parsing=0" 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
 
 echo 'CSV'
 
@@ -116,11 +116,11 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's Stri
 echo -e "Some text,CustomNull Some text" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's String, n Nullable(String)') settings max_read_buffer_size=15, format_csv_null_representation='CustomNull', input_format_parallel_parsing=0"
 
-echo -e "Some text,123NNN" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's String, n Nullable(Int32)') settings max_read_buffer_size=14, format_csv_null_representation='123NN', input_format_parallel_parsing=0, input_format_csv_detect_header=0" 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
+echo -e "Some text,123NNN\n" > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's String, n Nullable(Int32)') settings max_read_buffer_size=14, format_csv_null_representation='123NN', input_format_parallel_parsing=0" 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
 
-echo -e "Some text,NU,LL" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's String, n Nullable(String)') settings max_read_buffer_size=13, format_csv_null_representation='NU,L', input_format_parallel_parsing=0, input_format_csv_detect_header=0" 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
+echo -e "Some text,NU,LL\n" > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'CSV', 's String, n Nullable(String)') settings max_read_buffer_size=13, format_csv_null_representation='NU,L', input_format_parallel_parsing=0" 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
 
 
 echo 'Large custom NULL'

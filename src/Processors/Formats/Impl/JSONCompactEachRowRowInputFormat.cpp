@@ -43,7 +43,7 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
 {
 }
 
-void JSONCompactEachRowRowInputFormat::syncAfterErrorImpl()
+void JSONCompactEachRowRowInputFormat::syncAfterError()
 {
     skipToUnescapedNextLineOrEOF(*in);
 }
@@ -115,15 +115,6 @@ bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypeP
 {
     skipWhitespaceIfAny(*in);
     return JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, yield_strings);
-}
-
-bool JSONCompactEachRowFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name)
-{
-    ReadBufferFromString buf(field);
-    auto res = JSONUtils::readField(buf, column, type, serialization, column_name, format_settings, yield_strings);
-    if (!buf.eof())
-        throw Exception(ErrorCodes::INCORRECT_DATA, R"(Cannot parse value of column "{}" with type {} here: "{}")", column_name, type->getName(), field);
-    return res;
 }
 
 bool JSONCompactEachRowFormatReader::parseRowStartWithDiagnosticInfo(WriteBuffer & out)

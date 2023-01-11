@@ -26,19 +26,27 @@ public:
 
     String getName() const override { return "CSVRowInputFormat"; }
 
+    void setReadBuffer(ReadBuffer & in_) override;
+
 protected:
-    explicit CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                      bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
+    CSVRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,
+                               bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
+
+    CSVRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
+                      bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
 private:
     bool allowSyncAfterError() const override { return true; }
-    void syncAfterErrorImpl() override;
+    void syncAfterError() override;
+
+protected:
+    std::unique_ptr<PeekableReadBuffer> buf;
 };
 
 class CSVFormatReader : public FormatWithNamesAndTypesReader
 {
 public:
-    CSVFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    CSVFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_);
 
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
@@ -49,7 +57,6 @@ public:
     }
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
-    bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
@@ -74,8 +81,10 @@ public:
     template <bool read_string>
     String readCSVFieldIntoString();
 
-private:
-    bool readFieldImpl(ReadBuffer & buf, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization);
+    void setReadBuffer(ReadBuffer & in_) override;
+
+protected:
+    PeekableReadBuffer * buf;
 };
 
 class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader
@@ -87,6 +96,7 @@ private:
     DataTypes readRowAndGetDataTypesImpl() override;
     std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
+    PeekableReadBuffer buf;
     CSVFormatReader reader;
     DataTypes buffered_types;
 };

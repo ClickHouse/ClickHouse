@@ -68,7 +68,7 @@ if [ $rc -eq 0 ]; then
 fi
 ${CLICKHOUSE_CLIENT} --query "SYSTEM UNFREEZE WITH NAME 'test_01417_single_part_7_system'" \
   | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE" \
-      --query "SELECT command_type, partition_id, part_name, backup_name FROM table FORMAT TSVWithNames"
+      --query "SELECT command_type, partition_id, part_name, backup_name FROM table"
 
 # teardown
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS table_for_freeze;"

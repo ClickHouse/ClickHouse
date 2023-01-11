@@ -56,12 +56,6 @@ protected:
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
-    void syncAfterError() override;
-    virtual void syncAfterErrorImpl()
-    {
-        throw Exception("Method syncAfterErrorImpl is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
@@ -73,7 +67,6 @@ private:
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
     bool try_detect_header;
     bool is_header_detected = false;
-    std::vector<String> buffered_row;
 
 protected:
     Block::NameMap column_indexes_by_names;
@@ -88,7 +81,6 @@ public:
 
     /// Read single field from input. Return false if there was no real value and we inserted default value.
     virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
-    virtual bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) = 0;
 
     /// Methods for parsing with diagnostic info.
     virtual void checkNullValueForNonNullable(DataTypePtr) {}

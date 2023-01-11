@@ -80,7 +80,7 @@ bool CustomSeparatedRowInputFormat::allowSyncAfterError() const
     return !format_settings.custom.row_after_delimiter.empty() || !format_settings.custom.row_between_delimiter.empty();
 }
 
-void CustomSeparatedRowInputFormat::syncAfterErrorImpl()
+void CustomSeparatedRowInputFormat::syncAfterError()
 {
     skipToNextRowOrEof(*buf, format_settings.custom.row_after_delimiter, format_settings.custom.row_between_delimiter, ignore_spaces);
     end_of_stream = buf->eof();
@@ -270,17 +270,6 @@ bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr 
     return deserializeFieldByEscapingRule(type, serialization, column, *buf, format_settings.custom.escaping_rule, format_settings);
 }
 
-bool CustomSeparatedFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name)
-{
-    skipSpaces();
-    ReadBufferFromString field_buf(field);
-    format_settings.csv.custom_delimiter.clear();
-    auto res = deserializeFieldByEscapingRule(type, serialization, column, field_buf, format_settings.custom.escaping_rule, format_settings);
-    if (!field_buf.eof())
-        throw Exception(ErrorCodes::INCORRECT_DATA, R"(Cannot parse value of column "{}" with type {} here: "{}")", column_name, type->getName(), field);
-    return res;
-}
-
 bool CustomSeparatedFormatReader::checkForSuffixImpl(bool check_eof)
 {
     skipSpaces();
@@ -355,7 +344,7 @@ bool CustomSeparatedFormatReader::parseRowBetweenDelimiterWithDiagnosticInfo(Wri
 void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
-    FormatWithNamesAndTypesReader::setReadBuffer(in_);
+    FormatWithNamesAndTypesReader::setReadBuffer(*buf);
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(

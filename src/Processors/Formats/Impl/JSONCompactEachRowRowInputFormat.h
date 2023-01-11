@@ -36,7 +36,7 @@ public:
 
 private:
     bool allowSyncAfterError() const override { return true; }
-    void syncAfterErrorImpl() override;
+    void syncAfterError() override;
 };
 
 class JSONCompactEachRowFormatReader : public FormatWithNamesAndTypesReader
@@ -54,7 +54,6 @@ public:
     }
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
-    bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) override;
 
     void skipField(size_t /*column_index*/) override { skipField(); }
     void skipField();

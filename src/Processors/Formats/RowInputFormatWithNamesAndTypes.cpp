@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -151,6 +152,11 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
 
 void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out)
 {
+    auto & read_buf = getReadBuffer();
+    PeekableReadBuffer * peekable_buf = dynamic_cast<PeekableReadBuffer *>(&read_buf);
+    if (!peekable_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Header detection is supported only for formats that use PeekableReadBuffer");
+
     /// Empty data.
     if (unlikely(format_reader->checkForSuffix()))
     {
@@ -158,6 +164,8 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
         return;
     }
 
+    /// Make a checkpoint before reading the first row.
+    peekable_buf->setCheckpoint();
     auto first_row_values = format_reader->readRowForHeaderDetection();
 
     /// To understand if the first row is a header with column names, we check
@@ -178,13 +186,14 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
 
     if (!first_row_is_a_header)
     {
-        /// Remember values from the first row to read data from them later.
-        buffered_row = first_row_values;
+        /// Rollback to the beginning of the first row to parse it as data later.
+        peekable_buf->rollbackToCheckpoint(true);
         return;
     }
 
     /// First row is a header with column names.
     column_names_out = possible_names;
+    peekable_buf->dropCheckpoint();
     is_header_detected = true;
 
     /// Data contains only 1 row and it's just names.
@@ -194,60 +203,28 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
         return;
     }
 
+    /// Make a checkpoint before reading the second row.
+    peekable_buf->setCheckpoint();
+
     /// Skip delimiter between the first and the second rows.
     format_reader->skipRowBetweenDelimiter();
-
     auto second_row_values = format_reader->readRowForHeaderDetection();
+
     /// The second row can be a header with type names if it contains only valid type names.
     if (!checkIfValuesAreTypeNames(removeQuotesIfAny(second_row_values)))
     {
-        /// Remember values from the second row to read data from them later.
-        buffered_row = second_row_values;
+        /// Rollback to the beginning of the second row to parse it as data later.
+        peekable_buf->rollbackToCheckpoint(true);
         return;
     }
 
     /// The second row is a header with type names.
     type_names_out = removeQuotesIfAny(second_row_values);
+    peekable_buf->dropCheckpoint();
 }
 
 bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    /// If we tried to detect a header, we may have a buffered row values.
-    if (!buffered_row.empty())
-    {
-        if (buffered_row.size() != column_mapping->column_indexes_for_input_fields.size())
-            throw ParsingException(
-                ErrorCodes::INCORRECT_DATA,
-                "The number of columns ({}) in the row {} differs with the expected number of rows ({})",
-                buffered_row.size(),
-                row_num + 1,
-                column_mapping->column_indexes_for_input_fields.size());
-
-        ext.read_columns.resize(data_types.size());
-        for (size_t file_column = 0; file_column < buffered_row.size(); ++file_column)
-        {
-            const auto & column_index = column_mapping->column_indexes_for_input_fields[file_column];
-            const auto & field = buffered_row[file_column];
-            if (column_index)
-                ext.read_columns[*column_index] = format_reader->readField(
-                    field,
-                    *columns[*column_index],
-                    data_types[*column_index],
-                    serializations[*column_index],
-                    column_mapping->names_of_columns[file_column]);
-        }
-        buffered_row.clear();
-        ++row_num;
-
-        column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
-
-        /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.
-        if (!format_settings.defaults_for_omitted_fields)
-            ext.read_columns.assign(ext.read_columns.size(), true);
-
-        return true;
-    }
-
     if (unlikely(end_of_stream))
         return false;
 
@@ -301,19 +278,6 @@ void RowInputFormatWithNamesAndTypes::resetParser()
     column_mapping->not_presented_columns.clear();
     column_mapping->names_of_columns.clear();
     end_of_stream = false;
-}
-
-void RowInputFormatWithNamesAndTypes::syncAfterError()
-{
-    /// Check if error happened while parsing values from buffered rwo.
-    if (!buffered_row.empty())
-    {
-        /// Just clear buffered row.
-        buffered_row.clear();
-        return;
-    }
-
-    syncAfterErrorImpl();
 }
 
 void RowInputFormatWithNamesAndTypes::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
