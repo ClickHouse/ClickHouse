@@ -332,8 +332,7 @@ def create_test_html_report(
 
         # Display entires with logs at the top (they correspond to failed tests)
         test_results.sort(
-            key=lambda result: result.raw_logs is not None
-            or result.log_files is not None
+            key=lambda result: result.raw_logs is None and result.log_files is None
         )
 
         for test_result in test_results:
@@ -380,7 +379,7 @@ def create_test_html_report(
                 )
                 rows_part += row
 
-        headers = BASE_HEADERS
+        headers = BASE_HEADERS.copy()
         if has_test_time:
             headers.append("Test time, sec.")
         if has_log_urls:
