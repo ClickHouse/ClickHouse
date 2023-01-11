@@ -76,13 +76,24 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND uv_defines _GNU_SOURCE _POSIX_C_SOURCE=200112)
   list(APPEND uv_libraries rt)
   list(APPEND uv_sources
-       src/unix/epoll.c
-       src/unix/linux-core.c
-       src/unix/linux-inotify.c
-       src/unix/linux-syscalls.c
-       src/unix/procfs-exepath.c
-       src/unix/random-getrandom.c
-       src/unix/random-sysctl-linux.c)
+       src/unix/async.c
+       src/unix/core.c
+       src/unix/dl.c
+       src/unix/fs.c
+       src/unix/getaddrinfo.c
+       src/unix/getnameinfo.c
+       src/unix/loop-watcher.c
+       src/unix/loop.c
+       src/unix/pipe.c
+       src/unix/poll.c
+       src/unix/process.c
+       src/unix/random-devurandom.c
+       src/unix/signal.c
+       src/unix/stream.c
+       src/unix/tcp.c
+       src/unix/thread.c
+       src/unix/tty.c
+       src/unix/udp.c)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
