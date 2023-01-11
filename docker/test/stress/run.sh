@@ -128,18 +128,12 @@ EOL
 
 function stop()
 {
+    local max_tries="${1:-90}"
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    clickhouse stop $max_tries --do-not-kill && return
-
-    if [ -n "$1" ]
-    then
-        # temporarily disable it in BC check
-        clickhouse stop --force
-        return
-    fi
+    clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
@@ -465,7 +459,8 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
             clickhouse stop --force
         )
 
-        stop 1
+        # Use bigger timeout for previous version
+        stop 300
         mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
 
         # Start new server
