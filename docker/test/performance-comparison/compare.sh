@@ -391,7 +391,7 @@ do
     sed -n "s/^report-threshold\t/$test_name\t/p" < "$test_file" >> "analyze/report-thresholds.tsv"
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
-    sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
+    sed -n "s/^backward-incompatible\t/$test_name\t/p" < "$test_file" >> "analyze/backward-incompatible-queries.tsv"
 done
 
 # for each query run, prepare array of metrics from query log
@@ -399,18 +399,18 @@ clickhouse-local --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
--- Separately process 'partial' queries which we could only run on the new server
+-- Separately process 'backward-incompatible' queries which we could only run on the new server
 -- because they use new functions. We can't make normal stats for them, but still
 -- have to show some stats so that the PR author can tweak them.
-create view partial_queries as select test, query_index
-    from file('analyze/partial-queries.tsv', TSV,
+create view backward_incompatible_queries as select test, query_index
+    from file('analyze/backward-incompatible-queries.tsv', TSV,
         'test text, query_index int, servers Array(int)');
 
-create table partial_query_times engine File(TSVWithNamesAndTypes,
-        'analyze/partial-query-times.tsv')
+create table backward_incompatible_query_times engine File(TSVWithNamesAndTypes,
+        'analyze/backward-incompatible-query-times.tsv')
     as select test, query_index, stddevPop(time) time_stddev, median(time) time_median
     from query_runs
-    where (test, query_index) in partial_queries
+    where (test, query_index) in backward_incompatible_queries
     group by test, query_index
     ;
 
@@ -462,7 +462,7 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
     right join query_runs
         on query_logs.query_id = query_runs.query_id
             and query_logs.version = query_runs.version
-    where (test, query_index) not in partial_queries
+    where (test, query_index) not in backward_incompatible_queries
     ;
 
 -- This is just for convenience -- human-readable + easy to make plots.
@@ -645,19 +645,19 @@ create view query_display_names as select * from
         'test text, query_index int, query_display_name text')
     ;
 
-create view partial_query_times as select * from
-    file('analyze/partial-query-times.tsv', TSVWithNamesAndTypes,
+create view backward_incompatible_query_times as select * from
+    file('analyze/backward-incompatible-query-times.tsv', TSVWithNamesAndTypes,
         'test text, query_index int, time_stddev float, time_median double')
     ;
 
--- Report for partial queries that we could only run on the new server (e.g.
+-- Report for backward-incompatible queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
-create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
+create table backward_incompatible_queries_report engine File(TSV, 'report/backward-incompatible-queries-report.tsv')
     settings output_format_decimal_trailing_zeros = 1
     as select toDecimal64(time_median, 3) time,
         toDecimal64(time_stddev / time_median, 3) relative_time_stddev,
         test, query_index, query_display_name
-    from partial_query_times
+    from backward_incompatible_query_times
     join query_display_names using (test, query_index)
     order by test, query_index
     ;
@@ -829,7 +829,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 -- Guess the number of query runs used for this test. The number is required to
 -- calculate and check the average query run time in the report.
 -- We have to be careful, because we will encounter:
---  1) partial queries which run only on one server
+--  1) backward-incompatible queries which run only on one server
 --  3) some errors that make query run for a different number of times on a
 --     particular server.
 --
