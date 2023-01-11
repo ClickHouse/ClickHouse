@@ -54,10 +54,7 @@ def find_previous_release(server_version, releases):
                     CLICKHOUSE_PACKAGE_URL.format(
                         version=release.version, type=release.type
                     ),
-                    total=10,
-                    read=10,
-                    connect=10,
-                    backoff_factor=0.3,
+                    timeout=10,
                 ).status_code
                 != 404
             ):
