@@ -128,6 +128,50 @@ Result:
 └────────────────────────────┘
 ```
 
+## Defining and Using Query Parameters
+
+Query parameters can be defined using the syntax `param_name=value`, where `name` is the name of the parameter. Parameters can by defined using the `SET` command, or from the command-line using `--param`.
+
+To retrieve a query parameter, you specify the name of the parameter along with its data type surrounded by curly braces:
+
+```sql
+{name:datatype}
+```
+
+For example, the following SQL defines parameters named `a`, `b`, `c` and `d` - each of a different data type:
+
+```sql
+SET param_a = 13, param_b = 'str';
+SET param_c = '2022-08-04 18:30:53';
+SET param_d = '{\'10\': [11, 12], \'13\': [14, 15]}';
+
+SELECT
+   {a: UInt32},
+   {b: String},
+   {c: DateTime},
+   {d: Map(String, Array(UInt8))};
+```
+
+If you are using `clickhouse-client`, the parameters are specified as `--param_name=value`. For example, the following parameter has the name `message` and it is being retrieved as a `String`:
+
+```sql
+clickhouse-client --param_message='hello' --query="SELECT {message: String}"
+```
+
+Result:
+
+```response
+hello
+```
+
+If the query parameter represents the name of a database, table, function or other identifier, use `Identifier` for its type. For example, the following query returns rows from a table named `uk_price_paid`:
+
+```sql
+SET param_mytablename = "uk_price_paid";
+SELECT * FROM {mytablename:Identifier};
+```
+
+
 ## Functions
 
 Function calls are written like an identifier with a list of arguments (possibly empty) in round brackets. In contrast to standard SQL, the brackets are required, even for an empty argument list. Example: `now()`.
