@@ -163,9 +163,6 @@ struct ProjectionCandidate
     SortDescription group_by_elements_order_descr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
-
-    /// Because projection analysis uses a separate interpreter.
-    ContextPtr context;
 };
 
 /** Query along with some additional data,
@@ -174,6 +171,7 @@ struct ProjectionCandidate
   */
 struct SelectQueryInfo
 {
+
     SelectQueryInfo()
         : prepared_sets(std::make_shared<PreparedSets>())
     {}
@@ -208,9 +206,6 @@ struct SelectQueryInfo
 
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
-
-    /// Filter actions dag for current storage
-    ActionsDAGPtr filter_actions_dag;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage

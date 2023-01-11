@@ -523,7 +523,7 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + INTERVAL 1 MONTH DELETE,
+TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 1 WEEK TO VOLUME 'aaa',
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
@@ -883,3 +883,4 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `_part_uuid` — Уникальный идентификатор куска (если включена MergeTree настройка `assign_part_uuids`).
 -   `_partition_value` — Значения (кортеж) выражения `partition by`.
 -   `_sample_factor` — Коэффициент сэмплирования (из запроса).
+

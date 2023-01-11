@@ -136,3 +136,4 @@ DESCRIBE TABLE test_database.test_table;
 │ data   │ Nullable(String)  │
 └────────┴───────────────────┘
 ```
+

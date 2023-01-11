@@ -49,16 +49,14 @@ private:
 
 public:
     AggregateFunctionThrow(const DataTypes & argument_types_, const Array & parameters_, Float64 throw_probability_)
-        : IAggregateFunctionDataHelper(argument_types_, parameters_, createResultType())
-        , throw_probability(throw_probability_)
-    {}
+        : IAggregateFunctionDataHelper(argument_types_, parameters_), throw_probability(throw_probability_) {}
 
     String getName() const override
     {
         return "aggThrow";
     }
 
-    static DataTypePtr createResultType()
+    DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }

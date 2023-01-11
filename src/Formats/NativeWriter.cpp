@@ -64,10 +64,8 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
 }
 
 
-size_t NativeWriter::write(const Block & block)
+void NativeWriter::write(const Block & block)
 {
-    size_t written_before = ostr.count();
-
     /// Additional information about the block.
     if (client_revision > 0)
         block.info.write(ostr);
@@ -163,10 +161,6 @@ size_t NativeWriter::write(const Block & block)
 
     if (index)
         index->blocks.emplace_back(std::move(index_block));
-
-    size_t written_after = ostr.count();
-    size_t written_size = written_after - written_before;
-    return written_size;
 }
 
 }

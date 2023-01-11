@@ -72,7 +72,7 @@ BlockIO InterpreterDeleteQuery::execute()
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext(), false);
+        table->mutate(mutation_commands, getContext());
         return {};
     }
     else if (table->supportsLightweightDelete())
@@ -106,13 +106,13 @@ BlockIO InterpreterDeleteQuery::execute()
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext(), true);
+        table->mutate(mutation_commands, getContext());
 
         return {};
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table");
     }
 }
 

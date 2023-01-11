@@ -93,7 +93,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         where()->formatImpl(s, state, frame);
     }
 
-    if (!group_by_all && groupBy())
+    if (groupBy())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
         if (!group_by_with_grouping_sets)
@@ -104,9 +104,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         }
     }
 
-    if (group_by_all)
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY ALL" << (s.hilite ? hilite_none : "");
-
     if (group_by_with_rollup)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
 
@@ -115,8 +112,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (group_by_with_grouping_sets)
     {
-        if (!groupBy()) /// sanity check, issue 43049
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupt AST");
         auto nested_frame = frame;
         nested_frame.surround_each_list_element_with_parens = true;
         nested_frame.expression_list_prepend_whitespace = false;

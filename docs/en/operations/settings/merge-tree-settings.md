@@ -127,13 +127,6 @@ Default value: 100000.
 
 A large number of parts in a table reduces performance of ClickHouse queries and increases ClickHouse boot time. Most often this is a consequence of an incorrect design (mistakes when choosing a partitioning strategy - too small partitions).
 
-## simultaneous_parts_removal_limit {#simultaneous-parts-removal-limit}
-
-If there are a lot of outdated parts cleanup thread will try to delete up to `simultaneous_parts_removal_limit` parts during one iteration.
-`simultaneous_parts_removal_limit` set to `0` means unlimited.
-
-Default value: 0.
-
 ## replicated_deduplication_window {#replicated-deduplication-window}
 
 The number of most recently inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
@@ -311,7 +304,7 @@ Possible values:
 
 Default value: 0.5
 
-## replicated_max_parallel_fetches_for_host
+## replicated_max_parallel_fetches_for_host 
 
 Limit parallel fetches from endpoint (actually pool size).
 
@@ -517,26 +510,6 @@ Possible values:
 -   Any positive integer.
 
 Default value: -1 (unlimited).
-
-## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
-
-Merge parts if every part in the range is older than the value of `min_age_to_force_merge_seconds`.
-
-Possible values:
-
--   Positive integer.
-
-Default value: 0 — Disabled.
-
-## min_age_to_force_merge_on_partition_only {#min_age_to_force_merge_on_partition_only}
-
-Whether `min_age_to_force_merge_seconds` should be applied only on the entire partition and not on subset.
-
-Possible values:
-
--   true, false
-
-Default value: false
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 

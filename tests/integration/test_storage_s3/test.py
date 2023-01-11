@@ -11,7 +11,6 @@ import helpers.client
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.network import PartitionManager
-from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import exec_query_with_retry
 
 MINIO_INTERNAL_PORT = 9001
@@ -695,16 +694,47 @@ def test_s3_glob_scheherazade(started_cluster):
 
 
 def run_s3_mocks(started_cluster):
-    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
-    start_mock_servers(
-        started_cluster,
-        script_dir,
-        [
-            ("mock_s3.py", "resolver", "8080"),
-            ("unstable_server.py", "resolver", "8081"),
-            ("echo.py", "resolver", "8082"),
-        ],
+    logging.info("Starting s3 mocks")
+    mocks = (
+        ("mock_s3.py", "resolver", "8080"),
+        ("unstable_server.py", "resolver", "8081"),
+        ("echo.py", "resolver", "8082"),
     )
+    for mock_filename, container, port in mocks:
+        container_id = started_cluster.get_container_id(container)
+        current_dir = os.path.dirname(__file__)
+        started_cluster.copy_file_to_container(
+            container_id,
+            os.path.join(current_dir, "s3_mocks", mock_filename),
+            mock_filename,
+        )
+        started_cluster.exec_in_container(
+            container_id, ["python", mock_filename, port], detach=True
+        )
+
+    # Wait for S3 mocks to start
+    for mock_filename, container, port in mocks:
+        num_attempts = 100
+        for attempt in range(num_attempts):
+            ping_response = started_cluster.exec_in_container(
+                started_cluster.get_container_id(container),
+                ["curl", "-s", f"http://localhost:{port}/"],
+                nothrow=True,
+            )
+            if ping_response != "OK":
+                if attempt == num_attempts - 1:
+                    assert ping_response == "OK", 'Expected "OK", but got "{}"'.format(
+                        ping_response
+                    )
+                else:
+                    time.sleep(1)
+            else:
+                logging.debug(
+                    f"mock {mock_filename} ({port}) answered {ping_response} on attempt {attempt}"
+                )
+                break
+
+    logging.info("S3 mocks started")
 
 
 def replace_config(path, old, new):
@@ -776,7 +806,7 @@ def test_custom_auth_headers_exclusion(started_cluster):
         print(result)
 
     assert ei.value.returncode == 243
-    assert "HTTP response code: 403" in ei.value.stderr
+    assert "Forbidden Error" in ei.value.stderr
 
 
 def test_infinite_redirect(started_cluster):
@@ -982,9 +1012,6 @@ def test_predefined_connection_configuration(started_cluster):
         "SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')"
     )
     assert result == instance.query("SELECT number FROM numbers(10)")
-
-    result = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
-    assert "There is no named collection `no_collection`" in result
 
 
 result = ""
@@ -1687,7 +1714,7 @@ def test_ast_auth_headers(started_cluster):
         f"select count() from s3('http://resolver:8080/{bucket}/{filename}', 'CSV')"
     )
 
-    assert "HTTP response code: 403" in result
+    assert "Forbidden Error" in result
     assert "S3_ERROR" in result
 
     result = instance.query(

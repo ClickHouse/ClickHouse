@@ -927,9 +927,7 @@ static bool castColumnNumeric(const IColumn * column, F && f)
         ColumnVector<Int64>,
         ColumnVector<Int128>,
         ColumnVector<Int256>,
-        ColumnVector<UUID>,
-        ColumnVector<IPv4>,
-        ColumnVector<IPv6>
+        ColumnVector<UUID>
     >(column, std::forward<F>(f));
 }
 

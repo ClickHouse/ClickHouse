@@ -5,8 +5,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 
-#include <Common/HashTable/HashMap.h>
-
 #include <initializer_list>
 #include <list>
 #include <map>
@@ -95,10 +93,7 @@ public:
     Names getNames() const;
     DataTypes getDataTypes() const;
     Names getDataTypeNames() const;
-
-    /// Hash table match `column name -> position in the block`.
-    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
-    NameMap getNamesToIndexesMap() const;
+    std::unordered_map<String, size_t> getNamesToIndexesMap() const;
 
     Serializations getSerializations() const;
 

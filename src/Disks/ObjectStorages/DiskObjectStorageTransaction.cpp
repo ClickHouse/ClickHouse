@@ -133,13 +133,8 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
-        /// The client for an object storage may do retries internally
-        /// and there could be a situation when a query succeeded, but the response is lost
-        /// due to network error or similar. And when it will retry an operation it may receive
-        /// a 404 HTTP code. We don't want to threat this code as a real error for deletion process
-        /// (e.g. throwing some exceptions) and thus we just use method `removeObjectsIfExists`
         if (!delete_metadata_only && !objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+            object_storage.removeObjects(objects_to_remove);
     }
 };
 
@@ -218,10 +213,8 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
     void finalize() override
     {
-        /// Read comment inside RemoveObjectStorageOperation class
-        /// TL;DR Don't pay any attention to 404 status code
         if (!objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+            object_storage.removeObjects(objects_to_remove);
     }
 };
 
@@ -314,9 +307,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                     remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
                 }
             }
-            /// Read comment inside RemoveObjectStorageOperation class
-            /// TL;DR Don't pay any attention to 404 status code
-            object_storage.removeObjectsIfExist(remove_from_remote);
+            object_storage.removeObjects(remove_from_remote);
         }
     }
 };
@@ -361,10 +352,8 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
     void finalize() override
     {
-        /// Read comment inside RemoveObjectStorageOperation class
-        /// TL;DR Don't pay any attention to 404 status code
         if (!objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+            object_storage.removeObjects(objects_to_remove);
     }
 };
 
@@ -758,12 +747,6 @@ void DiskObjectStorageTransaction::commit()
 
     for (const auto & operation : operations_to_execute)
         operation->finalize();
-}
-
-void DiskObjectStorageTransaction::undo()
-{
-    for (const auto & operation : operations_to_execute | std::views::reverse)
-        operation->undo();
 }
 
 }

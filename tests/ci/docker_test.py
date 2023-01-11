@@ -43,55 +43,55 @@ class TestDockerImageCheck(unittest.TestCase):
                     "docker/test/stateless",
                     "clickhouse/stateless-test",
                     False,
-                    "clickhouse/test-base",  # type: ignore
+                    "clickhouse/test-base",
                 ),
                 di.DockerImage(
                     "docker/test/integration/base",
                     "clickhouse/integration-test",
                     False,
-                    "clickhouse/test-base",  # type: ignore
+                    "clickhouse/test-base",
                 ),
                 di.DockerImage(
                     "docker/test/fuzzer",
                     "clickhouse/fuzzer",
                     False,
-                    "clickhouse/test-base",  # type: ignore
+                    "clickhouse/test-base",
                 ),
                 di.DockerImage(
                     "docker/test/keeper-jepsen",
                     "clickhouse/keeper-jepsen-test",
                     False,
-                    "clickhouse/test-base",  # type: ignore
+                    "clickhouse/test-base",
                 ),
                 di.DockerImage(
                     "docker/docs/check",
                     "clickhouse/docs-check",
                     False,
-                    "clickhouse/docs-builder",  # type: ignore
+                    "clickhouse/docs-builder",
                 ),
                 di.DockerImage(
                     "docker/docs/release",
                     "clickhouse/docs-release",
                     False,
-                    "clickhouse/docs-builder",  # type: ignore
+                    "clickhouse/docs-builder",
                 ),
                 di.DockerImage(
                     "docker/test/stateful",
                     "clickhouse/stateful-test",
                     False,
-                    "clickhouse/stateless-test",  # type: ignore
+                    "clickhouse/stateless-test",
                 ),
                 di.DockerImage(
                     "docker/test/unit",
                     "clickhouse/unit-test",
                     False,
-                    "clickhouse/stateless-test",  # type: ignore
+                    "clickhouse/stateless-test",
                 ),
                 di.DockerImage(
                     "docker/test/stress",
                     "clickhouse/stress-test",
                     False,
-                    "clickhouse/stateful-test",  # type: ignore
+                    "clickhouse/stateful-test",
                 ),
             ]
         )
@@ -277,7 +277,7 @@ class TestDockerServer(unittest.TestCase):
             ds.gen_tags(version, "auto")
 
     @patch("docker_server.get_tagged_versions")
-    def test_auto_release_type(self, mock_tagged_versions: MagicMock) -> None:
+    def test_auto_release_type(self, mock_tagged_versions: MagicMock):
         mock_tagged_versions.return_value = [
             get_version_from_string("1.1.1.1"),
             get_version_from_string("1.2.1.1"),

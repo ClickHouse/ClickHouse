@@ -17,7 +17,6 @@ concurrency:
       - 'docs/**'
       - 'utils/list-versions/version_date.tsv'
       - 'website/**'
-      - 'utils/check-style/aspell-ignore/**'
   workflow_dispatch:
 jobs:
   DockerHubPushAarch64:

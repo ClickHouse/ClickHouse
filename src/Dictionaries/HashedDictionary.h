@@ -186,8 +186,6 @@ private:
             CollectionType<Float32>,
             CollectionType<Float64>,
             CollectionType<UUID>,
-            CollectionType<IPv4>,
-            CollectionType<IPv6>,
             CollectionType<StringRef>,
             CollectionType<Array>>
             container;

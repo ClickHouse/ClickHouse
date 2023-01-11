@@ -307,7 +307,7 @@ public:
         const TreeRewriterResultPtr & syntax_analyzer_result_,
         ContextPtr context_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const Names & required_result_columns_ = {},
+        const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {},
         PreparedSetsPtr prepared_sets_ = nullptr)
@@ -364,7 +364,7 @@ public:
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
-    Names required_result_columns;
+    NameSet required_result_columns;
     SelectQueryOptions query_options;
 
     JoinPtr makeJoin(

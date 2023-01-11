@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import time
 import sys
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
@@ -52,7 +52,7 @@ class DockerImage:
             and self.only_amd64 == other.only_amd64
         )
 
-    def __lt__(self, other: Any) -> bool:
+    def __lt__(self, other) -> bool:
         if not isinstance(other, DockerImage):
             return False
         if self.parent and not other.parent:
@@ -84,7 +84,7 @@ def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
             images_dict = json.load(dict_file)
     else:
         logging.info(
-            "Image file %s doesn't exist in repo %s", image_file_path, repo_path
+            "Image file %s doesnt exists in repo %s", image_file_path, repo_path
         )
 
     return images_dict
@@ -270,7 +270,7 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache,
     push: bool,
     child: bool,
 ) -> List[Tuple[str, str, str]]:

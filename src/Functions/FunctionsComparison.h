@@ -1154,8 +1154,6 @@ public:
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
             || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
-            || (left.isIPv4() && right.isIPv4())
-            || (left.isIPv6() && right.isIPv6())
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
@@ -1247,15 +1245,6 @@ public:
         const bool left_is_float = which_left.isFloat();
         const bool right_is_float = which_right.isFloat();
 
-        const bool left_is_ipv6 = which_left.isIPv6();
-        const bool right_is_ipv6 = which_right.isIPv6();
-        const bool left_is_fixed_string = which_left.isFixedString();
-        const bool right_is_fixed_string = which_right.isFixedString();
-        size_t fixed_string_size =
-            left_is_fixed_string ?
-                assert_cast<const DataTypeFixedString &>(*left_type).getN() :
-                (right_is_fixed_string ? assert_cast<const DataTypeFixedString &>(*right_type).getN() : 0);
-
         bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
             && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
@@ -1297,17 +1286,6 @@ public:
                 input_rows_count)))
         {
             return res;
-        }
-        else if (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
-        {
-            /// Special treatment for FixedString(16) as a binary representation of IPv6 -
-            /// CAST is customized for this case
-            ColumnPtr left_column = left_is_ipv6 ?
-                col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
-            ColumnPtr right_column = right_is_ipv6 ?
-                col_with_type_and_name_right.column : castColumn(col_with_type_and_name_right, left_type);
-
-            return executeGenericIdenticalTypes(left_column.get(), right_column.get());
         }
         else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {

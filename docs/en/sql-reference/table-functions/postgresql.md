@@ -131,3 +131,5 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 -   [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
 -   [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->

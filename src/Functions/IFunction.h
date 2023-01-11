@@ -3,8 +3,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
-#include <Core/IResolvedFunction.h>
-#include <Common/Exception.h>
 #include <DataTypes/IDataType.h>
 
 #include "config.h"
@@ -124,11 +122,11 @@ using Values = std::vector<llvm::Value *>;
 /** Function with known arguments and return type (when the specific overload was chosen).
   * It is also the point where all function-specific properties are known.
   */
-class IFunctionBase : public IResolvedFunction
+class IFunctionBase
 {
 public:
 
-    ~IFunctionBase() override = default;
+    virtual ~IFunctionBase() = default;
 
     virtual ColumnPtr execute( /// NOLINT
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
@@ -139,10 +137,8 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    const Array & getParameters() const final
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IFunctionBase doesn't support getParameters method");
-    }
+    virtual const DataTypes & getArgumentTypes() const = 0;
+    virtual const DataTypePtr & getResultType() const = 0;
 
     /// Do preparations and return executable.
     /// sample_columns should contain data types of arguments and values of constants, if relevant.
@@ -285,7 +281,7 @@ public:
 
 };
 
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).
@@ -386,7 +382,7 @@ protected:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
-    /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
+    // /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
 private:

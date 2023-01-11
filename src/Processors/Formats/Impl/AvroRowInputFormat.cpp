@@ -26,7 +26,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeFactory.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -47,6 +46,7 @@
 #include <ValidSchema.hh>
 
 #include <Poco/Buffer.h>
+#include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -906,15 +906,11 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
+    , input_stream(std::make_unique<InputStreamReadBufferAdapter>(*in))
+    , decoder(avro::binaryDecoder())
     , format_settings(format_settings_)
 
 {
-}
-
-void AvroConfluentRowInputFormat::readPrefix()
-{
-    input_stream = std::make_unique<InputStreamReadBufferAdapter>(*in);
-    decoder = avro::binaryDecoder();
     decoder->init(*input_stream);
 }
 
@@ -993,7 +989,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_LONG:
             return std::make_shared<DataTypeInt64>();
         case avro::Type::AVRO_BOOL:
-            return DataTypeFactory::instance().get("Bool");
+            return std::make_shared<DataTypeUInt8>();
         case avro::Type::AVRO_FLOAT:
             return std::make_shared<DataTypeFloat32>();
         case avro::Type::AVRO_DOUBLE:

@@ -14,3 +14,5 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/roles) <!--hide-->

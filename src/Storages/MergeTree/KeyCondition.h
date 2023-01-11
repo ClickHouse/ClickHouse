@@ -19,7 +19,7 @@ namespace DB
 class ASTFunction;
 class Context;
 class IFunction;
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
@@ -243,7 +243,7 @@ public:
 
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        ActionsDAGPtr filter_dag,
+        ActionDAGNodes dag_nodes,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -421,13 +421,12 @@ private:
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
     bool transformConstantWithValidFunctions(
-        ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
+        std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,

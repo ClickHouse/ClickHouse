@@ -309,3 +309,4 @@ SELECT toTypeName(toNullable(10));
 │ Nullable(UInt8)            │
 └────────────────────────────┘
 ```
+

@@ -32,11 +32,6 @@ public:
 
     bool supportsReadingSubsetOfColumns() override;
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
-    {
-        return {"_path", "_file"};
-    }
-
 protected:
     friend class TableFunctionS3Cluster;
 

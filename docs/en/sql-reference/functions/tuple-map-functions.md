@@ -544,3 +544,5 @@ Result:
 │ {'key3':0,'key1':10,'key2':10} │
 └────────────────────────────────┘
 ```  
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->

@@ -135,9 +135,7 @@ static size_t computeIndexGranularityImpl(
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
     if (!can_use_adaptive_index_granularity)
-    {
         index_granularity_for_block = fixed_index_granularity_rows;
-    }
     else
     {
         size_t block_size_in_memory = block.bytes();
@@ -154,13 +152,11 @@ static size_t computeIndexGranularityImpl(
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }
-    /// We should be less or equal than fixed index granularity
-    index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
-
-    /// very rare case when index granularity bytes less then single row
-    if (index_granularity_for_block == 0)
+    if (index_granularity_for_block == 0) /// very rare case when index granularity bytes less then single row
         index_granularity_for_block = 1;
 
+    /// We should be less or equal than fixed index granularity
+    index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
     return index_granularity_for_block;
 }
 
@@ -248,7 +244,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
                     const auto & primary_column = primary_index_block.getByPosition(j);
                     index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
                     primary_column.type->getDefaultSerialization()->serializeBinary(
-                        *primary_column.column, granule.start_row, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream, {});
+                        *primary_column.column, granule.start_row, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream);
                 }
             }
         }
@@ -316,7 +312,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
                 size_t last_row_number = column.size() - 1;
                 index_columns[j]->insertFrom(column, last_row_number);
                 index_types[j]->getDefaultSerialization()->serializeBinary(
-                    column, last_row_number, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream, {});
+                    column, last_row_number, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream);
             }
             last_block_index_columns.clear();
         }

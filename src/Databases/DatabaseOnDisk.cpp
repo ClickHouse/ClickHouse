@@ -539,19 +539,11 @@ String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
     String table_metadata_path = getObjectMetadataPath(object_name);
-    try
-    {
+
+    if (fs::exists(table_metadata_path))
         return FS::getModificationTime(table_metadata_path);
-    }
-    catch (const fs::filesystem_error & e)
-    {
-        if (e.code() == std::errc::no_such_file_or_directory)
-        {
-            return static_cast<time_t>(0);
-        }
-        else
-            throw;
-    }
+    else
+        return static_cast<time_t>(0);
 }
 
 void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const

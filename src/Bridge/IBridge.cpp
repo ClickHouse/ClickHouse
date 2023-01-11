@@ -61,8 +61,14 @@ namespace
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, Poco::Logger * log)
     {
         auto address = makeSocketAddress(host, port, log);
+#if POCO_VERSION < 0x01080000
+        socket.bind(address, /* reuseAddress = */ true);
+#else
         socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ false);
+#endif
+
         socket.listen(/* backlog = */ 64);
+
         return address;
     }
 }
@@ -230,7 +236,7 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
 
     auto server = HTTPServer(
-        std::make_shared<HTTPContext>(context),
+        context,
         getHandlerFactoryPtr(context),
         server_pool,
         socket,

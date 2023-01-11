@@ -69,6 +69,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_DATA;
 }
 
@@ -145,7 +146,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
 
 static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
-    auto internal_type = DataTypeFactory::instance().get("Bool");
+    auto internal_type = std::make_shared<DataTypeUInt8>();
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnVector<UInt8> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -162,7 +163,7 @@ static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::Ch
         for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
             column_data.emplace_back(chunk.Value(bool_i));
     }
-    return {std::move(internal_column), internal_type, column_name};
+    return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
 static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
@@ -809,7 +810,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
 {
 }
 
-void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows)
+void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
 {
     NameToColumnPtr name_to_column_ptr;
     for (auto column_name : table->ColumnNames())
@@ -823,12 +824,16 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
         name_to_column_ptr[std::move(column_name)] = arrow_column;
     }
 
-    arrowColumnsToCHChunk(res, name_to_column_ptr, num_rows);
+    arrowColumnsToCHChunk(res, name_to_column_ptr);
 }
 
-void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows)
+void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
 {
+    if (unlikely(name_to_column_ptr.empty()))
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Columns is empty");
+
     Columns columns_list;
+    UInt64 num_rows = name_to_column_ptr.begin()->second->length();
     columns_list.reserve(header.columns());
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
     bool skipped = false;

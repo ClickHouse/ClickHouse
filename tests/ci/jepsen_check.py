@@ -7,9 +7,9 @@ import sys
 
 import argparse
 
-import boto3  # type: ignore
-import requests  # type: ignore
+import boto3
 from github import Github
+import requests
 
 from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from stopwatch import Stopwatch
@@ -251,7 +251,7 @@ if __name__ == "__main__":
         )
         logging.info("Going to run jepsen: %s", cmd)
 
-        run_log_path = os.path.join(TEMP_PATH, "run.log")
+        run_log_path = os.path.join(TEMP_PATH, "runlog.log")
 
         with TeePopen(cmd, run_log_path) as process:
             retcode = process.wait()
@@ -272,9 +272,9 @@ if __name__ == "__main__":
 
         compress_fast(
             os.path.join(result_path, "store"),
-            os.path.join(result_path, "jepsen_store.tar.zst"),
+            os.path.join(result_path, "jepsen_store.tar.gz"),
         )
-        additional_data.append(os.path.join(result_path, "jepsen_store.tar.zst"))
+        additional_data.append(os.path.join(result_path, "jepsen_store.tar.gz"))
     except Exception as ex:
         print("Exception", ex)
         status = "failure"

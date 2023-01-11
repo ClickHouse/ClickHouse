@@ -166,3 +166,5 @@ move_ttl_info.max:                     []
 
 -   [MergeTree(合并树)家族](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [列和表的 TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/parts) <!--hide-->

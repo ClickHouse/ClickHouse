@@ -16,3 +16,4 @@ slug: /ru/operations/system-tables/roles
 ## Смотрите также {#see-also}
 
 -   [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)
+
