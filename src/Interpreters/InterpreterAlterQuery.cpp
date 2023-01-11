@@ -147,7 +147,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext());
+        table->mutate(mutation_commands, getContext(), false);
     }
 
     if (!partition_commands.empty())

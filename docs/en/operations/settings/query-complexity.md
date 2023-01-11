@@ -327,5 +327,3 @@ The maximum amount of data consumed by temporary files on disk in bytes for all 
 Zero means unlimited.
 
 Default value: 0.
-
-[Original article](https://clickhouse.com/docs/en/operations/settings/query_complexity/) <!--hide-->

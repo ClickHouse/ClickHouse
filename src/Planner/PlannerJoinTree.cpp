@@ -81,6 +81,63 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
     query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
 }
 
+NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot)
+{
+    /** We need to read at least one column to find the number of rows.
+      * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
+      * Because it is the column that is cheapest to read.
+      */
+    class ColumnWithSize
+    {
+    public:
+        ColumnWithSize(NameAndTypePair column_, ColumnSize column_size_)
+            : column(std::move(column_))
+            , compressed_size(column_size_.data_compressed)
+            , uncompressed_size(column_size_.data_uncompressed)
+            , type_size(column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100)
+        {
+        }
+
+        bool operator<(const ColumnWithSize & rhs) const
+        {
+            return std::tie(compressed_size, type_size, uncompressed_size)
+                < std::tie(rhs.compressed_size, rhs.type_size, rhs.uncompressed_size);
+        }
+
+        NameAndTypePair column;
+        size_t compressed_size = 0;
+        size_t uncompressed_size = 0;
+        size_t type_size = 0;
+    };
+
+    std::vector<ColumnWithSize> columns_with_sizes;
+
+    auto column_sizes = storage->getColumnSizes();
+    auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
+
+    if (!column_sizes.empty())
+    {
+        for (auto & column_name_and_type : column_names_and_types)
+        {
+            auto it = column_sizes.find(column_name_and_type.name);
+            if (it == column_sizes.end())
+                continue;
+
+            columns_with_sizes.emplace_back(column_name_and_type, it->second);
+        }
+    }
+
+    NameAndTypePair result;
+
+    if (!columns_with_sizes.empty())
+        result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
+    else
+        /// If we have no information about columns sizes, choose a column of minimum size of its data type
+        result = ExpressionActions::getSmallestColumn(column_names_and_types);
+
+    return result;
+}
+
 QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -127,9 +184,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
 
         if (columns_names.empty())
         {
-            auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
-            auto additional_column_to_read = column_names_and_types.front();
-
+            auto additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot);
             const auto & column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(additional_column_to_read, table_expression);
             columns_names.push_back(additional_column_to_read.name);
             table_expression_data.addColumn(additional_column_to_read, column_identifier);

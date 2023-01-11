@@ -42,7 +42,6 @@
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Freeze.h>
@@ -62,6 +61,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -509,7 +509,6 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::RESTART_DISK:
             restartDisk(query.disk);
-            break;
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -912,16 +911,10 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
-void InterpreterSystemQuery::restartDisk(String & name)
+[[noreturn]] void InterpreterSystemQuery::restartDisk(String &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
-
-    auto disk = getContext()->getDisk(name);
-
-    if (DiskRestartProxy * restart_proxy = dynamic_cast<DiskRestartProxy*>(disk.get()))
-        restart_proxy->restart(getContext());
-    else
-        throw Exception("Disk " + name + " doesn't have possibility to restart", ErrorCodes::BAD_ARGUMENTS);
+    throw Exception("SYSTEM RESTART DISK is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 

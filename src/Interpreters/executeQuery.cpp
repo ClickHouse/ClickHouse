@@ -1216,7 +1216,6 @@ void executeQuery(
                 compressed_buffer ? *compressed_buffer : *out_buf,
                 materializeBlock(pipeline.getHeader()),
                 context,
-                {},
                 output_format_settings);
 
             out->setAutoFlush();
