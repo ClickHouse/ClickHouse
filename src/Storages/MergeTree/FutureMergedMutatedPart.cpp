@@ -81,7 +81,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
         name = part_info.getPartNameV0(min_date, max_date);
     }
     else
-        name = part_info.getPartName();
+        name = part_info.getPartNameV1();
 }
 
 void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const IReservation * reservation)
