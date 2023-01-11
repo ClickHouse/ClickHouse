@@ -119,13 +119,13 @@ public:
             {
                 lower_function_name = function_name_if_constant_is_negative;
             }
-            resolveAggregateFunctionNode(*aggregate_function_node, inner_function_arguments_nodes[1], lower_function_name);
 
             auto inner_function_clone = inner_function_node->clone();
             auto & inner_function_clone_arguments = inner_function_clone->as<FunctionNode &>().getArguments();
             auto & inner_function_clone_arguments_nodes = inner_function_clone_arguments.getNodes();
             auto inner_function_clone_right_argument = inner_function_clone_arguments_nodes[1];
             aggregate_function_arguments_nodes = {inner_function_clone_right_argument};
+            resolveAggregateFunctionNode(*aggregate_function_node, inner_function_clone_right_argument, lower_function_name);
             inner_function_clone_arguments_nodes[1] = node;
             node = std::move(inner_function_clone);
         }
@@ -138,20 +138,20 @@ public:
             {
                 lower_function_name = function_name_if_constant_is_negative;
             }
-            resolveAggregateFunctionNode(*aggregate_function_node, inner_function_arguments_nodes[0], function_name_if_constant_is_negative);
 
             auto inner_function_clone = inner_function_node->clone();
             auto & inner_function_clone_arguments = inner_function_clone->as<FunctionNode &>().getArguments();
             auto & inner_function_clone_arguments_nodes = inner_function_clone_arguments.getNodes();
             auto inner_function_clone_left_argument = inner_function_clone_arguments_nodes[0];
             aggregate_function_arguments_nodes = {inner_function_clone_left_argument};
+            resolveAggregateFunctionNode(*aggregate_function_node, inner_function_clone_left_argument, function_name_if_constant_is_negative);
             inner_function_clone_arguments_nodes[0] = node;
             node = std::move(inner_function_clone);
         }
     }
 
 private:
-    static inline void resolveAggregateFunctionNode(FunctionNode & function_node, QueryTreeNodePtr & argument, const String & aggregate_function_name)
+    static inline void resolveAggregateFunctionNode(FunctionNode & function_node, const QueryTreeNodePtr & argument, const String & aggregate_function_name)
     {
         auto function_aggregate_function = function_node.getAggregateFunction();
 
