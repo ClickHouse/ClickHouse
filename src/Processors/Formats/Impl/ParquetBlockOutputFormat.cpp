@@ -29,7 +29,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     if (!ch_column_to_arrow_column)
     {
         const Block & header = getPort(PortKind::Main).getHeader();
-        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet", false, format_settings.parquet.output_string_as_string);
+        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet", false);
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
@@ -74,17 +74,13 @@ void ParquetBlockOutputFormat::finalizeImpl()
         throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
-void ParquetBlockOutputFormat::resetFormatterImpl()
-{
-    file_writer.reset();
-}
-
 void registerOutputFormatParquet(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
+           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);

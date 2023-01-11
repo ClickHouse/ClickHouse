@@ -114,9 +114,15 @@ public:
         return sizeAt(n) == 1;
     }
 
+/// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
     void insert(const Field & x) override
     {
-        const String & s = x.get<const String &>();
+        const String & s = DB::get<const String &>(x);
         const size_t old_size = chars.size();
         const size_t size_to_append = s.size() + 1;
         const size_t new_size = old_size + size_to_append;
@@ -125,6 +131,10 @@ public:
         memcpy(chars.data() + old_size, s.c_str(), size_to_append);
         offsets.push_back(new_size);
     }
+
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
     void insertFrom(const IColumn & src_, size_t n) override
     {
@@ -210,7 +220,7 @@ public:
         offsets.push_back(offsets.back() + 1);
     }
 
-    void insertManyDefaults(size_t length) override
+    virtual void insertManyDefaults(size_t length) override
     {
         chars.resize_fill(chars.size() + length);
         for (size_t i = 0; i < length; ++i)

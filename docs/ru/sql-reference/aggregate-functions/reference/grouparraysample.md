@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/grouparraysample
-sidebar_position: 114
+toc_priority: 114
 ---
 
 # groupArraySample {#grouparraysample}

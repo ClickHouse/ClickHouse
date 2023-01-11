@@ -1,7 +1,7 @@
 ---
-slug: /ru/sql-reference/statements/create/
-sidebar_label: CREATE
-sidebar_position: 34
+toc_folder_title: CREATE
+toc_priority: 34
+toc_title: "Обзор"
 ---
 
 # Запросы CREATE {#create-queries}
@@ -18,3 +18,4 @@ sidebar_position: 34
 -   [ROW POLICY](../../../sql-reference/statements/create/row-policy.md)
 -   [QUOTA](../../../sql-reference/statements/create/quota.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/create/settings-profile.md)
+

@@ -39,7 +39,7 @@ public:
     {
     }
 
-    void thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers);
+    void thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> & zookeepers);
 
     void printNumberOfRequestsExecuted(size_t num)
     {

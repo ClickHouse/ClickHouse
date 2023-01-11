@@ -38,9 +38,9 @@ SELECT sum(number) FROM numbers3;
 SHOW CREATE TABLE numbers3;
 DROP TABLE numbers3;
 
-CREATE TABLE test_table (EventDate Date, CounterID UInt32,  UserID UInt64,  EventTime DateTime('America/Los_Angeles'), UTCEventTime DateTime('UTC')) PARTITION BY EventDate PRIMARY KEY CounterID;
+CREATE TABLE test_table (EventDate Date, CounterID UInt32,  UserID UInt64,  EventTime DateTime('Europe/Moscow'), UTCEventTime DateTime('UTC')) PARTITION BY EventDate PRIMARY KEY CounterID;
 SET default_table_engine = 'Memory';
-CREATE MATERIALIZED VIEW test_view (Rows UInt64,  MaxHitTime DateTime('America/Los_Angeles')) AS SELECT count() AS Rows, max(UTCEventTime) AS MaxHitTime FROM test_table;
+CREATE MATERIALIZED VIEW test_view (Rows UInt64,  MaxHitTime DateTime('Europe/Moscow')) AS SELECT count() AS Rows, max(UTCEventTime) AS MaxHitTime FROM test_table;
 CREATE MATERIALIZED VIEW test_view_filtered (EventDate Date, CounterID UInt32) POPULATE AS SELECT CounterID, EventDate FROM test_table WHERE EventDate < '2013-01-01';
 SHOW CREATE TABLE test_view_filtered;
 INSERT INTO test_table (EventDate, UTCEventTime) VALUES ('2014-01-02', '2014-01-02 03:04:06');
@@ -66,7 +66,7 @@ DROP TABLE t2;
 
 
 CREATE DATABASE test_02184 ORDER BY kek; -- {serverError 80}
-CREATE DATABASE test_02184 SETTINGS x=1; -- {serverError 115}
+CREATE DATABASE test_02184 SETTINGS x=1; -- {serverError 80}
 CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) ENGINE=MergeTree PRIMARY KEY y; -- {clientError 36}
 SET default_table_engine = 'MergeTree';
 CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) PRIMARY KEY y; -- {clientError 36}
@@ -118,13 +118,3 @@ SHOW CREATE TABLE log;
 DROP TABLE val;
 DROP TABLE val2;
 DROP TABLE log;
-
-DROP TABLE IF EXISTS kek;
-DROP TABLE IF EXISTS lol;
-SET default_table_engine = 'Memory';
-CREATE TABLE kek (n int) SETTINGS log_queries=1;
-CREATE TABLE lol (n int) ENGINE=MergeTree ORDER BY n SETTINGS min_bytes_for_wide_part=123 SETTINGS log_queries=1;
-SHOW CREATE TABLE kek;
-SHOW CREATE TABLE lol;
-DROP TABLE kek;
-DROP TABLE lol;

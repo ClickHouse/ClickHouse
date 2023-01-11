@@ -2,7 +2,6 @@
 
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
-#include <Common/TargetSpecific.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -85,9 +84,8 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_AVX2_SSE42(
-    MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
-        const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
+    /// If you don't specify NO_INLINE, the compiler will inline this function, but we don't need this as this function contains tight loop inside.
+    static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
         /** GCC 4.8.2 vectorizes a loop only if it is written in this form.
           * In this case, if you loop through the array index (the code will look simpler),
@@ -107,30 +105,9 @@ struct NumComparisonImpl
             ++b_pos;
             ++c_pos;
         }
-    }))
-
-    static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
-    {
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorVectorImplAVX2(a, b, c);
-            return;
-        }
-        else if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorVectorImplSSE42(a, b, c);
-            return;
-        }
-#endif
-
-        vectorVectorImpl(a, b, c);
     }
 
-
-    MULTITARGET_FUNCTION_AVX2_SSE42(
-    MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
-        const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
+    static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
         size_t size = a.size();
         const A * __restrict a_pos = a.data();
@@ -143,24 +120,6 @@ struct NumComparisonImpl
             ++a_pos;
             ++c_pos;
         }
-    }))
-
-    static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
-    {
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorConstantImplAVX2(a, b, c);
-            return;
-        }
-        else if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorConstantImplSSE42(a, b, c);
-            return;
-        }
-#endif
-
-        vectorConstantImpl(a, b, c);
     }
 
     static void constantVector(A a, const ContainerB & b, PaddedPODArray<UInt8> & c)
@@ -387,38 +346,15 @@ struct StringEqualsImpl
         size_t size = a_offsets.size();
         ColumnString::Offset prev_a_offset = 0;
 
-        if (b_size == 0)
+        for (size_t i = 0; i < size; ++i)
         {
-            /*
-             * Add the fast path of string comparison if the string constant is empty
-             * and b_size is 0. If a_size is also 0, both of string a and b are empty
-             * string. There is no need to call memequalSmallAllowOverflow15() for
-             * string comparison.
-             */
-            for (size_t i = 0; i < size; ++i)
-            {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
+            auto a_size = a_offsets[i] - prev_a_offset - 1;
 
-                if (a_size == 0)
-                    c[i] = positive;
-                else
-                    c[i] = !positive;
+            c[i] = positive == memequalSmallAllowOverflow15(
+                a_data.data() + prev_a_offset, a_size,
+                b_data.data(), b_size);
 
-                prev_a_offset = a_offsets[i];
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < size; ++i)
-            {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
-
-                c[i] = positive == memequalSmallAllowOverflow15(
-                    a_data.data() + prev_a_offset, a_size,
-                    b_data.data(), b_size);
-
-                prev_a_offset = a_offsets[i];
-            }
+            prev_a_offset = a_offsets[i];
         }
     }
 
@@ -1154,8 +1090,6 @@ public:
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
             || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
-            || (left.isIPv4() && right.isIPv4())
-            || (left.isIPv6() && right.isIPv6())
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
@@ -1247,15 +1181,6 @@ public:
         const bool left_is_float = which_left.isFloat();
         const bool right_is_float = which_right.isFloat();
 
-        const bool left_is_ipv6 = which_left.isIPv6();
-        const bool right_is_ipv6 = which_right.isIPv6();
-        const bool left_is_fixed_string = which_left.isFixedString();
-        const bool right_is_fixed_string = which_right.isFixedString();
-        size_t fixed_string_size =
-            left_is_fixed_string ?
-                assert_cast<const DataTypeFixedString &>(*left_type).getN() :
-                (right_is_fixed_string ? assert_cast<const DataTypeFixedString &>(*right_type).getN() : 0);
-
         bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
             && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
@@ -1297,17 +1222,6 @@ public:
                 input_rows_count)))
         {
             return res;
-        }
-        else if (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
-        {
-            /// Special treatment for FixedString(16) as a binary representation of IPv6 -
-            /// CAST is customized for this case
-            ColumnPtr left_column = left_is_ipv6 ?
-                col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
-            ColumnPtr right_column = right_is_ipv6 ?
-                col_with_type_and_name_right.column : castColumn(col_with_type_and_name_right, left_type);
-
-            return executeGenericIdenticalTypes(left_column.get(), right_column.get());
         }
         else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {

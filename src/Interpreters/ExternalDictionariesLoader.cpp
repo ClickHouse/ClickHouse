@@ -6,7 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -136,7 +136,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
 
     if (qualified_name->database.empty())
     {
-        /// Either database name is not specified and we should use current one
+        /// Ether database name is not specified and we should use current one
         /// or it's an XML dictionary.
         bool is_xml_dictionary = has(name);
         if (is_xml_dictionary)

@@ -1,10 +1,9 @@
 ---
-slug: /en/engines/table-engines/integrations/odbc
-sidebar_position: 2
-sidebar_label: ODBC
+toc_priority: 2
+toc_title: ODBC
 ---
 
-# ODBC
+# ODBC {#table-engine-odbc}
 
 Allows ClickHouse to connect to external databases via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
@@ -126,5 +125,7 @@ SELECT * FROM odbc_t
 
 ## See Also {#see-also}
 
--   [ODBC dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [ODBC external dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
 -   [ODBC table function](../../../sql-reference/table-functions/odbc.md)
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/odbc/) <!--hide-->

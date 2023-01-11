@@ -2,10 +2,8 @@
 ##!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 from multiprocessing.dummy import Pool
-from kazoo.client import KazooClient, KazooRetry
-from kazoo.handlers.threading import KazooTimeoutError
+from kazoo.client import KazooClient, KazooState
 import random
 import string
 import os
@@ -24,51 +22,11 @@ node3 = cluster.add_instance(
 
 
 def start_zookeeper(node):
-    node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"])
+    node1.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"])
 
 
 def stop_zookeeper(node):
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
-    timeout = time.time() + 60
-    while node.get_process_pid("zookeeper") != None:
-        if time.time() > timeout:
-            raise Exception("Failed to stop ZooKeeper in 60 secs")
-        time.sleep(0.2)
-
-
-def generate_zk_snapshot(node):
-    for _ in range(100):
-        stop_zookeeper(node)
-        start_zookeeper(node)
-        time.sleep(2)
-        stop_zookeeper(node)
-
-        # get last snapshot
-        last_snapshot = node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "find /zookeeper/version-2 -name 'snapshot.*' -printf '%T@ %p\n' | sort -n | awk 'END {print $2}'",
-            ]
-        ).strip()
-
-        print(f"Latest snapshot: {last_snapshot}")
-
-        try:
-            # verify last snapshot
-            # zkSnapShotToolkit is a tool to inspect generated snapshots - if it's broken, an exception is thrown
-            node.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    f"/opt/zookeeper/bin/zkSnapShotToolkit.sh {last_snapshot}",
-                ]
-            )
-            return
-        except Exception as err:
-            print(f"Got error while reading snapshot: {err}")
-
-    raise Exception("Failed to generate a ZooKeeper snapshot")
 
 
 def clear_zookeeper(node):
@@ -78,11 +36,6 @@ def clear_zookeeper(node):
 def restart_and_clear_zookeeper(node):
     stop_zookeeper(node)
     clear_zookeeper(node)
-    start_zookeeper(node)
-
-
-def restart_zookeeper(node):
-    stop_zookeeper(node)
     start_zookeeper(node)
 
 
@@ -97,13 +50,6 @@ def clear_clickhouse_data(node):
 
 
 def convert_zookeeper_data(node):
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "tar -cvzf /var/lib/clickhouse/zk-data.tar.gz /zookeeper/version-2",
-        ]
-    )
     cmd = "/usr/bin/clickhouse keeper-converter --zookeeper-logs-dir /zookeeper/version-2/ --zookeeper-snapshots-dir  /zookeeper/version-2/ --output-dir /var/lib/clickhouse/coordination/snapshots"
     node.exec_in_container(["bash", "-c", cmd])
     return os.path.join(
@@ -120,7 +66,20 @@ def stop_clickhouse(node):
 
 def start_clickhouse(node):
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
+
+
+def copy_zookeeper_data(make_zk_snapshots, node):
+    stop_zookeeper(node)
+
+    if make_zk_snapshots:  # force zookeeper to create snapshot
+        start_zookeeper(node)
+        stop_zookeeper(node)
+
+    stop_clickhouse(node)
+    clear_clickhouse_data(node)
+    convert_zookeeper_data(node)
+    start_zookeeper(node)
+    start_clickhouse(node)
 
 
 @pytest.fixture(scope="module")
@@ -143,78 +102,53 @@ def get_fake_zk(node, timeout=30.0):
 
 
 def get_genuine_zk(node, timeout=30.0):
-    CONNECTION_RETRIES = 100
-    for i in range(CONNECTION_RETRIES):
-        try:
-            _genuine_zk_instance = KazooClient(
-                hosts=cluster.get_instance_ip(node.name) + ":2181",
-                timeout=timeout,
-                connection_retry=KazooRetry(max_tries=20),
-            )
-            _genuine_zk_instance.start()
-            return _genuine_zk_instance
-        except KazooTimeoutError:
-            if i == CONNECTION_RETRIES - 1:
-                raise
-
-            print(
-                "Failed to connect to ZK cluster because of timeout. Restarting cluster and trying again."
-            )
-            time.sleep(0.2)
-            restart_zookeeper(node)
+    _genuine_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(node.name) + ":2181", timeout=timeout
+    )
+    _genuine_zk_instance.start()
+    return _genuine_zk_instance
 
 
 def test_snapshot_and_load(started_cluster):
-    genuine_connection = None
-    fake_zks = []
+    restart_and_clear_zookeeper(node1)
+    genuine_connection = get_genuine_zk(node1)
+    for node in [node1, node2, node3]:
+        print("Stop and clear", node.name, "with dockerid", node.docker_id)
+        stop_clickhouse(node)
+        clear_clickhouse_data(node)
 
-    try:
-        restart_and_clear_zookeeper(node1)
-        genuine_connection = get_genuine_zk(node1)
+    for i in range(1000):
+        genuine_connection.create("/test" + str(i), b"data")
 
-        for node in [node1, node2, node3]:
-            print("Stop and clear", node.name, "with dockerid", node.docker_id)
-            stop_clickhouse(node)
-            clear_clickhouse_data(node)
+    print("Data loaded to zookeeper")
 
-        for i in range(1000):
-            genuine_connection.create("/test" + str(i), b"data")
+    stop_zookeeper(node1)
+    start_zookeeper(node1)
+    stop_zookeeper(node1)
 
-        print("Data loaded to zookeeper")
+    print("Data copied to node1")
+    resulted_path = convert_zookeeper_data(node1)
+    print("Resulted path", resulted_path)
+    for node in [node2, node3]:
+        print("Copy snapshot from", node1.name, "to", node.name)
+        cluster.copy_file_from_container_to_container(
+            node1, resulted_path, node, "/var/lib/clickhouse/coordination/snapshots"
+        )
 
-        generate_zk_snapshot(node1)
+    print("Starting clickhouses")
 
-        print("Data copied to node1")
-        resulted_path = convert_zookeeper_data(node1)
-        print("Resulted path", resulted_path)
-        for node in [node2, node3]:
-            print("Copy snapshot from", node1.name, "to", node.name)
-            cluster.copy_file_from_container_to_container(
-                node1, resulted_path, node, "/var/lib/clickhouse/coordination/snapshots"
-            )
+    p = Pool(3)
+    result = p.map_async(start_clickhouse, [node1, node2, node3])
+    result.wait()
 
-        print("Starting clickhouses")
+    print("Loading additional data")
+    fake_zks = [get_fake_zk(node) for node in [node1, node2, node3]]
+    for i in range(1000):
+        fake_zk = random.choice(fake_zks)
+        try:
+            fake_zk.create("/test" + str(i + 1000), b"data")
+        except Exception as ex:
+            print("Got exception:" + str(ex))
 
-        p = Pool(3)
-        result = p.map_async(start_clickhouse, [node1, node2, node3])
-        result.wait()
-
-        print("Loading additional data")
-        fake_zks = [get_fake_zk(node) for node in [node1, node2, node3]]
-        for i in range(1000):
-            fake_zk = random.choice(fake_zks)
-            try:
-                fake_zk.create("/test" + str(i + 1000), b"data")
-            except Exception as ex:
-                print("Got exception:" + str(ex))
-
-        print("Final")
-        fake_zks[0].create("/test10000", b"data")
-    finally:
-        for zk in fake_zks:
-            if zk:
-                zk.stop()
-                zk.close()
-        if genuine_connection:
-            genuine_connection.stop()
-            genuine_connection.close()
+    print("Final")
+    fake_zks[0].create("/test10000", b"data")

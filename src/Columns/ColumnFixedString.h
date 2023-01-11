@@ -209,7 +209,7 @@ public:
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return n; }
-    std::string_view getRawData() const override { return {reinterpret_cast<const char *>(chars.data()), chars.size()}; }
+    StringRef getRawData() const override { return StringRef(chars.data(), chars.size()); }
 
     /// Specialized part of interface, not from IColumn.
     void insertString(const String & string) { insertData(string.c_str(), string.size()); }

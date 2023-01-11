@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/statements/set
-sidebar_position: 50
-sidebar_label: SET
+toc_priority: 50
+toc_title: SET
 ---
 
-# SET Statement
+# SET Statement {#query-set}
 
 ``` sql
 SET param = value

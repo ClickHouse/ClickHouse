@@ -6,7 +6,6 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Interpreters/processColumnTransformers.h>
 
@@ -26,19 +25,14 @@ BlockIO InterpreterOptimizeQuery::execute()
     const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
     if (!ast.cluster.empty())
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
 
     getContext()->checkAccess(getRequiredAccess());
 
     auto table_id = getContext()->resolveStorageID(ast, Context::ResolveOrdinary);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
+    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot);
 
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
     Names column_names;
@@ -75,9 +69,6 @@ BlockIO InterpreterOptimizeQuery::execute()
                         required_col, fmt::join(column_names, "', '"));
         }
     }
-
-    if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
-        snapshot_data->parts = {};
 
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, getContext());
 

@@ -1,14 +1,14 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/FunctionDateOrDateTimeToDateOrDate32.h>
+#include <Functions/FunctionDateOrDateTimeToSomething.h>
 
 
 namespace DB
 {
 
-using FunctionToStartOfYear = FunctionDateOrDateTimeToDateOrDate32<ToStartOfYearImpl>;
+using FunctionToStartOfYear = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfYearImpl>;
 
-REGISTER_FUNCTION(ToStartOfYear)
+void registerFunctionToStartOfYear(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToStartOfYear>();
 }

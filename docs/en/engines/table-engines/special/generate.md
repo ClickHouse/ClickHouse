@@ -1,9 +1,9 @@
 ---
-slug: /en/engines/table-engines/special/generate
-sidebar_position: 140
-sidebar_label:  GenerateRandom
-title: "GenerateRandom Table Engine"
+toc_priority: 46
+toc_title: GenerateRandom
 ---
+
+# GenerateRandom Table Engine {#table_engines-generate}
 
 The GenerateRandom table engine produces random data for given table schema.
 
@@ -15,7 +15,7 @@ Usage examples:
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
 ``` sql
-ENGINE = GenerateRandom([random_seed] [,max_string_length] [,max_array_length])
+ENGINE = GenerateRandom(random_seed, max_string_length, max_array_length)
 ```
 
 The `max_array_length` and `max_string_length` parameters specify maximum length of all
@@ -55,3 +55,5 @@ SELECT * FROM generate_engine_table LIMIT 3
     -   `INSERT`
     -   Indices
     -   Replication
+
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/generate/) <!--hide-->

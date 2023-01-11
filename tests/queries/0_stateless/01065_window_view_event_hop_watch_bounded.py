@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-# Tags: no-parallel
-
 import os
 import sys
+import signal
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
@@ -26,45 +25,33 @@ with client(name="client1>", log=log) as client1, client(
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
 
-    client1.send(
-        "CREATE DATABASE IF NOT EXISTS 01065_window_view_event_hop_watch_bounded"
-    )
+    client1.send("DROP TABLE IF EXISTS test.mt")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01065_window_view_event_hop_watch_bounded.mt")
+    client1.send("DROP TABLE IF EXISTS test.wv")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01065_window_view_event_hop_watch_bounded.wv")
+    client1.send("DROP TABLE IF EXISTS `.inner.wv`")
     client1.expect(prompt)
 
     client1.send(
-        "CREATE TABLE 01065_window_view_event_hop_watch_bounded.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
+        "CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01065_window_view_event_hop_watch_bounded.wv ENGINE Memory WATERMARK=INTERVAL '2' SECOND AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01065_window_view_event_hop_watch_bounded.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
+        "CREATE WINDOW VIEW test.wv WATERMARK=INTERVAL '2' SECOND AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM test.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
-    client1.expect("Ok.")
+    client1.expect(prompt)
 
-    client1.send("WATCH 01065_window_view_event_hop_watch_bounded.wv")
-    client1.expect("Query id" + end_of_block)
-    client1.expect("Progress: 0.00 rows.*\)")
-    client2.send(
-        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:00');"
-    )
-    client2.expect("Ok.")
-    client2.send(
-        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:05');"
-    )
-    client2.expect("Ok.")
-    client1.expect("1" + end_of_block)
-    client2.send(
-        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:06');"
-    )
-    client2.expect("Ok.")
-    client2.send(
-        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:10');"
-    )
-    client2.expect("Ok.")
-    client1.expect("2" + end_of_block)
+    client1.send("WATCH test.wv")
+    client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:00');")
+    client2.expect(prompt)
+    client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:05');")
+    client2.expect(prompt)
+    client1.expect("1*" + end_of_block)
+    client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:06');")
+    client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:10');")
+    client2.expect(prompt)
+    client1.expect("1*" + end_of_block)
+    client1.expect("2*" + end_of_block)
 
     # send Ctrl-C
     client1.send("\x03", eol="")
@@ -72,9 +59,7 @@ with client(name="client1>", log=log) as client1, client(
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
-    client1.send("DROP TABLE 01065_window_view_event_hop_watch_bounded.wv")
+    client1.send("DROP TABLE test.wv")
     client1.expect(prompt)
-    client1.send("DROP TABLE 01065_window_view_event_hop_watch_bounded.mt")
-    client1.expect(prompt)
-    client1.send("DROP DATABASE IF EXISTS 01065_window_view_event_hop_watch_bounded")
+    client1.send("DROP TABLE test.mt")
     client1.expect(prompt)

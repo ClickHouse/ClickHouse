@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/grants
----
 # system.grants {#system_tables-grants}
 
 Привилегии пользовательских аккаунтов ClickHouse.
@@ -23,3 +20,4 @@ slug: /ru/operations/system-tables/grants
 - `1` — Строка описывает грант.
 
 -    `grant_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Разрешение предоставлено с опцией `WITH GRANT OPTION`, подробнее см. [GRANT](../../sql-reference/statements/grant.md#grant-privigele-syntax).
+

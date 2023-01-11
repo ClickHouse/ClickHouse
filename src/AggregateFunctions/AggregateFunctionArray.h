@@ -30,7 +30,7 @@ private:
 
 public:
     AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_, createResultType(nested_))
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_)
         , nested_func(nested_), num_arguments(arguments.size())
     {
         assert(parameters == nested_func->getParameters());
@@ -44,19 +44,9 @@ public:
         return nested_func->getName() + "Array";
     }
 
-    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
+    DataTypePtr getReturnType() const override
     {
-        return nested_->getResultType();
-    }
-
-    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
-    {
-        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        return nested_func->getNormalizedStateType();
+        return nested_func->getReturnType();
     }
 
     bool isVersioned() const override
@@ -154,11 +144,6 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertResultInto(place, to, arena);
-    }
-
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        nested_func->insertMergeResultInto(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

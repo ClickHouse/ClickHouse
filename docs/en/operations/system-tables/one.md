@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/one
----
-# one
+# system.one {#system-one}
 
 This table contains a single row with a single `dummy` UInt8 column containing the value 0.
 
@@ -22,3 +19,5 @@ This is similar to the `DUAL` table found in other DBMSs.
 
 1 rows in set. Elapsed: 0.001 sec.
 ```
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/one) <!--hide-->

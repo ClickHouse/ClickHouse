@@ -376,9 +376,7 @@ BlockIO InterpreterGrantQuery::execute()
         auto required_access = getRequiredAccessForExecutingOnCluster(elements_to_grant, elements_to_revoke);
         checkAdminOptionForExecutingOnCluster(*current_user_access, roles_to_grant, roles_to_revoke);
         current_user_access->checkGranteesAreAllowed(grantees);
-        DDLQueryOnClusterParams params;
-        params.access_to_check = std::move(required_access);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), std::move(required_access));
     }
 
     /// Check if the current user has corresponding access rights granted with grant option.

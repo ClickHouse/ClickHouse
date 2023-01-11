@@ -96,7 +96,7 @@ struct ReplicatedMergeTreeLogEntryData
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
-    MergeType merge_type = MergeType::Regular;
+    MergeType merge_type = MergeType::REGULAR;
     String column_name;
     String index_name;
 
@@ -143,8 +143,6 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// Returns fake part for drop range (for DROP_RANGE and REPLACE_RANGE)
     std::optional<String> getDropRange(MergeTreeDataFormatVersion format_version) const;
-
-    String getDescriptionForLogs(MergeTreeDataFormatVersion format_version) const;
 
     /// This entry is DROP PART, not DROP PARTITION. They both have same
     /// DROP_RANGE entry type, but differs in information about drop range.

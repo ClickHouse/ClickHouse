@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/row_policies
----
-# row_policies
+# system.row_policies {#system_tables-row_policies}
 
 Contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
 
@@ -33,3 +30,5 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW POLICIES](../../sql-reference/statements/show.md#show-policies-statement)
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/row_policies) <!--hide-->

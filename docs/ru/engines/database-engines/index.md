@@ -1,7 +1,7 @@
 ---
-slug: /ru/engines/database-engines/
-sidebar_position: 27
-sidebar_label: "Движки баз данных"
+toc_folder_title: "Движки баз данных"
+toc_priority: 27
+toc_title: "Введение"
 ---
 
 # Движки баз данных {#database-engines}
@@ -21,3 +21,4 @@ sidebar_label: "Движки баз данных"
 -   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
 -   [Replicated](../../engines/database-engines/replicated.md)
+

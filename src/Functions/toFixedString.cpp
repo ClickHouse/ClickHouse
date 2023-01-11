@@ -5,7 +5,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(FixedString)
+void registerFunctionFixedString(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToFixedString>();
 }

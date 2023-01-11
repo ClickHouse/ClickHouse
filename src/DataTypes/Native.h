@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <Common/Exception.h>
@@ -30,12 +30,6 @@ static inline bool typeIsSigned(const IDataType & type)
     return data_type.isNativeInt() || data_type.isFloat() || data_type.isEnum();
 }
 
-static inline llvm::Type * toNullableType(llvm::IRBuilderBase & builder, llvm::Type * type)
-{
-    auto * is_null_type = builder.getInt1Ty();
-    return llvm::StructType::get(type, is_null_type);
-}
-
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
 {
     WhichDataType data_type(type);
@@ -53,7 +47,7 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDa
         return builder.getInt8Ty();
     else if (data_type.isInt16() || data_type.isUInt16() || data_type.isDate())
         return builder.getInt16Ty();
-    else if (data_type.isInt32() || data_type.isUInt32() || data_type.isDate32() || data_type.isDateTime())
+    else if (data_type.isInt32() || data_type.isUInt32() || data_type.isDateTime())
         return builder.getInt32Ty();
     else if (data_type.isInt64() || data_type.isUInt64())
         return builder.getInt64Ty();
@@ -117,8 +111,7 @@ static inline bool canBeNativeType(const IDataType & type)
         return canBeNativeType(*data_type_nullable.getNestedType());
     }
 
-    return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isDate()
-        || data_type.isDate32() || data_type.isDateTime() || data_type.isEnum();
+    return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isDate() || data_type.isEnum();
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
@@ -138,7 +131,7 @@ static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataType
     if (value->getType()->isIntegerTy())
         return b.CreateICmpNE(value, zero);
     if (value->getType()->isFloatingPointTy())
-        return b.CreateFCmpUNE(value, zero);
+        return b.CreateFCmpONE(value, zero); /// QNaN is false
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from_type->getName());
 }
@@ -224,7 +217,7 @@ static inline std::pair<llvm::Value *, llvm::Value *> nativeCastToCommon(llvm::I
         size_t rhs_bit_width = rhs->getType()->getIntegerBitWidth() + (!rhs_is_signed && lhs_is_signed);
 
         size_t max_bit_width = std::max(lhs_bit_width, rhs_bit_width);
-        common = b.getIntNTy(static_cast<unsigned>(max_bit_width));
+        common = b.getIntNTy(max_bit_width);
     }
     else
     {
@@ -271,11 +264,11 @@ static inline llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builde
     {
         return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float64> &>(column).getElement(index));
     }
-    else if (column_data_type.isNativeUInt() || column_data_type.isDate() || column_data_type.isDateTime())
+    else if (column_data_type.isNativeUInt() || column_data_type.isDate() || column_data_type.isDateTime() || column_data_type.isDateTime64())
     {
         return llvm::ConstantInt::get(type, column.getUInt(index));
     }
-    else if (column_data_type.isNativeInt() || column_data_type.isEnum() || column_data_type.isDate32())
+    else if (column_data_type.isNativeInt() || column_data_type.isEnum())
     {
         return llvm::ConstantInt::get(type, column.getInt(index));
     }

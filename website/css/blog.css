@@ -1,0 +1,28 @@
+body.blog .dropdown-item {
+  color: #111 !important;
+}
+
+body.blog .dropdown-item:hover,
+body.blog .dropdown-item:focus {
+  background-color: #efefef;
+}
+
+.blog .social-icon {
+    background: #eee;
+}
+
+@media (prefers-color-scheme: dark) {
+  body.blog .dropdown-item {
+    color: #fff !important;
+  }
+
+  .blog .dropdown-item:hover,
+  .blog .dropdown-item:focus,
+  .blog .tag{
+    background-color: #666 !important;
+  }
+
+  .blog .social-icon {
+    background: #444451;
+  }
+}

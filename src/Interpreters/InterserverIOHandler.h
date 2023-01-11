@@ -69,7 +69,7 @@ public:
         return endpoint_map.erase(name);
     }
 
-    InterserverIOEndpointPtr getEndpoint(const String & name) const
+    InterserverIOEndpointPtr getEndpoint(const String & name)
     try
     {
         std::lock_guard lock(mutex);
@@ -84,7 +84,7 @@ private:
     using EndpointMap = std::map<String, InterserverIOEndpointPtr>;
 
     EndpointMap endpoint_map;
-    mutable std::mutex mutex;
+    std::mutex mutex;
 };
 
 }

@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <functional>
+#include <atomic>
 #include <mutex>
 #include <future>
 #include <condition_variable>
@@ -9,19 +10,17 @@
 #include <iostream>
 
 #include <boost/circular_buffer.hpp>
-#include <boost/noncopyable.hpp>
 
-#include <Common/logger_useful.h>
+#include <base/shared_ptr_helper.h>
+#include <base/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#include <base/defines.h>
 #include <Storages/MergeTree/IExecutableTask.h>
-
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int LOGICAL_ERROR;
 }
 
 struct TaskRuntimeData;
@@ -51,8 +50,7 @@ struct TaskRuntimeData
 
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
-    /// Guarded by MergeTreeBackgroundExecutor<>::mutex
-    bool is_currently_deleting{false};
+    std::atomic_bool is_currently_deleting{false};
     /// Actually autoreset=false is needed only for unit test
     /// where multiple threads could remove tasks corresponding to the same storage
     /// This scenario in not possible in reality.
@@ -130,7 +128,7 @@ private:
 };
 
 /**
- *  Executor for a background MergeTree related operations such as merges, mutations, fetches and so on.
+ *  Executor for a background MergeTree related operations such as merges, mutations, fetches an so on.
  *  It can execute only successors of ExecutableTask interface.
  *  Which is a self-written coroutine. It suspends, when returns true from executeStep() method.
  *
@@ -155,10 +153,10 @@ private:
  *  We use boost::circular_buffer as a container for queues not to do any allocations.
  *
  *  Another nuisance that we faces with is than background operations always interact with an associated Storage.
- *  So, when a Storage want to shutdown, it must wait until all its background operations are finished.
+ *  So, when a Storage want to shutdown, it must wait until all its background operaions are finished.
  */
 template <class Queue>
-class MergeTreeBackgroundExecutor final : boost::noncopyable
+class MergeTreeBackgroundExecutor final : public shared_ptr_helper<MergeTreeBackgroundExecutor<Queue>>
 {
 public:
     MergeTreeBackgroundExecutor(
@@ -172,7 +170,7 @@ public:
         , metric(metric_)
     {
         if (max_tasks_count == 0)
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task count for MergeTreeBackgroundExecutor must not be zero");
 
         pending.setCapacity(max_tasks_count);
         active.set_capacity(max_tasks_count);
@@ -190,37 +188,25 @@ public:
         wait();
     }
 
-    /// Handler for hot-reloading
-    /// Supports only increasing the number of threads and tasks, because
-    /// implementing tasks eviction will definitely be too error-prone and buggy.
-    void increaseThreadsAndMaxTasksCount(size_t new_threads_count, size_t new_max_tasks_count);
-
-    /// This method can return stale value of max_tasks_count (no mutex locking).
-    /// It's okay because amount of tasks can be only increased and getting stale value
-    /// can lead only to some postponing, not logical error.
-    size_t getMaxTasksCount() const;
-
     bool trySchedule(ExecutableTaskPtr task);
     void removeTasksCorrespondingToStorage(StorageID id);
     void wait();
 
 private:
     String name;
-    size_t threads_count TSA_GUARDED_BY(mutex) = 0;
-    std::atomic<size_t> max_tasks_count = 0;
+    size_t threads_count{0};
+    size_t max_tasks_count{0};
     CurrentMetrics::Metric metric;
 
     void routine(TaskRuntimeDataPtr item);
-
-    /// libc++ does not provide TSA support for std::unique_lock -> TSA_NO_THREAD_SAFETY_ANALYSIS
-    void threadFunction() TSA_NO_THREAD_SAFETY_ANALYSIS;
+    void threadFunction();
 
     /// Initially it will be empty
-    Queue pending TSA_GUARDED_BY(mutex);
-    boost::circular_buffer<TaskRuntimeDataPtr> active TSA_GUARDED_BY(mutex);
-    mutable std::mutex mutex;
-    std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
-    bool shutdown TSA_GUARDED_BY(mutex) = false;
+    Queue pending{};
+    boost::circular_buffer<TaskRuntimeDataPtr> active{0};
+    std::mutex mutex;
+    std::condition_variable has_tasks;
+    std::atomic_bool shutdown{false};
     ThreadPool pool;
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };

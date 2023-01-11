@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/ISimpleTransform.h>
-#include <IO/EmptyReadBuffer.h>
 
 namespace DB
 {

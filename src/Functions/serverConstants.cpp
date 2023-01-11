@@ -1,6 +1,4 @@
 #include <Functions/FunctionConstantBase.h>
-#include <base/getFQDNOrHostName.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -8,11 +6,12 @@
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
 #include <Common/DateLUT.h>
-#include <Common/ClickHouseRevision.h>
 
-#include <Poco/Environment.h>
+#if defined(OS_LINUX)
+#    include <Poco/Environment.h>
+#endif
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 
 namespace DB
@@ -20,7 +19,7 @@ namespace DB
 namespace
 {
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
     /// buildId() - returns the compiler build id of the running binary.
     class FunctionBuildId : public FunctionConstantBase<FunctionBuildId, String, DataTypeString>
     {
@@ -89,15 +88,6 @@ namespace
         explicit FunctionVersion(ContextPtr context) : FunctionConstantBase(VERSION_STRING, context->isDistributed()) {}
     };
 
-    /// revision() - returns the current revision.
-    class FunctionRevision : public FunctionConstantBase<FunctionRevision, UInt32, DataTypeUInt32>
-    {
-    public:
-        static constexpr auto name = "revision";
-        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionRevision>(context); }
-        explicit FunctionRevision(ContextPtr context) : FunctionConstantBase(ClickHouseRevision::getVersionRevision(), context->isDistributed()) {}
-    };
-
     class FunctionZooKeeperSessionUptime : public FunctionConstantBase<FunctionZooKeeperSessionUptime, UInt32, DataTypeUInt32>
     {
     public:
@@ -109,6 +99,7 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionZooKeeperSessionUptime>(context); }
     };
 
+#if defined(OS_LINUX)
     class FunctionGetOSKernelVersion : public FunctionConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
     {
     public:
@@ -116,86 +107,63 @@ namespace
         explicit FunctionGetOSKernelVersion(ContextPtr context) : FunctionConstantBase(Poco::Environment::osName() + " " + Poco::Environment::osVersion(), context->isDistributed()) {}
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
-
-    class FunctionDisplayName : public FunctionConstantBase<FunctionDisplayName, String, DataTypeString>
-    {
-    public:
-        static constexpr auto name = "displayName";
-        explicit FunctionDisplayName(ContextPtr context) : FunctionConstantBase(context->getConfigRef().getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
-        static FunctionPtr create(ContextPtr context) {return std::make_shared<FunctionDisplayName>(context); }
-    };
-}
-
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-REGISTER_FUNCTION(BuildId)
-{
-    factory.registerFunction<FunctionBuildId>();
-}
 #endif
 
-REGISTER_FUNCTION(HostName)
+}
+
+
+void registerFunctionBuildId([[maybe_unused]] FunctionFactory & factory)
+{
+#if defined(__ELF__) && !defined(__FreeBSD__)
+    factory.registerFunction<FunctionBuildId>();
+#endif
+}
+
+void registerFunctionHostName(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionHostName>();
     factory.registerAlias("hostname", "hostName");
 }
 
-REGISTER_FUNCTION(ServerUUID)
+void registerFunctionServerUUID(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionServerUUID>();
 }
 
-REGISTER_FUNCTION(TcpPort)
+void registerFunctionTcpPort(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTcpPort>();
 }
 
-REGISTER_FUNCTION(Timezone)
+void registerFunctionTimezone(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTimezone>();
     factory.registerAlias("timeZone", "timezone");
 }
 
-REGISTER_FUNCTION(Uptime)
+void registerFunctionUptime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionUptime>();
 }
 
-REGISTER_FUNCTION(Version)
+void registerFunctionVersion(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionVersion>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
 }
 
-REGISTER_FUNCTION(Revision)
-{
-    factory.registerFunction<FunctionRevision>({}, FunctionFactory::CaseInsensitive);
-}
-
-REGISTER_FUNCTION(ZooKeeperSessionUptime)
+void registerFunctionZooKeeperSessionUptime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionZooKeeperSessionUptime>();
 }
 
 
-REGISTER_FUNCTION(GetOSKernelVersion)
+void registerFunctionGetOSKernelVersion([[maybe_unused]] FunctionFactory & factory)
 {
+#if defined(OS_LINUX)
     factory.registerFunction<FunctionGetOSKernelVersion>();
-}
-
-
-REGISTER_FUNCTION(DisplayName)
-{
-    factory.registerFunction<FunctionDisplayName>(
-        {
-            R"(
-Returns the value of `display_name` from config or server FQDN if not set.
-
-[example:displayName]
-)",
-            Documentation::Examples{{"displayName", "SELECT displayName();"}},
-            Documentation::Categories{"Constant", "Miscellaneous"}
-        },
-        FunctionFactory::CaseSensitive);
+#endif
 }
 
 
 }
+

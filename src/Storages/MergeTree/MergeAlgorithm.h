@@ -12,4 +12,6 @@ enum class MergeAlgorithm
     Vertical /// per-row merge of PK and secondary indices columns, per-column gather for non-PK columns
 };
 
+String toString(MergeAlgorithm merge_algorithm);
+
 }

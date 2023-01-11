@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/covarpop
-sidebar_position: 36
+toc_priority: 36
 ---
 
 # covarPop {#covarpop}

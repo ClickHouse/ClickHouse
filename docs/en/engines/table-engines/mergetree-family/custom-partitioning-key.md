@@ -1,16 +1,12 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/custom-partitioning-key
-sidebar_position: 30
-sidebar_label: Custom Partitioning Key
+toc_priority: 32
+toc_title: Custom Partitioning Key
 ---
 
-# Custom Partitioning Key
+# Custom Partitioning Key {#custom-partitioning-key}
 
-:::warning
-In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression).
-
-You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
-:::
+!!! warning "Warning"
+    In most cases you don't need partition key, and in most other cases you don't need partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead make client identifier or name the first column in the ORDER BY expression).
 
 Partitioning is available for the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family tables (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) tables). [Materialized views](../../../engines/table-engines/special/materializedview.md#materializedview) based on MergeTree tables support partitioning, as well.
 
@@ -44,9 +40,8 @@ By default, the floating-point partition key is not supported. To use it enable 
 
 When inserting new data to a table, this data is stored as a separate part (chunk) sorted by the primary key. In 10-15 minutes after inserting, the parts of the same partition are merged into the entire part.
 
-:::info
-A merge only works for data parts that have the same value for the partitioning expression. This means **you shouldn’t make overly granular partitions** (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
-:::
+!!! info "Info"
+    A merge only works for data parts that have the same value for the partitioning expression. This means **you shouldn’t make overly granular partitions** (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
 
 Use the [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) table to view the table parts and partitions. For example, let’s assume that we have a `visits` table with partitioning by month. Let’s perform the `SELECT` query for the `system.parts` table:
 
@@ -83,9 +78,8 @@ Let’s break down the name of the part: `201901_1_9_2_11`:
 -   `2` is the chunk level (the depth of the merge tree it is formed from).
 -   `11` is the mutation version (if a part mutated)
 
-:::info
-The parts of old-type tables have the name: `20190117_20190123_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
-:::
+!!! info "Info"
+    The parts of old-type tables have the name: `20190117_20190123_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
 
 The `active` column shows the status of the part. `1` is active; `0` is inactive. The inactive parts are, for example, source parts remaining after merging to a larger part. The corrupted data parts are also indicated as inactive.
 
@@ -133,3 +127,5 @@ The `detached` directory contains parts that were detached from the table using 
 Note that on the operating server, you cannot manually change the set of parts or their data on the file system, since the server will not know about it. For non-replicated tables, you can do this when the server is stopped, but it isn’t recommended. For replicated tables, the set of parts cannot be changed in any case.
 
 ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
+
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

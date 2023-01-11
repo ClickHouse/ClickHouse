@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 
@@ -188,7 +187,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     {
         const String & column_name = column_def.name;
 
-        if (!column_defaults.contains(column_name) || !res.has(column_name))
+        if (column_defaults.count(column_name) == 0)
             continue;
 
         size_t block_column_position = res.getPositionByName(column_name);

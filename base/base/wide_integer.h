@@ -27,8 +27,6 @@
 #include <type_traits>
 #include <initializer_list>
 
-// NOLINTBEGIN(*)
-
 namespace wide
 {
 template <size_t Bits, typename Signed>
@@ -259,7 +257,4 @@ struct hash<wide::integer<Bits, Signed>>;
 
 }
 
-// NOLINTEND(*)
-
 #include "wide_integer_impl.h"
-

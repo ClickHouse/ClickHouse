@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/numbers_mt
----
-# numbers_mt
+# system.numbers_mt {#system-numbers-mt}
 
 The same as [system.numbers](../../operations/system-tables/numbers.md) but reads are parallelized. The numbers can be returned in any order.
 
@@ -29,3 +26,5 @@ Used for tests.
 
 10 rows in set. Elapsed: 0.001 sec.
 ```
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/numbers_mt) <!--hide-->

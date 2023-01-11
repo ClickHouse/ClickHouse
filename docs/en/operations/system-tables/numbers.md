@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/numbers
----
-# numbers
+# system.numbers {#system-numbers}
 
 This table contains a single UInt64 column named `number` that contains almost all the natural numbers starting from zero.
 
@@ -31,3 +28,5 @@ Reads from this table are not parallelized.
 
 10 rows in set. Elapsed: 0.001 sec.
 ```
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/numbers) <!--hide-->

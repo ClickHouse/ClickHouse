@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/numbers
----
 # system.numbers {#system-numbers}
 
 这个表有一个名为 `number` 的 UInt64 列，包含了几乎所有从 0 开始的自然数。
@@ -31,3 +28,5 @@ slug: /zh/operations/system-tables/numbers
 
 10 rows in set. Elapsed: 0.001 sec.
 ```
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/numbers) <!--hide-->
