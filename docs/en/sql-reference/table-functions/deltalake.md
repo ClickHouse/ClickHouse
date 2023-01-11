@@ -10,12 +10,12 @@ Provides a read-only table-like interface to [Delta Lake](https://github.com/del
 ## Syntax
 
 ``` sql
-deltaLake(path [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 ```
 
 ## Arguments
 
-- `path` — Bucket url with path to existing Delta Lake table in S3.
+- `url` — Bucket url with path to existing Delta Lake table in S3.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3).
 - `format` — The [format](/docs/en/interfaces/formats.md/#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.

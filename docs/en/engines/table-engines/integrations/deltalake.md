@@ -13,7 +13,7 @@ Note that the Delta Lake table must already exist in S3, this command does not t
 
 ``` sql
 CREATE TABLE deltalake
-    ENGINE = DeltaLake(path, [aws_access_key_id, aws_secret_access_key,])
+    ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,])
 ```
 
 **Engine parameters**
