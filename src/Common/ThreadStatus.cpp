@@ -188,10 +188,13 @@ void ThreadStatus::updatePerformanceCounters()
     }
 }
 
-void ThreadStatus::assertState(ThreadState permitted_state, const char * description) const
+void ThreadStatus::assertState(const std::initializer_list<int> & permitted_states, const char * description) const
 {
-    if (getCurrentState() == permitted_state)
-        return;
+    for (auto permitted_state : permitted_states)
+    {
+        if (getCurrentState() == permitted_state)
+            return;
+    }
 
     if (description)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", getCurrentState(), description);

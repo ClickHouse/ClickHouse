@@ -1648,83 +1648,6 @@ namespace
         String text_buffer;
     };
 
-    /// Serializes a ColumnVector<IPv6> containing IPv6s to a field of type TYPE_STRING or TYPE_BYTES.
-    class ProtobufSerializerIPv6 : public ProtobufSerializerSingleValue
-    {
-    public:
-        ProtobufSerializerIPv6(
-            std::string_view column_name_,
-            const google::protobuf::FieldDescriptor & field_descriptor_,
-            const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
-        {
-            setFunctions();
-        }
-
-        void writeRow(size_t row_num) override
-        {
-            const auto & column_vector = assert_cast<const ColumnVector<IPv6> &>(*column);
-            write_function(column_vector.getElement(row_num));
-        }
-
-        void readRow(size_t row_num) override
-        {
-            IPv6 value = read_function();
-            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
-            if (row_num < column_vector.size())
-                column_vector.getElement(row_num) = value;
-            else
-                column_vector.insertValue(value);
-        }
-
-        void insertDefaults(size_t row_num) override
-        {
-            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
-            if (row_num < column_vector.size())
-                return;
-            column_vector.insertDefault();
-        }
-
-        void describeTree(WriteBuffer & out, size_t indent) const override
-        {
-            writeIndent(out, indent) << "ProtobufSerializer" << TypeName<IPv6> << ": column " << quoteString(column_name) << " -> field "
-                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
-        }
-
-    private:
-        void setFunctions()
-        {
-            if ((field_typeid != FieldTypeId::TYPE_STRING) && (field_typeid != FieldTypeId::TYPE_BYTES))
-                incompatibleColumnType(TypeName<IPv6>);
-
-            write_function = [this](IPv6 value)
-            {
-                ipToString(value, text_buffer);
-                writeStr(text_buffer);
-            };
-
-            read_function = [this]() -> IPv6
-            {
-                readStr(text_buffer);
-                return parse<IPv6>(text_buffer);
-            };
-
-            default_function = [this]() -> IPv6 { return parse<IPv6>(field_descriptor.default_value_string()); };
-        }
-
-        static void ipToString(const IPv6 & ip, String & str)
-        {
-            WriteBufferFromString buf{str};
-            writeText(ip, buf);
-        }
-
-        std::function<void(IPv6)> write_function;
-        std::function<IPv6()> read_function;
-        std::function<IPv6()> default_function;
-        String text_buffer;
-    };
-
-    using ProtobufSerializerIPv4 = ProtobufSerializerNumber<UInt32>;
 
     using ProtobufSerializerInterval = ProtobufSerializerNumber<Int64>;
 
@@ -1813,7 +1736,7 @@ namespace
         }
 
         const std::shared_ptr<const DataTypeAggregateFunction> aggregate_function_data_type;
-        AggregateFunctionPtr aggregate_function;
+        const AggregateFunctionPtr aggregate_function;
         String text_buffer;
     };
 
@@ -2588,11 +2511,6 @@ namespace
             writer->endMessage(/*with_length_delimiter = */ true);
         }
 
-        void reset() override
-        {
-            first_call_of_write_row = true;
-        }
-
         void readRow(size_t row_num) override
         {
             if (first_call_of_read_row)
@@ -3363,8 +3281,6 @@ namespace
                 case TypeIndex::Decimal128: return std::make_unique<ProtobufSerializerDecimal<Decimal128>>(column_name, assert_cast<const DataTypeDecimal<Decimal128> &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Decimal256: return std::make_unique<ProtobufSerializerDecimal<Decimal256>>(column_name, assert_cast<const DataTypeDecimal<Decimal256> &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::UUID: return std::make_unique<ProtobufSerializerUUID>(column_name, field_descriptor, reader_or_writer);
-                case TypeIndex::IPv4: return std::make_unique<ProtobufSerializerIPv4>(column_name, field_descriptor, reader_or_writer);
-                case TypeIndex::IPv6: return std::make_unique<ProtobufSerializerIPv6>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Interval: return std::make_unique<ProtobufSerializerInterval>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::AggregateFunction: return std::make_unique<ProtobufSerializerAggregateFunction>(column_name, typeid_cast<std::shared_ptr<const DataTypeAggregateFunction>>(data_type), field_descriptor, reader_or_writer);
 

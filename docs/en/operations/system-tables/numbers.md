@@ -31,3 +31,5 @@ Reads from this table are not parallelized.
 
 10 rows in set. Elapsed: 0.001 sec.
 ```
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/numbers) <!--hide-->

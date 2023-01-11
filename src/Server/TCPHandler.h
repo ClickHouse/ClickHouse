@@ -19,6 +19,8 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+
 #include "IServer.h"
 #include "Server/TCPProtocolStackData.h"
 #include "base/types.h"

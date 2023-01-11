@@ -7,7 +7,7 @@
 
 namespace DB::QueryPlanOptimizations
 {
-size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
+size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 {
     /// check if it is preliminary distinct node
     DistinctStep * pre_distinct = nullptr;
@@ -22,7 +22,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// walk through the plan
     /// (1) check if nodes below preliminary distinct preserve sorting
     /// (2) gather transforming steps to update their sorting properties later
-    std::vector<ITransformingStep *> steps_to_update;
+    std::vector<ITransformingStep *> steps2update;
     QueryPlan::Node * node = parent_node;
     while (!node->children.empty())
     {
@@ -34,7 +34,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
         if (!traits.preserves_sorting)
             return 0;
 
-        steps_to_update.push_back(step);
+        steps2update.push_back(step);
 
         node = node->children.front();
     }
@@ -90,11 +90,11 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
 
     /// update data stream's sorting properties for found transforms
     const DataStream * input_stream = &read_from_merge_tree->getOutputStream();
-    while (!steps_to_update.empty())
+    while (!steps2update.empty())
     {
-        steps_to_update.back()->updateInputStream(*input_stream);
-        input_stream = &steps_to_update.back()->getOutputStream();
-        steps_to_update.pop_back();
+        steps2update.back()->updateInputStream(*input_stream);
+        input_stream = &steps2update.back()->getOutputStream();
+        steps2update.pop_back();
     }
 
     return 0;

@@ -593,27 +593,6 @@ LIMIT 10
 └────────────────┴─────────┘
 ```
 
-## formatReadableDecimalSize(x)
-
-Accepts the size (number of bytes). Returns a rounded size with a suffix (KB, MB, etc.) as a string.
-
-Example:
-
-``` sql
-SELECT
-    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
-    formatReadableDecimalSize(filesize_bytes) AS filesize
-```
-
-``` text
-┌─filesize_bytes─┬─filesize───┐
-│              1 │ 1.00 B     │
-│           1024 │ 1.02 KB   │
-│        1048576 │ 1.05 MB   │
-│      192851925 │ 192.85 MB │
-└────────────────┴────────────┘
-```
-
 ## formatReadableSize(x)
 
 Accepts the size (number of bytes). Returns a rounded size with a suffix (KiB, MiB, etc.) as a string.
@@ -1863,17 +1842,6 @@ Next, specify the path to `libcatboostmodel.<so|dylib>` in the clickhouse config
     <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
 ...
 </clickhouse>
-```
-
-For security and isolation reasons, the model evaluation does not run in the server process but in the clickhouse-library-bridge process.
-At the first execution of `catboostEvaluate()`, the server starts the library bridge process if it is not running already. Both processes
-communicate using a HTTP interface. By default, port `9012` is used. A different port can be specified as follows - this is useful if port
-`9012` is already assigned to a different service.
-
-``` xml
-<library_bridge>
-    <port>9019</port>
-</library_bridge>
 ```
 
 2. Train a catboost model using libcatboost

@@ -8,7 +8,7 @@ services:
             MYSQL_ROOT_HOST: ${MYSQL_ROOT_HOST}
             DATADIR: /mysql/
         expose:
-            - ${MYSQL8_PORT:-3306}
+            - ${MYSQL8_PORT}
         command: --server_id=100 --log-bin='mysql-bin-1.log' 
             --default_authentication_plugin='mysql_native_password' 
             --default-time-zone='+3:00' --gtid-mode="ON" 

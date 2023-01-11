@@ -462,7 +462,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
     settings.getter = createStreamGetter(name_and_type);
 
     if (!serialize_states.contains(name))
-         serialization->serializeBinaryBulkStatePrefix(column, settings, serialize_states[name]);
+         serialization->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
 
     if (storage.use_marks_file)
     {
@@ -1032,7 +1032,6 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
             copyData(*in, *out);
-            out->finalize();
         }
 
         if (use_marks_file)

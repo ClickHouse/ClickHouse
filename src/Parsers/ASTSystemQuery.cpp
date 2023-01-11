@@ -185,7 +185,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         print_identifier(database->as<ASTIdentifier>()->name());
     }
-    else if (type == Type::DROP_REPLICA || type == Type::DROP_DATABASE_REPLICA)
+    else if (type == Type::DROP_REPLICA)
     {
         print_drop_replica();
     }

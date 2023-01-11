@@ -348,7 +348,7 @@ void splitConjunctionsAst(const ASTPtr & node, ASTs & result)
 
 ASTs splitConjunctionsAst(const ASTPtr & node)
 {
-    ASTs result;
+    std::vector<ASTPtr> result;
     splitConjunctionsAst(node, result);
     return result;
 }

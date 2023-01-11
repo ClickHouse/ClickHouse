@@ -27,7 +27,7 @@ namespace
   * Takes state of aggregate function (example runningAccumulate(uniqState(UserID))),
   *  and for each row of columns, return result of aggregate function on merge of states of all previous rows and current row.
   *
-  * So, result of function depends on partition of data to columns and on order of data in columns.
+  * So, result of function depends on partition of data to columnss and on order of data in columns.
   */
 class FunctionRunningAccumulate : public IFunction
 {
@@ -52,10 +52,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override
     {
@@ -102,7 +99,7 @@ public:
         /// Will pass empty arena if agg_func does not allocate memory in arena
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
-        auto result_column_ptr = agg_func.getResultType()->createColumn();
+        auto result_column_ptr = agg_func.getReturnType()->createColumn();
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
 

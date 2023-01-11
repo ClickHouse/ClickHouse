@@ -236,11 +236,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isDateTime64()
-            && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
+            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDate32() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
         {
             const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
-            const auto decimal_value
-                = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
+            const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
             return Field(DecimalField<DateTime64>(decimal_value, scale));
         }
     }
@@ -248,25 +247,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         /// Already in needed type.
         return src;
-    }
-    else if (which_type.isIPv4() && src.getType() == Field::Types::IPv4)
-    {
-        /// Already in needed type.
-        return src;
-    }
-    else if (which_type.isIPv6())
-    {
-        /// Already in needed type.
-        if (src.getType() == Field::Types::IPv6)
-            return src;
-        /// Treat FixedString(16) as a binary representation of IPv6
-        if (which_from_type.isFixedString() && assert_cast<const DataTypeFixedString *>(from_type_hint)->getN() == IPV6_BINARY_LENGTH)
-        {
-            const auto col = type.createColumn();
-            ReadBufferFromString in_buffer(src.get<String>());
-            type.getDefaultSerialization()->deserializeBinary(*col, in_buffer, {});
-            return (*col)[0];
-        }
     }
     else if (which_type.isStringOrFixedString())
     {
@@ -406,9 +386,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (isObject(type))
     {
-        if (src.getType() == Field::Types::Object)
-            return src;  /// Already in needed type.
-
         const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
         if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->haveExplicitNames())
         {

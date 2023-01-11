@@ -9,7 +9,6 @@
 
 #include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/HDFS/StorageHDFS.h>
 
 namespace DB
@@ -17,7 +16,7 @@ namespace DB
 
 class Context;
 
-class StorageHDFSCluster : public IStorageCluster
+class StorageHDFSCluster : public IStorage
 {
 public:
     StorageHDFSCluster(
@@ -40,15 +39,11 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    ClusterPtr getCluster(ContextPtr context) const override;
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
-
 private:
     String cluster_name;
     String uri;
     String format_name;
     String compression_method;
-    bool add_columns_structure_to_query = false;
 };
 
 

@@ -49,7 +49,7 @@ public:
 
 private:
     void init();
-    size_t getRightOffset(size_t right_mark);
+    size_t getRightOffset(size_t right_mark_non_included);
 
     const MergeTreeReaderSettings settings;
     const ReadBufferFromFileBase::ProfileCallback profile_callback;

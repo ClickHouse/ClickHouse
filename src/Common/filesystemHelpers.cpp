@@ -64,11 +64,11 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
     return data_size <= free_space;
 }
 
-std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path)
+std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
-    fs::create_directories(folder_path);
-    return std::make_unique<PocoTemporaryFile>(folder_path);
+    fs::create_directories(path);
+    return std::make_unique<TemporaryFile>(path);
 }
 
 #if !defined(OS_LINUX)
@@ -352,8 +352,7 @@ time_t getModificationTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
-    std::error_code m_ec(errno, std::generic_category());
-    throw fs::filesystem_error("Cannot check modification time for file", path, m_ec);
+    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
 }
 
 time_t getChangeTime(const std::string & path)
@@ -361,8 +360,7 @@ time_t getChangeTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_ctime;
-    std::error_code m_ec(errno, std::generic_category());
-    throw fs::filesystem_error("Cannot check change time for file", path, m_ec);
+    DB::throwFromErrnoWithPath("Cannot check change time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
 }
 
 Poco::Timestamp getModificationTimestamp(const std::string & path)

@@ -26,7 +26,7 @@ Images = Dict[str, List[str]]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="The program gets images from changed_images_*.json, merges images "
+        description="The program gets images from changed_images_*.json, merges imeges "
         "with different architectures into one manifest and pushes back to docker hub",
     )
 
@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
 
 def load_images(path: str, suffix: str) -> Images:
     with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
-        return json.load(images)  # type: ignore
+        return json.load(images)
 
 
 def strip_suffix(suffix: str, images: Images) -> Images:

@@ -1,8 +1,7 @@
 ---
 slug: /en/operations/system-tables/
 sidebar_position: 52
-sidebar_label: Overview
-pagination_next: 'en/operations/system-tables/asynchronous_metric_log'
+sidebar_label: System Tables
 ---
 
 # System Tables
@@ -72,3 +71,5 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 -   `OSWriteChars`
 -   `OSReadBytes`
 -   `OSWriteBytes`
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/) <!--hide-->

@@ -1,6 +1,6 @@
 #include "remapExecutable.h"
 
-#if defined(OS_LINUX) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG)
+#if defined(OS_LINUX) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG) && !defined(SPLIT_SHARED_LIBRARIES)
 
 #include <sys/mman.h>
 #include <unistd.h>

@@ -46,15 +46,16 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!elem_parser->parse(pos, element, expected))
             return false;
 
-        elements.push_back(std::move(element));
+        elements.push_back(element);
         return true;
     };
 
     if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty))
         return false;
 
-    node = std::make_shared<ASTExpressionList>(result_separator);
-    node->children = std::move(elements);
+    auto list = std::make_shared<ASTExpressionList>(result_separator);
+    list->children = std::move(elements);
+    node = list;
 
     return true;
 }
@@ -75,7 +76,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!elem_parser.parse(pos, element, expected))
             return false;
 
-        elements.push_back(std::move(element));
+        elements.push_back(element);
         return true;
     };
 
@@ -119,8 +120,9 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parseUtil(pos, parse_element, parse_separator))
         return false;
 
-    node = std::make_shared<ASTExpressionList>();
-    node->children = std::move(elements);
+    auto list = std::make_shared<ASTExpressionList>();
+    list->children = std::move(elements);
+    node = list;
     return true;
 }
 
@@ -240,7 +242,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             if (!elem_parser->parse(pos, elem, expected))
                 return false;
 
-            node = std::move(elem);
+            node = elem;
             first = false;
         }
         else
@@ -492,12 +494,7 @@ template <typename... Args>
 static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... args)
 {
     auto ast_function = makeASTFunction(op.function_name, std::forward<Args>(args)...);
-
-    if (op.type == OperatorType::Lambda)
-    {
-        ast_function->is_lambda_function = true;
-        ast_function->kind = ASTFunction::Kind::LAMBDA_FUNCTION;
-    }
+    ast_function->is_lambda_function = op.type == OperatorType::Lambda;
     return ast_function;
 }
 
@@ -605,7 +602,7 @@ public:
 
         asts.reserve(asts.size() + n);
 
-        auto * start = operands.begin() + operands.size() - n;
+        auto start = operands.begin() + operands.size() - n;
         asts.insert(asts.end(), std::make_move_iterator(start), std::make_move_iterator(operands.end()));
         operands.erase(start, operands.end());
 
@@ -699,7 +696,7 @@ public:
         /// 2. If there is already tuple do nothing
         if (tryGetFunctionName(elements.back()) == "tuple")
         {
-            pushOperand(std::move(elements.back()));
+            pushOperand(elements.back());
             elements.pop_back();
         }
         /// 3. Put all elements in a single tuple
@@ -709,19 +706,6 @@ public:
             elements.clear();
             pushOperand(function);
         }
-
-        /// We must check that tuple arguments are identifiers
-        auto * func_ptr = operands.back()->as<ASTFunction>();
-        auto * args_ptr = func_ptr->arguments->as<ASTExpressionList>();
-
-        for (const auto & child : args_ptr->children)
-        {
-            if (typeid_cast<ASTIdentifier *>(child.get()))
-                continue;
-
-            return false;
-        }
-
         return true;
     }
 
@@ -936,7 +920,7 @@ public:
                         , ErrorCodes::SYNTAX_ERROR);
                 }
 
-                if (allow_function_parameters && !parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+                if (allow_function_parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 {
                     parameters = std::make_shared<ASTExpressionList>();
                     std::swap(parameters->children, elements);
@@ -1015,7 +999,6 @@ public:
             if (over.ignore(pos, expected))
             {
                 function_node->is_window_function = true;
-                function_node->kind = ASTFunction::Kind::WINDOW_FUNCTION;
 
                 ASTPtr function_node_as_iast = function_node;
 
@@ -1075,7 +1058,9 @@ public:
                         is_tuple = true;
 
                 // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
-                if (pos->type == TokenType::Arrow)
+                auto test_pos = pos;
+                auto test_expected = expected;
+                if (parseOperator(test_pos, "->", test_expected))
                     is_tuple = true;
             }
 
@@ -1457,7 +1442,7 @@ public:
             return false;
 
         auto subquery = std::make_shared<ASTSubquery>();
-        subquery->children.push_back(std::move(node));
+        subquery->children.push_back(node);
         elements = {makeASTFunction("exists", subquery)};
 
         finished = true;
@@ -1743,29 +1728,6 @@ private:
     bool parsed_interval_kind = false;
 };
 
-class TupleLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
-{
-public:
-    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
-    {
-        bool result = LayerWithSeparator::parse(pos, expected, action);
-
-        /// Check that after the tuple() function there is no lambdas operator
-        if (finished && pos->type == TokenType::Arrow)
-            return false;
-
-        return result;
-    }
-
-protected:
-    bool getResultImpl(ASTPtr & node) override
-    {
-        node = makeASTFunction("tuple", std::move(elements));
-        return true;
-    }
-};
-
-
 class IntervalLayer : public Layer
 {
 public:
@@ -1780,54 +1742,49 @@ public:
 
         if (state == 0)
         {
-            state = 1;
-
             auto begin = pos;
             auto init_expected = expected;
             ASTPtr string_literal;
-            String literal;
-
             //// A String literal followed INTERVAL keyword,
             /// the literal can be a part of an expression or
             /// include Number and INTERVAL TYPE at the same time
-            if (ParserStringLiteral{}.parse(pos, string_literal, expected)
-                && string_literal->as<ASTLiteral &>().value.tryGet(literal))
+            if (ParserStringLiteral{}.parse(pos, string_literal, expected))
             {
-                Tokens tokens(literal.data(), literal.data() + literal.size());
-                IParser::Pos token_pos(tokens, 0);
-                Expected token_expected;
-                ASTPtr expr;
-
-                if (!ParserNumber{}.parse(token_pos, expr, token_expected))
-                    return false;
-
-                /// case: INTERVAL '1' HOUR
-                /// back to begin
-                if (!token_pos.isValid())
+                String literal;
+                if (string_literal->as<ASTLiteral &>().value.tryGet(literal))
                 {
-                    pos = begin;
-                    expected = init_expected;
-                    return true;
-                }
+                    Tokens tokens(literal.data(), literal.data() + literal.size());
+                    IParser::Pos token_pos(tokens, 0);
+                    Expected token_expected;
+                    ASTPtr expr;
 
-                /// case: INTERVAL '1 HOUR'
-                if (!parseIntervalKind(token_pos, token_expected, interval_kind))
-                    return false;
-
-                pushResult(makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr));
-
-                /// case: INTERVAL '1 HOUR 1 SECOND ...'
-                while (token_pos.isValid())
-                {
-                    if (!ParserNumber{}.parse(token_pos, expr, token_expected) ||
-                        !parseIntervalKind(token_pos, token_expected, interval_kind))
+                    if (!ParserNumber{}.parse(token_pos, expr, token_expected))
+                    {
                         return false;
+                    }
+                    else
+                    {
+                        /// case: INTERVAL '1' HOUR
+                        /// back to begin
+                        if (!token_pos.isValid())
+                        {
+                            pos = begin;
+                            expected = init_expected;
+                        }
+                        else
+                        {
+                            /// case: INTERVAL '1 HOUR'
+                            if (!parseIntervalKind(token_pos, token_expected, interval_kind))
+                                return false;
 
-                    pushResult(makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr));
+                            elements = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr)};
+                            finished = true;
+                            return true;
+                        }
+                    }
                 }
-
-                finished = true;
             }
+            state = 1;
             return true;
         }
 
@@ -1842,17 +1799,6 @@ public:
                 finished = true;
             }
         }
-
-        return true;
-    }
-
-protected:
-    bool getResultImpl(ASTPtr & node) override
-    {
-        if (elements.size() == 1)
-            node = elements[0];
-        else
-            node = makeASTFunction("tuple", std::move(elements));
 
         return true;
     }
@@ -2069,9 +2015,6 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
             return std::make_unique<ViewLayer>(true);
     }
 
-    if (function_name == "tuple")
-        return std::make_unique<TupleLayer>();
-
     if (function_name_lowercase == "cast")
         return std::make_unique<CastLayer>();
     else if (function_name_lowercase == "extract")
@@ -2240,40 +2183,40 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::operators_t
         {"AND",           Operator("and",             4,  2, OperatorType::Mergeable)},
         {"BETWEEN",       Operator("",                6,  0, OperatorType::StartBetween)},
         {"NOT BETWEEN",   Operator("",                6,  0, OperatorType::StartNotBetween)},
-        {"==",            Operator("equals",          8,  2, OperatorType::Comparison)},
-        {"!=",            Operator("notEquals",       8,  2, OperatorType::Comparison)},
-        {"<>",            Operator("notEquals",       8,  2, OperatorType::Comparison)},
-        {"<=",            Operator("lessOrEquals",    8,  2, OperatorType::Comparison)},
-        {">=",            Operator("greaterOrEquals", 8,  2, OperatorType::Comparison)},
-        {"<",             Operator("less",            8,  2, OperatorType::Comparison)},
-        {">",             Operator("greater",         8,  2, OperatorType::Comparison)},
-        {"=",             Operator("equals",          8,  2, OperatorType::Comparison)},
-        {"LIKE",          Operator("like",            8,  2)},
-        {"ILIKE",         Operator("ilike",           8,  2)},
-        {"NOT LIKE",      Operator("notLike",         8,  2)},
-        {"NOT ILIKE",     Operator("notILike",        8,  2)},
-        {"IN",            Operator("in",              8,  2)},
-        {"NOT IN",        Operator("notIn",           8,  2)},
-        {"GLOBAL IN",     Operator("globalIn",        8,  2)},
-        {"GLOBAL NOT IN", Operator("globalNotIn",     8,  2)},
-        {"||",            Operator("concat",          9,  2, OperatorType::Mergeable)},
-        {"+",             Operator("plus",            10, 2)},
-        {"-",             Operator("minus",           10, 2)},
-        {"*",             Operator("multiply",        11, 2)},
-        {"/",             Operator("divide",          11, 2)},
-        {"%",             Operator("modulo",          11, 2)},
-        {"MOD",           Operator("modulo",          11, 2)},
-        {"DIV",           Operator("intDiv",          11, 2)},
-        {".",             Operator("tupleElement",    13, 2, OperatorType::TupleElement)},
-        {"[",             Operator("arrayElement",    13, 2, OperatorType::ArrayElement)},
-        {"::",            Operator("CAST",            13, 2, OperatorType::Cast)},
-        {"IS NULL",       Operator("isNull",          13, 1, OperatorType::IsNull)},
-        {"IS NOT NULL",   Operator("isNotNull",       13, 1, OperatorType::IsNull)},
+        {"IS NULL",       Operator("isNull",          8,  1, OperatorType::IsNull)},
+        {"IS NOT NULL",   Operator("isNotNull",       8,  1, OperatorType::IsNull)},
+        {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
+        {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
+        {"<>",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
+        {"<=",            Operator("lessOrEquals",    9,  2, OperatorType::Comparison)},
+        {">=",            Operator("greaterOrEquals", 9,  2, OperatorType::Comparison)},
+        {"<",             Operator("less",            9,  2, OperatorType::Comparison)},
+        {">",             Operator("greater",         9,  2, OperatorType::Comparison)},
+        {"=",             Operator("equals",          9,  2, OperatorType::Comparison)},
+        {"LIKE",          Operator("like",            9,  2)},
+        {"ILIKE",         Operator("ilike",           9,  2)},
+        {"NOT LIKE",      Operator("notLike",         9,  2)},
+        {"NOT ILIKE",     Operator("notILike",        9,  2)},
+        {"IN",            Operator("in",              9,  2)},
+        {"NOT IN",        Operator("notIn",           9,  2)},
+        {"GLOBAL IN",     Operator("globalIn",        9,  2)},
+        {"GLOBAL NOT IN", Operator("globalNotIn",     9,  2)},
+        {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
+        {"+",             Operator("plus",            11, 2)},
+        {"-",             Operator("minus",           11, 2)},
+        {"*",             Operator("multiply",        12, 2)},
+        {"/",             Operator("divide",          12, 2)},
+        {"%",             Operator("modulo",          12, 2)},
+        {"MOD",           Operator("modulo",          12, 2)},
+        {"DIV",           Operator("intDiv",          12, 2)},
+        {".",             Operator("tupleElement",    14, 2, OperatorType::TupleElement)},
+        {"[",             Operator("arrayElement",    14, 2, OperatorType::ArrayElement)},
+        {"::",            Operator("CAST",            14, 2, OperatorType::Cast)},
     });
 
 std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::unary_operators_table({
         {"NOT",           Operator("not",             5,  1)},
-        {"-",             Operator("negate",          12, 1)}
+        {"-",             Operator("negate",          13, 1)}
     });
 
 Operator ParserExpressionImpl::finish_between_operator = Operator("", 7, 0, OperatorType::FinishBetween);
@@ -2396,7 +2339,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (layers.back()->previousType() == OperatorType::Comparison)
     {
-        auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
 
         if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
@@ -2421,10 +2363,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
             layers.back()->pushOperand(std::move(function));
             return Action::OPERATOR;
-        }
-        else
-        {
-            pos = old_pos;
         }
     }
 

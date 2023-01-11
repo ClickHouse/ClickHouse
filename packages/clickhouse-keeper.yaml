@@ -12,6 +12,8 @@ priority: "optional"
 
 conflicts:
 - clickhouse-server
+depends:
+- adduser
 suggests:
 - clickhouse-keeper-dbg
 

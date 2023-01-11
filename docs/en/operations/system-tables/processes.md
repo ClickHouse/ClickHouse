@@ -63,3 +63,5 @@ Settings:             {'background_pool_size':'32','load_balancing':'random','al
 
 1 rows in set. Elapsed: 0.002 sec.
 ```
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/processes) <!--hide-->

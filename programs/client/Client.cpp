@@ -16,8 +16,6 @@
 
 #include <base/find_symbols.h>
 
-#include <Access/AccessControl.h>
-
 #include "config_version.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -30,10 +28,9 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/UseSSL.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <IO/UseSSL.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -41,8 +38,6 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-
-#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <Interpreters/InterpreterSetQuery.h>
 
@@ -248,7 +243,6 @@ try
     registerAggregateFunctions();
 
     processConfig();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
 
     /// Includes delayed_interactive.
     if (is_interactive)
@@ -262,10 +256,6 @@ try
     /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
         showWarnings();
-
-    /// Set user password complexity rules
-    auto & access_control = global_context->getAccessControl();
-    access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
     if (is_interactive && !delayed_interactive)
     {
@@ -357,9 +347,17 @@ void Client::connect()
         }
         catch (const Exception & e)
         {
-            if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            /// It is typical when users install ClickHouse, type some password and instantly forget it.
+            /// This problem can't be fixed with reconnection so it is not attempted
+            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
+                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
             {
-                /// This problem can't be fixed with reconnection so it is not attempted
+                std::cerr << std::endl
+                          << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
+                          << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
+                          << "and deleting this file will reset the password." << std::endl
+                          << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
+                          << std::endl;
                 throw;
             }
             else
@@ -830,20 +828,6 @@ bool Client::processWithFuzzing(const String & full_query)
         WriteBufferFromOStream ast_buf(std::cout, 4096);
         formatAST(*query, ast_buf, false /*highlight*/);
         ast_buf.next();
-        if (const auto * insert = query->as<ASTInsertQuery>())
-        {
-            /// For inserts with data it's really useful to have the data itself available in the logs, as formatAST doesn't print it
-            if (insert->hasInlinedData())
-            {
-                String bytes;
-                {
-                    auto read_buf = getReadBufferFromASTInsertQuery(query);
-                    WriteBufferFromString write_buf(bytes);
-                    copyData(*read_buf, write_buf);
-                }
-                std::cout << std::endl << bytes;
-            }
-        }
         std::cout << std::endl << std::endl;
 
         try
@@ -1104,6 +1088,7 @@ void Client::processConfig()
     }
     else
     {
+        need_render_progress = config().getBool("progress", false);
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 

@@ -22,3 +22,5 @@ slug: /zh/operations/system-tables/one
 
 1 rows in set. Elapsed: 0.001 sec.
 ```
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/one) <!--hide-->

@@ -1,11 +1,8 @@
-#include <Access/AccessControl.h>
-
 #include <Columns/getLeastSuperColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
-#include <Interpreters/QueryLog.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -24,7 +21,6 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 
 #include <algorithm>
-
 
 namespace DB
 {
@@ -165,13 +161,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 0; query_num < num_children; ++query_num)
         {
             headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
-            /// Here we check that, in case if required_result_column_names were specified,
-            /// nested interpreter returns exactly it. Except if query requires full header.
-            /// The code aboew is written in a way that for 0th query required_result_column_names_for_other_selects[0]
-            /// is an empty list, and we should use required_result_column_names instead.
-            const auto & current_required_result_column_names = (query_num == 0 && !require_full_header)
-                ? required_result_column_names
-                : required_result_column_names_for_other_selects[query_num];
+            const auto & current_required_result_column_names = required_result_column_names_for_other_selects[query_num];
             if (!current_required_result_column_names.empty())
             {
                 const auto & header_columns = headers[query_num].getNames();
@@ -390,27 +380,6 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
 {
     for (auto & interpreter : nested_interpreters)
         interpreter->ignoreWithTotals();
-}
-
-void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
-{
-    elem.query_kind = "Select";
-
-    for (const auto & interpreter : nested_interpreters)
-    {
-        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
-        {
-            auto filter = select_interpreter->getRowPolicyFilter();
-            if (filter)
-            {
-                for (const auto & row_policy : filter->policies)
-                {
-                    auto name = row_policy->getFullName().toString();
-                    elem.used_row_policies.emplace(std::move(name));
-                }
-            }
-        }
-    }
 }
 
 }

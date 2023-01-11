@@ -353,7 +353,7 @@ Typical usage:
     {
     R"(
 Returns a random number from the exponential distribution.
-Accepts one parameter - lambda value.
+Accepts one parameter.
 
 Typical usage:
 [example:typical]
@@ -413,7 +413,7 @@ Typical usage:
     {
     R"(
 Returns a random number from the Bernoulli distribution.
-Accepts one parameter - probability of success.
+Accepts two parameters - probability of success.
 
 Typical usage:
 [example:typical]
@@ -458,7 +458,7 @@ Typical usage:
     {
     R"(
 Returns a random number from the poisson distribution.
-Accepts one parameter - the mean number of occurrences.
+Accepts two parameters - the mean number of occurrences.
 
 Typical usage:
 [example:typical]

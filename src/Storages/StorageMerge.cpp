@@ -44,6 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_PREWHERE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -145,43 +146,8 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
     /// If new table that matches regexp for current storage and doesn't support PREWHERE
     /// will appear after this check and before calling "read" method, the optimized query may fail.
     /// Since it's quite rare case, we just ignore this possibility.
-    const auto & table_doesnt_support_prewhere = getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); });
-    bool can_move = (table_doesnt_support_prewhere == nullptr);
 
-    if (!can_move)
-        return false;
-
-    if (!getInMemoryMetadataPtr())
-        return false;
-
-    std::unordered_map<std::string, const IDataType *> column_types;
-    for (const auto & name_type : getInMemoryMetadataPtr()->getColumns().getAll())
-    {
-        column_types.emplace(name_type.name, name_type.type.get());
-    }
-
-    /// Check that all tables have the same column types, otherwise prewhere will fail
-    forEachTable([&](const StoragePtr & table)
-    {
-        const auto & metadata_ptr = table->getInMemoryMetadataPtr();
-        if (!metadata_ptr)
-            can_move = false;
-
-        if (!can_move)
-            return;
-
-        for (const auto & column : metadata_ptr->getColumns().getAll())
-        {
-            const auto * src_type = column_types[column.name];
-            if (src_type && !src_type->equals(*column.type))
-            {
-                can_move = false;
-                return;
-            }
-        }
-    });
-
-    return can_move;
+    return getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); }) == nullptr;
 }
 
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
@@ -394,17 +360,13 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
-        = std::min(static_cast<size_t>(tables_count), std::max(1UL, static_cast<size_t>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
+        = std::min(static_cast<unsigned>(tables_count), std::max(1U, static_cast<unsigned>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
     size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
-    if (order_info)
+    InputOrderInfoPtr input_sorting_info;
+    if (query_info.order_optimizer)
     {
-        query_info.input_order_info = order_info;
-    }
-    else if (query_info.order_optimizer)
-    {
-        InputOrderInfoPtr input_sorting_info;
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
             auto storage_ptr = std::get<1>(*it);
@@ -687,7 +649,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, *builder);
+        convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, modified_query_info.query, *builder, processed_stage);
     }
 
     return builder;
@@ -863,7 +825,9 @@ void ReadFromMerge::convertingSourceStream(
     const StorageMetadataPtr & metadata_snapshot,
     const Aliases & aliases,
     ContextPtr local_context,
-    QueryPipelineBuilder & builder)
+    ASTPtr & query,
+    QueryPipelineBuilder & builder,
+    QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = builder.getHeader();
 
@@ -899,6 +863,39 @@ void ReadFromMerge::convertingSourceStream(
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
         });
+    }
+
+    auto where_expression = query->as<ASTSelectQuery>()->where();
+
+    if (!where_expression)
+        return;
+
+    if (processed_stage > QueryProcessingStage::FetchColumns)
+    {
+        for (size_t column_index : collections::range(0, header.columns()))
+        {
+            ColumnWithTypeAndName header_column = header.getByPosition(column_index);
+            ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
+            /// If the processed_stage greater than FetchColumns and the block structure between streams is different.
+            /// the where expression maybe invalid because of ConvertingTransform.
+            /// So we need to throw exception.
+            if (!header_column.type->equals(*before_column.type.get()))
+            {
+                NamesAndTypesList source_columns = metadata_snapshot->getSampleBlock().getNamesAndTypesList();
+                auto virtual_column = *storage_merge->getVirtuals().tryGetByName("_table");
+                source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
+                auto syntax_result = TreeRewriter(local_context).analyze(where_expression, source_columns);
+                ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, local_context}.getActions(false, false);
+                Names required_columns = actions->getRequiredColumns();
+
+                for (const auto & required_column : required_columns)
+                {
+                    if (required_column == header_column.name)
+                        throw Exception("Block structure mismatch in Merge Storage: different types:\n" + before_block_header.dumpStructure()
+                                        + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
+                }
+            }
+        }
     }
 }
 

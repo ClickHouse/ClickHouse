@@ -141,7 +141,7 @@ public:
     /// Get piece of memory, without alignment.
     char * alloc(size_t size)
     {
-        if (unlikely(static_cast<std::ptrdiff_t>(size) > head->end - head->pos))
+        if (unlikely(head->pos + size > head->end))
             addMemoryChunk(size);
 
         char * res = head->pos;

@@ -37,3 +37,5 @@ SELECT * FROM test_bool;
 │ 2 │ false │
 └───┴───────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/data_types/boolean/) <!--hide-->
