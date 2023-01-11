@@ -64,7 +64,7 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Planner/CollectColumnIndetifiers.h>
+#include <Planner/CollectColumnIdentifiers.h>
 
 namespace DB
 {
