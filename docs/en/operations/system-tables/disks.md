@@ -20,7 +20,7 @@ Columns:
 SELECT * FROM system.disks;
 ```
 
-```text
+```response
 ┌─name────┬─path─────────────────┬───free_space─┬──total_space─┬─keep_free_space─┐
 │ default │ /var/lib/clickhouse/ │ 276392587264 │ 490652508160 │               0 │
 └─────────┴──────────────────────┴──────────────┴──────────────┴─────────────────┘

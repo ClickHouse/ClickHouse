@@ -15,7 +15,7 @@ This is similar to the `DUAL` table found in other DBMSs.
 SELECT * FROM system.one LIMIT 10;
 ```
 
-```text
+```response
 ┌─dummy─┐
 │     0 │
 └───────┘

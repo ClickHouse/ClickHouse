@@ -13,7 +13,7 @@ Used for tests.
 SELECT * FROM system.numbers_mt LIMIT 10;
 ```
 
-```text
+```response
 ┌─number─┐
 │      0 │
 │      1 │
