@@ -460,8 +460,6 @@ private:
     /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
     const RenamingRestrictions renaming_restrictions;
 
-    const size_t replicated_fetches_pool_size;
-
     /// Throttlers used in DataPartsExchange to lower maximum fetch/sends
     /// speed.
     ThrottlerPtr replicated_fetches_throttler;
