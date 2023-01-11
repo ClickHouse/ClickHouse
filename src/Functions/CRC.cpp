@@ -15,7 +15,7 @@ struct CRCBase
     {
         for (size_t i = 0; i < 256; ++i)
         {
-            T c = static_cast<T>(i);
+            T c = i;
             for (size_t j = 0; j < 8; ++j)
                 c = c & 1 ? polynomial ^ (c >> 1) : c >> 1;
             tab[i] = c;
@@ -58,7 +58,7 @@ struct CRC32ZLIBImpl
 
     static UInt32 makeCRC(const unsigned char *buf, size_t size)
     {
-        return static_cast<UInt32>(crc32_z(0L, buf, size));
+        return crc32_z(0L, buf, size);
     }
 };
 
@@ -140,7 +140,7 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 template <class T>
 void registerFunctionCRCImpl(FunctionFactory & factory)
 {
-    factory.registerFunction<T>(T::name, {}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<T>(T::name, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(CRC)

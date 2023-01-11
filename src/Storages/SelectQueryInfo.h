@@ -7,9 +7,6 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Interpreters/AggregateDescription.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/TableExpressionModifiers.h>
-#include <Planner/PlannerContext.h>
 
 #include <memory>
 
@@ -104,33 +101,17 @@ struct FilterDAGInfo
 
 struct InputOrderInfo
 {
-    /// Sort description for merging of already sorted streams.
-    /// Always a prefix of ORDER BY or GROUP BY description specified in query.
-    SortDescription sort_description_for_merging;
-
-    /** Size of prefix of sorting key that is already
-     * sorted before execution of sorting or aggreagation.
-     *
-     * Contains both columns that scpecified in
-     * ORDER BY or GROUP BY clause of query
-     * and columns that turned out to be already sorted.
-     *
-     * E.g. if we have sorting key ORDER BY (a, b, c, d)
-     * and query with `WHERE a = 'x' AND b = 'y' ORDER BY c, d` clauses.
-     * sort_description_for_merging will be equal to (c, d) and
-     * used_prefix_of_sorting_key_size will be equal to 4.
-     */
-    const size_t used_prefix_of_sorting_key_size;
-
-    const int direction;
-    const UInt64 limit;
+    SortDescription order_key_fixed_prefix_descr;
+    SortDescription order_key_prefix_descr;
+    int direction;
+    UInt64 limit;
 
     InputOrderInfo(
-        const SortDescription & sort_description_for_merging_,
-        size_t used_prefix_of_sorting_key_size_,
+        const SortDescription & order_key_fixed_prefix_descr_,
+        const SortDescription & order_key_prefix_descr_,
         int direction_, UInt64 limit_)
-        : sort_description_for_merging(sort_description_for_merging_)
-        , used_prefix_of_sorting_key_size(used_prefix_of_sorting_key_size_)
+        : order_key_fixed_prefix_descr(order_key_fixed_prefix_descr_)
+        , order_key_prefix_descr(order_key_prefix_descr_)
         , direction(direction_), limit(limit_)
     {
     }
@@ -163,9 +144,6 @@ struct ProjectionCandidate
     SortDescription group_by_elements_order_descr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
-
-    /// Because projection analysis uses a separate interpreter.
-    ContextPtr context;
 };
 
 /** Query along with some additional data,
@@ -174,6 +152,7 @@ struct ProjectionCandidate
   */
 struct SelectQueryInfo
 {
+
     SelectQueryInfo()
         : prepared_sets(std::make_shared<PreparedSets>())
     {}
@@ -181,15 +160,6 @@ struct SelectQueryInfo
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
-
-    /// Planner context
-    PlannerContextPtr planner_context;
-
-    /// Storage table expression
-    QueryTreeNodePtr table_expression;
-
-    /// Table expression modifiers for storage
-    std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 
@@ -208,9 +178,6 @@ struct SelectQueryInfo
 
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
-
-    /// Filter actions dag for current storage
-    ActionsDAGPtr filter_actions_dag;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
@@ -236,9 +203,6 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
-
-    // If limit is not 0, that means it's a trivial limit query.
-    UInt64 limit = 0;
 
     InputOrderInfoPtr getInputOrderInfo() const
     {

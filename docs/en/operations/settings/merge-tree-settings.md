@@ -1,7 +1,4 @@
----
-slug: /en/operations/settings/merge-tree-settings
-title: "MergeTree tables settings"
----
+# MergeTree tables settings
 
 The values of `merge_tree` settings (for all MergeTree tables) can be viewed in the table `system.merge_tree_settings`, they can be overridden in `config.xml` in the `merge_tree` section, or set in the `SETTINGS` section of each table.
 
@@ -15,7 +12,7 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 100.
+Default value: 10.
 
 Override example in `config.xml`:
 
@@ -127,13 +124,6 @@ Default value: 100000.
 
 A large number of parts in a table reduces performance of ClickHouse queries and increases ClickHouse boot time. Most often this is a consequence of an incorrect design (mistakes when choosing a partitioning strategy - too small partitions).
 
-## simultaneous_parts_removal_limit {#simultaneous-parts-removal-limit}
-
-If there are a lot of outdated parts cleanup thread will try to delete up to `simultaneous_parts_removal_limit` parts during one iteration.
-`simultaneous_parts_removal_limit` set to `0` means unlimited.
-
-Default value: 0.
-
 ## replicated_deduplication_window {#replicated-deduplication-window}
 
 The number of most recently inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
@@ -145,7 +135,7 @@ Possible values:
 
 Default value: 100.
 
-The `Insert` command creates one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md), when writing into replicated tables, ClickHouse writes the hash sums of the created parts into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from ClickHouse Keeper.
+The `Insert` command creates one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication/), when writing into replicated tables, ClickHouse writes the hash sums of the created parts into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from ClickHouse Keeper.
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
@@ -173,8 +163,6 @@ Possible values:
 Default value: 604800 (1 week).
 
 Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
-
-The time is relative to the time of the most recent record, not to the wall time. If it's the only record it will be stored forever.
 
 ## max_replicated_logs_to_keep
 
@@ -230,15 +218,11 @@ Default value: 0 (seconds)
 
 When this setting has a value greater than than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
 
-:::warning Zero-copy replication is not ready for production
-Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-:::
-
 Possible values:
 
 -   Any positive integer.
 
-Default value: 10800
+Default value: 1800
 
 ## try_fetch_recompressed_part_timeout
 
@@ -268,7 +252,7 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 100
+Default value: 10
 
 ## max_suspicious_broken_parts_bytes
 
@@ -311,7 +295,7 @@ Possible values:
 
 Default value: 0.5
 
-## replicated_max_parallel_fetches_for_host
+## replicated_max_parallel_fetches_for_host 
 
 Limit parallel fetches from endpoint (actually pool size).
 
@@ -517,26 +501,6 @@ Possible values:
 -   Any positive integer.
 
 Default value: -1 (unlimited).
-
-## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
-
-Merge parts if every part in the range is older than the value of `min_age_to_force_merge_seconds`.
-
-Possible values:
-
--   Positive integer.
-
-Default value: 0 — Disabled.
-
-## min_age_to_force_merge_on_partition_only {#min_age_to_force_merge_on_partition_only}
-
-Whether `min_age_to_force_merge_seconds` should be applied only on the entire partition and not on subset.
-
-Possible values:
-
--   true, false
-
-Default value: false
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 

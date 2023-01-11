@@ -110,8 +110,6 @@ public:
     /// The name of the table.
     StorageID getStorageID() const;
 
-    virtual bool isMergeTree() const { return false; }
-
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
@@ -243,10 +241,6 @@ public:
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 
-    /// Return true if storage can execute 'DELETE FROM' mutations. This is different from lightweight delete
-    /// because those are internally translated into 'ALTER UDPATE' mutations.
-    virtual bool supportsDelete() const { return false; }
-
 private:
 
     StorageID storage_id;
@@ -262,15 +256,11 @@ protected:
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
 public:
-    /// Lock table for share. This lock must be acquired if you want to be sure,
+    /// Lock table for share. This lock must be acuqired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
     /// variety of cases starting from SELECT queries to background merges in
     /// MergeTree.
     TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
-
-    /// Similar to lockForShare, but returns a nullptr if the table is dropped while
-    /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
-    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
@@ -329,7 +319,7 @@ public:
         ContextPtr /*context*/,
         QueryProcessingStage::Enum & /*processed_stage*/,
         size_t /*max_block_size*/,
-        size_t /*num_streams*/);
+        unsigned /*num_streams*/);
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
@@ -363,7 +353,7 @@ private:
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
-        size_t /*num_streams*/);
+        unsigned /*num_streams*/);
 
 public:
     /// Other version of read which adds reading step to query plan.
@@ -376,7 +366,7 @@ public:
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
-        size_t /*num_streams*/);
+        unsigned /*num_streams*/);
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
@@ -488,7 +478,7 @@ public:
     }
 
     /// Mutate the table contents
-    virtual void mutate(const MutationCommands &, ContextPtr, bool /*force_wait*/)
+    virtual void mutate(const MutationCommands &, ContextPtr)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -589,8 +579,7 @@ public:
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
-    /// Returns true if all disks of storage are read-only or write-once.
-    /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
+    /// Returns true if all disks of storage are read-only.
     virtual bool isStaticStorage() const;
 
     virtual bool supportsSubsetOfColumns() const { return false; }
@@ -623,12 +612,12 @@ public:
 
     /// Number of rows INSERTed since server start.
     ///
-    /// Does not take the underlying Storage (if any) into account.
+    /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeRows() const { return {}; }
 
     /// Number of bytes INSERTed since server start.
     ///
-    /// Does not take the underlying Storage (if any) into account.
+    /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
     /// Creates a storage snapshot from given metadata.

@@ -4,15 +4,12 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <Parsers/toOneLineQuery.h>
-#include <base/errnoToString.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
-
 #if defined(OS_LINUX)
     #include <sys/prctl.h>
 #endif
@@ -31,7 +28,6 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
-#include <Poco/Pipe.h>
 
 #include <Common/ErrorHandlers.h>
 #include <base/argsToConfig.h>
@@ -61,7 +57,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"
@@ -78,7 +74,6 @@ namespace DB
     {
         extern const int CANNOT_SET_SIGNAL_HANDLER;
         extern const int CANNOT_SEND_SIGNAL;
-        extern const int SYSTEM_ERROR;
     }
 }
 
@@ -179,9 +174,12 @@ __attribute__((__weak__)) void collectCrashLog(
 class SignalListener : public Poco::Runnable
 {
 public:
-    static constexpr int StdTerminate = -1;
-    static constexpr int StopThread = -2;
-    static constexpr int SanitizerTrap = -3;
+    enum Signals : int
+    {
+        StdTerminate = -1,
+        StopThread = -2,
+        SanitizerTrap = -3,
+    };
 
     explicit SignalListener(BaseDaemon & daemon_)
         : log(&Poco::Logger::get("BaseDaemon"))
@@ -206,7 +204,7 @@ public:
             // Don't use strsignal here, because it's not thread-safe.
             LOG_TRACE(log, "Received signal {}", sig);
 
-            if (sig == StopThread)
+            if (sig == Signals::StopThread)
             {
                 LOG_INFO(log, "Stop SignalListener thread");
                 break;
@@ -217,7 +215,7 @@ public:
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
                 LOG_INFO(log, "Opened new log file after received signal.");
             }
-            else if (sig == StdTerminate)
+            else if (sig == Signals::StdTerminate)
             {
                 UInt32 thread_num;
                 std::string message;
@@ -266,8 +264,8 @@ private:
     {
         size_t pos = message.find('\n');
 
-        LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, thread_num, message.substr(0, pos));
+        LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
 
         /// Print trace from std::terminate exception line-by-line to make it easy for grep.
         while (pos != std::string_view::npos)
@@ -304,36 +302,26 @@ private:
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
-                query = DB::toOneLineQuery(thread_group->query);
+                query = thread_group->one_line_query;
             }
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
         }
 
-        std::string signal_description = "Unknown signal";
-
-        /// Some of these are not really signals, but our own indications on failure reason.
-        if (sig == StdTerminate)
-            signal_description = "std::terminate";
-        else if (sig == SanitizerTrap)
-            signal_description = "sanitizer trap";
-        else if (sig >= 0)
-            signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
         LOG_FATAL(log, "########################################");
 
         if (query_id.empty())
         {
-            LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (no query) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, signal_description, sig);
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
+                thread_num, strsignal(sig), sig);
         }
         else
         {
-            LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, query_id, query, signal_description, sig);
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
+                thread_num, query_id, query, strsignal(sig), sig);
         }
 
         String error_message;
@@ -365,33 +353,27 @@ private:
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
         /// Please keep the below log messages in-sync with the ones in programs/server/Server.cpp
-
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
         {
-            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read.");
+            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read."
+                " (calculated checksum: {})", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == daemon.stored_binary_hash)
+        {
+            LOG_FATAL(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
         }
         else
         {
-            String calculated_binary_hash = getHashOfLoadedBinaryHex();
-            if (calculated_binary_hash == daemon.stored_binary_hash)
-            {
-                LOG_FATAL(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
-            }
-            else
-            {
-                LOG_FATAL(
-                    log,
-                    "Calculated checksum of the executable ({0}) does not correspond"
-                    " to the reference checksum stored in the executable ({1})."
-                    " This may indicate one of the following:"
-                    " - the executable was changed just after startup;"
-                    " - the executable was corrupted on disk due to faulty hardware;"
-                    " - the loaded executable was corrupted in memory due to faulty hardware;"
-                    " - the file was intentionally modified;"
-                    " - a logical error in the code.",
-                    calculated_binary_hash,
-                    daemon.stored_binary_hash);
-            }
+            LOG_FATAL(log, "Calculated checksum of the executable ({0}) does not correspond"
+                " to the reference checksum stored in the executable ({1})."
+                " This may indicate one of the following:"
+                " - the executable was changed just after startup;"
+                " - the executable was corrupted on disk due to faulty hardware;"
+                " - the loaded executable was corrupted in memory due to faulty hardware;"
+                " - the file was intentionally modified;"
+                " - a logical error in the code."
+                , calculated_binary_hash, daemon.stored_binary_hash);
         }
 #endif
 
@@ -591,8 +573,7 @@ void BaseDaemon::closeFDs()
     {
         int max_fd = -1;
 #if defined(_SC_OPEN_MAX)
-        // fd cannot be > INT_MAX
-        max_fd = static_cast<int>(sysconf(_SC_OPEN_MAX));
+        max_fd = sysconf(_SC_OPEN_MAX);
         if (max_fd == -1)
 #endif
             max_fd = 256; /// bad fallback
@@ -602,6 +583,34 @@ void BaseDaemon::closeFDs()
     }
 }
 
+namespace
+{
+/// In debug version on Linux, increase oom score so that clickhouse is killed
+/// first, instead of some service. Use a carefully chosen random score of 555:
+/// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+/// whatever errors that occur, because it's just a debugging aid and we don't
+/// care if it breaks.
+#if defined(OS_LINUX) && !defined(NDEBUG)
+void debugIncreaseOOMScore()
+{
+    const std::string new_score = "555";
+    try
+    {
+        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(new_score.c_str(), new_score.size());
+        buf.close();
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_WARNING(&Poco::Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
+        return;
+    }
+    LOG_INFO(&Poco::Logger::root(), "Set OOM score adjustment to {}", new_score);
+}
+#else
+void debugIncreaseOOMScore() {}
+#endif
+}
 
 void BaseDaemon::initialize(Application & self)
 {
@@ -656,7 +665,7 @@ void BaseDaemon::initialize(Application & self)
     if (config().has("timezone"))
     {
         const std::string config_timezone = config().getString("timezone");
-        if (0 != setenv("TZ", config_timezone.data(), 1)) // NOLINT(concurrency-mt-unsafe) // ok if not called concurrently with other setenv/getenv
+        if (0 != setenv("TZ", config_timezone.data(), 1))
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
@@ -768,6 +777,7 @@ void BaseDaemon::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
     logRevision();
+    debugIncreaseOOMScore();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
     {
@@ -826,7 +836,6 @@ static void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
-extern String getGitHash();
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
@@ -859,14 +868,12 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     String build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
     if (build_id_hex.empty())
-        build_id = "";
+        build_id_info = "no build id";
     else
-        build_id = build_id_hex;
+        build_id_info = "build id: " + build_id_hex;
 #else
-    build_id = "";
+    build_id_info = "no build id";
 #endif
-
-    git_hash = getGitHash();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -878,10 +885,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    logger().information("Starting " + std::string{VERSION_FULL}
-        + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
+    Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
+        + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
 }
 
@@ -927,23 +933,24 @@ void BaseDaemon::handleSignal(int signal_id)
         std::lock_guard lock(signal_handler_mutex);
         {
             ++terminate_signals_counter;
+            sigint_signals_counter += signal_id == SIGINT;
             signal_event.notify_all();
         }
 
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
-    if (terminate_signals_counter >= 2)
+    if (sigint_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
+        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
         call_default_signal_handler(signal_id);
         /// If the above did not help.
         _exit(128 + signal_id);
@@ -977,15 +984,11 @@ void BaseDaemon::setupWatchdog()
 
     while (true)
     {
-        /// This pipe is used to synchronize notifications to the service manager from the child process
-        /// to be sent after the notifications from the parent process.
-        Poco::Pipe notify_sync;
-
         static pid_t pid = -1;
         pid = fork();
 
         if (-1 == pid)
-            DB::throwFromErrno("Cannot fork", DB::ErrorCodes::SYSTEM_ERROR);
+            throw Poco::Exception("Cannot fork");
 
         if (0 == pid)
         {
@@ -994,31 +997,8 @@ void BaseDaemon::setupWatchdog()
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
                 logger().warning("Cannot do prctl to ask termination with parent.");
 #endif
-
-            {
-                notify_sync.close(Poco::Pipe::CLOSE_WRITE);
-                /// Read from the pipe will block until the pipe is closed.
-                /// This way we synchronize with the parent process.
-                char buf[1];
-                if (0 != notify_sync.readBytes(buf, sizeof(buf)))
-                    throw Poco::Exception("Unexpected result while waiting for watchdog synchronization pipe to close.");
-            }
-
             return;
         }
-
-#if defined(OS_LINUX)
-        /// Tell the service manager the actual main process is not this one but the forked process
-        /// because it is going to be serving the requests and it is going to send "READY=1" notification
-        /// when it is fully started.
-        /// NOTE: we do this right after fork() and then notify the child process to "unblock" so that it finishes initialization
-        /// and sends "READY=1" after we have sent "MAINPID=..."
-        systemdNotify(fmt::format("MAINPID={}\n", pid));
-#endif
-
-        /// Close the pipe after notifying the service manager.
-        /// The child process is waiting for the pipe to be closed.
-        notify_sync.close();
 
         /// Change short thread name and process name.
         setThreadName("clckhouse-watch");   /// 15 characters
@@ -1034,8 +1014,8 @@ void BaseDaemon::setupWatchdog()
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
             Poco::AutoPtr<OwnPatternFormatter> pf;
-            if (config().getString("logger.formatting.type", "") == "json")
-                pf = new OwnJSONPatternFormatter(config());
+            if (config().getString("logger.formatting", "") == "json")
+                pf = new OwnJSONPatternFormatter;
             else
                 pf = new OwnPatternFormatter;
             Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
@@ -1084,7 +1064,7 @@ void BaseDaemon::setupWatchdog()
                     break;
             }
             else if (errno != EINTR)
-                throw Poco::Exception("Cannot waitpid, errno: " + errnoToString());
+                throw Poco::Exception("Cannot waitpid, errno: " + std::string(strerror(errno)));
         } while (true);
 
         if (errno == ECHILD)
@@ -1138,58 +1118,3 @@ String BaseDaemon::getStoredBinaryHash() const
 {
     return stored_binary_hash;
 }
-
-#if defined(OS_LINUX)
-void systemdNotify(const std::string_view & command)
-{
-    const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
-
-    if (path == nullptr)
-        return; /// not using systemd
-
-    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-
-    if (s == -1)
-        DB::throwFromErrno("Can't create UNIX socket for systemd notify.", DB::ErrorCodes::SYSTEM_ERROR);
-
-    SCOPE_EXIT({ close(s); });
-
-    const size_t len = strlen(path);
-
-    struct sockaddr_un addr;
-
-    addr.sun_family = AF_UNIX;
-
-    if (len < 2 || len > sizeof(addr.sun_path) - 1)
-        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
-
-    memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
-
-    size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
-
-    /// '@' means this is Linux abstract socket, per documentation sun_path[0] must be set to '\0' for it.
-    if (path[0] == '@')
-        addr.sun_path[0] = 0;
-    else if (path[0] == '/')
-        addrlen += 1; /// non-abstract-addresses should be zero terminated.
-    else
-        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
-
-    const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
-
-    size_t sent_bytes_total = 0;
-    while (sent_bytes_total < command.size())
-    {
-        auto sent_bytes = sendto(s, command.data() + sent_bytes_total, command.size() - sent_bytes_total, 0, sock_addr, static_cast<socklen_t>(addrlen));
-        if (sent_bytes == -1)
-        {
-            if (errno == EINTR)
-                continue;
-            else
-                DB::throwFromErrno("Failed to notify systemd, sendto returned error.", DB::ErrorCodes::SYSTEM_ERROR);
-        }
-        else
-            sent_bytes_total += sent_bytes;
-    }
-}
-#endif

@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/misc
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 sidebar_position: 41
@@ -376,3 +375,5 @@ USE db
 用于设置会话的当前数据库。
 当前数据库用于搜索表，如果数据库没有在查询中明确定义与表名之前的点。
 使用HTTP协议时无法进行此查询，因为没有会话的概念。
+
+[原始文章](https://clickhouse.com/docs/en/query_language/misc/) <!--hide-->

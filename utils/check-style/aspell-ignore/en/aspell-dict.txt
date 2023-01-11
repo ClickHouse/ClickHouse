@@ -9,9 +9,6 @@ AddressSanitizer
 AppleClang
 ArrowStream
 AvroConfluent
-BSON
-BSONEachRow
-Bool
 CCTOOLS
 CLion
 CMake
@@ -25,7 +22,6 @@ CentOS
 ClickHouse
 ClickHouse's
 Config
-ConnectionDetails
 Contrib
 Ctrl
 CustomSeparated
@@ -33,7 +29,6 @@ CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBMSs
 DateTime
-DateTimes
 DockerHub
 Doxygen
 Encodings
@@ -56,7 +51,6 @@ IPv
 IntN
 Integrations
 JSONAsString
-JSONAsObject
 JSONColumns
 JSONColumnsWithMetadata
 JSONCompact
@@ -70,7 +64,6 @@ JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONEachRow
 JSONEachRowWithProgress
-JSONObjectEachRow
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
@@ -100,9 +93,7 @@ MySQLDump
 NEKUDOTAYIM
 NULLIF
 NVME
-NYPD
 NuRaft
-ObjectId
 Ok
 OpenSUSE
 OpenStack
@@ -114,13 +105,13 @@ Precompiled
 PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
+PrettyNoEscapes
+PrettySpace
+PrettySpaceNoEscapes
 PrettyCompactNoEscapesMonoBlock
 PrettyMonoBlock
-PrettyNoEscapes
 PrettyNoEscapesMonoBlock
-PrettySpace
 PrettySpaceMonoBlock
-PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
@@ -128,7 +119,6 @@ QTCreator
 RBAC
 RawBLOB
 RedHat
-ReplicatedMergeTree
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
@@ -141,7 +131,6 @@ SQLInsert
 SQLSTATE
 SSSE
 Schemas
-SelfManaged
 Stateful
 Submodules
 Subqueries
@@ -173,7 +162,6 @@ Werror
 Woboq
 WriteBuffer
 WriteBuffers
-WithNamesAndTypes
 XCode
 YAML
 YYYY
@@ -200,8 +188,6 @@ boolean
 bools
 boringssl
 brotli
-bson
-bsoneachrow
 buildable
 camelCase
 capn
@@ -213,7 +199,6 @@ ccache
 cctz
 cfg
 changelog
-changelogs
 charset
 charsets
 checkouting
@@ -250,13 +235,11 @@ datafiles
 dataset
 datasets
 datetime
-datetimes
 dbms
 ddl
 deallocation
 debian
 decompressor
-denormalizing
 denormals
 deserialization
 deserialized
@@ -268,7 +251,6 @@ dragonbox
 durations
 endian
 enum
-exFAT
 fastops
 fcoverage
 filesystem
@@ -317,7 +299,6 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
-jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
 jsonstringseachrowwithprogress
@@ -365,7 +346,6 @@ mysqldump
 mysqljs
 noop
 nullable
-nullability
 num
 obfuscator
 odbc
@@ -396,13 +376,13 @@ prestable
 prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
+prettynoescapes
+prettyspace
+prettyspacenoescapes
 prettycompactnoescapesmonoblock
 prettymonoblock
-prettynoescapes
 prettynoescapesmonoblock
-prettyspace
 prettyspacemonoblock
-prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prlimit
 prometheus
@@ -425,9 +405,7 @@ representable
 requestor
 resultset
 rethrow
-retriable
 risc
-riscv
 ro
 rocksdb
 rowNumberInBlock
@@ -435,7 +413,6 @@ rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
 rsync
-runnable
 runningAccumulate
 runtime
 russian
@@ -469,7 +446,6 @@ subquery
 subseconds
 substring
 subtree
-subtype
 sudo
 symlink
 symlinks
@@ -488,15 +464,12 @@ th
 tmp
 tokenization
 toml
-toolchain
 toolset
 tskv
 tsv
 tui
 turbostat
 txt
-ubuntu
-uint
 unary
 unencrypted
 unixodbc

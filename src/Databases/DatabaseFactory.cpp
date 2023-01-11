@@ -14,13 +14,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/NamedCollectionsHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
@@ -324,24 +322,25 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         ASTs & engine_args = engine->arguments->children;
         auto use_table_cache = false;
-        StoragePostgreSQL::Configuration configuration;
+        StoragePostgreSQLConfiguration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema", "on_conflict", "use_table_cache"});
+            auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+            configuration.set(common_configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
-            configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
-            use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
+
+            for (const auto & [arg_name, arg_value] : storage_specific_args)
+            {
+                if (arg_name == "use_table_cache")
+                    use_table_cache = true;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Unexpected key-value argument."
+                            "Got: {}, but expected one of:"
+                            "host, port, username, password, database, schema, use_table_cache.", arg_name);
+            }
         }
         else
         {
@@ -399,22 +398,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         ASTs & engine_args = engine->arguments->children;
-        StoragePostgreSQL::Configuration configuration;
+        StoragePostgreSQLConfiguration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema"});
+            auto [common_configuration, storage_specific_args, _] = named_collection.value();
+            configuration.set(common_configuration);
 
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
+            if (!storage_specific_args.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "MaterializedPostgreSQL Database requires only `host`, `port`, `database_name`, `username`, `password`.");
         }
         else
         {

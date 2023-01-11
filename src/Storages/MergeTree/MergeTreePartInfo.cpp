@@ -18,7 +18,7 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
     if (auto part_opt = tryParsePartName(part_name, format_version))
         return *part_opt;
     else
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
 }
 
 void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)

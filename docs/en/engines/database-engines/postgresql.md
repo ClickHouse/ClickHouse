@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/database-engines/postgresql
 sidebar_position: 40
 sidebar_label: PostgreSQL
 ---
@@ -136,3 +135,4 @@ DESCRIBE TABLE test_database.test_table;
 │ data   │ Nullable(String)  │
 └────────┴───────────────────┘
 ```
+

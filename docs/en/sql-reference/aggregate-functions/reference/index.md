@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/
 toc_folder_title: Reference
 sidebar_position: 36
 toc_hidden: true
@@ -32,7 +31,6 @@ ClickHouse-specific aggregate functions:
 -   [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
 -   [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 -   [groupArray](../../../sql-reference/aggregate-functions/reference/grouparray.md)
--   [groupArrayLast](../../../sql-reference/aggregate-functions/reference/grouparraylast.md)
 -   [groupUniqArray](../../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
 -   [groupArrayInsertAt](../../../sql-reference/aggregate-functions/reference/grouparrayinsertat.md)
 -   [groupArrayMovingAvg](../../../sql-reference/aggregate-functions/reference/grouparraymovingavg.md)
@@ -74,3 +72,5 @@ ClickHouse-specific aggregate functions:
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->

@@ -19,7 +19,7 @@ namespace NAMESPACE
 template <typename A, typename B, typename ResultType>
 void divideImpl(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
 {
-    libdivide::divider<A> divider(static_cast<A>(b));
+    libdivide::divider<A> divider(b);
     const A * a_end = a_pos + size;
 
 #if defined(__SSE2__)

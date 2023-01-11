@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/utilities/clickhouse-local
 sidebar_position: 60
 sidebar_label: clickhouse-local
 ---
@@ -116,9 +115,4 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-
-
-## Related Content
-
-- [Getting Data Into ClickHouse - Part 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)
-- [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
+[Original article](https://clickhouse.com/docs/en/operations/utils/clickhouse-local/) <!--hide-->

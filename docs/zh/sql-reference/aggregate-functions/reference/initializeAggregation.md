@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/initializeAggregation
 sidebar_position: 150
 ---
 

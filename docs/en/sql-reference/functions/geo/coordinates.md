@@ -1,9 +1,10 @@
 ---
-slug: /en/sql-reference/functions/geo/coordinates
 sidebar_label: Geographical Coordinates
 sidebar_position: 62
-title: "Functions for Working with Geographical Coordinates"
 ---
+
+
+# Functions for Working with Geographical Coordinates
 
 ## greatCircleDistance
 
@@ -141,3 +142,6 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 │   1 │
 └─────┘
 ```
+
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/coordinates) <!--hide-->

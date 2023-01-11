@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/boolean
 sidebar_position: 43
 sidebar_label: Boolean
 ---
@@ -37,3 +36,5 @@ SELECT * FROM test_bool;
 │ 2 │ false │
 └───┴───────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/data_types/boolean/) <!--hide-->

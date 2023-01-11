@@ -13,7 +13,6 @@ BlockIO InterpreterSetQuery::execute()
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(ast.changes);
     session_context->addQueryParameters(ast.query_parameters);
-    session_context->resetSettingsToDefaultValue(ast.default_settings);
     return {};
 }
 
@@ -23,7 +22,6 @@ void InterpreterSetQuery::executeForCurrentContext()
     const auto & ast = query_ptr->as<ASTSetQuery &>();
     getContext()->checkSettingsConstraints(ast.changes);
     getContext()->applySettingsChanges(ast.changes);
-    getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
 
 }

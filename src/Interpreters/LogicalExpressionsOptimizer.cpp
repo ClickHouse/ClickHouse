@@ -313,7 +313,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
     for (const auto & entry : garbage_map)
     {
         const auto * function = entry.first;
-        auto * first_erased = entry.second;
+        auto first_erased = entry.second;
 
         auto & operands = getFunctionOperands(function);
         operands.erase(first_erased, operands.end());

@@ -12,7 +12,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int ILLEGAL_COLUMN;
 }
 
 JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
@@ -99,7 +98,8 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 
 void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
 }
 
 
@@ -207,15 +207,6 @@ void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
     serializations[0]->deserializeTextJSON(column, *buf, format_settings);
 }
 
-JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings)
-{
-    if (!settings.json.allow_object_type)
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot infer the data structure in JSONAsObject format because experimental Object type is not allowed. Set setting "
-            "allow_experimental_object_type = 1 in order to allow it");
-}
-
 void registerInputFormatJSONAsString(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONAsString", [](
@@ -270,9 +261,9 @@ void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 
 void registerJSONAsObjectSchemaReader(FormatFactory & factory)
 {
-    factory.registerExternalSchemaReader("JSONAsObject", [](const FormatSettings & settings)
+    factory.registerExternalSchemaReader("JSONAsObject", [](const FormatSettings &)
     {
-        return std::make_shared<JSONAsObjectExternalSchemaReader>(settings);
+        return std::make_shared<JSONAsObjectExternalSchemaReader>();
     });
 }
 

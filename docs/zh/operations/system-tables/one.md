@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/one
----
 # system.one {#system-one}
 
 此表包含一行只有一个值为 0 的 `dummy` UInt8 列的数据。
@@ -22,3 +19,5 @@ slug: /zh/operations/system-tables/one
 
 1 rows in set. Elapsed: 0.001 sec.
 ```
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/one) <!--hide-->

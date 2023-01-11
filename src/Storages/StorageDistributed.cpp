@@ -566,10 +566,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
-    /// TODO: Analyzer syntax analyzer result
-    if (!query_info.syntax_analyzer_result)
-        return {};
-
     // GROUP BY
     const ASTPtr group_by = select.groupBy();
     if (!query_info.syntax_analyzer_result->aggregates.empty() || group_by)
@@ -600,7 +596,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
 static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr query)
 {
-    if (!hasDynamicSubcolumns(all_columns))
+    if (!hasObjectColumns(all_columns))
         return false;
 
     if (!query)
@@ -615,7 +611,7 @@ static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr
         auto name_in_storage = Nested::splitName(required_column).first;
         auto column_in_storage = all_columns.tryGetPhysical(name_in_storage);
 
-        if (column_in_storage && column_in_storage->type->hasDynamicSubcolumns())
+        if (column_in_storage && isObject(column_in_storage->type))
             return true;
     }
 
@@ -642,7 +638,7 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
         metadata_snapshot->getColumns(),
         getContext());
 
-    auto object_columns = DB::getConcreteObjectColumns(
+    auto object_columns = DB::getObjectColumns(
         snapshot_data->objects_by_shard.begin(),
         snapshot_data->objects_by_shard.end(),
         metadata_snapshot->getColumns(),
@@ -659,7 +655,7 @@ void StorageDistributed::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
     if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)
@@ -705,7 +701,7 @@ void StorageDistributed::read(
             select_stream_factory, modified_query_ast,
             local_context, query_info,
             sharding_key_expr, sharding_key_column_name,
-            query_info.cluster, processed_stage);
+            query_info.cluster);
     else
         ClusterProxy::executeQuery(
             query_plan, header, processed_stage,
@@ -872,11 +868,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
-    /// Select query is needed for pruining on virtual columns
-    auto extension = src_storage_cluster.getTaskIteratorExtension(
-        select.list_of_selects->children.at(0)->as<ASTSelectQuery>()->clone(),
-        local_context);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(local_context);
 
     auto dst_cluster = getCluster();
 
@@ -947,8 +939,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
     StoragePtr src_storage;
 
-    /// Distributed write only works in the most trivial case INSERT ... SELECT
-    /// without any unions or joins on the right side
     if (select.list_of_selects->children.size() == 1)
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
@@ -969,11 +959,11 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     {
         return distributedWriteBetweenDistributedTables(*src_distributed, query, local_context);
     }
-    if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
+    else if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
     {
         return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
     }
-    if (local_context->getClientInfo().distributed_depth == 0)
+    else if (local_context->getClientInfo().distributed_depth == 0)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. "\
             "Reason: distributed reading is supported only from Distributed engine or *Cluster table functions, but got {} storage", src_storage->getName());
@@ -1426,7 +1416,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
         res -= shards[i].weight;
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 
@@ -1469,7 +1459,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     {
         /// Step is 5% of the delay and minimal one second.
         /// NOTE: max_delay_to_insert is in seconds, and step is in ms.
-        const size_t step_ms = static_cast<size_t>(std::min<double>(1., static_cast<double>(distributed_settings.max_delay_to_insert) * 1'000 * 0.05));
+        const size_t step_ms = std::min<double>(1., static_cast<double>(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
         UInt64 delayed_ms = 0;
 
         do {

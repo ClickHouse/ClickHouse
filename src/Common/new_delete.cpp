@@ -1,6 +1,6 @@
 #include <cassert>
 #include <new>
-#include "config.h"
+#include <Common/config.h>
 #include <Common/memory.h>
 
 #if defined(OS_DARWIN) && (USE_JEMALLOC)

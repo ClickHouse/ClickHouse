@@ -1,0 +1,9 @@
+<yandex>
+    <listen_host remove="remove"/>
+    <include from_zk="/clickhouse/listen_hosts" />
+    <tcp_port from_zk="/clickhouse/ports/tcp" replace="replace" />
+    <http_port from_zk="/clickhouse/ports/http" replace="replace" />
+    <mysql_port from_zk="/clickhouse/ports/mysql" replace="replace" />
+    <postgresql_port from_zk="/clickhouse/ports/postgresql" replace="replace" />
+    <grpc_port from_zk="/clickhouse/ports/grpc" replace="replace" />
+</yandex>

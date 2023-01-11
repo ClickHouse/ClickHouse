@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/log-family/stripelog
 toc_priority: 32
 toc_title: StripeLog
 ---
@@ -90,3 +89,5 @@ SELECT * FROM stripe_log_table ORDER BY timestamp
 │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
 └─────────────────────┴──────────────┴────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/stripelog/) <!--hide-->

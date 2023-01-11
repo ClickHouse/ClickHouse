@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/database-engines/atomic
 sidebar_label: Atomic
 sidebar_position: 10
 ---

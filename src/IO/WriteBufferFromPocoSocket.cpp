@@ -31,7 +31,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int CANNOT_WRITE_TO_SOCKET;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -56,11 +55,7 @@ void WriteBufferFromPocoSocket::nextImpl()
         try
         {
             CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkSend);
-            char * pos = working_buffer.begin() + bytes_written;
-            size_t size = offset() - bytes_written;
-            if (size > INT_MAX)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
-            res = socket.impl()->sendBytes(pos, static_cast<int>(size));
+            res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);
         }
         catch (const Poco::Net::NetException & e)
         {

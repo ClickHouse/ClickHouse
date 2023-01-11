@@ -1,11 +1,8 @@
----
-slug: /zh/operations/system-tables/tables
----
 # system.tables {#system-tables}
 
-包含服务器知道的每个表的元数据。 [分离的](../../sql-reference/statements/detach.mdx)表不在 `system.tables` 显示。
+包含服务器知道的每个表的元数据。 [分离的](../../sql-reference/statements/detach.md)表不在 `system.tables` 显示。
 
-[临时表](../../sql-reference/statements/create/table.mdx#temporary-tables)只在创建它们的会话中的 `system.tables` 中才可见。它们的数据库字段显示为空，并且 `is_temporary` 标志显示为开启。
+[临时表](../../sql-reference/statements/create/table.md#temporary-tables)只在创建它们的会话中的 `system.tables` 中才可见。它们的数据库字段显示为空，并且 `is_temporary` 标志显示为开启。
 
 此表包含以下列 (列类型显示在括号中):
 
@@ -126,3 +123,6 @@ lifetime_bytes:             ᴺᵁᴸᴸ
 comment:
 has_own_data:               0
 ```
+
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/tables) <!--hide-->

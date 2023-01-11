@@ -15,7 +15,7 @@ class MergeTreeReaderWide : public IMergeTreeReader
 {
 public:
     MergeTreeReaderWide(
-        MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
+        DataPartWidePtr data_part_,
         NamesAndTypesList columns_,
         const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,

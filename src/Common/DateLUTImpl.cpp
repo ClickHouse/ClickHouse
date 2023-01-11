@@ -30,7 +30,7 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 }
@@ -149,9 +149,9 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
     /// Fill lookup table for years and months.
     size_t year_months_lut_index = 0;
-    unsigned first_day_of_last_month = 0;
+    size_t first_day_of_last_month = 0;
 
-    for (unsigned day = 0; day < DATE_LUT_SIZE; ++day)
+    for (size_t day = 0; day < DATE_LUT_SIZE; ++day)
     {
         const Values & values = lut[day];
 

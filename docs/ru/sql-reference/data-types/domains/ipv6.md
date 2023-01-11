@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/domains/ipv6
 sidebar_position: 60
 sidebar_label: IPv6
 ---
@@ -81,3 +80,4 @@ SELECT toTypeName(i), CAST(from AS FixedString(16)) AS i FROM hits LIMIT 1;
 │ FixedString(16)                           │  ��� │
 └───────────────────────────────────────────┴─────────┘
 ```
+

@@ -1,6 +1,4 @@
----
-slug: /zh/operations/system-tables/data_type_families
----
+
 # system.data_type_families {#system_tables-data_type_families}
 
 包含有关受支持的[数据类型](../../sql-reference/data-types/)的信息.

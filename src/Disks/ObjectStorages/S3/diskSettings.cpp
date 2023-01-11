@@ -4,7 +4,6 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
-#include <Common/Throttler.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -20,8 +19,10 @@
 #include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
 #include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
+#include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
-#include <Common/Macros.h>
+
+#include <Common/FileCacheFactory.h>
 
 namespace DB
 {
@@ -33,11 +34,15 @@ namespace ErrorCodes
 
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
-    const Settings & settings = context->getSettingsRef();
-    S3Settings::RequestSettings request_settings(config, config_prefix, settings, "s3_");
+    S3Settings::ReadWriteSettings rw_settings;
+    rw_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries);
+    rw_settings.min_upload_part_size = config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size);
+    rw_settings.upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", context->getSettingsRef().s3_upload_part_size_multiply_factor);
+    rw_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold);
+    rw_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size);
 
     return std::make_unique<S3ObjectStorageSettings>(
-        request_settings,
+        rw_settings,
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
@@ -107,28 +112,19 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
 }
 
 
-std::unique_ptr<Aws::S3::S3Client> getClient(
-    const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix,
-    ContextPtr context,
-    const S3ObjectStorageSettings & settings)
+std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
-        context->getRemoteHostFilter(),
-        static_cast<int>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
-        context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
-        /* for_disk_s3 = */ true,
-        settings.request_settings.get_request_throttler,
-        settings.request_settings.put_request_throttler);
+        context->getRemoteHostFilter(), context->getGlobalContext()->getSettingsRef().s3_max_redirects,
+        context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
 
-    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-    S3::URI uri(endpoint);
+    S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
     if (uri.key.back() != '/')
         throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
     client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
-    client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 30000);
+    client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
     client_configuration.endpointOverride = uri.endpoint;
 

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/syntax
 sidebar_position: 2
 sidebar_label: Syntax
 ---
@@ -77,9 +76,8 @@ Numeric literal tries to be parsed:
 
 Literal value has the smallest type that the value fits in.
 For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../sql-reference/data-types/index.md).
-Underscores `_` inside numeric literals are ignored and can be used for better readability.
 
-Examples: `1`, `10_000_000`, `0xffff_ffff`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
+Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
 ### String
 
@@ -206,3 +204,5 @@ In a `SELECT` query, an asterisk can replace the expression. For more informatio
 An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
+
+[Original article](https://clickhouse.com/docs/en/sql_reference/syntax/) <!--hide-->

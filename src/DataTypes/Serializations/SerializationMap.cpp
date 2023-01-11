@@ -36,20 +36,20 @@ static IColumn & extractNestedColumn(IColumn & column)
     return assert_cast<ColumnMap &>(column).getNestedColumn();
 }
 
-void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const auto & map = field.get<const Map &>();
+    const auto & map = get<const Map &>(field);
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
         const auto & tuple = elem.safeGet<const Tuple>();
         assert(tuple.size() == 2);
-        key->serializeBinary(tuple[0], ostr, settings);
-        value->serializeBinary(tuple[1], ostr, settings);
+        key->serializeBinary(tuple[0], ostr);
+        value->serializeBinary(tuple[1], ostr);
     }
 }
 
-void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     size_t size;
     readVarUInt(size, istr);
@@ -59,20 +59,20 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
     for (size_t i = 0; i < size; ++i)
     {
         Tuple tuple(2);
-        key->deserializeBinary(tuple[0], istr, settings);
-        value->deserializeBinary(tuple[1], istr, settings);
+        key->deserializeBinary(tuple[0], istr);
+        value->deserializeBinary(tuple[1], istr);
         map.push_back(std::move(tuple));
     }
 }
 
-void SerializationMap::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationMap::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    nested->serializeBinary(extractNestedColumn(column), row_num, ostr, settings);
+    nested->serializeBinary(extractNestedColumn(column), row_num, ostr);
 }
 
-void SerializationMap::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    nested->deserializeBinary(extractNestedColumn(column), istr, settings);
+    nested->deserializeBinary(extractNestedColumn(column), istr);
 }
 
 
@@ -257,24 +257,26 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 }
 
 void SerializationMap::enumerateStreams(
-    EnumerateStreamsSettings & settings,
+    SubstreamPath & path,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    auto next_data = SubstreamData(nested)
-        .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
-        .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
+    SubstreamData next_data =
+    {
+        nested,
+        data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr,
+        data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr,
+        data.serialization_info,
+    };
 
-    nested->enumerateStreams(settings, callback, next_data);
+    nested->enumerateStreams(path, callback, next_data);
 }
 
 void SerializationMap::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    nested->serializeBinaryBulkStatePrefix(extractNestedColumn(column), settings, state);
+    nested->serializeBinaryBulkStatePrefix(settings, state);
 }
 
 void SerializationMap::serializeBinaryBulkStateSuffix(

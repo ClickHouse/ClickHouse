@@ -32,9 +32,6 @@ struct BackupSettings
     /// Whether the BACKUP command must return immediately without waiting until the backup has completed.
     bool async = false;
 
-    /// Whether the BACKUP will omit similar files (within one backup only).
-    bool deduplicate_files = true;
-
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.
     size_t shard_num = 0;

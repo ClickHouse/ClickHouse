@@ -13,7 +13,6 @@
 #include <Core/Defines.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
-#include <base/IPv4andIPv6.h>
 #include <base/DayNum.h>
 #include <base/strong_typedef.h>
 #include <base/EnumReflection.h>
@@ -106,6 +105,10 @@ template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 template <typename T>
 class DecimalField
 {
@@ -165,6 +168,9 @@ private:
     T dec;
     UInt32 scale;
 };
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
@@ -193,8 +199,6 @@ template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
 
 template <> struct NearestFieldTypeImpl<DayNum> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UUID> { using Type = UUID; };
-template <> struct NearestFieldTypeImpl<IPv4> { using Type = IPv4; };
-template <> struct NearestFieldTypeImpl<IPv6> { using Type = IPv6; };
 template <> struct NearestFieldTypeImpl<Int16> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<Int32> { using Type = Int64; };
 
@@ -295,8 +299,6 @@ public:
             UUID = 27,
             Bool = 28,
             Object = 29,
-            IPv4 = 30,
-            IPv6 = 31,
         };
     };
 
@@ -449,9 +451,7 @@ public:
     }
 
     template <typename T> auto & safeGet() const
-    {
-        return const_cast<Field *>(this)->safeGet<T>();
-    }
+    { return const_cast<Field *>(this)->safeGet<T>(); }
 
     template <typename T> auto & safeGet();
 
@@ -473,8 +473,6 @@ public:
             case Types::Int128:  return get<Int128>()  < rhs.get<Int128>();
             case Types::Int256:  return get<Int256>()  < rhs.get<Int256>();
             case Types::UUID:    return get<UUID>()    < rhs.get<UUID>();
-            case Types::IPv4:    return get<IPv4>()    < rhs.get<IPv4>();
-            case Types::IPv6:    return get<IPv6>()    < rhs.get<IPv6>();
             case Types::Float64: return get<Float64>() < rhs.get<Float64>();
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
@@ -514,8 +512,6 @@ public:
             case Types::Int128:  return get<Int128>()  <= rhs.get<Int128>();
             case Types::Int256:  return get<Int256>()  <= rhs.get<Int256>();
             case Types::UUID:    return get<UUID>().toUnderType() <= rhs.get<UUID>().toUnderType();
-            case Types::IPv4:    return get<IPv4>()    <= rhs.get<IPv4>();
-            case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
             case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
@@ -556,8 +552,6 @@ public:
                 return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
             }
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
-            case Types::IPv4:    return get<IPv4>()    == rhs.get<IPv4>();
-            case Types::IPv6:    return get<IPv6>()    == rhs.get<IPv6>();
             case Types::String:  return get<String>()  == rhs.get<String>();
             case Types::Array:   return get<Array>()   == rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
@@ -590,6 +584,11 @@ public:
         switch (field.which)
         {
             case Types::Null:    return f(field.template get<Null>());
+// gcc 8.2.1
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
             case Types::UInt64:  return f(field.template get<UInt64>());
             case Types::UInt128: return f(field.template get<UInt128>());
             case Types::UInt256: return f(field.template get<UInt256>());
@@ -597,8 +596,6 @@ public:
             case Types::Int128:  return f(field.template get<Int128>());
             case Types::Int256:  return f(field.template get<Int256>());
             case Types::UUID:    return f(field.template get<UUID>());
-            case Types::IPv4:    return f(field.template get<IPv4>());
-            case Types::IPv6:    return f(field.template get<IPv6>());
             case Types::Float64: return f(field.template get<Float64>());
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
@@ -615,9 +612,12 @@ public:
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     String dump() const;
@@ -625,7 +625,7 @@ public:
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
+        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData
         > storage;
@@ -760,8 +760,6 @@ template <> struct Field::TypeToEnum<Int64>   { static constexpr Types::Which va
 template <> struct Field::TypeToEnum<Int128>  { static constexpr Types::Which value = Types::Int128; };
 template <> struct Field::TypeToEnum<Int256>  { static constexpr Types::Which value = Types::Int256; };
 template <> struct Field::TypeToEnum<UUID>    { static constexpr Types::Which value = Types::UUID; };
-template <> struct Field::TypeToEnum<IPv4>    { static constexpr Types::Which value = Types::IPv4; };
-template <> struct Field::TypeToEnum<IPv6>    { static constexpr Types::Which value = Types::IPv6; };
 template <> struct Field::TypeToEnum<Float64> { static constexpr Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String>  { static constexpr Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array>   { static constexpr Types::Which value = Types::Array; };
@@ -784,8 +782,6 @@ template <> struct Field::EnumToType<Field::Types::Int64>   { using Type = Int64
 template <> struct Field::EnumToType<Field::Types::Int128>  { using Type = Int128; };
 template <> struct Field::EnumToType<Field::Types::Int256>  { using Type = Int256; };
 template <> struct Field::EnumToType<Field::Types::UUID>    { using Type = UUID; };
-template <> struct Field::EnumToType<Field::Types::IPv4>    { using Type = IPv4; };
-template <> struct Field::EnumToType<Field::Types::IPv6>    { using Type = IPv6; };
 template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float64; };
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
 template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };
@@ -849,6 +845,31 @@ auto & Field::safeGet()
             "Bad get: has {}, requested {}", getTypeName(), requested);
 
     return get<T>();
+}
+
+
+template <typename T>
+T get(const Field & field)
+{
+    return field.template get<T>();
+}
+
+template <typename T>
+T get(Field & field)
+{
+    return field.template get<T>();
+}
+
+template <typename T>
+T safeGet(const Field & field)
+{
+    return field.template safeGet<T>();
+}
+
+template <typename T>
+T safeGet(Field & field)
+{
+    return field.template safeGet<T>();
 }
 
 
@@ -982,3 +1003,4 @@ struct fmt::formatter<DB::Field>
         return format_to(ctx.out(), "{}", toString(x));
     }
 };
+

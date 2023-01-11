@@ -20,10 +20,11 @@ namespace ErrorCodes
 ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
+    const RowOutputFormatParams & params_,
     const FormatSchemaInfo & schema_info_,
     const FormatSettings & settings_,
     bool with_length_delimiter_)
-    : IRowOutputFormat(header_, out_)
+    : IRowOutputFormat(header_, out_, params_)
     , writer(std::make_unique<ProtobufWriter>(out))
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
@@ -58,11 +59,14 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
             with_length_delimiter ? "Protobuf" : "ProtobufSingle",
             [with_length_delimiter](WriteBuffer & buf,
                const Block & header,
+               const RowOutputFormatParams & params,
                const FormatSettings & settings)
             {
                 return std::make_shared<ProtobufRowOutputFormat>(
-                    buf, header, FormatSchemaInfo(settings, "Protobuf", true),
-                    settings, with_length_delimiter);
+                    buf, header, params,
+                    FormatSchemaInfo(settings, "Protobuf", true),
+                    settings,
+                    with_length_delimiter);
             });
     }
 }

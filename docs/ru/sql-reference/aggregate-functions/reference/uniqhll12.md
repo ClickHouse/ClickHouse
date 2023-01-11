@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/uniqhll12
 sidebar_position: 194
 ---
 
@@ -37,3 +36,5 @@ uniqHLL12(x[, ...])
 -   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
 -   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+
+

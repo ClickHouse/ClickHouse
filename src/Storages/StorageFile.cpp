@@ -5,7 +5,6 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -82,8 +81,7 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read,
-    std::vector<std::string> & result,
-    bool recursive = false)
+    std::vector<std::string> & result)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -91,17 +89,10 @@ void listFilesWithRegexpMatchingImpl(
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
     const size_t next_slash = suffix_with_globs.find('/', 1);
-    const std::string current_glob = suffix_with_globs.substr(0, next_slash);
-    auto regexp = makeRegexpPatternFromGlobs(current_glob);
-
+    auto regexp = makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash));
     re2::RE2 matcher(regexp);
 
-    bool skip_regex = current_glob == "/*" ? true : false;
-    if (!recursive)
-        recursive = current_glob == "/**" ;
-
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
-
     if (!fs::exists(prefix_without_globs))
         return;
 
@@ -116,21 +107,15 @@ void listFilesWithRegexpMatchingImpl(
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!it->is_directory() && !looking_for_directory)
         {
-            if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
                 total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
             }
         }
-        else if (it->is_directory())
+        else if (it->is_directory() && looking_for_directory)
         {
-            if (recursive)
-            {
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "" ,
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash) : current_glob ,
-                                                total_bytes_to_read, result, recursive);
-            }
-            else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read, result);
@@ -224,7 +209,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         in.setProgressCallback(context);
     }
 
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
+    auto zstd_window_log_max = context->getSettingsRef().zstd_window_log_max;
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
 
@@ -593,8 +578,22 @@ public:
 
                 if (num_rows)
                 {
-                    updateRowsProgressApprox(
-                        *this, chunk, files_info->total_bytes_to_read, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                    auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
+                    size_t total_rows_approx = std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row);
+                    total_rows_approx_accumulated += total_rows_approx;
+                    ++total_rows_count_times;
+                    total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
+
+                    /// We need to add diff, because total_rows_approx is incremental value.
+                    /// It would be more correct to send total_rows_approx as is (not a diff),
+                    /// but incrementation of total_rows_to_read does not allow that.
+                    /// A new field can be introduces for that to be sent to client, but it does not worth it.
+                    if (total_rows_approx > total_rows_approx_prev)
+                    {
+                        size_t diff = total_rows_approx - total_rows_approx_prev;
+                        addTotalRowsApprox(diff);
+                        total_rows_approx_prev = total_rows_approx;
+                    }
                 }
                 return chunk;
             }
@@ -635,7 +634,7 @@ private:
 
     UInt64 total_rows_approx_accumulated = 0;
     size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_max = 0;
+    UInt64 total_rows_approx_prev = 0;
 };
 
 
@@ -646,7 +645,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     if (use_table_fd)
     {
@@ -821,7 +820,8 @@ public:
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
-            *write_buf, metadata_snapshot->getSampleBlock(), context, format_settings);
+            *write_buf, metadata_snapshot->getSampleBlock(), context,
+            {}, format_settings);
 
         if (do_not_write_prefix)
             writer->doNotWritePrefix();

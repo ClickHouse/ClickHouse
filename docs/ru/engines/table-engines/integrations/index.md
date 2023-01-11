@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/integrations/
 sidebar_label: "Движки таблиц для интеграции"
 sidebar_position: 30
 ---
@@ -20,3 +19,4 @@ sidebar_position: 30
 -   [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md)
 -   [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md)
 -   [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
+

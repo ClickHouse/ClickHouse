@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/metrics
----
 # metrics
 
 Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.
@@ -40,3 +37,5 @@ SELECT * FROM system.metrics LIMIT 10
 -   [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
 -   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
 -   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/metrics) <!--hide-->

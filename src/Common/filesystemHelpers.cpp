@@ -16,16 +16,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
-
-
-namespace ProfileEvents
-{
-    extern const Event ExternalProcessingFilesTotal;
-}
 
 namespace DB
 {
@@ -42,6 +34,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_FILE;
 }
 
+
 struct statvfs getStatVFS(const String & path)
 {
     struct statvfs fs;
@@ -54,21 +47,19 @@ struct statvfs getStatVFS(const String & path)
     return fs;
 }
 
-bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
+
+bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t data_size [[maybe_unused]])
 {
-    fs::path filepath(path);
-    /// `path` may point to nonexisting file, then we can't check it directly, move to parent directory
-    while (filepath.has_parent_path() && !fs::exists(filepath))
-        filepath = filepath.parent_path();
-    auto free_space = fs::space(filepath).free;
+    auto free_space = fs::space(path).free;
     return data_size <= free_space;
 }
 
-std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path)
+std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 {
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
-    fs::create_directories(folder_path);
-    return std::make_unique<PocoTemporaryFile>(folder_path);
+    fs::create_directories(path);
+
+    /// NOTE: std::make_shared cannot use protected constructors
+    return std::make_unique<TemporaryFile>(path);
 }
 
 #if !defined(OS_LINUX)
@@ -86,22 +77,6 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #else
     throw DB::Exception("The function getDeviceId is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
 #endif
-}
-
-
-std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path)
-{
-#if defined(OS_LINUX)
-    struct stat sb;
-    if (lstat(path.c_str(), &sb))
-        return {};
-    WriteBufferFromOwnString ss;
-    ss << major(sb.st_dev) << ":" << minor(sb.st_dev);
-    return ss.str();
-#else
-    return {};
-#endif
-
 }
 
 #if !defined(OS_LINUX)
@@ -258,7 +233,7 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
     return buf.st_size;
 }
 
-Int64 getINodeNumberFromPath(const String & path)
+int getINodeNumberFromPath(const String & path)
 {
     struct stat file_stat;
     if (stat(path.data(), &file_stat))
@@ -352,8 +327,7 @@ time_t getModificationTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
-    std::error_code m_ec(errno, std::generic_category());
-    throw fs::filesystem_error("Cannot check modification time for file", path, m_ec);
+    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
 }
 
 time_t getChangeTime(const std::string & path)
@@ -361,8 +335,7 @@ time_t getChangeTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_ctime;
-    std::error_code m_ec(errno, std::generic_category());
-    throw fs::filesystem_error("Cannot check change time for file", path, m_ec);
+    DB::throwFromErrnoWithPath("Cannot check change time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
 }
 
 Poco::Timestamp getModificationTimestamp(const std::string & path)

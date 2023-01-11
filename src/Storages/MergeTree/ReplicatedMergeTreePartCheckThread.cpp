@@ -70,21 +70,23 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
 {
     /// Wait for running tasks to finish and temporarily stop checking
-    auto pause_checking_parts = task->getExecLock();
-
-    std::lock_guard lock(parts_mutex);
-    for (auto it = parts_queue.begin(); it != parts_queue.end();)
+    stop();
+    SCOPE_EXIT({ start(); });
     {
-        if (drop_range_info.contains(MergeTreePartInfo::fromPartName(it->first, storage.format_version)))
+        std::lock_guard lock(parts_mutex);
+        for (auto it = parts_queue.begin(); it != parts_queue.end();)
         {
-            /// Remove part from the queue to avoid part resurrection
-            /// if we will check it and enqueue fetch after DROP/REPLACE execution.
-            parts_set.erase(it->first);
-            it = parts_queue.erase(it);
-        }
-        else
-        {
-            ++it;
+            if (drop_range_info.contains(MergeTreePartInfo::fromPartName(it->first, storage.format_version)))
+            {
+                /// Remove part from the queue to avoid part resurrection
+                /// if we will check it and enqueue fetch after DROP/REPLACE execution.
+                parts_set.erase(it->first);
+                it = parts_queue.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
         }
     }
 }
@@ -179,15 +181,10 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
                     found_part_with_the_same_min_block = true;
                     parts_found.push_back(part_on_replica);
                 }
-
                 if (part_on_replica_info.max_block == part_info.max_block)
                 {
                     found_part_with_the_same_max_block = true;
-
-                    /// If we are looking for part like partition_X_X_level we can add part
-                    /// partition_X_X_(level-1) two times, avoiding it
-                    if (parts_found.empty() || parts_found.back() != part_on_replica)
-                        parts_found.push_back(part_on_replica);
+                    parts_found.push_back(part_on_replica);
                 }
 
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
@@ -235,7 +232,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
         /// We cannot simply remove part from ZooKeeper, because it may be removed from virtual_part,
         /// so we have to create some entry in the queue. Maybe we will execute it (by fetching part or covering part from somewhere),
         /// maybe will simply replace with empty part.
-        storage.removePartAndEnqueueFetch(part_name, /* storage_init = */false);
+        storage.removePartAndEnqueueFetch(part_name);
     }
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
@@ -378,7 +375,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 LOG_ERROR(log, fmt::runtime(message));
 
                 /// Delete part locally.
-                storage.outdateBrokenPartAndCloneToDetached(part, "broken");
+                storage.forgetPartAndMoveToDetached(part, "broken");
 
                 /// Part is broken, let's try to find it and fetch.
                 searchForMissingPartAndFetchIfPossible(part_name, exists_in_zookeeper);
@@ -395,7 +392,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
             String message = "Unexpected part " + part_name + " in filesystem. Removing.";
             LOG_ERROR(log, fmt::runtime(message));
-            storage.outdateBrokenPartAndCloneToDetached(part, "unexpected");
+            storage.forgetPartAndMoveToDetached(part, "unexpected");
             return {part_name, false, message};
         }
         else

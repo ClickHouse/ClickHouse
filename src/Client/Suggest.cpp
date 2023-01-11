@@ -7,7 +7,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include "Core/Protocol.h"
-#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -123,18 +122,11 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                     continue;
 
-                /// We should not use std::cerr here, because this method works concurrently with the main thread.
-                /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
-
-                WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
-                out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                out.next();
+                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
             }
             catch (...)
             {
-                WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
-                out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                out.next();
+                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
             }
 
             break;

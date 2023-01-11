@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/data_skipping_indices
----
 # system.data_skipping_indices {#system-data-skipping-indices}
 
 包含有关所有表中现有数据跳过索引的信息.

@@ -34,6 +34,7 @@ Uptime: **13 minutes and 51 seconds**
 #### ClickHouse configuration
 **result**
 ```XML
+<?xml version="1.0" encoding="utf-8"?>
 <clickhouse>
 	<logger>
 		<level>trace</level>
