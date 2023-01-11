@@ -181,5 +181,3 @@ Default value: `300`.
 
 -   [The mysql table function](../../../sql-reference/table-functions/mysql.md)
 -   [Using MySQL as a dictionary source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/mysql/) <!--hide-->
