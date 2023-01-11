@@ -1,12 +1,13 @@
 #pragma once
 
+#include <shared_mutex>
+
 #ifdef OS_LINUX /// Because of futex
 
 #include <Common/CancelToken.h>
 #include <base/types.h>
 #include <base/defines.h>
 #include <atomic>
-#include <shared_mutex> // for std::unique_lock and std::shared_lock
 
 namespace DB
 {
