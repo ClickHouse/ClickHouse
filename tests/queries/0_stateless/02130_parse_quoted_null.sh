@@ -48,7 +48,7 @@ echo -e "nan\t11" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=4
 
 echo -e "42\tnan" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --input_format_custom_detect_header=0 --max_read_buffer_size=4 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=4 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
 
 $CLICKHOUSE_CLIENT -q "select * from test_02130 order by y"
 $CLICKHOUSE_CLIENT -q "drop table test_02130"

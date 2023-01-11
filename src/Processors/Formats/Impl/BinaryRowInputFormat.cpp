@@ -64,13 +64,6 @@ bool BinaryFormatReader::readField(IColumn & column, const DataTypePtr & /*type*
     return true;
 }
 
-bool BinaryFormatReader::readField(const String & field, IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, const String & /*column_name*/)
-{
-    ReadBufferFromString buf(field);
-    serialization->deserializeBinary(column, buf, format_settings);
-    return true;
-}
-
 void BinaryFormatReader::skipHeaderRow()
 {
     String tmp;

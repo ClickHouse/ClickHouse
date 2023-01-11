@@ -22,20 +22,27 @@ public:
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
+    void setReadBuffer(ReadBuffer & in_) override;
+
 private:
+    TabSeparatedRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,
+                               bool with_names_, bool with_types_, bool is_raw, const FormatSettings & format_settings_);
+
     bool allowSyncAfterError() const override { return true; }
-    void syncAfterErrorImpl() override;
+    void syncAfterError() override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
+
+
+    std::unique_ptr<PeekableReadBuffer> buf;
 };
 
 class TabSeparatedFormatReader final : public FormatWithNamesAndTypesReader
 {
 public:
-    TabSeparatedFormatReader(ReadBuffer & in_, const FormatSettings & format_settings, bool is_raw_);
+    TabSeparatedFormatReader(PeekableReadBuffer & in_, const FormatSettings & format_settings, bool is_raw_);
 
     bool readField(IColumn & column, const DataTypePtr & type,
                    const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
-    bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
@@ -62,9 +69,10 @@ public:
         return is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped;
     }
 
-private:
-    bool readFieldImpl(ReadBuffer & buf, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization);
+    void setReadBuffer(ReadBuffer & in_) override;
 
+private:
+    PeekableReadBuffer * buf;
     bool is_raw;
     bool first_row = true;
 };
@@ -78,6 +86,7 @@ private:
     DataTypes readRowAndGetDataTypesImpl() override;
     std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
+    PeekableReadBuffer buf;
     TabSeparatedFormatReader reader;
 };
 

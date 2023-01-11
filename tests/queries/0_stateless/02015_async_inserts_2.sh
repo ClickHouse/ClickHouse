@@ -15,7 +15,7 @@ ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSV
 2,"b"' &
 
 ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSV
-qqqqqqqqqqq' 2>&1 | grep -o "INCORRECT_DATA" &
+qqqqqqqqqqq' 2>&1 | grep -o "Code: 27" &
 
 ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSV
 4,"c"

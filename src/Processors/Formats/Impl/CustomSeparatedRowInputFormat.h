@@ -30,7 +30,7 @@ private:
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
 
     bool allowSyncAfterError() const override;
-    void syncAfterErrorImpl() override;
+    void syncAfterError() override;
     void readPrefix() override;
 
     std::unique_ptr<PeekableReadBuffer> buf;
@@ -45,7 +45,6 @@ public:
     using EscapingRule = FormatSettings::EscapingRule;
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
-    bool readField(const String & field, IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
@@ -82,6 +81,7 @@ public:
     EscapingRule getEscapingRule() { return format_settings.custom.escaping_rule; }
 
     void setReadBuffer(ReadBuffer & in_) override;
+
 private:
     template <bool is_header>
     std::vector<String> readRowImpl();
