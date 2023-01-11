@@ -7,11 +7,13 @@ title: "Query Result Cache [experimental]"
 
 # Query Result Cache [experimental]
 
-The query result cache is an experimental feature which can speed up repeated executions of the same SELECT query.
+The (experimental) query result cache allows to compute SELECT queries just once and to serve further executions of the same query
+immediately from the cache. Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the
+ClickHouse server.
 
 ## Background, Design and Limitations
 
-Query caches are generally either transactionally consistent or inconsistent.
+Query result caches are generally either transactionally consistent or inconsistent.
 
 - In transactionally consistent caches, the database invalidates/discards cached query results if the result of the SELECT query changes or
   potentially changes. In ClickHouse, operations which change the data include inserts/updates/deletes in/of/from tables or collapsing
@@ -57,7 +59,8 @@ queries do not increment the cache miss counter.
 
 The cache exists once per ClickHouse server process but cache results are by default not shared between users (see below).
 
-Query results are referenced in the cache by the [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of their query. This means that caching is agnostic to upper/lowercase, for example `SELECT 1` and `select 1` are treated as the same query.
+Query results are referenced in the cache by the [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of their
+query. This means that caching is agnostic to upper/lowercase, for example `SELECT 1` and `select 1` are treated as the same query.
 
 If the query was aborted by an exception or cancelled, no entry is written into the query result cache.
 

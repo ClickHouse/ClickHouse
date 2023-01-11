@@ -136,6 +136,7 @@ String QueryResultCache::Key::queryStringFromAst() const
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings format_settings(buf, /*one_line*/ true);
+    format_settings.show_secrets = false;
     ast->format(format_settings);
     return buf.str();
 }
@@ -189,7 +190,7 @@ void QueryResultCache::Writer::buffer(Chunk && partial_query_result)
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
     {
-        partial_query_results.clear(); /// free some space
+        partial_query_results.clear(); /// eagerly free some space
         skip_insert = true;
     }
 }
@@ -254,10 +255,7 @@ void QueryResultCache::Writer::finalizeWrite()
         if (auto it = cache.find(key); it != cache.end())
             cache_size_in_bytes -= it->second.allocatedBytes(); /// key replacement
 
-        /// cache[key] = query_result; /// does no replacement for unclear reasons
-        cache.erase(key);
         cache[key] = std::move(query_result);
-
         LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Stored result of query {}", key.queryStringFromAst());
     }
 }
@@ -286,8 +284,8 @@ QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t &
         return;
     }
 
-    LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Entry found for query {}", key.queryStringFromAst());
     pipe = Pipe(std::make_shared<SourceFromSingleChunk>(key.header, it->second.clone()));
+    LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Entry found for query {}", key.queryStringFromAst());
 }
 
 bool QueryResultCache::Reader::hasCacheEntryForKey() const
