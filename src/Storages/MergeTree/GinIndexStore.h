@@ -11,6 +11,27 @@
 #include <roaring.hh>
 #include <Common/FST.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+
+/// GinIndexStore manages the inverted index for a data part, and it is made up of one or more immutable
+/// index segments.
+///
+/// There are 4 types of index files in a store:
+///  1. Segment ID file(.gin_sid): it contains one byte for version followed by the next available segment ID.
+///  2. Segment Metadata file(.gin_seg): it contains index segment metadata.
+///     - Its file format is an array of GinIndexSegment as defined in this file.
+///     - postings_start_offset points to the file(.gin_post) starting position for the segment's postings list.
+///     - term_dict_start_offset points to the file(.gin_dict) starting position for the segment's term dictionaries.
+///  3. Term Dictionary file(.gin_dict): it contains term dictionaries.
+///     - It contains an array of (FST_size, FST_blob) which has size and actual data of FST.
+///  4. Postings Lists(.gin_post): it contains postings lists data.
+///     - It contains an array of serialized postings lists.
+///
+/// During the searching in the segment, the segment's meta data can be found in .gin_seg file. From the meta data,
+/// the starting position of its term dictionary is used to locate its FST. Then FST is read into memory.
+/// By using the term and FST, the offset("output" in FST) of the postings list for the term
+/// in FST is found. The offset plus the postings_start_offset is the file location in .gin_post file
+/// for its postings list.
+
 namespace DB
 {
 enum : uint8_t
@@ -85,7 +106,7 @@ struct GinIndexSegment
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset = 0;
 
-    /// .gin_dict file offset of this segment's term dictionaries
+    /// .term_dict file offset of this segment's term dictionaries
     UInt64 term_dict_start_offset = 0;
 };
 
