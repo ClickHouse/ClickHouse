@@ -24,6 +24,10 @@
 #    include <arm_acle.h>
 #endif
 
+#if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#include "vec_crc32.h"
+#endif
+
 namespace DB
 {
 /** Distance function implementation.
@@ -72,6 +76,8 @@ struct NgramDistanceImpl
         return __crc32cd(code_points[2], combined) & 0xFFFFu;
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
         return s390x_crc32(code_points[2], combined) & 0xFFFFu;
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return crc32_ppc(code_points[2], reinterpret_cast<const unsigned char *>(&combined), sizeof(combined)) & 0xFFFFu;
 #else
         return (intHashCRC32(combined) ^ intHashCRC32(code_points[2])) & 0xFFFFu;
 #endif
