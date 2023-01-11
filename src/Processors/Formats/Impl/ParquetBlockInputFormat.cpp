@@ -14,6 +14,7 @@
 #include <parquet/file_reader.h>
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
+#include "ArrowFieldIndexUtil.h"
 #include <DataTypes/NestedUtils.h>
 
 namespace DB
@@ -95,29 +96,6 @@ const BlockMissingValues & ParquetBlockInputFormat::getMissingValues() const
     return block_missing_values;
 }
 
-static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
-{
-    if (type->id() == arrow::Type::LIST)
-        return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type());
-
-    if (type->id() == arrow::Type::STRUCT)
-    {
-        int indices = 0;
-        auto * struct_type = static_cast<arrow::StructType *>(type.get());
-        for (int i = 0; i != struct_type->num_fields(); ++i)
-            indices += countIndicesForType(struct_type->field(i)->type());
-        return indices;
-    }
-
-    if (type->id() == arrow::Type::MAP)
-    {
-        auto * map_type = static_cast<arrow::MapType *>(type.get());
-        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
-    }
-
-    return 1;
-}
-
 static void getFileReaderAndSchema(
     ReadBuffer & in,
     std::unique_ptr<parquet::arrow::FileReader> & file_reader,
@@ -150,28 +128,10 @@ void ParquetBlockInputFormat::prepareReader()
         format_settings.parquet.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
-    const bool ignore_case = format_settings.parquet.case_insensitive_column_matching;
-    std::unordered_set<String> nested_table_names;
-    if (format_settings.parquet.import_nested)
-        nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
-
-    int index = 0;
-    for (int i = 0; i < schema->num_fields(); ++i)
-    {
-        /// STRUCT type require the number of indexes equal to the number of
-        /// nested elements, so we should recursively
-        /// count the number of indices we need for this type.
-        int indexes_count = static_cast<int>(countIndicesForType(schema->field(i)->type()));
-        const auto & name = schema->field(i)->name();
-
-        if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
-        {
-            for (int j = 0; j != indexes_count; ++j)
-                column_indices.push_back(index + j);
-        }
-
-        index += indexes_count;
-    }
+    ArrowFieldIndexUtil<false> field_util(
+        format_settings.parquet.case_insensitive_column_matching,
+        format_settings.parquet.allow_missing_columns);
+    column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
 }
 
 ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
