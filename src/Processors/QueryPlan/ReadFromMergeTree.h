@@ -238,6 +238,13 @@ private:
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
+    Pipe spreadMarkRangesAmongStreamsWithOrderImpl(
+        RangesInDataParts && parts_with_ranges,
+        const Names & column_names,
+        const InputOrderInfoPtr & input_order_info,
+        size_t num_streams,
+        bool need_preliminary_merge);
+
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         const Names & column_names,
