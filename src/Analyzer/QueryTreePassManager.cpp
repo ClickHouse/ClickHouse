@@ -24,6 +24,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -74,6 +75,9 @@ class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
 
         for (size_t i = 0; i < expected_arg_types.size(); ++i)
         {
+            // Skip lambdas
+            if(WhichDataType(expected_arg_types[i]).isFunction())
+                continue;
             if (!expected_arg_types[i]->equals(*actual_arg_columns[i].type))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Function {} expects {} argument to have {} type but receives {} after running {} pass",
