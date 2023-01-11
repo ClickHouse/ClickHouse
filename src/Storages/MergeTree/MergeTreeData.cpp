@@ -3870,27 +3870,32 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     {
         size_t parts_over_threshold = 0;
         size_t allowed_parts_over_threshold = 1;
-        if (active_parts_over_threshold >= outdated_parts_over_threshold)
+        const bool use_active_parts_threshold = (active_parts_over_threshold >= outdated_parts_over_threshold);
+        if (use_active_parts_threshold)
         {
-            parts_over_threshold =  active_parts_over_threshold;
+            parts_over_threshold = active_parts_over_threshold;
             allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
         }
         else
         {
             parts_over_threshold = outdated_parts_over_threshold;
-            allowed_parts_over_threshold = outdated_parts_over_threshold;
+            allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
             if (settings->inactive_parts_to_throw_insert > 0)
                 allowed_parts_over_threshold = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
         }
 
-        chassert(allowed_parts_over_threshold > 0 && parts_over_threshold <= allowed_parts_over_threshold);
+        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold) [[unlikely]]
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Incorrect calculation of {} parts over threshold: allowed_parts_over_threshold={}, parts_over_threshold={}",
+                (use_active_parts_threshold ? "active" : "inactive"),
+                allowed_parts_over_threshold,
+                parts_over_threshold);
 
         const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
         double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
-        UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
-        /// min() as a save guard here
-        delay_milliseconds = std::max(
-            min_delay_milliseconds, std::min(max_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor)));
+        const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
+        delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
     }
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
