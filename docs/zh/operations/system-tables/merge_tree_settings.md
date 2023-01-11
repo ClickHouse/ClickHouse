@@ -16,7 +16,7 @@ slug: /zh/operations/system-tables/merge_tree_settings
 
 **示例**
 ```sql
-:) SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
+SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
 ```
 
 ```text

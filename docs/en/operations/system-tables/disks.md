@@ -17,7 +17,7 @@ Columns:
 **Example**
 
 ```sql
-:) SELECT * FROM system.disks;
+SELECT * FROM system.disks;
 ```
 
 ```text

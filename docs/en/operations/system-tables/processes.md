@@ -20,7 +20,7 @@ Columns:
 -   `is_all_data_sent` (Int8) – Was all data sent to the client (in other words query had been finished on the server).
 
 ```sql
-:) SELECT * FROM system.processes LIMIT 10 FORMAT Vertical;
+SELECT * FROM system.processes LIMIT 10 FORMAT Vertical;
 ```
 
 ```text

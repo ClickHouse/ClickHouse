@@ -12,7 +12,7 @@ This is similar to the `DUAL` table found in other DBMSs.
 **Example**
 
 ```sql
-:) SELECT * FROM system.one LIMIT 10;
+SELECT * FROM system.one LIMIT 10;
 ```
 
 ```text
