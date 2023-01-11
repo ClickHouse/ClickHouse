@@ -1,10 +1,3 @@
-import pytest
-
-# FIXME This test is too flaky
-# https://github.com/ClickHouse/ClickHouse/issues/45160
-
-pytestmark = pytest.mark.skip
-
 import json
 import os.path as p
 import random
@@ -16,6 +9,7 @@ from random import randrange
 import math
 
 import pika
+import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
