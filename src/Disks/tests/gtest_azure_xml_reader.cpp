@@ -17,9 +17,9 @@ TEST(AzureXMLWrapper, TestLeak)
     std::string str = "<hello>world</hello>";
 
     Azure::Storage::_internal::XmlReader reader(str.c_str(), str.length());
-    reader.Read();
     Azure::Storage::_internal::XmlReader reader2(std::move(reader));
     Azure::Storage::_internal::XmlReader reader3 = std::move(reader2);
+    reader3.Read();
 }
 
 #endif
