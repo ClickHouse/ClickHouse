@@ -53,12 +53,15 @@ public:
     void skipRowEndDelimiter() override;
     void skipPrefixBeforeHeader() override;
 
-    std::vector<String> readRow();
-    std::vector<String> readNames() override { return readRow(); }
-    std::vector<String> readTypes() override { return readRow(); }
+    std::vector<String> readRow() { return readRowImpl<false>(); }
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
+
+    template <bool read_string>
     String readFieldIntoString();
 
-    std::vector<String> readRowForHeaderDetection() override { return readRow(); }
+    std::vector<String> readRowAndGetFieldsAndDataTypes() override { return readHeaderRow(); }
 
     void checkNullValueForNonNullable(DataTypePtr type) override;
 
@@ -72,6 +75,9 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
 
 private:
+    template <bool is_header>
+    std::vector<String> readRowImpl();
+
     PeekableReadBuffer * buf;
     bool is_raw;
     bool first_row = true;

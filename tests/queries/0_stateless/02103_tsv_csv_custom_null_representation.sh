@@ -15,7 +15,7 @@ echo 'Custom NULL representation' > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'TSV', 's Nullable(String)') SETTINGS format_tsv_null_representation='Custom NULL representation'"
 
 echo -e 'N\tU\tL\tL' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'TSV', 's Nullable(String)') SETTINGS format_tsv_null_representation='N\tU\tL\tL', input_format_tsv_detect_header=0"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'TSV', 's Nullable(String)') SETTINGS format_tsv_null_representation='N\tU\tL\tL'"
 
 echo -e "\\NSome text" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('test_02103_null.data', 'TSV', 's Nullable(String)')"

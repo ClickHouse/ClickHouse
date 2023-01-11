@@ -97,9 +97,9 @@ public:
     virtual std::vector<String> readTypes() = 0;
 
     /// Read row with raw values.
-    virtual std::vector<String> readRowForHeaderDetection()
+    virtual std::vector<String> readRowAndGetFieldsAndDataTypes()
     {
-        throw Exception("Method readRowForHeaderDetection is not implemented for format reader", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Method readRowAndGetFieldsAndDataTypes is not implemented for format reader", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Skip single field, it's used to skip unknown columns.

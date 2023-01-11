@@ -127,6 +127,13 @@ echo '"x","y","z"
 "Hello",\N,\N
 \N,"World",\N' | $CLICKHOUSE_LOCAL --input-format='CSV' --table='test' -q "select * from test";
 
+echo 16
+echo '"a""b","c"
+1,2' | $CLICKHOUSE_LOCAL --input-format='CSV' --table='test' -q "desc test";
+
+echo -e'"a""b","c"
+1,2' | $CLICKHOUSE_LOCAL --input-format='CSV' --table='test' -q "select * from test";
+
 echo "TSV"
 echo 1
 echo -e 'x\ty\tz
@@ -276,5 +283,23 @@ echo '<result_before_delimiter>
 <row_between_delimiter>
 <row_before_delimiter>"UInt32"<field_delimiter>"String"<field_delimiter>"Array(UInt32)"<row_after_delimiter>
 <result_after_delimiter>' | $CLICKHOUSE_LOCAL --input-format='CustomSeparated' --table='test' -q "select * from test"  --format_custom_row_before_delimiter='<row_before_delimiter>' --format_custom_row_after_delimiter=$'<row_after_delimiter>\n' --format_custom_row_between_delimiter=$'<row_between_delimiter>\n' --format_custom_result_before_delimiter=$'<result_before_delimiter>\n' --format_custom_result_after_delimiter=$'<result_after_delimiter>\n' --format_custom_field_delimiter='<field_delimiter>' --format_custom_escaping_rule='CSV'
+
+echo 7
+echo '<result_before_delimiter>
+<row_before_delimiter>"x"<field_delimiter>"y"<field_delimiter>"z"<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>"UInt32"<field_delimiter>"String"<field_delimiter>"Array(UInt32)"<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>42<field_delimiter>"Hello"<field_delimiter>[1,2,3]<row_after_delimiter>
+<result_after_delimiter>' | $CLICKHOUSE_LOCAL --input-format='CustomSeparated' --table='test' -q "desc test" --format_custom_row_before_delimiter='<row_before_delimiter>' --format_custom_row_after_delimiter=$'<row_after_delimiter>\n' --format_custom_row_between_delimiter=$'<row_between_delimiter>\n' --format_custom_result_before_delimiter=$'<result_before_delimiter>\n' --format_custom_result_after_delimiter=$'<result_after_delimiter>\n' --format_custom_field_delimiter='<field_delimiter>' --format_custom_escaping_rule='JSON'
+
+
+echo '<result_before_delimiter>
+<row_before_delimiter>"x"<field_delimiter>"y"<field_delimiter>"z"<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>"UInt32"<field_delimiter>"String"<field_delimiter>"Array(UInt32)"<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>42<field_delimiter>"Hello"<field_delimiter>[1,2,3]<row_after_delimiter>
+<result_after_delimiter>' | $CLICKHOUSE_LOCAL --input-format='CustomSeparated' --table='test' -q "select * from test"  --format_custom_row_before_delimiter='<row_before_delimiter>' --format_custom_row_after_delimiter=$'<row_after_delimiter>\n' --format_custom_row_between_delimiter=$'<row_between_delimiter>\n' --format_custom_result_before_delimiter=$'<result_before_delimiter>\n' --format_custom_result_after_delimiter=$'<result_after_delimiter>\n' --format_custom_field_delimiter='<field_delimiter>' --format_custom_escaping_rule='JSON'
 
 

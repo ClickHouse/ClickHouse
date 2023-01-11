@@ -1,6 +1,5 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11,8 +10,6 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
-
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -98,13 +95,19 @@ void TabSeparatedFormatReader::skipRowEndDelimiter()
     assertChar('\n', *buf);
 }
 
+template <bool read_string>
 String TabSeparatedFormatReader::readFieldIntoString()
 {
     String field;
     if (is_raw)
         readString(field, *buf);
     else
-        readTSVField(field, *buf);
+    {
+        if constexpr (read_string)
+            readEscapedString(field, *buf);
+        else
+            readTSVField(field, *buf);
+    }
     return field;
 }
 
@@ -128,12 +131,13 @@ void TabSeparatedFormatReader::skipHeaderRow()
     skipRowEndDelimiter();
 }
 
-std::vector<String> TabSeparatedFormatReader::readRow()
+template <bool is_header_row>
+std::vector<String> TabSeparatedFormatReader::readRowImpl()
 {
     std::vector<String> fields;
     do
     {
-        fields.push_back(readFieldIntoString());
+        fields.push_back(readFieldIntoString<is_header_row>());
     }
     while (checkChar('\t', *buf));
 
@@ -299,7 +303,8 @@ std::pair<std::vector<String>, DataTypes> TabSeparatedSchemaReader::readRowAndGe
 
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
-    return {fields, data_types};}
+    return {fields, data_types};
+}
 
 DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypesImpl()
 {
