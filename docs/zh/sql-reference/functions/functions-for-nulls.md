@@ -22,7 +22,7 @@ slug: /zh/sql-reference/functions/functions-for-nulls
 
 存在以下内容的表
 
-```text
+```response
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -35,7 +35,7 @@ slug: /zh/sql-reference/functions/functions-for-nulls
 SELECT x FROM t_null WHERE isNull(y)
 ```
 
-```text
+```response
 ┌─x─┐
 │ 1 │
 └───┘
@@ -60,7 +60,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 存在以下内容的表
 
-```text
+```response
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -73,7 +73,7 @@ SELECT x FROM t_null WHERE isNull(y)
 SELECT x FROM t_null WHERE isNotNull(y)
 ```
 
-```text
+```response
 ┌─x─┐
 │ 2 │
 └───┘
@@ -98,7 +98,7 @@ SELECT x FROM t_null WHERE isNotNull(y)
 
 考虑可以指定多种联系客户的方式的联系人列表。
 
-```text
+```response
 ┌─name─────┬─mail─┬─phone─────┬──icq─┐
 │ client 1 │ ᴺᵁᴸᴸ │ 123-45-67 │  123 │
 │ client 2 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ │
@@ -113,7 +113,7 @@ SELECT x FROM t_null WHERE isNotNull(y)
 SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 ```
 
-```text
+```response
 ┌─name─────┬─coalesce(mail, phone, CAST(icq, 'Nullable(String)'))─┐
 │ client 1 │ 123-45-67                                            │
 │ client 2 │ ᴺᵁᴸᴸ                                                 │

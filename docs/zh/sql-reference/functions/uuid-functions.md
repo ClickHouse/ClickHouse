@@ -27,7 +27,7 @@ INSERT INTO t_uuid SELECT generateUUIDv4()
 SELECT * FROM t_uuid
 ```
 
-```text
+```response
 ┌────────────────────────────────────x─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
@@ -51,7 +51,7 @@ UUID类型的值
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
-```text
+```response
 ┌─────────────────────────────────uuid─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
@@ -77,7 +77,7 @@ SELECT
     UUIDStringToNum(uuid) AS bytes
 ```
 
-```text
+```response
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┘
@@ -101,7 +101,8 @@ UUIDNumToString(FixedString(16))
 SELECT
     'a/<@];!~p{jTj={)' AS bytes,
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
-
+```
+```response
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ a/<@];!~p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
 └──────────────────┴──────────────────────────────────────┘

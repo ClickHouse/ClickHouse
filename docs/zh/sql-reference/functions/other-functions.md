@@ -33,7 +33,7 @@ slug: /zh/sql-reference/functions/other-functions
 SELECT 'some/long/path/to/file' AS a, basename(a)
 ```
 
-``` text
+```response
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
@@ -43,7 +43,7 @@ SELECT 'some/long/path/to/file' AS a, basename(a)
 SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 ```
 
-``` text
+```response
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
@@ -53,7 +53,7 @@ SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 SELECT 'some-file-name' AS a, basename(a)
 ```
 
-``` text
+```response
 ┌─a──────────────┬─basename('some-file-name')─┐
 │ some-file-name │ some-file-name             │
 └────────────────┴────────────────────────────┘
@@ -402,7 +402,7 @@ FROM
 SELECT toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
 ```
 
-```text
+```response
 ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ DateTime                                            │
 └─────────────────────────────────────────────────────┘
@@ -412,7 +412,7 @@ SELECT toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
 SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
 ```
 
-```text
+```response
 ┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ Const(UInt32)                                             │
 └───────────────────────────────────────────────────────────┘
@@ -466,7 +466,7 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
 SELECT defaultValueOfArgumentType(CAST(1, 'Int8'))
 ```
 
-```text
+```response
 ┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
 │                                           0 │
 └─────────────────────────────────────────────┘
@@ -476,7 +476,7 @@ SELECT defaultValueOfArgumentType(CAST(1, 'Int8'))
 SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
 ```
 
-```text
+```response
 ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
 │                                                  ᴺᵁᴸᴸ │
 └───────────────────────────────────────────────────────┘
@@ -497,7 +497,8 @@ SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
 
 ```
 SELECT count() FROM ontime
-
+```
+```response
 ┌─count()─┐
 │ 4276457 │
 └─────────┘
@@ -511,7 +512,7 @@ SELECT count() FROM ontime
 SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
 ```
 
-```text
+```response
 SELECT
     FlightDate AS k,
     count()
@@ -537,7 +538,7 @@ ORDER BY k ASC
 SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 ```
 
-```text
+```response
 SELECT
     FlightDate AS k,
     count()
@@ -561,7 +562,7 @@ ORDER BY k ASC
 SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2017-09-15') GROUP BY k ORDER BY k
 ```
 
-```text
+```response
 SELECT
     FlightDate AS k,
     count()

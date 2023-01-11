@@ -24,7 +24,7 @@ slug: /zh/sql-reference/data-types/enum
 INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
 ```
 
-```text
+```response
 Ok.
 
 3 rows in set. Elapsed: 0.002 sec.
@@ -34,7 +34,7 @@ Ok.
 INSERT INTO t_enum VALUES('a')
 ```
 
-```text
+```response
 Exception on client:
 Code: 49. DB::Exception: Unknown element 'a' for type Enum8('hello' = 1, 'world' = 2)
 ```
@@ -45,7 +45,7 @@ Code: 49. DB::Exception: Unknown element 'a' for type Enum8('hello' = 1, 'world'
 SELECT * FROM t_enum
 ```
 
-```text
+```response
 ┌─x─────┐
 │ hello │
 │ world │
@@ -59,7 +59,7 @@ SELECT * FROM t_enum
 SELECT CAST(x, 'Int8') FROM t_enum
 ```
 
-```text
+```response
 ┌─CAST(x, 'Int8')─┐
 │               1 │
 │               2 │
@@ -73,7 +73,7 @@ SELECT CAST(x, 'Int8') FROM t_enum
 SELECT toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))
 ```
 
-```text
+```response
 ┌─toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))─┐
 │ Enum8('a' = 1, 'b' = 2)                              │
 └──────────────────────────────────────────────────────┘

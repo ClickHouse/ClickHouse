@@ -38,7 +38,7 @@ $$)
 
 **Result:**
 
-```text
+```response
 ┌───b─┬─a─────┐
 │ 111 │ Hello │
 │ 123 │ World │
@@ -60,7 +60,7 @@ $$)
 
 **Result:**
 
-```text
+```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ b    │ Nullable(Float64) │              │                    │         │                  │                │
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
