@@ -881,7 +881,7 @@ static void addConstantToWithClause(const ASTPtr & query, const String & column_
             std::make_shared<ASTLiteral>(data_type->getName())));
 
     node->alias = column_name;
-    node->prefer_alias_to_column_name = true;
+    node->force_alias = true;
     select.with()->children.push_back(std::move(node));
 }
 
