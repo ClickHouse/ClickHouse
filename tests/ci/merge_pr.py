@@ -157,6 +157,13 @@ def main():
     token = args.token or get_best_robot_token()
     gh = GitHub(token, per_page=100)
     repo = gh.get_repo(args.repo)
+    # An ugly and not nice fix to patch the wrong organization URL,
+    # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
+    # pylint: disable=protected-access
+    repo.organization._url.value = repo.organization.url.replace(  # type: ignore
+        "/users/", "/orgs/", 1
+    )
+    # pylint: enable=protected-access
     pr = repo.get_pull(args.pr)
     if pr.is_merged():
         logging.info("The PR #%s is already merged", pr.number)
@@ -183,8 +190,7 @@ def main():
 
     if args.check_approved:
         reviews = Reviews(pr)
-        org = gh.get_organization(repo.organization.login)
-        team = org.get_team_by_slug(TEAM_NAME)
+        team = repo.organization.get_team_by_slug(TEAM_NAME)
         members = list(team.get_members())
         if not reviews.is_approved(members):
             logging.warning("We don't merge the PR")
