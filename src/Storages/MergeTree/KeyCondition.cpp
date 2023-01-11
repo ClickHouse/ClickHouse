@@ -613,7 +613,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     }
                 }
 
-                const auto & func = inverted_dag.addFunction(FunctionFactory::instance().get(node.function_base->getName(), context), children, "");
+                const auto & func = inverted_dag.addFunction(node.function_base, children, "");
                 to_inverted[&node] = &func;
                 return func;
             }

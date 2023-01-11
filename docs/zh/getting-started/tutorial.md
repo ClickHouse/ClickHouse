@@ -666,5 +666,3 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
 
 复制在多主机模式下运行。数据可以加载到任何副本中，然后系统自动将其与其他实例同步。复制是异步的，因此在给定时刻，并非所有副本都可能包含最近插入的数据。至少应该有一个副本允许数据摄入。另一些则会在重新激活后同步数据并修复一致性。请注意，这种方法允许最近插入的数据丢失的可能性很低。
-
-[原始文章](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->
