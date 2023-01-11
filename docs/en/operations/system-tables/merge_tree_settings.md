@@ -15,7 +15,7 @@ Columns:
 
 **Example**
 ```sql
-:) SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
+SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
 ```
 
 ```text

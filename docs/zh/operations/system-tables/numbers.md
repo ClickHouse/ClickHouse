@@ -12,7 +12,7 @@ slug: /zh/operations/system-tables/numbers
 **示例**
 
 ```sql
-:) SELECT * FROM system.numbers LIMIT 10;
+SELECT * FROM system.numbers LIMIT 10;
 ```
 
 ```text

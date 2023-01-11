@@ -1265,7 +1265,7 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x10` int32                             | [Int32/UInt32](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal32](/docs/en/sql-reference/data-types/decimal.md)                                                         |
 | `\x12` int64                             | [Int64/UInt64](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal64](/docs/en/sql-reference/data-types/decimal.md)/[DateTime64](/docs/en/sql-reference/data-types/datetime64.md) |
 
-Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8). 
+Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8).
 Big integers and decimals (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) can be parsed from BSON Binary value with `\x00` binary subtype. In this case this format will validate that the size of binary data equals the size of expected value.
 
 Note: this format don't work properly on Big-Endian platforms.
@@ -2319,25 +2319,22 @@ INSERT INTO `test2` VALUES (1),(2),(3);
 Queries:
 
 ```sql
-:) desc file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
+DESCRIBE TABLE file(dump.sql, MySQLDump) SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
 
-DESCRIBE TABLE file(dump.sql, MySQLDump)
-SETTINGS input_format_mysql_dump_table_name = 'test2'
-
-Query id: 25e66c89-e10a-42a8-9b42-1ee8bbbde5ef
-
+```text
 ┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ x    │ Nullable(Int32) │              │                    │         │                  │                │
 └──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
 
-:) select * from file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
-
+```sql
 SELECT *
 FROM file(dump.sql, MySQLDump)
          SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
 
-Query id: 17d59664-ebce-4053-bb79-d46a516fb590
-
+```text
 ┌─x─┐
 │ 1 │
 │ 2 │

@@ -226,18 +226,14 @@ ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 。
 
 <!-- -->
 
-``` bash
-:) SELECT x+100 FROM t_null WHERE y IS NULL
+``` sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
 
-SELECT x + 100
-FROM t_null
-WHERE isNull(y)
-
+``` text
 ┌─plus(x, 100)─┐
 │          101 │
 └──────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 ### IS NOT NULL {#is-not-null}
@@ -249,16 +245,12 @@ WHERE isNull(y)
 
 <!-- -->
 
-``` bash
-:) SELECT * FROM t_null WHERE y IS NOT NULL
+``` sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
 
-SELECT *
-FROM t_null
-WHERE isNotNull(y)
-
+``` text
 ┌─x─┬─y─┐
 │ 2 │ 3 │
 └───┴───┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```

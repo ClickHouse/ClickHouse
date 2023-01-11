@@ -27,7 +27,7 @@ A table with data parsed from `data` argument according specified format and ext
 
 **Query:**
 ``` sql
-:) select * from format(JSONEachRow, 
+SELECT * FROM format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
@@ -49,8 +49,7 @@ $$)
 
 **Query:**
 ```sql
-
-:) desc format(JSONEachRow,
+DESC format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}

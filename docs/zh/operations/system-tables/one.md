@@ -12,7 +12,7 @@ slug: /zh/operations/system-tables/one
 **示例**
 
 ```sql
-:) SELECT * FROM system.one LIMIT 10;
+SELECT * FROM system.one LIMIT 10;
 ```
 
 ```text
