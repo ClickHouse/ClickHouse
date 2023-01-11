@@ -628,7 +628,9 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     s3_requests_before = get_s3_requests()
     node.query(
-        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 128 * 1024))
+        "INSERT INTO s3_test VALUES {}".format(
+            generate_values("2020-01-03", 128 * 1024)
+        )
     )
     s3_requests_to_write_partition = get_s3_requests() - s3_requests_before
 
@@ -643,12 +645,17 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     s3_requests_before = get_s3_requests()
     node.query(
-        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 128 * 1024, -1))
+        "INSERT INTO s3_test VALUES {}".format(
+            generate_values("2020-01-04", 128 * 1024, -1)
+        )
     )
 
     # There should be 3 times more S3 requests because multi-part upload mode uses 3 requests to upload object.
     num_multipart_uploads = 5
-    assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition + num_multipart_uploads * 2
+    assert (
+        get_s3_requests() - s3_requests_before
+        == s3_requests_to_write_partition + num_multipart_uploads * 2
+    )
 
 
 @pytest.mark.parametrize("node_name", ["node"])
