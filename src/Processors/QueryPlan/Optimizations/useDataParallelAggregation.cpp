@@ -40,7 +40,7 @@ bool isPartitionKeySuitsGroupByKey(const ReadFromMergeTree & reading, const Aggr
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryAggregateEachPartitionIndependently(QueryPlan::Node * node, QueryPlan::Nodes &)
+size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &)
 {
     if (!node || node->children.size() != 1)
         return 0;

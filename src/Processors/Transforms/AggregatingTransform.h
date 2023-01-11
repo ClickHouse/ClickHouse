@@ -147,7 +147,7 @@ public:
         Block header,
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataPtr many_data,
-        size_t current_variant_,
+        size_t current_variant,
         size_t max_threads,
         size_t temporary_data_merge_threads,
         bool skip_merging_ = false);
@@ -182,8 +182,7 @@ private:
     AggregatedDataVariants & variants;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
-    size_t current_variant;
-    bool skip_merging = false;
+    bool skip_merging = false; /// if we aggregate partitioned data merging is not needed
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;

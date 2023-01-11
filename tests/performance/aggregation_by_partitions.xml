@@ -1,15 +1,50 @@
 <test>
-  <settings>
-<!-- <allow_aggregate_each_partition_independently>1</allow_aggregate_each_partition_independently> -->
-  </settings>
+    <settings>
+    <!-- <allow_aggregate_each_partition_independently>1</allow_aggregate_each_partition_independently> -->
+        <max_memory_usage>0</max_memory_usage>
+        <max_partitions_per_insert_block>4096</max_partitions_per_insert_block>
+    </settings>
 
-  <create_query>create table t(a UInt32) engine=MergeTree order by a partition by a % 16</create_query>
+    <substitutions>
+        <substitution>
+            <name>size</name>
+            <values>
+                <value>10000</value>
+                <value>100000</value>
+                <value>1000000</value>
+                <value>10000000</value>
+                <value>100000000</value>
+            </values>
+        </substitution>
 
-  <fill_query>insert into t select * from numbers_mt(5e7)</fill_query>
+        <substitution>
+            <name>partitions</name>
+            <values>
+                <value>2</value>
+                <value>4</value>
+                <value>8</value>
+                <value>16</value>
+                <value>32</value>
+                <value>64</value>
+                <value>128</value>
+                <value>256</value>
+<!-- <value>512</value> -->
+<!-- <value>1024</value> -->
+<!-- <value>2048</value> -->
+<!-- <value>4096</value> -->
+            </values>
+        </substitution>
+    </substitutions>
 
-  <query>select a from t group by a format Null</query>
+    <create_query>create table t_{size}_{partitions}(a UInt64) engine=MergeTree order by a partition by a % {partitions}</create_query>
 
-  <query>select a from t group by a format Null settings optimize_aggregation_in_order = 1</query>
+    <fill_query>insert into t_{size}_{partitions} select * from numbers_mt({size})</fill_query>
 
-  <drop_query>drop table t</drop_query>
+    <!-- <fill_query>optimize table t_{size}_{partitions} final</fill_query> -->
+
+    <query>select a from t_{size}_{partitions} group by a format Null</query>
+
+    <query>select a from t_{size}_{partitions} group by a format Null settings optimize_aggregation_in_order = 1</query>
+
+    <drop_query>drop table t_{size}_{partitions}</drop_query>
 </test>

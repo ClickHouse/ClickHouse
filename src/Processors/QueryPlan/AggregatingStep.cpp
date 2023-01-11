@@ -166,12 +166,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         params.group_by_two_level_threshold_bytes = 0;
     }
 
-    /// In case of external aggregation we cannot completely avoid merging,
-    /// because each thread might use multiple hash tables during the execution and then the same key might be present in multiple hash tables.
-    /// But nevertheless we could save some time merging only HTs from the same thread (future task).
-    if (params.max_bytes_before_external_group_by)
-        skip_merging = false;
-
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
@@ -373,7 +367,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 pipeline.addSimpleTransform([&](const Block & header)
                                             { return std::make_shared<FinalizeAggregatedTransform>(header, transform_params); });
-                pipeline.resize(merge_threads);
+                pipeline.resize(params.max_threads);
                 aggregating_in_order = collector.detachProcessors(0);
                 return;
             }

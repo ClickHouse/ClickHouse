@@ -68,7 +68,7 @@ void tryRemoveRedundantSorting(QueryPlan::Node * root);
 ///                      - Something -                    - Expression - Something -
 size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
-size_t tryAggregateEachPartitionIndependently(QueryPlan::Node * node, QueryPlan::Nodes &);
+size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &);
 
 inline const auto & getOptimizations()
 {
@@ -83,7 +83,7 @@ inline const auto & getOptimizations()
          "reuseStorageOrderingForWindowFunctions",
          &QueryPlanOptimizationSettings::optimize_plan},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryAggregateEachPartitionIndependently, "aggregationPartitionsIndepedently", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::optimize_plan},
     }};
 
     return optimizations;
