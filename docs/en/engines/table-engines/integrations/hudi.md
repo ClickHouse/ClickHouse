@@ -13,7 +13,7 @@ Note that the Hudi table must already exist in S3, this command does not take DD
 
 ``` sql
 CREATE TABLE hudi_table
-    ENGINE = Hudi(path, [aws_access_key_id, aws_secret_access_key,])
+    ENGINE = Hudi(url, [aws_access_key_id, aws_secret_access_key,])
 ```
 
 **Engine parameters**
