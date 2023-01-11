@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -438,6 +439,13 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
+
+    /// Add _row_exists column if it is physically present in the part
+    if (auto part_storage = dynamic_pointer_cast<DB::StorageFromMergeTreeDataPart>(storage))
+    {
+        if (part_storage->hasLightweightDeletedMask())
+            all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
+    }
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = materializeTTLRecalculateOnly(storage);
@@ -946,6 +954,8 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];
+            if (step->actions()->hasArrayJoin())
+                throw Exception("arrayJoin is not allowed in mutations", ErrorCodes::UNEXPECTED_EXPRESSION);
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.

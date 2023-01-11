@@ -715,7 +715,7 @@ void TablesDependencyGraph::log() const
 {
     if (nodes.empty())
     {
-        LOG_TEST(getLogger(), "No tables");
+        LOG_TRACE(getLogger(), "No tables");
         return;
     }
 
@@ -727,7 +727,7 @@ void TablesDependencyGraph::log() const
 
         String level_desc = (node->level == CYCLIC_LEVEL) ? "cyclic" : fmt::format("level {}", node->level);
 
-        LOG_TEST(getLogger(), "Table {} has {} ({})", node->storage_id, dependencies_desc, level_desc);
+        LOG_TRACE(getLogger(), "Table {} has {} ({})", node->storage_id, dependencies_desc, level_desc);
     }
 }
 
