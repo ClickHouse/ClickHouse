@@ -152,6 +152,8 @@ private:
     std::array<StatePtr, MAX_TERM_LENGTH + 1> temp_states;
     String previous_word;
     StatePtr initial_state;
+
+    /// map of (state_hash, StatePtr)
     std::unordered_map<UInt64, StatePtr> minimized_states;
 
     /// Next available ID of state

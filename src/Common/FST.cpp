@@ -7,6 +7,9 @@
 #include <Common/Exception.h>
 #include <city.h>
 
+/// "paper" in the comments in this file refers to:
+/// [Direct Construction of Minimal Acyclic Subsequential Transduers] by Stoyan Mihov and Denis Maurel, University of Tours, France
+
 namespace DB
 {
 namespace ErrorCodes
@@ -218,10 +221,13 @@ FSTBuilder::FSTBuilder(WriteBuffer& write_buffer_) : write_buffer(write_buffer_)
     }
 }
 
+/// See FindMinimized in the paper pseudo code l11-l21.
 StatePtr FSTBuilder::findMinimized(const State & state, bool & found)
 {
     found = false;
     auto hash = state.hash();
+
+    /// MEMBER: in the paper pseudo code l15
     auto it = minimized_states.find(hash);
 
     if (it != minimized_states.cend() && *it->second == state)
@@ -229,11 +235,16 @@ StatePtr FSTBuilder::findMinimized(const State & state, bool & found)
         found = true;
         return it->second;
     }
+
+    /// COPY_STATE: in the paper pseudo code l17
     StatePtr p = std::make_shared<State>(state);
+
+    /// INSERT: in the paper pseudo code l18
     minimized_states[hash] = p;
     return p;
 }
 
+/// See the paper pseudo code l33-34.
 size_t FSTBuilder::getCommonPrefixLength(const String & word1, const String & word2)
 {
     size_t i = 0;
@@ -242,6 +253,7 @@ size_t FSTBuilder::getCommonPrefixLength(const String & word1, const String & wo
     return i;
 }
 
+/// See the paper pseudo code l33-39 and l70-72(when down_to is 0).
 void FSTBuilder::minimizePreviousWordSuffix(Int64 down_to)
 {
     for (Int64 i = static_cast<Int64>(previous_word.size()); i >= down_to; --i)
@@ -256,6 +268,7 @@ void FSTBuilder::minimizePreviousWordSuffix(Int64 down_to)
             if (arc)
                 output = arc->output;
 
+            /// SET_TRANSITION
             temp_states[i - 1]->addArc(previous_word[i - 1], output, minimized_state);
         }
         if (minimized_state->id == 0)
@@ -291,16 +304,22 @@ void FSTBuilder::add(const std::string & current_word, Output current_output)
 
     minimizePreviousWordSuffix(prefix_length_plus1);
 
-    /// Initialize the tail state
+    /// Initialize the tail state, see paper pseudo code l39-43
     for (size_t i = prefix_length_plus1; i <= current_word.size(); ++i)
     {
+        /// CLEAR_STATE: l41
         temp_states[i]->clear();
+
+        /// SET_TRANSITION: l42
         temp_states[i - 1]->addArc(current_word[i - 1], 0, temp_states[i]);
     }
 
     /// We assume the current word is different with previous word
+    /// See paper pseudo code l44-47
     temp_states[current_word_len]->setFinal(true);
+
     /// Adjust outputs on the arcs
+    /// See paper pseudo code l48-63
     for (size_t i = 1; i <= prefix_length_plus1 - 1; ++i)
     {
         Arc * arc_ptr = temp_states[i - 1]->getArc(current_word[i - 1]);
@@ -323,6 +342,7 @@ void FSTBuilder::add(const std::string & current_word, Output current_output)
     }
 
     /// Set last temp state's output
+    /// paper pseudo code l66-67 (assuming CurrentWord != PreviousWorld)
     Arc * arc = temp_states[prefix_length_plus1 - 1]->getArc(current_word[prefix_length_plus1 - 1]);
     assert(arc != nullptr);
     arc->output = current_output;
