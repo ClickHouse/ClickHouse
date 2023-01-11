@@ -15,10 +15,10 @@ for i in {0..4}
 do
     query_id="${CLICKHOUSE_DATABASE}_02521_${i}_$RANDOM$RANDOM"
     $CLICKHOUSE_CLIENT --query_id="$query_id" -q "INSERT INTO test_02521_insert_delay SELECT number, toString(number) FROM numbers(${i}, 1)"
-    $CLICKHOUSE_CLIENT -q "system flush logs"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
     $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "select ProfileEvents['DelayedInsertsMilliseconds'] as delay from system.query_log where event_date >= yesterday() and query_id = {query_id:String} order by delay desc limit 1"
 done
 
-$CLICKHOUSE_CLIENT -q "INSERT INTO test_02521_insert_delay VALUES(0, 'This query throws error')" 2>&1 | grep -o 'TOO_MANY_PARTS'
+$CLICKHOUSE_CLIENT -q "INSERT INTO test_02521_insert_delay VALUES(0, 'This query throws error')" 2>&1 | grep -o 'TOO_MANY_PARTS' | head -n 1
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_02521_insert_delay"
