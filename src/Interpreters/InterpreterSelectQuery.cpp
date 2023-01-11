@@ -510,10 +510,37 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
-    if (settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY && !settings.parallel_replicas_custom_key.value.empty())
+
+    ASTPtr parallel_replicas_custom_filter_ast = nullptr;
+    if (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY)
     {
-        query_info.parallel_replica_custom_key_ast = parseParallelReplicaCustomKey(
+        if (settings.parallel_replicas_custom_key.value.empty())
+            throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but 'parallel_replicas_custom_key' has no value");
+
+        auto custom_key_ast = parseParallelReplicaCustomKey(
                 settings.parallel_replicas_custom_key, *context);
+
+        // first we do modulo with replica count
+        ASTPtr args = std::make_shared<ASTExpressionList>();
+        args->children.push_back(custom_key_ast);
+        args->children.push_back(std::make_shared<ASTLiteral>(settings.parallel_replicas_count.value));
+
+        auto modulo_function = std::make_shared<ASTFunction>();
+        modulo_function->name = "positiveModulo";
+        modulo_function->arguments = args;
+        modulo_function->children.push_back(modulo_function->arguments);
+
+        /// then we compare result to the current replica number (offset)
+        args = std::make_shared<ASTExpressionList>();
+        args->children.push_back(modulo_function);
+        args->children.push_back(std::make_shared<ASTLiteral>(settings.parallel_replica_offset.value));
+
+        auto equals_function = std::make_shared<ASTFunction>();
+        equals_function->name = "equals";
+        equals_function->arguments = args;
+        equals_function->children.push_back(equals_function->arguments);
+
+        parallel_replicas_custom_filter_ast = equals_function;
     }
 
     auto analyze = [&] (bool try_move_to_prewhere)
@@ -651,6 +678,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 additional_filter_info->do_remove_column = true;
 
                 query_info.filter_asts.push_back(query_info.additional_filter_ast);
+            }
+
+            if (parallel_replicas_custom_filter_ast)
+            {
+                custom_key_filter_info = generateFilterActions(
+                        table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                        prepared_sets);
+
+                custom_key_filter_info->do_remove_column = true;
+                query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }
 
             source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
@@ -1396,17 +1433,23 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
-            if (additional_filter_info)
+            const auto add_filter_step = [&](const auto & new_filter_info, const std::string & description)
             {
-                auto additional_filter_step = std::make_unique<FilterStep>(
+                auto filter_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentDataStream(),
-                    additional_filter_info->actions,
-                    additional_filter_info->column_name,
-                    additional_filter_info->do_remove_column);
+                    new_filter_info->actions,
+                    new_filter_info->column_name,
+                    new_filter_info->do_remove_column);
 
-                additional_filter_step->setStepDescription("Additional filter");
-                query_plan.addStep(std::move(additional_filter_step));
-            }
+                filter_step->setStepDescription(description);
+                query_plan.addStep(std::move(filter_step));
+            };
+
+            if (additional_filter_info)
+                add_filter_step(additional_filter_info, "Additional filter");
+
+            if (custom_key_filter_info)
+                add_filter_step(custom_key_filter_info, "Paralel replica custom key filter");
 
             if (expressions.before_array_join)
             {
