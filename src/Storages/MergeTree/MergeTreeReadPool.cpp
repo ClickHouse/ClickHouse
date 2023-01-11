@@ -40,7 +40,6 @@ MergeTreeReadPool::MergeTreeReadPool(
     , prewhere_info{prewhere_info_}
     , parts_ranges{std::move(parts_)}
 {
-    std::cerr << "============== " << threads_ << std::endl;
     /// parts don't contain duplicate MergeTreeDataPart's.
     const auto per_part_sum_marks = fillPerPartInfo(parts_ranges);
     fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_ranges, min_marks_for_concurrent_read_);
@@ -50,7 +49,6 @@ MergeTreeReadPool::MergeTreeReadPool(
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names)
 {
     const std::lock_guard lock{mutex};
-    std::cerr << "============== get task" << thread << std::endl;
 
     /// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
     if (thread >= backoff_state.current_threads)
