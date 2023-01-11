@@ -369,6 +369,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     many_data, counter++);
             });
 
+            if (skip_merging)
+            {
+                pipeline.addSimpleTransform([&](const Block & header)
+                                            { return std::make_shared<FinalizeAggregatedTransform>(header, transform_params); });
+                pipeline.resize(merge_threads);
+                aggregating_in_order = collector.detachProcessors(0);
+                return;
+            }
+
             aggregating_in_order = collector.detachProcessors(0);
 
             auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
