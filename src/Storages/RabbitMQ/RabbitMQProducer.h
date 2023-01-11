@@ -43,7 +43,7 @@ private:
     void stopProducingTask() override;
     void finishImpl() override;
 
-    void iterateEventLoop();
+    bool iterateEventLoop();
     void startProducingTaskLoop() override;
     void setupChannel();
     void removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish);
@@ -105,6 +105,8 @@ private:
     std::map<UInt64, Payload> delivery_record;
 
     Poco::Logger * log;
+
+    size_t wait_publish_event_backoff;
 };
 
 }

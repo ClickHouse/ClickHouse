@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <amqpcpp.h>
 #include <boost/algorithm/string/split.hpp>
+#include <base/sleep.h>
 #include <chrono>
 #include <thread>
 #include <atomic>
@@ -15,6 +16,8 @@ namespace DB
 
 static const auto BATCH = 1000;
 static const auto RETURNED_LIMIT = 50000;
+static const size_t WAIT_PUBLISH_EVENT_SLEEP_SEC_MIN = 1;
+static const size_t WAIT_PUBLISH_EVENT_SLEEP_SEC_MAX = 10;
 
 namespace ErrorCodes
 {
@@ -41,6 +44,7 @@ RabbitMQProducer::RabbitMQProducer(
     , payloads(BATCH)
     , returned(RETURNED_LIMIT)
     , log(log_)
+    , wait_publish_event_backoff(WAIT_PUBLISH_EVENT_SLEEP_SEC_MIN)
 {
 }
 
@@ -85,6 +89,8 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
 
 void RabbitMQProducer::setupChannel()
 {
+    LOG_TEST(log, "Creating producer channel");
+
     producer_channel = connection.createChannel();
 
     producer_channel->onError([&](const char * message)
@@ -164,6 +170,8 @@ void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple,
 
 void RabbitMQProducer::publish(Payloads & messages, bool republishing)
 {
+    wait_publish_event_backoff = WAIT_PUBLISH_EVENT_SLEEP_SEC_MIN;
+
     Payload payload;
 
     /* It is important to make sure that delivery_record.size() is never bigger than returned.size(), i.e. number if unacknowledged
@@ -226,22 +234,36 @@ void RabbitMQProducer::publish(Payloads & messages, bool republishing)
 
 void RabbitMQProducer::startProducingTaskLoop()
 {
-    while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty()) && !shutdown_called.load())
+    LOG_DEBUG(log, "Starting producer loop");
+
+    bool wait_loop_finish = false;
+    while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty() || wait_loop_finish) && !shutdown_called.load())
     {
         /// If onReady callback is not received, producer->usable() will anyway return true,
         /// but must publish only after onReady callback.
         if (producer_ready)
         {
+            LOG_TEST(log, "Queue: {}", payloads.size());
+
             /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
              * as fast as possible and no new publishes are made before returned messages are handled
              */
-            if (!returned.empty() && producer_channel->usable())
-                publish(returned, true);
-            else if (!payloads.empty() && producer_channel->usable())
-                publish(payloads, false);
+            const bool is_producer_broken = producer_channel->usable();
+            if (!is_producer_broken)
+            {
+                if (!returned.empty())
+                    publish(returned, true);
+                else if (!payloads.empty())
+                    publish(payloads, false);
+                else
+                {
+                    sleepForSeconds(wait_publish_event_backoff);
+                    wait_publish_event_backoff = std::min(WAIT_PUBLISH_EVENT_SLEEP_SEC_MAX, wait_publish_event_backoff + 1); /// linear backoff
+                }
+            }
         }
 
-        iterateEventLoop();
+        wait_loop_finish = iterateEventLoop();
 
         if (!producer_channel->usable())
         {
@@ -254,9 +276,9 @@ void RabbitMQProducer::startProducingTaskLoop()
 }
 
 
-void RabbitMQProducer::iterateEventLoop()
+bool RabbitMQProducer::iterateEventLoop()
 {
-    connection.getHandler().iterateLoop();
+    return connection.getHandler().iterateLoop();
 }
 
 }
