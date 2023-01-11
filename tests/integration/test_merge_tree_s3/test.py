@@ -55,7 +55,7 @@ FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
 FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
 
-def create_table(node, table_name, **additional_settings):
+def create_table(node, table_name, codec="", **additional_settings):
     settings = {
         "storage_policy": "s3",
         "old_parts_lifetime": 0,
@@ -65,9 +65,9 @@ def create_table(node, table_name, **additional_settings):
 
     create_table_statement = f"""
         CREATE TABLE {table_name} (
-            dt Date,
-            id Int64,
-            data String,
+            dt Date {codec},
+            id Int64 {codec},
+            data String {codec},
             INDEX min_max (id) TYPE minmax GRANULARITY 3
         ) ENGINE=MergeTree()
         PARTITION BY dt
@@ -609,7 +609,7 @@ def test_freeze_system_unfreeze(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_disk_apply_new_settings(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+    create_table(node, "s3_test", codec="CODEC(NONE)")
 
     config_path = os.path.join(
         SCRIPT_DIR,
@@ -628,7 +628,7 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     s3_requests_before = get_s3_requests()
     node.query(
-        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))
+        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 128 * 1024))
     )
     s3_requests_to_write_partition = get_s3_requests() - s3_requests_before
 
@@ -643,11 +643,12 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     s3_requests_before = get_s3_requests()
     node.query(
-        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096, -1))
+        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 128 * 1024, -1))
     )
 
     # There should be 3 times more S3 requests because multi-part upload mode uses 3 requests to upload object.
-    assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition * 3
+    num_multipart_uploads = 5
+    assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition + num_multipart_uploads * 2
 
 
 @pytest.mark.parametrize("node_name", ["node"])
