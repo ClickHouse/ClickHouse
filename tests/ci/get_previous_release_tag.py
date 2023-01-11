@@ -9,6 +9,8 @@ CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/tags"
 CLICKHOUSE_PACKAGE_URL = "https://github.com/ClickHouse/ClickHouse/releases/download/v{version}-{type}/clickhouse-common-static_{version}_amd64.deb"
 VERSION_PATTERN = r"(v(?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+-[a-zA-Z]*)"
 
+logger = logging.getLogger(__name__)
+
 
 class Version:
     def __init__(self, version):
@@ -61,10 +63,10 @@ def find_previous_release(server_version, releases):
             ):
                 return True, release
             else:
-                print(
-                    "The tag {version}-{type} exists but the package is not yet available on GitHub".format(
-                        version=release.version, type=release.type
-                    )
+                logger.debug(
+                    "The tag %s-%s exists but the package is not yet available on GitHub",
+                    release.version,
+                    release.type,
                 )
 
     return False, None
