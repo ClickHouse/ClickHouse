@@ -2203,7 +2203,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
             log, "Removing {} parts from filesystem (serially): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
-            preparePartForRemoval(part)->remove();
+            asMutableDeletingPart(part)->remove();
             if (part_names_succeed)
                 part_names_succeed->insert(part->name);
         }
