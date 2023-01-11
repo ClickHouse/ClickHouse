@@ -165,7 +165,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
 
     /// Make a checkpoint before reading the first row.
     peekable_buf->setCheckpoint();
-    auto first_row_values = format_reader->readRowAndGetFieldsAndDataTypes();
+    auto first_row_values = format_reader->readRowForHeaderDetection();
 
     /// To understand if the first row is a header with column names, we check
     /// that all values from this row is a subset of column names from provided header.
@@ -207,7 +207,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
 
     /// Skip delimiter between the first and the second rows.
     format_reader->skipRowBetweenDelimiter();
-    auto second_row_values = format_reader->readRowAndGetFieldsAndDataTypes();
+    auto second_row_values = format_reader->readRowForHeaderDetection();
 
     /// The second row can be a header with type names if it contains only valid type names.
     if (!checkIfValuesAreTypeNames(removeQuotesIfAny(second_row_values)))

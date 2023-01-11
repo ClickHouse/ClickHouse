@@ -72,7 +72,7 @@ public:
     std::vector<String> readTypes() override { return readHeaderRow(); }
     std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
     std::vector<String> readRow() { return readRowImpl<false>(); }
-    std::vector<String> readRowAndGetFieldsAndDataTypes() override { return readHeaderRow(); }
+    std::vector<String> readRowForHeaderDetection() override { return readHeaderRow(); }
 
 
     template <bool is_header>

@@ -72,7 +72,7 @@ public:
 
     std::vector<String> readRow() { return readRowImpl<ReadFieldMode::AS_FIELD>(); }
 
-    std::vector<String> readRowAndGetFieldsAndDataTypes() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
+    std::vector<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
 
     bool checkEndOfRow();
     bool checkForSuffixImpl(bool check_eof);

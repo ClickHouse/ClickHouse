@@ -97,7 +97,7 @@ public:
     virtual std::vector<String> readTypes() = 0;
 
     /// Read row with raw values.
-    virtual std::vector<String> readRowAndGetFieldsAndDataTypes()
+    virtual std::vector<String> readRowForHeaderDetection()
     {
         throw Exception("Method readRowAndGetFieldsAndDataTypes is not implemented for format reader", ErrorCodes::NOT_IMPLEMENTED);
     }
