@@ -18,7 +18,7 @@ CREATE TABLE hudi_table
 
 **Engine parameters**
 
--   `path` — Bucket url with the path to an existing Hudi table.
+-   `url` — Bucket url with the path to an existing Hudi table.
 -   `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
 
 **Example**
