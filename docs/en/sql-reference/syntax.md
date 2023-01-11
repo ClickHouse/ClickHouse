@@ -143,7 +143,7 @@ For example, the following SQL defines parameters named `a`, `b`, `c` and `d` - 
 ```sql
 SET param_a = 13, param_b = 'str';
 SET param_c = '2022-08-04 18:30:53';
-SET param_d = '{\'10\': [11, 12], \'13\': [14, 15]}';
+SET param_d = {'10': [11, 12], '13': [14, 15]}';
 
 SELECT
    {a: UInt32},
