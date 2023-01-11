@@ -543,5 +543,3 @@ Result:
 │   7 │ original │     7 │
 └─────┴──────────┴───────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/order-by/) <!--hide-->
