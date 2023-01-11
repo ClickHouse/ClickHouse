@@ -33,7 +33,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/ArrayJoinAction.h>
 
-#include <Planner/CollectColumnIndetifiers.h>
+#include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerActionsVisitor.h>

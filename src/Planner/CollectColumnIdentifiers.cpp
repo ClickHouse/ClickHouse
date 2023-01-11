@@ -1,4 +1,4 @@
-#include <Planner/CollectColumnIndetifiers.h>
+#include <Planner/CollectColumnIdentifiers.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
@@ -23,12 +23,12 @@ public:
     static bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType & child)
     {
         const auto & node_type = child->getNodeType();
-        return node_type !=  QueryTreeNodeType::TABLE
-            && node_type !=  QueryTreeNodeType::TABLE_FUNCTION
-            && node_type !=  QueryTreeNodeType::QUERY
-            && node_type !=  QueryTreeNodeType::UNION
-            && node_type !=  QueryTreeNodeType::JOIN
-            && node_type !=  QueryTreeNodeType::ARRAY_JOIN;
+        return node_type != QueryTreeNodeType::TABLE
+            && node_type != QueryTreeNodeType::TABLE_FUNCTION
+            && node_type != QueryTreeNodeType::QUERY
+            && node_type != QueryTreeNodeType::UNION
+            && node_type != QueryTreeNodeType::JOIN
+            && node_type != QueryTreeNodeType::ARRAY_JOIN;
     }
 
     void visitImpl(const QueryTreeNodePtr & node)
@@ -36,11 +36,11 @@ public:
         if (node->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
 
-        const auto * column_ident = planner_context->getColumnNodeIdentifierOrNull(node);
-        if (!column_ident)
+        const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
+        if (!column_identifier)
             return;
 
-        used_identifiers.insert(*column_ident);
+        used_identifiers.insert(*column_identifier);
     }
 
     ColumnIdentifierSet & used_identifiers;
