@@ -61,7 +61,7 @@ public:
     template <bool read_string>
     String readFieldIntoString();
 
-    std::vector<String> readRowAndGetFieldsAndDataTypes() override { return readHeaderRow(); }
+    std::vector<String> readRowForHeaderDetection() override { return readHeaderRow(); }
 
     void checkNullValueForNonNullable(DataTypePtr type) override;
 
