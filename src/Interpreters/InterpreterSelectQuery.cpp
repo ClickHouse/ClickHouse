@@ -112,6 +112,7 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -682,11 +683,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
             if (parallel_replicas_custom_filter_ast)
             {
-                custom_key_filter_info = generateFilterActions(
+                parallel_replicas_custom_filter_info = generateFilterActions(
                         table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                         prepared_sets);
 
-                custom_key_filter_info->do_remove_column = true;
+                parallel_replicas_custom_filter_info->do_remove_column = true;
                 query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }
 
@@ -1448,8 +1449,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             if (additional_filter_info)
                 add_filter_step(additional_filter_info, "Additional filter");
 
-            if (custom_key_filter_info)
-                add_filter_step(custom_key_filter_info, "Paralel replica custom key filter");
+            if (parallel_replicas_custom_filter_info)
+                add_filter_step(parallel_replicas_custom_filter_info, "Parallel replica custom key filter");
 
             if (expressions.before_array_join)
             {
