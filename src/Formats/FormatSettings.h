@@ -78,6 +78,7 @@ struct FormatSettings
         bool low_cardinality_as_dictionary = false;
         bool import_nested = false;
         bool allow_missing_columns = false;
+        bool output_string_as_string = false;
     } arrow;
 
     struct
@@ -140,6 +141,7 @@ struct FormatSettings
         UInt64 row_group_size = 1000000;
         bool import_nested = false;
         bool allow_missing_columns = false;
+        bool output_string_as_string = false;
     } parquet;
 
     struct Pretty
@@ -220,6 +222,7 @@ struct FormatSettings
         bool import_nested = false;
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
+        bool output_string_as_string = false;
     } orc;
 
     /// For capnProto format we should determine how to
