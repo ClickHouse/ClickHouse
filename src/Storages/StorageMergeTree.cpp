@@ -528,14 +528,14 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
     it->second.writeCSN(csn);
 }
 
-void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
+void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, bool force_wait)
 {
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
     Int64 version = startMutation(commands, query_context);
 
-    if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
+    if (force_wait || query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
 }
 

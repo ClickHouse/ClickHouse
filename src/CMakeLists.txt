@@ -103,7 +103,7 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/MeiliSearch)
-add_headers_and_sources(dbms Storages/NamedCollections)
+add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -358,6 +358,10 @@ target_link_libraries(clickhouse_common_io
 
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
+endif()
+
+if (TARGET ch_contrib::crc32_s390x)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
@@ -349,6 +350,13 @@ private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
     Node & addNode(Node node);
+
+    const Node & addFunctionImpl(
+        const FunctionBasePtr & function_base,
+        NodeRawConstPtrs children,
+        ColumnsWithTypeAndName arguments,
+        std::string result_name,
+        bool all_const);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
