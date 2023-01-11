@@ -233,7 +233,10 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
                 readCSVField(result, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readTSVField(result, buf);
+            if constexpr (read_string)
+                readEscapedString(result, buf);
+            else
+                readTSVField(result, buf);
             break;
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read value with {} escaping rule", escapingRuleToString(escaping_rule));
@@ -249,6 +252,21 @@ String readFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule es
 String readStringByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
     return readByEscapingRule<true>(buf, escaping_rule, format_settings);
+}
+
+String readStringOrFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
+{
+    /// For Quoted escaping rule we can read value as string only if it starts with `'`.
+    /// If there is no `'` it can be any other field number/array/etc.
+    if (escaping_rule == FormatSettings::EscapingRule::Quoted && !buf.eof() && *buf.position() == '\'')
+        return readFieldByEscapingRule(buf, escaping_rule, format_settings);
+
+    /// For JSON it's the same as for Quoted, but we check `"`.
+    if (escaping_rule == FormatSettings::EscapingRule::JSON && !buf.eof() && *buf.position() == '"')
+        return readFieldByEscapingRule(buf, escaping_rule, format_settings);
+
+    /// For other escaping rules we can read any field as string value.
+    return readStringByEscapingRule(buf, escaping_rule, format_settings);
 }
 
 DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)

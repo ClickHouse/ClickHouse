@@ -4,7 +4,6 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -12,7 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
 }
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
@@ -163,14 +161,14 @@ bool CustomSeparatedFormatReader::checkEndOfRow()
     return checkForSuffixImpl(true);
 }
 
-template <bool is_header>
+template <CustomSeparatedFormatReader::ReadFieldMode mode>
 String CustomSeparatedFormatReader::readFieldIntoString(bool is_first, bool is_last, bool is_unknown)
 {
     if (!is_first)
         skipFieldDelimiter();
     skipSpaces();
     updateFormatSettings(is_last);
-    if constexpr (is_header)
+    if constexpr (mode != ReadFieldMode::AS_FIELD)
     {
         /// If the number of columns is unknown and we use CSV escaping rule,
         /// we don't know what delimiter to expect after the value,
@@ -179,7 +177,10 @@ String CustomSeparatedFormatReader::readFieldIntoString(bool is_first, bool is_l
             return readCSVStringWithTwoPossibleDelimiters(
                 *buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
 
-        return readStringByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
+        if constexpr (mode == ReadFieldMode::AS_STRING)
+            return readStringByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
+        else
+            return readStringOrFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
     }
     else
     {
@@ -191,7 +192,7 @@ String CustomSeparatedFormatReader::readFieldIntoString(bool is_first, bool is_l
     }
 }
 
-template <bool is_header>
+template <CustomSeparatedFormatReader::ReadFieldMode mode>
 std::vector<String> CustomSeparatedFormatReader::readRowImpl()
 {
     std::vector<String> values;
@@ -201,14 +202,14 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
     {
         do
         {
-            values.push_back(readFieldIntoString<is_header>(values.empty(), false, true));
+            values.push_back(readFieldIntoString<mode>(values.empty(), false, true));
         } while (!checkEndOfRow());
         columns = values.size();
     }
     else
     {
         for (size_t i = 0; i != columns; ++i)
-            values.push_back(readFieldIntoString<is_header>(i == 0, i + 1 == columns, false));
+            values.push_back(readFieldIntoString<mode>(i == 0, i + 1 == columns, false));
     }
 
     skipRowEndDelimiter();

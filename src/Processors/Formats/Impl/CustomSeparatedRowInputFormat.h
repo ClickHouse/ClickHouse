@@ -68,11 +68,11 @@ public:
 
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
-    std::vector<String> readHeaderRow() {return readRowImpl<true>(); }
+    std::vector<String> readHeaderRow() {return readRowImpl<ReadFieldMode::AS_STRING>(); }
 
-    std::vector<String> readRow() { return readRowImpl<false>(); }
+    std::vector<String> readRow() { return readRowImpl<ReadFieldMode::AS_FIELD>(); }
 
-    std::vector<String> readRowForHeaderDetection() override { return readRowImpl<false>(); }
+    std::vector<String> readRowAndGetFieldsAndDataTypes() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
 
     bool checkEndOfRow();
     bool checkForSuffixImpl(bool check_eof);
@@ -83,10 +83,17 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
 
 private:
-    template <bool is_header>
+    enum class ReadFieldMode
+    {
+        AS_STRING,
+        AS_FIELD,
+        AS_POSSIBLE_STRING,
+    };
+
+    template <ReadFieldMode mode>
     std::vector<String> readRowImpl();
 
-    template <bool read_string>
+    template <ReadFieldMode mode>
     String readFieldIntoString(bool is_first, bool is_last, bool is_unknown);
 
     void updateFormatSettings(bool is_last_column);

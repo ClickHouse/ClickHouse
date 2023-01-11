@@ -21,7 +21,7 @@ String getFileNameFromReadBuffer(const ReadBuffer & in)
     else if (const auto * parallel = dynamic_cast<const ParallelReadBuffer *>(&in))
         return getFileName(parallel->getReadBufferFactory());
     else if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(&in))
-        return getFileName(peekable->getSubBuffer());
+        return getFileNameFromReadBuffer(peekable->getSubBuffer());
     else
         return getFileName(in);
 }

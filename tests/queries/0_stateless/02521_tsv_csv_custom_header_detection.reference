@@ -91,6 +91,10 @@ c3	Nullable(String)
 x	y	z
 Hello	\N	\N
 \N	World	\N
+16
+a""b	Nullable(Int64)					
+c	Nullable(Int64)					
+1	2
 TSV
 1
 x	Nullable(Int64)					
@@ -158,3 +162,8 @@ c2	Nullable(String)
 c3	Nullable(String)					
 x	y	z
 UInt32	String	Array(UInt32)
+7
+x	UInt32					
+y	String					
+z	Array(UInt32)					
+42	Hello	[1,2,3]

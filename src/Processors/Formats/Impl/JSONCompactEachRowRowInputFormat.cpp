@@ -18,11 +18,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
     const Block & header_,
     ReadBuffer & in_,

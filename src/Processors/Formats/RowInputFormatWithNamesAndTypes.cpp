@@ -8,7 +8,6 @@
 #include <IO/Operators.h>
 #include <Formats/EscapingRuleUtils.h>
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -166,10 +165,10 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
 
     /// Make a checkpoint before reading the first row.
     peekable_buf->setCheckpoint();
-    auto first_row_values = format_reader->readRowForHeaderDetection();
+    auto first_row_values = format_reader->readRowAndGetFieldsAndDataTypes();
 
     /// To understand if the first row is a header with column names, we check
-    /// that all values from this row is a subset of column names from read header.
+    /// that all values from this row is a subset of column names from provided header.
     auto column_names = getPort().getHeader().getNames();
     std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
     /// Values can be in quotes, remove them.
@@ -208,7 +207,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
 
     /// Skip delimiter between the first and the second rows.
     format_reader->skipRowBetweenDelimiter();
-    auto second_row_values = format_reader->readRowForHeaderDetection();
+    auto second_row_values = format_reader->readRowAndGetFieldsAndDataTypes();
 
     /// The second row can be a header with type names if it contains only valid type names.
     if (!checkIfValuesAreTypeNames(removeQuotesIfAny(second_row_values)))

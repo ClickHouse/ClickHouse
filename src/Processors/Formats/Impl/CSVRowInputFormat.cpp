@@ -1,7 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 
 #include <Formats/verbosePrintString.h>
 #include <Formats/registerWithNamesAndTypes.h>
@@ -15,11 +14,25 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    void checkBadDelimiter(char delimiter)
+    {
+        const String bad_delimiters = " \t\"'.UL";
+        if (bad_delimiters.find(delimiter) != String::npos)
+            throw Exception(
+                String("CSV format may not work correctly with delimiter '") + delimiter
+                    + "'. Try use CustomSeparated format instead.",
+                ErrorCodes::BAD_ARGUMENTS);
+    }
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
@@ -51,10 +64,10 @@ CSVRowInputFormat::CSVRowInputFormat(
         with_types_,
         format_settings_,
         std::move(format_reader_),
-        /// We cannot detect header properly when we have Tuple in CSV, because tuple name is a single column, but tuple elements are parsed as separate CSV columns.
         format_settings_.csv.try_detect_header),
     buf(std::move(in_))
 {
+    checkBadDelimiter(format_settings_.csv.delimiter);
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
@@ -73,16 +86,10 @@ CSVRowInputFormat::CSVRowInputFormat(
         with_types_,
         format_settings_,
         std::make_unique<CSVFormatReader>(*in_, format_settings_),
-        /// We cannot detect header properly when we have Tuple in CSV, because tuple name is a single column, but tuple elements are parsed as separate CSV columns.
         format_settings_.csv.try_detect_header),
     buf(std::move(in_))
 {
-    const String bad_delimiters = " \t\"'.UL";
-    if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
-        throw Exception(
-            String("CSV format may not work correctly with delimiter '") + format_settings.csv.delimiter
-                + "'. Try use CustomSeparated format instead.",
-            ErrorCodes::BAD_ARGUMENTS);
+    checkBadDelimiter(format_settings_.csv.delimiter);
 }
 
 void CSVRowInputFormat::syncAfterError()
@@ -331,7 +338,8 @@ std::pair<std::vector<String>, DataTypes> CSVSchemaReader::readRowAndGetFieldsAn
 
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, format_settings, FormatSettings::EscapingRule::CSV);
-    return {fields, data_types};}
+    return {fields, data_types};
+}
 
 DataTypes CSVSchemaReader::readRowAndGetDataTypesImpl()
 {
