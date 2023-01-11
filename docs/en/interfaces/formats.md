@@ -101,7 +101,7 @@ The `TabSeparated` format supports outputting total values (when using WITH TOTA
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 ```
 
-``` text
+``` response
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -177,7 +177,7 @@ INSERT INTO nestedt Values ( 1, [1], ['a'])
 SELECT * FROM nestedt FORMAT TSV
 ```
 
-``` text
+``` response
 1  [1]    ['a']
 ```
 
@@ -761,7 +761,7 @@ SELECT * FROM json_as_string;
 
 Result:
 
-``` text
+``` response
 ┌─json──────────────────────────────┐
 │ {"foo":{"bar":{"x":"y"},"baz":1}} │
 │ {}                                │
@@ -782,7 +782,7 @@ SELECT * FROM json_square_brackets;
 
 Result:
 
-```text
+```response
 ┌─field──────────────────────┐
 │ {"id": 1, "name": "name1"} │
 │ {"id": 2, "name": "name2"} │
@@ -1118,7 +1118,7 @@ When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHo
 
 Consider the `UserActivity` table as an example:
 
-``` text
+``` response
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -1127,7 +1127,7 @@ Consider the `UserActivity` table as an example:
 
 The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
-``` text
+``` response
 {"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
 {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
@@ -1171,7 +1171,7 @@ Without this setting, ClickHouse throws an exception.
 SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
 ```
 
-``` text
+``` response
 ┌─name────────────────────────────┬─value─┐
 │ input_format_import_nested_json │ 0     │
 └─────────────────────────────────┴───────┘
@@ -1181,7 +1181,7 @@ SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
 ```
 
-``` text
+``` response
 Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
 ```
 
@@ -1191,7 +1191,7 @@ INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], 
 SELECT * FROM json_each_row_nested
 ```
 
-``` text
+``` response
 ┌─n.s───────────┬─n.i────┐
 │ ['abc','def'] │ [1,23] │
 └───────────────┴────────┘
@@ -1300,7 +1300,7 @@ Example (shown for the [PrettyCompact](#prettycompact) format):
 SELECT * FROM t_null
 ```
 
-``` text
+``` response
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
@@ -1312,7 +1312,7 @@ Rows are not escaped in Pretty\* formats. Example is shown for the [PrettyCompac
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
-``` text
+``` response
 ┌─Escaping_test────────────────────────┐
 │ String with 'quotes' and      character │
 └──────────────────────────────────────┘
@@ -1327,7 +1327,7 @@ The Pretty format supports outputting total values (when using WITH TOTALS) and 
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-``` text
+``` response
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -1488,7 +1488,7 @@ Example:
 SELECT * FROM t_null FORMAT Vertical
 ```
 
-``` text
+``` response
 Row 1:
 ──────
 x: 1
@@ -1501,7 +1501,7 @@ Rows are not escaped in Vertical format:
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
 ```
 
-``` text
+``` response
 Row 1:
 ──────
 test: string with 'quotes' and      with some special

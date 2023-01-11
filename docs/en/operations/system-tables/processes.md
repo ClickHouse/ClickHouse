@@ -23,7 +23,7 @@ Columns:
 SELECT * FROM system.processes LIMIT 10 FORMAT Vertical;
 ```
 
-```text
+```response
 Row 1:
 ──────
 is_initial_query:     1
