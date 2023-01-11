@@ -96,10 +96,12 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
 {
     memory = std::make_unique<Memory>();
-    memory->size = settings.max_single_part_upload_size;
+    memory->size = std::max<size_t>(settings.max_single_part_upload_size, DBMS_DEFAULT_BUFFER_SIZE);
+
+    LOG_TRACE(log, "Buffer size {} ", buffer_size_);
 
     if (buffer_size_)
-        memory->size = std::min(buffer_size_, settings.max_single_part_upload_size);
+        memory->size = std::min(buffer_size_, memory->size);
 
     memory->data = static_cast<char *>(memory->allocator.alloc(memory->size));
     set(memory->data, memory->size);
@@ -160,8 +162,7 @@ void WriteBufferFromS3::nextImpl()
 
 std::shared_ptr<Aws::StringStream> WriteBufferFromS3::allocateBuffer()
 {
-    size_t cur_size = memory->size;
-    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", std::move(memory), cur_size);
+    auto temporary_buffer = Aws::MakeShared<Aws::SimpleStringStream>("temporary buffer", std::move(memory), written_bytes_in_memory);
 
     memory = std::make_unique<Memory>();
     memory->size = upload_part_size;
