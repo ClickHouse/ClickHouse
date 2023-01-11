@@ -152,6 +152,12 @@ SELECT
    {d: Map(String, Array(UInt8))};
 ```
 
+Result:
+
+```response
+13	str	2022-08-04 18:30:53	{'10':[11,12],'13':[14,15]}
+```
+
 If you are using `clickhouse-client`, the parameters are specified as `--param_name=value`. For example, the following parameter has the name `message` and it is being retrieved as a `String`:
 
 ```sql
