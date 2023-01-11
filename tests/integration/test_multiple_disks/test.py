@@ -1625,6 +1625,7 @@ def test_rename(start_cluster):
         """
         )
 
+        # jbod1 disk is 40mb
         for _ in range(5):
             data = []
             for i in range(10):
@@ -1635,7 +1636,13 @@ def test_rename(start_cluster):
                 )
             )
 
-        disks = get_used_disks_for_table(node1, "renaming_table")
+        # data is moved in the background, so check with retries
+        num_try = 0
+        while get_used_disks_for_table(node1, "renaming_table") == 1:
+            time.sleep(1)
+            num_try += 1
+            if num_try == 20:
+                break
         assert len(disks) > 1
         assert node1.query("SELECT COUNT() FROM default.renaming_table") == "50\n"
 
