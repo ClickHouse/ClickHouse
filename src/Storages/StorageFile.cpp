@@ -706,7 +706,7 @@ Pipe StorageFile::read(
                 });
 
             if (fetch_columns.empty())
-                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
             columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         }
         else
