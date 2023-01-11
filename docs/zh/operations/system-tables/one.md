@@ -15,7 +15,7 @@ slug: /zh/operations/system-tables/one
 SELECT * FROM system.one LIMIT 10;
 ```
 
-```text
+```response
 ┌─dummy─┐
 │     0 │
 └───────┘

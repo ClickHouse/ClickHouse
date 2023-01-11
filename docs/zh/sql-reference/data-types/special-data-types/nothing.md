@@ -13,7 +13,7 @@ slug: /zh/sql-reference/data-types/special-data-types/nothing
 SELECT toTypeName(array())
 ```
 
-```text
+```response
 ┌─toTypeName(array())─┐
 │ Array(Nothing)      │
 └─────────────────────┘

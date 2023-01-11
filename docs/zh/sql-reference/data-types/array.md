@@ -23,7 +23,7 @@ slug: /zh/sql-reference/data-types/array
 SELECT array(1, 2) AS x, toTypeName(x)
 ```
 
-```text
+```response
 ┌─x─────┬─toTypeName(array(1, 2))─┐
 │ [1,2] │ Array(UInt8)            │
 └───────┴─────────────────────────┘
@@ -33,7 +33,7 @@ SELECT array(1, 2) AS x, toTypeName(x)
 SELECT [1, 2] AS x, toTypeName(x)
 ```
 
-``` text
+```response
 ┌─x─────┬─toTypeName([1, 2])─┐
 │ [1,2] │ Array(UInt8)       │
 └───────┴────────────────────┘
@@ -50,7 +50,7 @@ ClickHouse会自动检测数组元素,并根据元素计算出存储这些元素
 SELECT array(1, 2, NULL) AS x, toTypeName(x)
 ```
 
-```text
+```response
 ┌─x──────────┬─toTypeName(array(1, 2, NULL))─┐
 │ [1,2,NULL] │ Array(Nullable(UInt8))        │
 └────────────┴───────────────────────────────┘
@@ -62,7 +62,7 @@ SELECT array(1, 2, NULL) AS x, toTypeName(x)
 SELECT array(1, 'a')
 ```
 
-```text
+```response
 Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```

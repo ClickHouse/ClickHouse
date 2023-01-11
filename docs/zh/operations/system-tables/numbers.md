@@ -15,7 +15,7 @@ slug: /zh/operations/system-tables/numbers
 SELECT * FROM system.numbers LIMIT 10;
 ```
 
-```text
+```response
 ┌─number─┐
 │      0 │
 │      1 │

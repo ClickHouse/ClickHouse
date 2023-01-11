@@ -21,7 +21,7 @@ slug: /zh/sql-reference/data-types/tuple
 SELECT tuple(1,'a') AS x, toTypeName(x)
 ```
 
-```text
+```response
 ┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
 │ (1,'a') │ Tuple(UInt8, String)      │
 └─────────┴───────────────────────────┘
@@ -37,7 +37,7 @@ SELECT tuple(1,'a') AS x, toTypeName(x)
 SELECT tuple(1, NULL) AS x, toTypeName(x)
 ```
 
-```text
+```response
 ┌─x────────┬─toTypeName(tuple(1, NULL))──────┐
 │ (1,NULL) │ Tuple(UInt8, Nullable(Nothing)) │
 └──────────┴─────────────────────────────────┘
