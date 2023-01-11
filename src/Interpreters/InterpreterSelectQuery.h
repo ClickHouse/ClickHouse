@@ -224,6 +224,8 @@ private:
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;
 
+    FilterDAGInfoPtr custom_key_filter_info;
+
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
     /// List of columns to read to execute the query.
