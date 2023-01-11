@@ -36,7 +36,7 @@ const DataTypes & FunctionNode::getArgumentTypes() const
 {
     if (!function)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Trying to get expected argument types of function {} when IResolvedFunction is not set",
+        "Function {} is not resolved",
         function_name);
     return function->getArgumentTypes();
 }
