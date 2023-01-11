@@ -131,30 +131,6 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
 
         aliases[alias] = ast;
     }
-
-    /** QueryAliasesVisitor is executed before ExecuteScalarSubqueriesVisitor.
-        For example we have subquery in our query (SELECT sum(number) FROM numbers(10)).
-
-        After running QueryAliasesVisitor it will be (SELECT sum(number) FROM numbers(10)) as _subquery_1
-        and force_alias for this subquery will be true.
-
-        After running ExecuteScalarSubqueriesVisitor it will be converted to (45 as _subquery_1)
-        and force_alias for ast literal will be true.
-
-        But if we send such query on remote host with Distributed engine for example we cannot send force_alias
-        information for our ast node with query string. And this alias will be dropped because force_alias for ASTWIthAlias
-        by default is false.
-
-        It is imporant that subquery can be converted to literal during ExecuteScalarSubqueriesVisitor.
-        And code below check if we previously set for subquery alias as _subquery, and if it is true
-        then set force_alias = true for node that was optimized during ExecuteScalarSubqueriesVisitor.
-     */
-
-    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
-    {
-        if (startsWith(alias, dummy_subquery_name_prefix))
-            ast_with_alias->force_alias = true;
-    }
 }
 
 /// Explicit template instantiations

@@ -2199,7 +2199,19 @@ struct ParserExpressionImpl
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto start = std::make_unique<ExpressionLayer>(false);
-    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+    bool ret = ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+    if (ret)
+    {
+        if (const auto * func = node->as<ASTFunction>())
+        {
+            if (func->name == "__columnWithAliasName")
+            {
+                node = func->arguments->children.front();
+                dynamic_cast<ASTWithAlias &>(*node).force_alias = true;
+            }
+        }
+    }
+    return ret;
 }
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
