@@ -155,7 +155,6 @@ private:
 
         /// perform linear interpolation
         size_t idx = 0;
-
         if (size >= 2)
         {
             if (level >= value_weight_pairs[size - 2].second)
@@ -164,8 +163,20 @@ private:
             }
             else
             {
-                while (level > value_weight_pairs[idx + 1].second)
-                    idx++;
+                size_t start = 0, end = size - 1;
+                while (start <= end)
+                {
+                    size_t mid = start + (end - start) / 2;
+                    if (mid > size)
+                        break;
+                    if (level > value_weight_pairs[mid + 1].second)
+                        start = mid + 1;
+                    else
+                    {
+                        idx = mid;
+                        end = mid - 1;
+                    }
+                }
             }
         }
 
@@ -249,8 +260,20 @@ private:
                 }
                 else
                 {
-                    while (level > value_weight_pairs[idx + 1].second)
-                        idx++;
+                    size_t start = 0, end = size - 1;
+                    while (start <= end)
+                    {
+                        size_t mid = start + (end - start) / 2;
+                        if (mid > size)
+                            break;
+                        if (level > value_weight_pairs[mid + 1].second)
+                            start = mid + 1;
+                        else
+                        {
+                            idx = mid;
+                            end = mid - 1;
+                        }
+                    }
                 }
             }
 
