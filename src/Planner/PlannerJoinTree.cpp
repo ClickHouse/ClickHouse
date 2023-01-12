@@ -735,6 +735,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             add_sorting(right_plan, join_clause.key_names_right, JoinTableSide::Right);
         }
 
+        auto join_pipeline_type = join_algorithm->pipelineType();
         auto join_step = std::make_unique<JoinStep>(
             left_plan.getCurrentDataStream(),
             right_plan.getCurrentDataStream(),
@@ -743,7 +744,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             settings.max_threads,
             false /*optimize_read_in_order*/);
 
-        join_step->setStepDescription(fmt::format("JOIN {}", join_algorithm->pipelineType()));
+        join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 
         std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
@@ -834,12 +835,26 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 {
     const auto & query_node_typed = query_node->as<QueryNode &>();
     auto table_expressions_stack = buildTableExpressionsStack(query_node_typed.getJoinTree());
-    bool is_single_table_expression = table_expressions_stack.size() == 1;
+    size_t table_expressions_stack_size = table_expressions_stack.size();
+    bool is_single_table_expression = table_expressions_stack_size == 1;
+
+    std::vector<ColumnIdentifierSet> table_expressions_outer_scope_columns(table_expressions_stack_size);
+    ColumnIdentifierSet current_outer_scope_columns = outer_scope_columns;
+
+    for (Int64 i = table_expressions_stack_size - 1; i >= 0; --i)
+    {
+        table_expressions_outer_scope_columns[i] = current_outer_scope_columns;
+
+        if (table_expressions_stack[i]->getNodeType() == QueryTreeNodeType::JOIN)
+            collectTopLevelColumnIdentifiers(table_expressions_stack[i], planner_context, current_outer_scope_columns);
+    }
 
     std::vector<JoinTreeQueryPlan> query_plans_stack;
 
-    for (auto & table_expression : table_expressions_stack)
+    for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
+        const auto & table_expression = table_expressions_stack[i];
+
         if (auto * array_join_node = table_expression->as<ArrayJoinNode>())
         {
             if (query_plans_stack.empty())
@@ -868,7 +883,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             query_plans_stack.push_back(buildQueryPlanForJoinNode(table_expression,
                 std::move(left_query_plan),
                 std::move(right_query_plan),
-                outer_scope_columns,
+                table_expressions_outer_scope_columns[i],
                 planner_context));
         }
         else
