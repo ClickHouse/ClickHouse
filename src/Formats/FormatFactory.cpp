@@ -14,7 +14,6 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
-#include <fcntl.h>
 #include <unistd.h>
 
 #include <boost/algorithm/string/case_conv.hpp>

@@ -9,7 +9,7 @@ services:
       - data1-1:/data1
       - ${MINIO_CERTS_DIR:-}:/certs
     expose:
-      - ${MINIO_PORT}
+      - ${MINIO_PORT:-9001}
     environment:
       MINIO_ACCESS_KEY: minio
       MINIO_SECRET_KEY: minio123

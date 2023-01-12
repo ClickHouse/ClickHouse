@@ -1544,8 +1544,11 @@ def check_server_started(args):
             print(" OK")
             sys.stdout.flush()
             return True
-        except (ConnectionError, http.client.ImproperConnectionState):
-            print(".", end="")
+        except (ConnectionError, http.client.ImproperConnectionState) as e:
+            if args.hung_check:
+                print("Connection error, will retry: ", str(e))
+            else:
+                print(".", end="")
             sys.stdout.flush()
             retry_count -= 1
             sleep(0.5)
