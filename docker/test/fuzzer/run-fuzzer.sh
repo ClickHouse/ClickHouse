@@ -397,6 +397,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="fuzzer.log">fuzzer.log</a>
   <a href="server.log.gz">server.log.gz</a>
   <a href="main.log">main.log</a>
+  <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
 </p>
 <table>
