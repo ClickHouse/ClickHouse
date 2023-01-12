@@ -1504,7 +1504,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     entry.znode_name,
                     entry.typeToString(),
                     entry.new_part_name,
-                    info.getPartName());
+                    info.getPartNameForLogs());
                 LOG_TRACE(log, fmt::runtime(out_postpone_reason));
                 return false;
             }
