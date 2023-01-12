@@ -1478,8 +1478,6 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
         part.reset();
 
         clearOldPartsFromFilesystem();
-
-        LOG_INFO(log, "Removed part {}.", part_name);
     }
 
     /// Else nothing to do, part was removed in some different way

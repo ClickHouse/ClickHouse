@@ -2021,7 +2021,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             }
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
-            bool reached_removal_time = part_remove_time < time_now && time_now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds();
+            bool reached_removal_time = part_remove_time <= time_now && time_now - part_remove_time >= getSettings()->old_parts_lifetime.totalSeconds();
             if ((reached_removal_time && !has_skipped_mutation_parent(part))
                 || force
                 || isInMemoryPart(part)     /// Remove in-memory parts immediately to not store excessive data in RAM
