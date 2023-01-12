@@ -425,7 +425,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         aggregated_columns = temp_actions->getNamesAndTypesList();
 
     for (const auto & desc : aggregate_descriptions)
-        aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
+        aggregated_columns.emplace_back(desc.column_name, desc.function->getResultType());
 }
 
 
@@ -1668,12 +1668,14 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     NamesWithAliases result_columns;
+    NameSet required_result_columns_set(required_result_columns.begin(), required_result_columns.end());
 
     ASTs asts = select_query->select()->children;
     for (const auto & ast : asts)
     {
         String result_name = ast->getAliasOrColumnName();
-        if (required_result_columns.empty() || required_result_columns.contains(result_name))
+
+        if (required_result_columns_set.empty() || required_result_columns_set.contains(result_name))
         {
             std::string source_name = ast->getColumnName();
 
@@ -1709,6 +1711,15 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
 
     auto actions = chain.getLastActions();
     actions->project(result_columns);
+
+    if (!required_result_columns.empty())
+    {
+        result_columns.clear();
+        for (const auto & column : required_result_columns)
+            result_columns.emplace_back(column, std::string{});
+        actions->project(result_columns);
+    }
+
     return actions;
 }
 
@@ -2074,7 +2085,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 for (const auto & f : w.window_functions)
                 {
                     query_analyzer.columns_after_window.push_back(
-                        {f.column_name, f.aggregate_function->getReturnType()});
+                        {f.column_name, f.aggregate_function->getResultType()});
                 }
             }
 

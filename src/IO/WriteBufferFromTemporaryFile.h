@@ -20,11 +20,11 @@ public:
     ~WriteBufferFromTemporaryFile() override;
 
 private:
-    explicit WriteBufferFromTemporaryFile(std::unique_ptr<TemporaryFile> && tmp_file);
+    explicit WriteBufferFromTemporaryFile(std::unique_ptr<PocoTemporaryFile> && tmp_file);
 
     std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 
-    std::unique_ptr<TemporaryFile> tmp_file;
+    std::unique_ptr<PocoTemporaryFile> tmp_file;
 
     friend class ReadBufferFromTemporaryWriteBuffer;
 };
