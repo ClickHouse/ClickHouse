@@ -1,4 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
+-- Tag no-fasttest: Depends on OpenSSL
+-- Tag no-parallel: Messes with internal cache
 
 SYSTEM DROP QUERY RESULT CACHE;
 

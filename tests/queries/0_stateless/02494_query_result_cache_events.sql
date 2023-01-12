@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: Messes with internal cache
 
 -- Start with empty query result cache (QRC) and query log
 SYSTEM DROP QUERY RESULT CACHE;

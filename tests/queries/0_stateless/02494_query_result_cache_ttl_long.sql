@@ -1,4 +1,7 @@
 -- Tags: no-fasttest, no-parallel, long
+-- Tag no-fasttest: Test runtime is > 6 sec
+-- Tag long: Test runtime is > 6 sec
+-- Tag no-parallel: Messes with internal cache
 
 SYSTEM DROP QUERY RESULT CACHE;
 
