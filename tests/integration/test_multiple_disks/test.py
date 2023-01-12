@@ -1643,7 +1643,7 @@ def test_rename(start_cluster):
             num_try += 1
             if num_try == 20:
                 break
-        assert len(disks) > 1
+        assert len(get_used_disks_for_table(node1, "renaming_table")) > 1
         assert node1.query("SELECT COUNT() FROM default.renaming_table") == "50\n"
 
         node1.query("RENAME TABLE default.renaming_table TO default.renaming_table1")
