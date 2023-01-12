@@ -34,7 +34,10 @@ public:
         return 0;
     }
 
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override
+    {
+        return false;
+    }
 
     bool isDeterministicInScopeOfQuery() const override
     {

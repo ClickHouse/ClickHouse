@@ -125,23 +125,6 @@ def get_candidates_to_be_killed(event_data: dict) -> Dict[str, List[str]]:
     return instances_by_zone
 
 
-def delete_runner(access_token: str, runner: RunnerDescription) -> bool:
-    headers = {
-        "Authorization": f"token {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-
-    response = requests.delete(
-        f"https://api.github.com/orgs/ClickHouse/actions/runners/{runner.id}",
-        headers=headers,
-    )
-    response.raise_for_status()
-    print(
-        f"Response code deleting {runner.name} with id {runner.id} is {response.status_code}"
-    )
-    return bool(response.status_code == 204)
-
-
 def main(
     github_secret_key: str, github_app_id: int, event: dict
 ) -> Dict[str, List[str]]:
@@ -160,8 +143,11 @@ def main(
     access_token = get_access_token(encoded_jwt, installation_id)
 
     runners = list_runners(access_token)
+    # We used to delete potential hosts to terminate from GitHub runners pool,
+    # but the documentation states:
+    # --- Returning an instance first in the response data does not guarantee its termination
+    # so they will be cleaned out by ci_runners_metrics_lambda eventually
 
-    to_delete_runners = []
     instances_to_kill = []
     for zone, num_to_kill in to_kill_by_zone.items():
         candidates = instances_by_zone[zone]
@@ -199,21 +185,10 @@ def main(
             print(
                 f"Checked all candidates for av {zone}, get to delete {len(delete_for_av)}, but still cannot get required {num_to_kill}"
             )
-        to_delete_runners += delete_for_av
+
+        instances_to_kill += [runner.name for runner in delete_for_av]
 
     print("Got instances to kill: ", ", ".join(instances_to_kill))
-    print(
-        "Going to delete runners:",
-        ", ".join([runner.name for runner in to_delete_runners]),
-    )
-    for runner in to_delete_runners:
-        if delete_runner(access_token, runner):
-            print(
-                f"Runner with name {runner.name} and id {runner.id} successfuly deleted from github"
-            )
-            instances_to_kill.append(runner.name)
-        else:
-            print(f"Cannot delete {runner.name} from github")
 
     response = {"InstanceIDs": instances_to_kill}
     print(response)

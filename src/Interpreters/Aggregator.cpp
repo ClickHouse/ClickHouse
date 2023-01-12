@@ -221,16 +221,32 @@ void initDataVariantsWithSizeHint(
             const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
             const auto lower_limit = hint->sum_of_sizes / max_threads;
             const auto upper_limit = stats_collecting_params.max_size_to_preallocate_for_aggregation / max_threads;
-            const auto adjusted = std::min(std::max(lower_limit, hint->median_size), upper_limit);
-            if (worthConvertToTwoLevel(
-                    params.group_by_two_level_threshold,
-                    hint->sum_of_sizes,
-                    /*group_by_two_level_threshold_bytes*/ 0,
-                    /*result_size_bytes*/ 0))
-                method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
-            result.init(method_chosen, adjusted);
-            ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
-            return;
+            if (hint->median_size > upper_limit)
+            {
+                /// Since we cannot afford to preallocate as much as we want, we will likely need to do resize anyway.
+                /// But we will also work with the big (i.e. not so cache friendly) HT from the beginning which may result in a slight slowdown.
+                /// So let's just do nothing.
+                LOG_TRACE(
+                    &Poco::Logger::get("Aggregator"),
+                    "No space were preallocated in hash tables because 'max_size_to_preallocate_for_aggregation' has too small value: {}, "
+                    "should be at least {}",
+                    stats_collecting_params.max_size_to_preallocate_for_aggregation,
+                    hint->median_size * max_threads);
+            }
+            /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
+            else if ((max_threads > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
+            {
+                const auto adjusted = std::max(lower_limit, hint->median_size);
+                if (worthConvertToTwoLevel(
+                        params.group_by_two_level_threshold,
+                        hint->sum_of_sizes,
+                        /*group_by_two_level_threshold_bytes*/ 0,
+                        /*result_size_bytes*/ 0))
+                    method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
+                result.init(method_chosen, adjusted);
+                ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
+                return;
+            }
         }
     }
     result.init(method_chosen);
@@ -433,7 +449,7 @@ Block Aggregator::Params::getHeader(
             {
                 auto & elem = res.getByName(aggregate.column_name);
 
-                elem.type = aggregate.function->getReturnType();
+                elem.type = aggregate.function->getResultType();
                 elem.column = elem.type->createColumn();
             }
         }
@@ -452,7 +468,7 @@ Block Aggregator::Params::getHeader(
 
             DataTypePtr type;
             if (final)
-                type = aggregate.function->getReturnType();
+                type = aggregate.function->getResultType();
             else
                 type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
 
@@ -930,7 +946,10 @@ void Aggregator::executeOnBlockSmall(
     /// How to perform the aggregation?
     if (result.empty())
     {
-        initDataVariantsWithSizeHint(result, method_chosen, params);
+        if (method_chosen != AggregatedDataVariants::Type::without_key)
+            initDataVariantsWithSizeHint(result, method_chosen, params);
+        else
+            result.init(method_chosen);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
     }
@@ -1581,7 +1600,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     auto & out_stream = tmp_data->createStream(getHeader(false), max_temp_file_size);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.path());
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getPath());
 
     /// Flush only two-level data and possibly overflow data.
 

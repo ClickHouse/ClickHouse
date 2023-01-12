@@ -20,6 +20,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
+#include <Storages/StorageView.h>
 
 
 namespace DB
@@ -249,7 +250,17 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     for (const auto & column : *cols)
                     {
                         if (first_table || !data.join_using_columns.contains(column.name))
-                            addIdentifier(columns, table.table, column.name);
+                        {
+                            std::string column_name = column.name;
+
+                            /// replaceQueryParameterWithValue is used for parameterized view (which are created using query parameters
+                            /// and SELECT is used with substitution of these query parameters )
+                            if (!data.parameter_values.empty())
+                                column_name
+                                    = StorageView::replaceQueryParameterWithValue(column_name, data.parameter_values, data.parameter_types);
+
+                            addIdentifier(columns, table.table, column_name);
+                        }
                     }
                 }
                 first_table = false;
@@ -299,7 +310,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             }
 
             // QualifiedAsterisk's transformers start to appear at child 1
-            for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+            for (const auto * it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
             {
                 IASTColumnsTransformer::transform(*it, columns);
             }

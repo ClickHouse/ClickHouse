@@ -112,12 +112,7 @@ endif ()
 
 target_link_libraries(clickhouse_functions_obj PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
 
-if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
-    # Used to forward the linking information to the final binaries such as clickhouse / unit_tests_dbms,
-    # since such information are lost after we convert to OBJECT target
-    add_library(clickhouse_functions INTERFACE)
-    target_link_libraries(clickhouse_functions INTERFACE ${OBJECT_LIBS} ${PUBLIC_LIBS} ${PRIVATE_LIBS})
-else()
-    add_library(clickhouse_functions SHARED ${OBJECT_LIBS})
-    target_link_libraries(clickhouse_functions PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
-endif ()
+# Used to forward the linking information to the final binaries such as clickhouse / unit_tests_dbms,
+# since such information are lost after we convert to OBJECT target
+add_library(clickhouse_functions INTERFACE)
+target_link_libraries(clickhouse_functions INTERFACE ${OBJECT_LIBS} ${PUBLIC_LIBS} ${PRIVATE_LIBS})

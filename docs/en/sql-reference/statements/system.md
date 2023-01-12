@@ -104,12 +104,16 @@ Compiled expression cache used when query/user/profile enable option [compile-ex
 
 ## FLUSH LOGS
 
-Flushes buffers of log messages to system tables (e.g. system.query_log). Allows you to not wait 7.5 seconds when debugging.
+Flushes buffered log messages to system tables, e.g. system.query_log. Mainly useful for debugging since most system tables have a default flush interval of 7.5 seconds.
 This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG
 
 Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper.
+
+## RELOAD USERS
+
+Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. Note that `SYSTEM RELOAD CONFIG` will only reload users.xml access storage.
 
 ## SHUTDOWN
 

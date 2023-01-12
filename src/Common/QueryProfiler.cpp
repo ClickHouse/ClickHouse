@@ -50,11 +50,11 @@ namespace
                 /// But pass with some frequency to avoid drop of all traces.
                 if (overrun_count > 0 && write_trace_iteration % (overrun_count + 1) == 0)
                 {
-                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
+                    ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
                 }
                 else
                 {
-                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
+                    ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
                     return;
                 }
             }
@@ -67,7 +67,7 @@ namespace
         const StackTrace stack_trace(signal_context);
 
         TraceSender::send(trace_type, stack_trace, {});
-        ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
+        ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;
     }
