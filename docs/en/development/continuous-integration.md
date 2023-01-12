@@ -129,7 +129,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
   - `clickhouse`: Main built binary.
   - `clickhouse-odbc-bridge`
   - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
-  - `performance.tgz`: Special package for performance tests.
+  - `performance.tar.zst`: Special package for performance tests.
 
 
 ## Special Build Check
