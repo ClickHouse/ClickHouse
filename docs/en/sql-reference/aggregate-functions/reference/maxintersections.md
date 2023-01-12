@@ -61,4 +61,4 @@ Response:
 3
 ```
 
-If you have multiple occurrences of the maximum interval, you can use the [`maxIntersectionsPosition` function](./maxintersectionsposition.md) to locate the numer and location of those occurrences.
+If you have multiple occurrences of the maximum interval, you can use the [`maxIntersectionsPosition` function](./maxintersectionsposition.md) to locate the number and location of those occurrences.
