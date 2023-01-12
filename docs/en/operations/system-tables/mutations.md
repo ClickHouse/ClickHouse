@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/mutations
 ---
 # mutations
 
-The table contains information about [mutations](/docs/en/sql-reference/statements/alter/index.md/#mutations) of [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
+The table contains information about [mutations](/docs/en/sql-reference/statements/alter/index.md#mutations) of [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
 
 Columns:
 
@@ -15,7 +15,7 @@ Columns:
 
 -   `command` ([String](/docs/en/sql-reference/data-types/string.md)) — The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
 
--   `create_time` ([Datetime](/docs/en/sql-reference/data-types/datetime.md)) —  Date and time when the mutation command was submitted for execution.
+-   `create_time` ([DateTime](/docs/en/sql-reference/data-types/datetime.md)) —  Date and time when the mutation command was submitted for execution.
 
 -   `block_numbers.partition_id` ([Array](/docs/en/sql-reference/data-types/array.md)([String](/docs/en/sql-reference/data-types/string.md))) — For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty.
 
@@ -39,14 +39,12 @@ If there were problems with mutating some data parts, the following columns cont
 
 -   `latest_failed_part` ([String](/docs/en/sql-reference/data-types/string.md)) — The name of the most recent part that could not be mutated.
 
--   `latest_fail_time` ([Datetime](/docs/en/sql-reference/data-types/datetime.md)) — The date and time of the most recent part mutation failure.
+-   `latest_fail_time` ([DateTime](/docs/en/sql-reference/data-types/datetime.md)) — The date and time of the most recent part mutation failure.
 
 -   `latest_fail_reason` ([String](/docs/en/sql-reference/data-types/string.md)) — The exception message that caused the most recent part mutation failure.
 
 **See Also**
 
--   [Mutations](/docs/en/sql-reference/statements/alter/index.md/#mutations)
+-   [Mutations](/docs/en/sql-reference/statements/alter/index.md#mutations)
 -   [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) table engine
 -   [ReplicatedMergeTree](/docs/en/engines/table-engines/mergetree-family/replication.md) family
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/mutations) <!--hide-->

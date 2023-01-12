@@ -89,11 +89,6 @@ public:
         return getExpression()->getResultType();
     }
 
-    ConstantValuePtr getConstantValueOrNull() const override
-    {
-        return getExpression()->getConstantValueOrNull();
-    }
-
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:

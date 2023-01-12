@@ -142,6 +142,9 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 
     checkHasReplicaMetadataInZooKeeper(zookeeper, replica_path);
 
+    /// Just in case it was not removed earlier due to connection loss
+    zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
+
     String replica_metadata_version;
     const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version);
     if (replica_metadata_version_exists)
@@ -182,12 +185,13 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     storage.createNewZooKeeperNodes();
     storage.syncPinnedPartUUIDs();
 
+    std::lock_guard lock(storage.table_shared_id_mutex);
     storage.createTableSharedID();
 };
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    storage.startupImpl();
+    storage.startupImpl(/* from_attach_thread */ true);
     storage.initialization_done = true;
     LOG_INFO(log, "Table is initialized");
 }

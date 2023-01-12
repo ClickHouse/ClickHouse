@@ -29,6 +29,12 @@ node_without_interserver_listen_host = cluster.add_instance(
 def start_cluster():
     try:
         cluster.start()
+        cluster.wait_for_url(
+            f"http://{INTERSERVER_LISTEN_HOST}:{INTERSERVER_HTTP_PORT}"
+        )
+        cluster.wait_for_url(
+            f"http://{node_without_interserver_listen_host.ip_address}:8123"
+        )
         yield cluster
 
     finally:

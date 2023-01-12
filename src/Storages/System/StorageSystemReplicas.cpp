@@ -153,7 +153,7 @@ Pipe StorageSystemReplicas::read(
 
     for (size_t i = 0, size = col_database->size(); i < size; ++i)
     {
-        StorageReplicatedMergeTree::Status status;
+        ReplicatedTableStatus status;
         dynamic_cast<StorageReplicatedMergeTree &>(
             *replicated_tables
                 [(*col_database)[i].safeGet<const String &>()]

@@ -4,6 +4,7 @@ import logging
 import subprocess
 import os
 import sys
+from typing import List, Tuple
 
 from github import Github
 
@@ -26,6 +27,10 @@ from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
 
 IMAGE_NAME = "clickhouse/sqlancer-test"
+
+
+def get_pull_command(docker_image):
+    return f"docker pull {docker_image}"
 
 
 def get_run_command(download_url, workspace_path, image):
@@ -91,10 +96,25 @@ if __name__ == "__main__":
     if not os.path.exists(workspace_path):
         os.makedirs(workspace_path)
 
+    pull_command = get_pull_command(docker_image)
+
+    logging.info("Going to pull image %s", pull_command)
+
+    pull_log_path = os.path.join(workspace_path, "pull.log")
+    with open(pull_log_path, "w", encoding="utf-8") as log:
+        with subprocess.Popen(
+            pull_command, shell=True, stderr=log, stdout=log
+        ) as process:
+            retcode = process.wait()
+            if retcode == 0:
+                logging.info("Pull successfully")
+            else:
+                logging.info("Pull failed")
+
     run_command = get_run_command(build_url, workspace_path, docker_image)
     logging.info("Going to run %s", run_command)
 
-    run_log_path = os.path.join(workspace_path, "runlog.log")
+    run_log_path = os.path.join(workspace_path, "run.log")
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log
@@ -123,6 +143,7 @@ if __name__ == "__main__":
 
     paths = [
         run_log_path,
+        pull_log_path,
         os.path.join(workspace_path, "clickhouse-server.log"),
         os.path.join(workspace_path, "stderr.log"),
         os.path.join(workspace_path, "stdout.log"),
@@ -137,7 +158,7 @@ if __name__ == "__main__":
     report_url = GITHUB_RUN_URL
 
     status = "success"
-    test_results = []
+    test_results = []  # type: List[Tuple[str, str]]
     # Try to get status message saved by the SQLancer
     try:
         # with open(
@@ -145,7 +166,7 @@ if __name__ == "__main__":
         # ) as status_f:
         #     status = status_f.readline().rstrip("\n")
         if os.path.exists(os.path.join(workspace_path, "server_crashed.log")):
-            test_results.append("Server crashed", "FAIL")
+            test_results.append(("Server crashed", "FAIL"))
         with open(
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:

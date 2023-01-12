@@ -194,6 +194,9 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         // write only the root system path because of digest
         if (Coordination::matchPath(path.toView(), keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
         {
+            if (counter == snapshot.snapshot_container_size - 1)
+                break;
+
             ++it;
             continue;
         }

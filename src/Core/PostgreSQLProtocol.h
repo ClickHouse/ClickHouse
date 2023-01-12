@@ -175,7 +175,7 @@ public:
     FrontMessageType receiveMessageType()
     {
         char type = 0;
-        in->read(type);
+        in->readStrict(type);
         return static_cast<FrontMessageType>(type);
     }
 

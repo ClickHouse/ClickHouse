@@ -434,7 +434,7 @@ void StorageBuffer::read(
 }
 
 
-static void appendBlock(const Block & from, Block & to)
+static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
 {
     size_t rows = from.rows();
     size_t old_rows = to.rows();
@@ -456,7 +456,24 @@ static void appendBlock(const Block & from, Block & to)
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            {
+                /// Usually IColumn::mutate() here will simply move pointers,
+                /// however in case of parallel reading from it via SELECT, it
+                /// is possible for the full IColumn::clone() here, and in this
+                /// case it may fail due to MEMORY_LIMIT_EXCEEDED, and this
+                /// breaks the rollback, since the column got lost, it is
+                /// neither in last_col nor in "to" block.
+                ///
+                /// The safest option here, is to do a full clone every time,
+                /// however, it is overhead. And it looks like the only
+                /// exception that is possible here is MEMORY_LIMIT_EXCEEDED,
+                /// and it is better to simply suppress it, to avoid overhead
+                /// for every INSERT into Buffer (Anyway we have a
+                /// LOGICAL_ERROR in rollback that will bail if something else
+                /// will happens here).
+                LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+                last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            }
 
             /// In case of ColumnAggregateFunction aggregate states will
             /// be allocated from the query context but can be destroyed from the
@@ -468,7 +485,10 @@ static void appendBlock(const Block & from, Block & to)
             last_col->ensureOwnership();
             last_col->insertRangeFrom(col_from, 0, rows);
 
-            to.getByPosition(column_no).column = std::move(last_col);
+            {
+                DENY_ALLOCATIONS_IN_SCOPE;
+                to.getByPosition(column_no).column = std::move(last_col);
+            }
         }
         CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
         CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, to.bytes() - old_bytes);
@@ -480,6 +500,9 @@ static void appendBlock(const Block & from, Block & to)
         /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
         /// So ignore any memory limits, even global (since memory tracking has drift).
         LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+
+        /// But first log exception to get more details in case of LOGICAL_ERROR
+        tryLogCurrentException(log, "Caught exception while adding data to buffer, rolling back...");
 
         try
         {
@@ -625,7 +648,7 @@ private:
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
 
-        appendBlock(sorted_block, buffer.data);
+        appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
         storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);

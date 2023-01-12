@@ -316,7 +316,7 @@ public:
 
         centroids.resize(size);
         // From now, TDigest will be in invalid state if exception is thrown.
-        buf.read(reinterpret_cast<char *>(centroids.data()), size * sizeof(centroids[0]));
+        buf.readStrict(reinterpret_cast<char *>(centroids.data()), size * sizeof(centroids[0]));
 
         for (const auto & c : centroids)
         {

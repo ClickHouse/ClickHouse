@@ -1,5 +1,6 @@
 #include <Planner/PlannerWindowFunctions.h>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/WindowNode.h>
 
@@ -91,7 +92,7 @@ std::vector<WindowDescription> extractWindowDescriptions(const QueryTreeNodes & 
         for (const auto & parameter_node : parameters_nodes)
         {
             /// Function parameters constness validated during analysis stage
-            window_function.function_parameters.push_back(parameter_node->getConstantValue().getValue());
+            window_function.function_parameters.push_back(parameter_node->as<ConstantNode &>().getValue());
         }
 
         const auto & arguments_nodes = window_function_node_typed.getArguments().getNodes();
