@@ -108,14 +108,14 @@ def create_drop_loop(index, stop_event):
             return
 
         node.query_with_retry(
-            f"CREATE TABLE {table_name} (key UInt64, value UInt64) ENGINE = KeeperMap('/test') PRIMARY KEY(key);"
+            f"CREATE TABLE IF NOT EXISTS {table_name} (key UInt64, value UInt64) ENGINE = KeeperMap('/test') PRIMARY KEY(key);"
         )
         node.query_with_retry(f"INSERT INTO {table_name} VALUES ({index}, {i})")
         result = node.query_with_retry(
             f"SELECT value FROM {table_name} WHERE key = {index}"
         )
         assert result.strip() == str(i)
-        node.query_with_retry(f"DROP TABLE {table_name} SYNC")
+        node.query_with_retry(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
 def test_create_drop_keeper_map_concurrent(started_cluster):
