@@ -1,7 +1,7 @@
 ---
 slug: /en/operations/system-tables/schema_inference_cache
 ---
-# Schema inference cache
+# schema_inference_cache
 
 Contains information about all cached file schemas.
 
@@ -67,4 +67,3 @@ schema:                 id Nullable(Float64), age Nullable(Float64), name Nullab
 
 **See also**
 -   [Automatic schema inference from input data](/docs/en/interfaces/schema-inference.md)
-

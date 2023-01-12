@@ -272,9 +272,9 @@ if __name__ == "__main__":
 
         compress_fast(
             os.path.join(result_path, "store"),
-            os.path.join(result_path, "jepsen_store.tar.gz"),
+            os.path.join(result_path, "jepsen_store.tar.zst"),
         )
-        additional_data.append(os.path.join(result_path, "jepsen_store.tar.gz"))
+        additional_data.append(os.path.join(result_path, "jepsen_store.tar.zst"))
     except Exception as ex:
         print("Exception", ex)
         status = "failure"

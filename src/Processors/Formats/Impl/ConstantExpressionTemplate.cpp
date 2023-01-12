@@ -553,7 +553,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
     {
         Field number;
         if (type_info.is_nullable && 4 <= istr.available() && 0 == strncasecmp(istr.position(), "NULL", 4))
+        {
             istr.position() += 4;
+        }
         else
         {
             /// ParserNumber::parse(...) is about 20x slower than strtod(...)
