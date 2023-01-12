@@ -458,16 +458,6 @@ TableJoin::createConvertingActions(
                 LOG_DEBUG(&Poco::Logger::get("TableJoin"), "{} JOIN converting actions: empty", side);
                 return;
             }
-            auto format_cols = [](const auto & cols) -> std::string
-            {
-                std::vector<std::string> str_cols;
-                str_cols.reserve(cols.size());
-                for (const auto & col : cols)
-                    str_cols.push_back(fmt::format("'{}': {}", col.name, col.type->getName()));
-                return fmt::format("[{}]", fmt::join(str_cols, ", "));
-            };
-            LOG_DEBUG(&Poco::Logger::get("TableJoin"), "{} JOIN converting actions: {} -> {}",
-                side, format_cols(dag->getRequiredColumns()), format_cols(dag->getResultColumns()));
         };
         log_actions("Left", left_converting_actions);
         log_actions("Right", right_converting_actions);
@@ -670,6 +660,11 @@ String TableJoin::renamedRightColumnName(const String & name) const
     if (const auto it = renames.find(name); it != renames.end())
         return it->second;
     return name;
+}
+
+void TableJoin::setRename(const String & from, const String & to)
+{
+    renames[from] = to;
 }
 
 void TableJoin::addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast)

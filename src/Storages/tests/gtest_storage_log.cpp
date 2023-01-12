@@ -65,7 +65,7 @@ private:
 };
 
 
-using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
+using DiskImplementations = testing::Types<DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.

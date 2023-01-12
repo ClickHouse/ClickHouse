@@ -17,8 +17,6 @@
 namespace DB
 {
 
-constexpr int HTTP_TOO_MANY_REQUESTS = 429;
-
 class HTTPServerResponse;
 
 class SingleEndpointHTTPSessionPool : public PoolBase<Poco::Net::HTTPClientSession>
@@ -33,6 +31,38 @@ private:
 
 public:
     SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_);
+};
+
+class HTTPException : public Exception
+{
+public:
+    HTTPException(
+        int code,
+        const std::string & uri,
+        Poco::Net::HTTPResponse::HTTPStatus http_status_,
+        const std::string & reason,
+        const std::string & body
+    )
+        : Exception(makeExceptionMessage(uri, http_status_, reason, body), code)
+        , http_status(http_status_)
+    {}
+
+    HTTPException * clone() const override { return new HTTPException(*this); }
+    void rethrow() const override { throw *this; }
+
+    int getHTTPStatus() const { return http_status; }
+
+private:
+    Poco::Net::HTTPResponse::HTTPStatus http_status{};
+
+    static std::string makeExceptionMessage(
+        const std::string & uri,
+        Poco::Net::HTTPResponse::HTTPStatus http_status,
+        const std::string & reason,
+        const std::string & body);
+
+    const char * name() const noexcept override { return "DB::HTTPException"; }
+    const char * className() const noexcept override { return "DB::HTTPException"; }
 };
 
 using PooledHTTPSessionPtr = SingleEndpointHTTPSessionPool::Entry;

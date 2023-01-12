@@ -22,6 +22,9 @@
 #include <Storages/PartitionCommands.h>
 #include <Common/typeid_cast.h>
 
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 #include <algorithm>
@@ -65,6 +68,9 @@ BlockIO InterpreterAlterQuery::execute()
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
     BlockIO res;
+
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(query_ptr);
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
@@ -137,11 +143,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                                                          "to execute ALTERs of different types in single query");
     }
 
-    if (!mutation_commands.empty())
+    if (mutation_commands.hasNonEmptyMutationCommands())
     {
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext());
+        table->mutate(mutation_commands, getContext(), false);
     }
 
     if (!partition_commands.empty())

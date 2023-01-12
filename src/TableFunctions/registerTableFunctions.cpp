@@ -28,7 +28,7 @@ void registerTableFunctions()
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
     registerTableFunctionHudi(factory);
-    registerTableFunctionDelta(factory);
+    registerTableFunctionDeltaLake(factory);
     registerTableFunctionOSS(factory);
 
 #endif

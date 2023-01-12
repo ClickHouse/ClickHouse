@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/HeaderCollection.h>
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/HTTPHeaderEntries.h>
 
 #include <string>
 #include <optional>
@@ -13,20 +13,17 @@
 #include <base/types.h>
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
+#include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
 #include <Poco/URI.h>
 
 #include <Common/Exception.h>
 #include <Common/Throttler_fwd.h>
 
-namespace Aws::S3
-{
-    class S3Client;
-}
-
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
@@ -80,7 +77,7 @@ public:
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
-        HeaderCollection headers,
+        HTTPHeaderEntries headers,
         bool use_environment_credentials,
         bool use_insecure_imds_request);
 
@@ -119,8 +116,7 @@ struct URI
 
     bool is_virtual_hosted_style;
 
-    explicit URI(const Poco::URI & uri_);
-    explicit URI(const std::string & uri_) : URI(Poco::URI(uri_)) {}
+    explicit URI(const std::string & uri_);
 
     static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
@@ -131,16 +127,22 @@ struct ObjectInfo
     time_t last_modification_time = 0;
 };
 
-S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
+bool isNotFoundError(Aws::S3::S3Errors error);
 
-size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
+Aws::S3::Model::HeadObjectOutcome headObject(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
+
+S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
+
+size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
+
+bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
 
 }
 #endif
 
 namespace Poco::Util
 {
-class AbstractConfiguration;
+    class AbstractConfiguration;
 };
 
 namespace DB::S3
@@ -155,7 +157,7 @@ struct AuthSettings
     std::string region;
     std::string server_side_encryption_customer_key_base64;
 
-    HeaderCollection headers;
+    HTTPHeaderEntries headers;
 
     std::optional<bool> use_environment_credentials;
     std::optional<bool> use_insecure_imds_request;

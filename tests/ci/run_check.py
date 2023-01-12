@@ -112,7 +112,7 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     return True, "No special conditions apply", "pending"
 
 
-def check_pr_description(pr_info) -> Tuple[str, str]:
+def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
     lines = list(
         map(lambda x: x.strip(), pr_info.body.split("\n") if pr_info.body else [])
     )

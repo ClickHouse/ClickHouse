@@ -5,6 +5,7 @@ import os
 import sys
 import subprocess
 import atexit
+from typing import List, Tuple
 
 from github import Github
 
@@ -37,14 +38,16 @@ def get_test_name(line):
     raise Exception(f"No test name in line '{line}'")
 
 
-def process_result(result_folder):
+def process_results(
+    result_folder: str,
+) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
     OK_SIGN = "OK ]"
     FAILED_SIGN = "FAILED  ]"
     SEGFAULT = "Segmentation fault"
     SIGNAL = "received signal SIG"
     PASSED = "PASSED"
 
-    summary = []
+    summary = []  # type: List[Tuple[str, str]]
     total_counter = 0
     failed_counter = 0
     result_log_path = f"{result_folder}/test_result.txt"
@@ -137,7 +140,7 @@ if __name__ == "__main__":
 
     run_command = f"docker run --cap-add=SYS_PTRACE --volume={tests_binary_path}:/unit_tests_dbms --volume={test_output}:/test_output {docker_image}"
 
-    run_log_path = os.path.join(test_output, "runlog.log")
+    run_log_path = os.path.join(test_output, "run.log")
 
     logging.info("Going to run func tests: %s", run_command)
 
@@ -151,7 +154,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     s3_helper = S3Helper()
-    state, description, test_results, additional_logs = process_result(test_output)
+    state, description, test_results, additional_logs = process_results(test_output)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)
