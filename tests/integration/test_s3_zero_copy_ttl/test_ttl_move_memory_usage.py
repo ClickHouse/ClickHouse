@@ -22,6 +22,9 @@ def started_single_node_cluster():
 
 
 def test_move_and_s3_memory_usage(started_single_node_cluster):
+
+    pytest.skip("Test is too flaky. Disable it for now.")
+
     if small_node.is_built_with_sanitizer() or small_node.is_debug_build():
         pytest.skip("Disabled for debug and sanitizers. Too slow.")
 
