@@ -53,12 +53,10 @@ private:
 
     static inline void resolveAsCountAggregateFunction(FunctionNode & function_node)
     {
-        auto function_result_type = function_node.getResultType();
-
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
 
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 

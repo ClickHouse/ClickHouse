@@ -60,7 +60,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Storages/NamedCollections/NamedCollectionUtils.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -204,46 +204,6 @@ int mainEntryClickHouseServer(int argc, char ** argv)
 
 namespace
 {
-
-void setupTmpPath(Poco::Logger * log, const std::string & path)
-try
-{
-    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
-
-    fs::create_directories(path);
-
-    /// Clearing old temporary files.
-    fs::directory_iterator dir_end;
-    size_t unknown_files = 0;
-    for (fs::directory_iterator it(path); it != dir_end; ++it)
-    {
-        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
-        {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-            fs::remove(it->path());
-        }
-        else
-        {
-            unknown_files++;
-            if (unknown_files < 100)
-                LOG_DEBUG(log, "Found unknown {} {} in temporary path",
-                    it->is_regular_file() ? "file" : (it->is_directory() ? "directory" : "element"),
-                    it->path().string());
-        }
-    }
-
-    if (unknown_files)
-        LOG_DEBUG(log, "Found {} unknown files in temporary path", unknown_files);
-}
-catch (...)
-{
-    DB::tryLogCurrentException(
-        log,
-        fmt::format(
-            "Caught exception while setup temporary path: {}. It is ok to skip this exception as cleaning old temporary files is not "
-            "necessary",
-            path));
-}
 
 size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
 {
@@ -459,6 +419,33 @@ void Server::createServer(
         }
     }
 }
+
+
+#if defined(OS_LINUX)
+namespace
+{
+
+void setOOMScore(int value, Poco::Logger * log)
+{
+    try
+    {
+        std::string value_string = std::to_string(value);
+        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(value_string.c_str(), value_string.size());
+        buf.next();
+        buf.close();
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_WARNING(log, "Failed to adjust OOM score: '{}'.", e.displayText());
+        return;
+    }
+    LOG_INFO(log, "Set OOM score adjustment to {}", value);
+}
+
+}
+#endif
+
 
 void Server::uninitialize()
 {
@@ -743,6 +730,13 @@ try
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+    const auto memory_amount = getMemoryAmount();
+
+    LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+        formatReadableSizeWithBinarySuffix(memory_amount),
+        getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
+        std::thread::hardware_concurrency());
+
     sanityChecks(*this);
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
@@ -815,8 +809,6 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
-
-    const auto memory_amount = getMemoryAmount();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -916,6 +908,21 @@ try
             }
         }
     }
+
+    int default_oom_score = 0;
+
+#if !defined(NDEBUG)
+    /// In debug version on Linux, increase oom score so that clickhouse is killed
+    /// first, instead of some service. Use a carefully chosen random score of 555:
+    /// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+    /// whatever errors that occur, because it's just a debugging aid and we don't
+    /// care if it breaks.
+    default_oom_score = 555;
+#endif
+
+    int oom_score = config().getInt("oom_score", default_oom_score);
+    if (oom_score)
+        setOOMScore(oom_score, log);
 #endif
 
     global_context->setRemoteHostFilter(config());
@@ -1013,13 +1020,21 @@ try
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
     /// Storage with temporary data for processing of heavy queries.
+    if (auto temporary_policy = config().getString("tmp_policy", ""); !temporary_policy.empty())
+    {
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStoragePolicy(temporary_policy, max_size);
+    }
+    else if (auto temporary_cache = config().getString("temporary_data_in_cache", ""); !temporary_cache.empty())
+    {
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStorageInCache(temporary_cache, max_size);
+    }
+    else
     {
         std::string temporary_path = config().getString("tmp_path", path / "tmp/");
-        std::string temporary_policy = config().getString("tmp_policy", "");
         size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
-        const VolumePtr & volume = global_context->setTemporaryStorage(temporary_path, temporary_policy, max_size);
-        for (const DiskPtr & disk : volume->getDisks())
-            setupTmpPath(log, disk->getPath());
+        global_context->setTemporaryStoragePath(temporary_path, max_size);
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -1076,8 +1091,8 @@ try
         bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
         try
         {
-            LOG_DEBUG(
-                log, "Initializing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+            LOG_DEBUG(log, "Initializing MergeTree metadata cache, lru_cache_size: {} continue_if_corrupted: {}",
+                ReadableSize(size), continue_if_corrupted);
             global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
         }
         catch (...)
@@ -1426,7 +1441,7 @@ try
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        tryLogCurrentException(log, "Caught exception while setting up access control.");
         throw;
     }
 
@@ -1749,13 +1764,6 @@ try
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
-
-        {
-            LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
-                formatReadableSizeWithBinarySuffix(memory_amount),
-                getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
-                std::thread::hardware_concurrency());
-        }
 
         /// try to load dictionaries immediately, throw on error and die
         try

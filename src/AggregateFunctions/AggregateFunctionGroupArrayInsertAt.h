@@ -64,7 +64,7 @@ private:
 
 public:
     AggregateFunctionGroupArrayInsertAtGeneric(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params, std::make_shared<DataTypeArray>(arguments[0]))
         , type(argument_types[0])
         , serialization(type->getDefaultSerialization())
     {
@@ -100,11 +100,6 @@ public:
     }
 
     String getName() const override { return "groupArrayInsertAt"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(type);
-    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
