@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/Threading.h>
+#include <Common/SharedMutex.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -12,7 +12,7 @@ class ProfilingScopedWriteRWLock
 {
 public:
 
-    ProfilingScopedWriteRWLock(DB::FastSharedMutex & rwl_, ProfileEvents::Event event) :
+    ProfilingScopedWriteRWLock(SharedMutex & rwl_, ProfileEvents::Event event) :
         scoped_write_lock(rwl_)
     {
         ProfileEvents::increment(event, watch.elapsed());
@@ -20,14 +20,14 @@ public:
 
 private:
     Stopwatch watch;
-    std::unique_lock<DB::FastSharedMutex> scoped_write_lock;
+    std::unique_lock<SharedMutex> scoped_write_lock;
 };
 
 
 class ProfilingScopedReadRWLock
 {
 public:
-    ProfilingScopedReadRWLock(DB::FastSharedMutex & rwl, ProfileEvents::Event event) :
+    ProfilingScopedReadRWLock(SharedMutex & rwl, ProfileEvents::Event event) :
         scoped_read_lock(rwl)
     {
         ProfileEvents::increment(event, watch.elapsed());
@@ -35,7 +35,7 @@ public:
 
 private:
     Stopwatch watch;
-    std::shared_lock<DB::FastSharedMutex> scoped_read_lock;
+    std::shared_lock<SharedMutex> scoped_read_lock;
 };
 
 }

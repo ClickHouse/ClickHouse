@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ActionBlocker.h>
-#include <Common/Threading.h>
+#include <Common/SharedMutex.h>
 #include <base/types.h>
 
 #include <atomic>
@@ -43,7 +43,7 @@ public:
 
     /// You need to stop the data transfer if blocker is activated.
     ActionBlocker blocker;
-    DB::FastSharedMutex rwlock;
+    SharedMutex rwlock;
 };
 
 using InterserverIOEndpointPtr = std::shared_ptr<InterserverIOEndpoint>;

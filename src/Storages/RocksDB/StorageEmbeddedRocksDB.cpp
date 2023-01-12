@@ -25,7 +25,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Common/Threading.h>
 #include <base/sort.h>
 
 #include <rocksdb/table.h>

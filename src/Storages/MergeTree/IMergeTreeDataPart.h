@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Threading.h>
 #include <IO/WriteSettings.h>
 #include <Core/Block.h>
 #include <base/types.h>

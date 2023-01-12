@@ -19,7 +19,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/OvercommitTracker.h>
-#include <Common/Threading.h>
 
 #include <condition_variable>
 #include <list>
