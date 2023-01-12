@@ -7,6 +7,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/gwp_asan.h>
 #include "config.h"
 
 #if USE_JEMALLOC
@@ -29,6 +30,21 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 {
+    if (unlikely(GuardedAlloc.shouldSample()))
+    {
+        if constexpr (sizeof...(TAlign) == 1)
+        {
+            if (void * ptr = GuardedAlloc.allocate(size, alignToSizeT(align...)))
+                return ptr;
+        }
+        else
+        {
+            if (void * ptr = GuardedAlloc.allocate(size))
+                return ptr;
+
+        }
+    }
+
     void * ptr = nullptr;
     if constexpr (sizeof...(TAlign) == 1)
         ptr = aligned_alloc(alignToSizeT(align...), size);
@@ -44,16 +60,31 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
+    if (unlikely(GuardedAlloc.shouldSample()))
+    {
+        if (void * ptr = GuardedAlloc.allocate(size))
+            return ptr;
+    }
     return malloc(size);
 }
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size, std::align_val_t align) noexcept
 {
+    if (unlikely(GuardedAlloc.shouldSample()))
+    {
+        if (void * ptr = GuardedAlloc.allocate(size, alignToSizeT(align)))
+            return ptr;
+    }
     return aligned_alloc(static_cast<size_t>(align), size);
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
+    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    {
+        GuardedAlloc.deallocate(ptr);
+        return;
+    }
     free(ptr);
 }
 
@@ -65,6 +96,12 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size, TAlign... al
 {
     if (unlikely(ptr == nullptr))
         return;
+
+    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    {
+        GuardedAlloc.deallocate(ptr);
+        return;
+    }
 
     if constexpr (sizeof...(TAlign) == 1)
         sdallocx(ptr, size, MALLOCX_ALIGN(alignToSizeT(align...)));
@@ -122,6 +159,14 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]] = 0, TAlign... align [[maybe_unused]]) noexcept
 {
+    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    {
+        if (!size)
+            size = GuardedAlloc.getSize(ptr);
+        CurrentMemoryTracker::free(size);
+        return;
+    }
+
     try
     {
 #if USE_JEMALLOC
