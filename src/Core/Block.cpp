@@ -91,14 +91,20 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
                 expected.dumpStructure()),
             code);
 
-    if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
+    if (isColumnConst(*actual.column) && isColumnConst(*expected.column)
+        && actual.column->size() > 0 && expected.column->size() > 0) /// don't check values in empty columns
     {
         Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
         Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
 
         if (actual_value != expected_value)
-            return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different values of constants, actual: "
-                + applyVisitor(FieldVisitorToString(), actual_value) + ", expected: " + applyVisitor(FieldVisitorToString(), expected_value),
+            return onError<ReturnType>(
+                fmt::format(
+                    "Block structure mismatch in {} stream: different values of constants in column '{}': actual: {}, expected: {}",
+                    context_description,
+                    actual.name,
+                    applyVisitor(FieldVisitorToString(), actual_value),
+                    applyVisitor(FieldVisitorToString(), expected_value)),
                 code);
     }
 
