@@ -158,7 +158,6 @@ UInt64 QueryResultCache::QueryResult::sizeInBytes() const
     return res;
 };
 
-
 namespace
 {
 
