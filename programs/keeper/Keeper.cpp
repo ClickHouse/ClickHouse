@@ -6,7 +6,6 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
-#include <Server/TCPServer.h>
 #include <filesystem>
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
@@ -22,8 +21,15 @@
 #include <Poco/Environment.h>
 #include <sys/stat.h>
 #include <pwd.h>
-#include <Coordination/FourLetterCommand.h>
 
+#include <Coordination/FourLetterCommand.h>
+#include <Coordination/KeeperAsynchronousMetrics.h>
+
+#include <Server/HTTP/HTTPServer.h>
+#include <Server/TCPServer.h>
+#include <Server/HTTPHandlerFactory.h>
+
+#include "Core/Defines.h"
 #include "config.h"
 #include "config_version.h"
 
@@ -51,6 +57,16 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
         return code ? code : 1;
     }
 }
+
+#ifdef KEEPER_STANDALONE_BUILD
+
+// Weak symbols don't work correctly on Darwin
+// so we have a stub implementation to avoid linker errors
+void collectCrashLog(
+    Int32, UInt64, const String &, const StackTrace &)
+{}
+
+#endif
 
 namespace DB
 {
@@ -261,7 +277,62 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
     BaseDaemon::defineOptions(options);
 }
 
+struct Keeper::KeeperHTTPContext : public IHTTPContext
+{
+    explicit KeeperHTTPContext(TinyContextPtr context_)
+        : context(std::move(context_))
+    {}
+
+    uint64_t getMaxHstsAge() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.hsts_max_age", 0);
+    }
+
+    uint64_t getMaxUriSize() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_max_uri_size", 1048576);
+    }
+
+    uint64_t getMaxFields() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_max_fields", 1000000);
+    }
+
+    uint64_t getMaxFieldNameSize() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 1048576);
+    }
+
+    uint64_t getMaxFieldValueSize() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 1048576);
+    }
+
+    uint64_t getMaxChunkSize() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_max_chunk_size", 100_GiB);
+    }
+
+    Poco::Timespan getReceiveTimeout() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_receive_timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
+    }
+
+    Poco::Timespan getSendTimeout() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_send_timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
+    }
+
+    TinyContextPtr context;
+};
+
+HTTPContextPtr Keeper::httpContext()
+{
+    return std::make_shared<KeeperHTTPContext>(tiny_context);
+}
+
 int Keeper::main(const std::vector<std::string> & /*args*/)
+try
 {
     Poco::Logger * log = &logger();
 
@@ -334,6 +405,25 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     DNSResolver::instance().setDisableCacheFlag();
 
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
+    std::mutex servers_lock;
+    auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
+
+    tiny_context = std::make_shared<TinyContext>();
+    /// This object will periodically calculate some metrics.
+    KeeperAsynchronousMetrics async_metrics(
+        tiny_context,
+        config().getUInt("asynchronous_metrics_update_period_s", 1),
+        [&]() -> std::vector<ProtocolServerMetrics>
+        {
+            std::vector<ProtocolServerMetrics> metrics;
+
+            std::lock_guard lock(servers_lock);
+            metrics.reserve(servers->size());
+            for (const auto & server : *servers)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+            return metrics;
+        }
+    );
 
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -345,15 +435,13 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
-
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    tiny_context.initializeKeeperDispatcher(/* start_async = */ true);
-    FourLetterCommandFactory::registerCommands(*tiny_context.getKeeperDispatcher());
+    tiny_context->initializeKeeperDispatcher(/* start_async = */ true);
+    FourLetterCommandFactory::registerCommands(*tiny_context->getKeeperDispatcher());
 
     auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
     {
-        return tiny_context.getConfigRef();
+        return tiny_context->getConfigRef();
     };
 
     for (const auto & listen_host : listen_hosts)
@@ -372,7 +460,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
                 "Keeper (tcp): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
-                        config_getter, tiny_context.getKeeperDispatcher(),
+                        config_getter, tiny_context->getKeeperDispatcher(),
                             config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC),
                             config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), false), server_pool, socket));
         });
@@ -391,7 +479,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
                 "Keeper with secure protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
-                        config_getter, tiny_context.getKeeperDispatcher(),
+                        config_getter, tiny_context->getKeeperDispatcher(),
                         config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC),
                         config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), true), server_pool, socket));
 #else
@@ -400,6 +488,29 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
                 ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
         });
+
+        const auto & config = config_getter();
+        Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+        Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+        http_params->setTimeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
+        http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+        /// Prometheus (if defined and not setup yet with http_port)
+        port_name = "prometheus.port";
+        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            auto http_context = httpContext();
+            socket.setReceiveTimeout(http_context->getReceiveTimeout());
+            socket.setSendTimeout(http_context->getSendTimeout());
+            servers->emplace_back(
+                listen_host,
+                port_name,
+                "Prometheus: http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    std::move(http_context), createPrometheusMainHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+        });
     }
 
     for (auto & server : *servers)
@@ -407,6 +518,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         server.start();
         LOG_INFO(log, "Listening for {}", server.getDescription());
     }
+
+    async_metrics.start();
 
     zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
@@ -420,13 +533,15 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
             if (config->has("keeper_server"))
-                tiny_context.updateKeeperConfiguration(*config);
+                tiny_context->updateKeeperConfiguration(*config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");
         main_config_reloader.reset();
+
+        async_metrics.stop();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t current_connections = 0;
@@ -449,7 +564,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        tiny_context.shutdownKeeperDispatcher();
+        tiny_context->shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
@@ -472,6 +587,12 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     waitForTerminationRequest();
 
     return Application::EXIT_OK;
+}
+catch (...)
+{
+    /// Poco does not provide stacktrace.
+    tryLogCurrentException("Application");
+    throw;
 }
 
 

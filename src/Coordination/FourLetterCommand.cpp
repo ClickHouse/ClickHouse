@@ -142,6 +142,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr log_info_command = std::make_shared<LogInfoCommand>(keeper_dispatcher);
         factory.registerCommand(log_info_command);
 
+        FourLetterCommandPtr request_leader_command = std::make_shared<RequestLeaderCommand>(keeper_dispatcher);
+        factory.registerCommand(request_leader_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -505,6 +508,11 @@ String LogInfoCommand::run()
     append("target_committed_log_idx", log_info.target_committed_log_idx);
     append("last_snapshot_idx", log_info.last_snapshot_idx);
     return ret.str();
+}
+
+String RequestLeaderCommand::run()
+{
+    return keeper_dispatcher.requestLeader() ? "Sent leadership request to leader." : "Failed to send leadership request to leader.";
 }
 
 }

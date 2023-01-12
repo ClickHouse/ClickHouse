@@ -2184,3 +2184,44 @@ def savepoint(clickhouse_node, mysql_node, mysql_host):
     mysql_node.query(f"INSERT INTO {db}.t1 VALUES (2)")
     mysql_node.query("ROLLBACK TO savepoint_1")
     mysql_node.query("COMMIT")
+
+
+def dropddl(clickhouse_node, mysql_node, mysql_host):
+    db = "dropddl"
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(f"CREATE TABLE {db}.t1 (a INT PRIMARY KEY, b INT)")
+    mysql_node.query(f"CREATE TABLE {db}.t2 (a INT PRIMARY KEY, b INT)")
+    mysql_node.query(f"CREATE TABLE {db}.t3 (a INT PRIMARY KEY, b INT)")
+    mysql_node.query(f"CREATE TABLE {db}.t4 (a INT PRIMARY KEY, b INT)")
+    mysql_node.query(f"CREATE VIEW {db}.v1 AS SELECT * FROM {db}.t1")
+    mysql_node.query(f"INSERT INTO {db}.t1(a, b) VALUES(1, 1)")
+
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{mysql_host}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT count() FROM system.tables where database = '{db}' FORMAT TSV",
+        "4\n",
+    )
+    check_query(clickhouse_node, f"SELECT * FROM {db}.t1 FORMAT TSV", "1\t1\n")
+    mysql_node.query(f"DROP EVENT IF EXISTS {db}.event_name")
+    mysql_node.query(f"DROP VIEW IF EXISTS {db}.view_name")
+    mysql_node.query(f"DROP FUNCTION IF EXISTS {db}.function_name")
+    mysql_node.query(f"DROP TRIGGER IF EXISTS {db}.trigger_name")
+    mysql_node.query(f"DROP INDEX `PRIMARY` ON {db}.t2")
+    mysql_node.query(f"DROP TABLE {db}.t3")
+    mysql_node.query(f"DROP TABLE if EXISTS {db}.t3,{db}.t4")
+    mysql_node.query(f"TRUNCATE TABLE {db}.t1")
+    mysql_node.query(f"INSERT INTO {db}.t2(a, b) VALUES(1, 1)")
+    check_query(clickhouse_node, f"SELECT * FROM {db}.t2 FORMAT TSV", "1\t1\n")
+    check_query(clickhouse_node, f"SELECT count() FROM {db}.t1 FORMAT TSV", "0\n")
+    check_query(
+        clickhouse_node,
+        f"SELECT name FROM system.tables where database = '{db}' FORMAT TSV",
+        "t1\nt2\n",
+    )
+    mysql_node.query(f"DROP DATABASE {db}")
+    clickhouse_node.query(f"DROP DATABASE {db}")

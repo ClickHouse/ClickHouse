@@ -250,7 +250,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, true, read_settings.for_object_storage);
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id, true, read_settings.for_object_storage);
 
     file_size = object_size;
     return *file_size;
@@ -340,9 +340,7 @@ SeekableReadBufferPtr ReadBufferS3Factory::getReader()
 {
     const auto next_range = range_generator.nextRange();
     if (!next_range)
-    {
         return nullptr;
-    }
 
     auto reader = std::make_shared<ReadBufferFromS3>(
         client_ptr,
@@ -350,10 +348,11 @@ SeekableReadBufferPtr ReadBufferS3Factory::getReader()
         key,
         version_id,
         request_settings,
-        read_settings,
+        read_settings.adjustBufferSize(object_size),
         false /*use_external_buffer*/,
         next_range->first,
         next_range->second);
+
     return reader;
 }
 
