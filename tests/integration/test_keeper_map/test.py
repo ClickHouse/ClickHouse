@@ -111,7 +111,9 @@ def create_drop_loop(index, stop_event):
             f"CREATE TABLE {table_name} (key UInt64, value UInt64) ENGINE = KeeperMap('/test') PRIMARY KEY(key);"
         )
         node.query_with_retry(f"INSERT INTO {table_name} VALUES ({index}, {i})")
-        result = node.query_with_retry(f"SELECT value FROM {table_name} WHERE key = {index}")
+        result = node.query_with_retry(
+            f"SELECT value FROM {table_name} WHERE key = {index}"
+        )
         assert result.strip() == str(i)
         node.query_with_retry(f"DROP TABLE {table_name} SYNC")
 
