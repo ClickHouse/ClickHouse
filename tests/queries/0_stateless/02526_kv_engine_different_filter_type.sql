@@ -1,3 +1,5 @@
+-- Tags: use-rocksdb
+
 DROP TABLE IF EXISTS 02526_keeper_map;
 DROP TABLE IF EXISTS 02526_rocksdb;
 
