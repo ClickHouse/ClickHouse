@@ -112,8 +112,8 @@ struct StatisticalSample
         readVarUInt(size_y, buf);
         x.resize(size_x, arena);
         y.resize(size_y, arena);
-        buf.read(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
-        buf.read(reinterpret_cast<char *>(y.data()), size_y * sizeof(y[0]));
+        buf.readStrict(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
+        buf.readStrict(reinterpret_cast<char *>(y.data()), size_y * sizeof(y[0]));
     }
 };
 

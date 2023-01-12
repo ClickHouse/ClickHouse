@@ -5,6 +5,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -14,6 +15,8 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <IO/MMapReadBufferFromFile.h>
+#include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
@@ -36,6 +39,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/ProfileEvents.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -46,6 +50,13 @@
 #include <re2/re2.h>
 #include <filesystem>
 
+
+namespace ProfileEvents
+{
+    extern const Event CreatedReadBufferOrdinary;
+    extern const Event CreatedReadBufferMMap;
+    extern const Event CreatedReadBufferMMapFailed;
+}
 
 namespace fs = std::filesystem;
 
@@ -175,6 +186,57 @@ void checkCreationIsAllowed(
     }
 }
 
+std::unique_ptr<ReadBuffer> selectReadBuffer(
+    const String & current_path,
+    bool use_table_fd,
+    int table_fd,
+    const struct stat & file_stat,
+    ContextPtr context)
+{
+    auto read_method = context->getSettingsRef().storage_file_read_method;
+
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
+    {
+        try
+        {
+            std::unique_ptr<ReadBufferFromFileBase> res;
+            if (use_table_fd)
+                res = std::make_unique<MMapReadBufferFromFileDescriptor>(table_fd, 0);
+            else
+                res = std::make_unique<MMapReadBufferFromFile>(current_path, 0);
+
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
+            return res;
+        }
+        catch (const ErrnoException &)
+        {
+            /// Fallback if mmap is not supported.
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMapFailed);
+        }
+    }
+
+    std::unique_ptr<ReadBufferFromFileBase> res;
+    if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
+    {
+        if (use_table_fd)
+            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
+        else
+            res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
+
+        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    }
+    else
+    {
+        if (use_table_fd)
+            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
+        else
+            res = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
+
+        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    }
+    return res;
+}
+
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
     bool use_table_fd,
@@ -183,7 +245,6 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & compression_method,
     ContextPtr context)
 {
-    std::unique_ptr<ReadBuffer> nested_buffer;
     CompressionMethod method;
 
     struct stat file_stat{};
@@ -194,11 +255,6 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         if (0 != fstat(table_fd, &file_stat))
             throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
 
-        if (S_ISREG(file_stat.st_mode))
-            nested_buffer = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
-        else
-            nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
-
         method = chooseCompressionMethod("", compression_method);
     }
     else
@@ -207,19 +263,16 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         if (0 != stat(current_path.c_str(), &file_stat))
             throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
 
-        if (S_ISREG(file_stat.st_mode))
-            nested_buffer = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
-        else
-            nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
-
         method = chooseCompressionMethod(current_path, compression_method);
     }
+
+    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
     /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
     if (context->getApplicationType() == Context::ApplicationType::LOCAL
         || context->getApplicationType() == Context::ApplicationType::CLIENT)
     {
-        auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
+        auto & in = static_cast<ReadBufferFromFileBase &>(*nested_buffer);
         in.setProgressCallback(context);
     }
 
@@ -592,22 +645,8 @@ public:
 
                 if (num_rows)
                 {
-                    auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
-                    size_t total_rows_approx = static_cast<size_t>(std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row));
-                    total_rows_approx_accumulated += total_rows_approx;
-                    ++total_rows_count_times;
-                    total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
-
-                    /// We need to add diff, because total_rows_approx is incremental value.
-                    /// It would be more correct to send total_rows_approx as is (not a diff),
-                    /// but incrementation of total_rows_to_read does not allow that.
-                    /// A new field can be introduces for that to be sent to client, but it does not worth it.
-                    if (total_rows_approx > total_rows_approx_prev)
-                    {
-                        size_t diff = total_rows_approx - total_rows_approx_prev;
-                        addTotalRowsApprox(diff);
-                        total_rows_approx_prev = total_rows_approx;
-                    }
+                    updateRowsProgressApprox(
+                        *this, chunk, files_info->total_bytes_to_read, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
                 }
                 return chunk;
             }
@@ -648,7 +687,7 @@ private:
 
     UInt64 total_rows_approx_accumulated = 0;
     size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_prev = 0;
+    UInt64 total_rows_approx_max = 0;
 };
 
 
@@ -719,7 +758,7 @@ Pipe StorageFile::read(
                 });
 
             if (fetch_columns.empty())
-                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
             columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         }
         else
@@ -834,8 +873,7 @@ public:
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
-            *write_buf, metadata_snapshot->getSampleBlock(), context,
-            {}, format_settings);
+            *write_buf, metadata_snapshot->getSampleBlock(), context, format_settings);
 
         if (do_not_write_prefix)
             writer->doNotWritePrefix();

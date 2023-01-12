@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import atexit
 import csv
 import logging
 import os
 import subprocess
 import sys
-import atexit
+
+from typing import List, Tuple
 
 
 from clickhouse_helper import (
@@ -28,9 +30,18 @@ from upload_result_helper import upload_results
 
 NAME = "Style Check"
 
+GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
+    "git -c user.email=robot-clickhouse@users.noreply.github.com "
+    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+    "-c core.sshCommand="
+    "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+)
 
-def process_result(result_folder):
-    test_results = []
+
+def process_result(
+    result_folder: str,
+) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
+    test_results = []  # type: List[Tuple[str, str]]
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible
@@ -57,7 +68,7 @@ def process_result(result_folder):
     try:
         results_path = os.path.join(result_folder, "test_results.tsv")
         with open(results_path, "r", encoding="utf-8") as fd:
-            test_results = list(csv.reader(fd, delimiter="\t"))
+            test_results = list(csv.reader(fd, delimiter="\t"))  # type: ignore
         if len(test_results) == 0:
             raise Exception("Empty results")
 
@@ -81,7 +92,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def checkout_head(pr_info: PRInfo):
+def checkout_head(pr_info: PRInfo) -> None:
     # It works ONLY for PRs, and only over ssh, so either
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
     assert pr_info.number
@@ -89,14 +100,8 @@ def checkout_head(pr_info: PRInfo):
         # We can't push to forks, sorry folks
         return
     remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    git_prefix = (  # All commits to remote are done as robot-clickhouse
-        "git -c user.email=robot-clickhouse@clickhouse.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-        "-c core.sshCommand="
-        "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
-    )
     fetch_cmd = (
-        f"{git_prefix} fetch --depth=1 "
+        f"{GIT_PREFIX} fetch --depth=1 "
         f"{remote_url} {pr_info.head_ref}:head-{pr_info.head_ref}"
     )
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
@@ -107,7 +112,7 @@ def checkout_head(pr_info: PRInfo):
     git_runner(f"git checkout -f head-{pr_info.head_ref}")
 
 
-def commit_push_staged(pr_info: PRInfo):
+def commit_push_staged(pr_info: PRInfo) -> None:
     # It works ONLY for PRs, and only over ssh, so either
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
     assert pr_info.number
@@ -118,15 +123,9 @@ def commit_push_staged(pr_info: PRInfo):
     if not git_staged:
         return
     remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    git_prefix = (  # All commits to remote are done as robot-clickhouse
-        "git -c user.email=robot-clickhouse@clickhouse.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-        "-c core.sshCommand="
-        "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
-    )
-    git_runner(f"{git_prefix} commit -m 'Automatic style fix'")
+    git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
     push_cmd = (
-        f"{git_prefix} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
+        f"{GIT_PREFIX} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
     )
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
         with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
@@ -149,7 +148,7 @@ if __name__ == "__main__":
     if args.push:
         checkout_head(pr_info)
 
-    gh = GitHub(get_best_robot_token())
+    gh = GitHub(get_best_robot_token(), per_page=100, create_cache_dir=False)
 
     atexit.register(update_mergeable_check, gh, pr_info, NAME)
 

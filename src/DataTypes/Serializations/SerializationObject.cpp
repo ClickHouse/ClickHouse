@@ -376,25 +376,25 @@ void SerializationObject<Parser>::deserializeBinaryBulkFromTuple(
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeBinary(const Field &, WriteBuffer &) const
+void SerializationObject<Parser>::serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(Field &, ReadBuffer &) const
+void SerializationObject<Parser>::deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeBinary(const IColumn &, size_t, WriteBuffer &) const
+void SerializationObject<Parser>::serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &) const
+void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }

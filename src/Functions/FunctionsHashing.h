@@ -3,11 +3,17 @@
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
+#include <wyhash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
-#include <wyhash.h>
 
 #include "config.h"
+
+#ifdef __clang__
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wused-but-marked-unused"
+#endif
+#include <xxhash.h>
 
 #if USE_BLAKE3
 #    include <blake3.h>
@@ -17,7 +23,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
-#include <xxhash.h>
 
 #if USE_SSL
 #    include <openssl/md4.h>
@@ -47,6 +52,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
+#include <base/IPv4andIPv6.h>
 #include <base/range.h>
 #include <base/bit_cast.h>
 
@@ -588,7 +594,7 @@ struct ImplXxHash32
     static constexpr auto name = "xxHash32";
     using ReturnType = UInt32;
 
-    static auto apply(const char * s, const size_t len) { return XXH32(s, len, 0); }
+    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH32(s, len, 0); }
     /**
       *  With current implementation with more than 1 arguments it will give the results
       *  non-reproducible from outside of CH.
@@ -609,7 +615,24 @@ struct ImplXxHash64
     using ReturnType = UInt64;
     using uint128_t = CityHash_v1_0_2::uint128;
 
-    static auto apply(const char * s, const size_t len) { return XXH64(s, len, 0); }
+    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH64(s, len, 0); }
+
+    /*
+       With current implementation with more than 1 arguments it will give the results
+       non-reproducible from outside of CH. (see comment on ImplXxHash32).
+     */
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct ImplXXH3
+{
+    static constexpr auto name = "xxh3";
+    using ReturnType = UInt64;
+    using uint128_t = CityHash_v1_0_2::uint128;
+
+    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH3_64bits(s, len); }
 
     /*
        With current implementation with more than 1 arguments it will give the results
@@ -646,7 +669,7 @@ struct ImplBLAKE3
         {
             auto err_st = std::string(err_msg);
             blake3_free_char_pointer(err_msg);
-            throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Function returned error message: " + err_st, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
     #endif
@@ -668,7 +691,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(arguments[0]))
+        if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -712,6 +735,22 @@ public:
             const auto size = col_from_fix->size();
             auto & chars_to = col_to->getChars();
             const auto length = col_from_fix->getN();
+            chars_to.resize(size * Impl::length);
+            for (size_t i = 0; i < size; ++i)
+            {
+                Impl::apply(
+                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+            }
+            return col_to;
+        }
+        else if (
+            const ColumnIPv6 * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
+        {
+            auto col_to = ColumnFixedString::create(Impl::length);
+            const typename ColumnIPv6::Container & data = col_from_ip->getData();
+            const auto size = col_from_ip->size();
+            auto & chars_to = col_to->getChars();
+            const auto length = IPV6_BINARY_LENGTH;
             chars_to.resize(size * Impl::length);
             for (size_t i = 0; i < size; ++i)
             {
@@ -816,6 +855,8 @@ public:
             return executeType<Decimal32>(arguments);
         else if (which.isDecimal64())
             return executeType<Decimal64>(arguments);
+        else if (which.isIPv4())
+            return executeType<IPv4>(arguments);
         else
             throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1114,6 +1155,8 @@ private:
         else if (which.isInt128()) executeBigIntType<Int128, first>(icolumn, vec_to);
         else if (which.isInt256()) executeBigIntType<Int256, first>(icolumn, vec_to);
         else if (which.isUUID()) executeBigIntType<UUID, first>(icolumn, vec_to);
+        else if (which.isIPv4()) executeIntType<IPv4, first>(icolumn, vec_to);
+        else if (which.isIPv6()) executeBigIntType<IPv6, first>(icolumn, vec_to);
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
@@ -1508,7 +1551,12 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
 }
+
+#ifdef __clang__
+#    pragma clang diagnostic pop
+#endif

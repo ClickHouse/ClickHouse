@@ -10,6 +10,8 @@ namespace DB
 /** Constant node represents constant value in query tree.
   * Constant value must be representable by Field.
   * Examples: 1, 'constant_string', [1,2,3].
+  *
+  * Constant node can optionally keep pointer to its source expression.
   */
 class ConstantNode;
 using ConstantNodePtr = std::shared_ptr<ConstantNode>;
@@ -17,6 +19,9 @@ using ConstantNodePtr = std::shared_ptr<ConstantNode>;
 class ConstantNode final : public IQueryTreeNode
 {
 public:
+    /// Construct constant query tree node from constant value and source expression
+    explicit ConstantNode(ConstantValuePtr constant_value_, QueryTreeNodePtr source_expression);
+
     /// Construct constant query tree node from constant value
     explicit ConstantNode(ConstantValuePtr constant_value_);
 
@@ -41,9 +46,22 @@ public:
         return value_string;
     }
 
-    ConstantValuePtr getConstantValueOrNull() const override
+    /// Returns true if constant node has source expression, false otherwise
+    bool hasSourceExpression() const
     {
-        return constant_value;
+        return children[source_child_index] != nullptr;
+    }
+
+    /// Get source expression
+    const QueryTreeNodePtr & getSourceExpression() const
+    {
+        return children[source_child_index];
+    }
+
+    /// Get source expression
+    QueryTreeNodePtr & getSourceExpression()
+    {
+        return children[source_child_index];
     }
 
     QueryTreeNodeType getNodeType() const override
@@ -71,7 +89,8 @@ private:
     ConstantValuePtr constant_value;
     String value_string;
 
-    static constexpr size_t children_size = 0;
+    static constexpr size_t children_size = 1;
+    static constexpr size_t source_child_index = 0;
 };
 
 }
