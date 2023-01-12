@@ -37,7 +37,13 @@ import clickhouse_grpc_pb2_grpc
 
 config_dir = os.path.join(SCRIPT_DIR, "./configs")
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/grpc_config.xml"])
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/grpc_config.xml"],
+    # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+    # second_deadlock_stack -- just ordinary option we use everywhere, don't want to overwrite it
+    env_variables={"TSAN_OPTIONS": "report_atomic_races=0 second_deadlock_stack=1"},
+)
 main_channel = None
 
 
@@ -368,23 +374,24 @@ progress {
   read_bytes: 16
   total_rows_to_read: 8
 }
-, output: "0\\t0\\n1\\t0\\n"
+, output: "0\\t0\\n1\\t0"
 , progress {
   read_rows: 2
   read_bytes: 16
 }
-, output: "2\\t0\\n3\\t0\\n"
+, output: "\\n2\\t0\\n3\\t0"
 , progress {
   read_rows: 2
   read_bytes: 16
 }
-, output: "4\\t0\\n5\\t0\\n"
+, output: "\\n4\\t0\\n5\\t0"
 , progress {
   read_rows: 2
   read_bytes: 16
 }
-, output: "6\\t0\\n7\\t0\\n"
-, stats {
+, output: "\\n6\\t0\\n7\\t0"
+, output: "\\n"
+stats {
   rows: 8
   blocks: 4
   allocated_bytes: 1092

@@ -821,8 +821,7 @@ public:
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
-            *write_buf, metadata_snapshot->getSampleBlock(), context,
-            {}, format_settings);
+            *write_buf, metadata_snapshot->getSampleBlock(), context, format_settings);
 
         if (do_not_write_prefix)
             writer->doNotWritePrefix();

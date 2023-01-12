@@ -13,7 +13,7 @@ import time
 import zlib  # for crc32
 
 
-MAX_RETRY = 3
+MAX_RETRY = 1
 NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
@@ -214,10 +214,9 @@ def clear_ip_tables_and_restart_daemons():
             subprocess.check_output("sudo iptables -D DOCKER-USER 1", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info(
-            "All iptables rules cleared, "
-            + str(iptables_iter)
-            + "iterations, last error: "
-            + str(err)
+            "All iptables rules cleared, %s iterations, last error: %s",
+            iptables_iter,
+            str(err),
         )
 
 
@@ -327,7 +326,7 @@ class ClickhouseIntegrationTestsRunner:
                     break
             else:
                 raise Exception("Package with {} not found".format(package))
-        logging.info("Unstripping binary")
+        # logging.info("Unstripping binary")
         # logging.info(
         #     "Unstring %s",
         #     subprocess.check_output(
@@ -594,10 +593,7 @@ class ClickhouseIntegrationTestsRunner:
             test_names = set([])
             for test_name in tests_in_group:
                 if test_name not in counters["PASSED"]:
-                    if "[" in test_name:
-                        test_names.add(test_name[: test_name.find("[")])
-                    else:
-                        test_names.add(test_name)
+                    test_names.add(test_name)
 
             if i == 0:
                 test_data_dirs = self._find_test_data_dirs(repo_path, test_names)
@@ -629,13 +625,8 @@ class ClickhouseIntegrationTestsRunner:
             log_path = os.path.join(repo_path, "tests/integration", log_basename)
             with open(log_path, "w") as log:
                 logging.info("Executing cmd: %s", cmd)
-                retcode = subprocess.Popen(
-                    cmd, shell=True, stderr=log, stdout=log
-                ).wait()
-                if retcode == 0:
-                    logging.info("Run %s group successfully", test_group)
-                else:
-                    logging.info("Some tests failed")
+                # ignore retcode, since it meaningful due to pipe to tee
+                subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
