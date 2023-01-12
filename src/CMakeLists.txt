@@ -11,11 +11,7 @@ if(COMPILER_PIPE)
 else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
-if(USE_STATIC_LIBRARIES)
-    set(MAX_LINKER_MEMORY 3500)
-else()
-    set(MAX_LINKER_MEMORY 2500)
-endif()
+set(MAX_LINKER_MEMORY 3500)
 include(../cmake/limit_jobs.cmake)
 
 include (../cmake/version.cmake)
@@ -107,7 +103,7 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/MeiliSearch)
-add_headers_and_sources(dbms Storages/NamedCollections)
+add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -200,10 +196,6 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
-if (SPLIT_SHARED_LIBRARIES)
-    target_compile_definitions(clickhouse_common_io PRIVATE SPLIT_SHARED_LIBRARIES)
-endif ()
-
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
@@ -227,18 +219,7 @@ add_subdirectory(Common/Config)
 
 set (all_modules)
 macro(add_object_library name common_path)
-    if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
-        add_headers_and_sources(dbms ${common_path})
-    else ()
-        list (APPEND all_modules ${name})
-        add_headers_and_sources(${name} ${common_path})
-        add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
-        if (OS_DARWIN)
-            target_link_libraries (${name} PRIVATE -Wl,-undefined,dynamic_lookup)
-        else()
-            target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
-        endif()
-    endif ()
+    add_headers_and_sources(dbms ${common_path})
 endmacro()
 
 add_object_library(clickhouse_access Access)
@@ -297,28 +278,12 @@ if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
 endif()
 
-if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
-    add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
-    if (TARGET ch_contrib::jemalloc)
-        target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
-    endif()
-    set (all_modules dbms)
-else()
-    add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PUBLIC ${all_modules})
-    target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::libdivide)
-    if (TARGET ch_contrib::jemalloc)
-        target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::jemalloc)
-    endif()
-    list (APPEND all_modules dbms)
-    # force all split libs to be linked
-    if (OS_DARWIN)
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-undefined,error")
-    else()
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
-    endif()
-endif ()
+add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
+target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
+if (TARGET ch_contrib::jemalloc)
+    target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
+endif()
+set (all_modules dbms)
 
 macro (dbms_target_include_directories)
     foreach (module ${all_modules})
@@ -393,6 +358,10 @@ target_link_libraries(clickhouse_common_io
 
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
+endif()
+
+if (TARGET ch_contrib::crc32_s390x)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
@@ -615,13 +584,7 @@ if (ENABLE_TESTS)
 
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
-        -Wno-zero-as-null-pointer-constant
-        -Wno-covered-switch-default
-        -Wno-undef
         -Wno-sign-compare
-        -Wno-used-but-marked-unused
-        -Wno-missing-noreturn
-        -Wno-gnu-zero-variadic-macro-arguments
     )
 
     target_link_libraries(unit_tests_dbms PRIVATE
@@ -642,6 +605,11 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
+
+    if (TARGET ch_contrib::azure_sdk)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
+    endif()
+
 
     add_check(unit_tests_dbms)
 endif ()

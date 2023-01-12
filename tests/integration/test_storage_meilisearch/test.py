@@ -598,7 +598,7 @@ def test_named_collection_secure(started_cluster):
     )
 
     node.query(
-        'CREATE TABLE combine_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure_no_password, password="password" )'
+        'CREATE TABLE combine_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure_no_password, key="password" )'
     )
 
     assert node.query("SELECT COUNT() FROM simple_meili_table") == "100\n"

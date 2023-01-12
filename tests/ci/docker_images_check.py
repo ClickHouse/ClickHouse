@@ -84,7 +84,7 @@ def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
             images_dict = json.load(dict_file)
     else:
         logging.info(
-            "Image file %s doesnt exists in repo %s", image_file_path, repo_path
+            "Image file %s doesn't exist in repo %s", image_file_path, repo_path
         )
 
     return images_dict
