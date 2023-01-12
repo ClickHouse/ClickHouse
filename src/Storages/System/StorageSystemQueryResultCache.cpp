@@ -48,7 +48,7 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
         res_columns[2]->insert(std::chrono::system_clock::to_time_t(key.expires_at));
         res_columns[3]->insert(key.expires_at < std::chrono::system_clock::now());
         res_columns[4]->insert(!key.username.has_value());
-        res_columns[5]->insert(result.allocatedBytes());
+        res_columns[5]->insert(result.sizeInBytes());
     }
 }
 

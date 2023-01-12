@@ -6,12 +6,13 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Sources/SourceFromChunks.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
+
 
 namespace ProfileEvents
 {
@@ -149,6 +150,15 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
     return res;
 }
 
+UInt64 QueryResultCache::QueryResult::sizeInBytes() const
+{
+    size_t res = 0;
+    for (const auto & chunk : chunks)
+        res += chunk.allocatedBytes();
+    return res;
+};
+
+
 namespace
 {
 
@@ -183,14 +193,14 @@ void QueryResultCache::Writer::buffer(Chunk && partial_query_result)
     if (skip_insert)
         return;
 
-    partial_query_results.emplace_back(std::move(partial_query_result));
+    query_result.chunks.emplace_back(std::move(partial_query_result));
 
-    new_entry_size_in_bytes += partial_query_results.back().allocatedBytes();
-    new_entry_size_in_rows += partial_query_results.back().getNumRows();
+    new_entry_size_in_bytes += query_result.chunks.back().allocatedBytes();
+    new_entry_size_in_rows += query_result.chunks.back().getNumRows();
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
     {
-        partial_query_results.clear(); /// eagerly free some space
+        query_result.chunks.clear(); /// eagerly free some space
         skip_insert = true;
     }
 }
@@ -202,25 +212,6 @@ void QueryResultCache::Writer::finalizeWrite()
 
     if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
         return;
-
-    auto to_single_chunk = [](Chunks & chunks_) -> Chunk
-    {
-        if (chunks_.empty())
-            return {};
-
-        Chunk res = std::move(chunks_[0]);
-        for (size_t i = 1; i != chunks_.size(); ++i)
-            res.append(chunks_[i]);
-        return res;
-    };
-
-    auto query_result = to_single_chunk(partial_query_results);
-    new_entry_size_in_bytes = query_result.allocatedBytes(); // updated because compression potentially affects the size of the single chunk vs the aggregate size of individual chunks
-
-    /// ^^ Here, the partial result chunks are concatenated during cache insert. This potentially wastes computation if the cached entry is
-    /// not retrieved later on. The alternative is to cache the partial result chunks and to concatenate them lazily during cache read, at
-    /// the risk of repeating that for each read.
-    /// TODO Implement a more balanced strategy, e.g. insert partial results + concatenate after > N reads.
 
     std::lock_guard lock(mutex);
 
@@ -239,7 +230,7 @@ void QueryResultCache::Writer::finalizeWrite()
         for (auto it = cache.begin(); it != cache.end();)
             if (is_stale(it->first))
             {
-                cache_size_in_bytes -= it->second.allocatedBytes();
+                cache_size_in_bytes -= it->second.sizeInBytes();
                 it = cache.erase(it);
                 ++removed_items;
             }
@@ -251,9 +242,9 @@ void QueryResultCache::Writer::finalizeWrite()
     /// Insert or replace if enough space
     if (sufficient_space_in_cache())
     {
-        cache_size_in_bytes += query_result.allocatedBytes();
+        cache_size_in_bytes += query_result.sizeInBytes();
         if (auto it = cache.find(key); it != cache.end())
-            cache_size_in_bytes -= it->second.allocatedBytes(); /// key replacement
+            cache_size_in_bytes -= it->second.sizeInBytes(); // key replacement
 
         cache[key] = std::move(query_result);
         LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Stored result of query {}", key.queryStringFromAst());
@@ -278,13 +269,20 @@ QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t &
 
     if (is_stale(it->first))
     {
-        cache_size_in_bytes_ -= it->second.allocatedBytes();
+        cache_size_in_bytes_ -= it->second.sizeInBytes();
         const_cast<Cache &>(cache_).erase(it);
         LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Stale entry found and removed for query {}", key.queryStringFromAst());
         return;
     }
 
-    pipe = Pipe(std::make_shared<SourceFromSingleChunk>(key.header, it->second.clone()));
+    /// Can't just return a pointer to the cache entry. The pointed-to data is gone after eviction. Return a deep copy for now.
+    /// TODO: Avoid the copy. For that, make the cache value a shared_ptr. Even if eviction happens, the data remains valid if there are still readers.
+    Chunks cloned_query_result;
+    cloned_query_result.reserve(it->second.chunks.size());
+    for (const auto & chunk : it->second.chunks)
+        cloned_query_result.emplace_back(chunk.clone());
+
+    pipe = Pipe(std::make_shared<SourceFromChunks>(key.header, std::move(cloned_query_result)));
     LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Entry found for query {}", key.queryStringFromAst());
 }
 

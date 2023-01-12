@@ -15,9 +15,9 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
 /// when data is inserted/deleted into/from tables referenced by queries in the cache. In such situations, incorrect results may be
-/// returned. In order to still obtain sufficiently up-to-date query results, a expiry time must be specified for each cache entry after
-/// which it becomes stale and is ignored. Stale entries are removed opportunistically from the cache, they are only evicted when a new
-/// entry is inserted and the cache has insufficient capacity.
+/// returned. In order to still obtain sufficiently up-to-date query results, a expiry time (TTL) must be specified for each cache entry
+/// after which it becomes stale and is ignored. Stale entries are removed opportunistically from the cache, they are only evicted when a
+/// new entry is inserted and the cache has insufficient capacity.
 class QueryResultCache
 {
 public:
@@ -37,7 +37,7 @@ public:
         /// ----------------------------------------------------
         /// Additional stuff data stored in the key, not hashed:
 
-        /// For constructing the pipe.
+        /// Result metadata for constructing the pipe.
         const Block header;
 
         /// Std::nullopt means that the associated entry can be read by other users. In general, sharing is a bad idea: First, it is
@@ -56,6 +56,14 @@ public:
         String queryStringFromAst() const;
     };
 
+    struct QueryResult
+    {
+        Chunks chunks;
+        size_t sizeInBytes() const;
+
+        /// Note: For performance reasons, we store the original result chunks as-is (no concatenation during cache insert or read).
+    };
+
 private:
     struct KeyHasher
     {
@@ -63,7 +71,7 @@ private:
     };
 
     /// query --> query result
-    using Cache = std::unordered_map<Key, Chunk, KeyHasher>;
+    using Cache = std::unordered_map<Key, QueryResult, KeyHasher>;
 
     /// query --> query execution count
     using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
@@ -75,9 +83,9 @@ public:
     /// written into the query result cache. Unfortunately, neither the Writer nor the special transform added on top of the query pipeline
     /// which holds the Writer know whether they are destroyed because the query ended successfully or because of an exception (otherwise,
     /// we could simply implement a check in their destructors). To handle exceptions correctly nevertheless, we do the actual insert in
-    /// finalizeWrite() (as opposed to the Writer destructor). This function is then called only for successful queries (in
-    /// finish_callback() which runs before the transform and the Writer are destroyed), whereas for unsuccessful queries we do nothing (the
-    /// Writer is destroyed w/o inserting anything).
+    /// finalizeWrite() as opposed to the Writer destructor. This function is then called only for successful queries in finish_callback()
+    /// which runs before the transform and the Writer are destroyed, whereas for unsuccessful queries we do nothing (the Writer is
+    /// destroyed w/o inserting anything).
     /// Queries may also be cancelled by the user, in which case IProcessor's cancel bit is set. FinalizeWrite() is only called if the
     /// cancel bit is not set.
     class Writer
@@ -98,7 +106,7 @@ public:
         const size_t max_entry_size_in_rows;
         const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction and finalizeWrite() coincide with query start/end
         const std::chrono::milliseconds min_query_runtime;
-        Chunks partial_query_results;
+        QueryResult query_result;
         std::atomic<bool> skip_insert = false;
 
         Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
