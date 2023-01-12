@@ -196,7 +196,7 @@ Each slot can be seen as an independent state machine with the following states:
  * `granted`: slot is `allocated` by specific query, but not yet acquired by any thread.
  * `acquired`: slot is `allocated` by specific query and acquired by a thread.
 
-Note that `allocated` slot can be in two different states: `granted` and `acquired`. The former is transitional state, that actually should be short. From instant when slot is allocated to a query till the moment when up-scaling procedure is run by any thread of that query.
+Note that `allocated` slot can be in two different states: `granted` and `acquired`. The former is a transitional state, that actually should be short (from the instant when a slot is allocated to a query till the moment when the up-scaling procedure is run by any thread of that query).
 
 ```mermaid
 stateDiagram-v2
