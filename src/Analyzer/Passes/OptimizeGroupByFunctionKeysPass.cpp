@@ -12,6 +12,35 @@ namespace DB
 
 class OptimizeGroupByFunctionKeysVisitor : public InDepthQueryTreeVisitor<OptimizeGroupByFunctionKeysVisitor>
 {
+public:
+    static bool needChildVisit(QueryTreeNodePtr & /*parent*/, QueryTreeNodePtr & child)
+    {
+        return !child->as<FunctionNode>();
+    }
+
+    static void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * query = node->as<QueryNode>();
+        if (!query)
+            return;
+
+        if (!query->hasGroupBy())
+            return;
+
+        auto & group_by = query->getGroupBy().getNodes();
+        if (query->isGroupByWithGroupingSets())
+        {
+            for (auto & set : group_by)
+            {
+                auto & grouping_set = set->as<ListNode>()->getNodes();
+                optimizeGroupingSet(grouping_set);
+            }
+        }
+        else
+            optimizeGroupingSet(group_by);
+    }
+private:
+
     static bool canBeEliminated(QueryTreeNodePtr & node, QueryTreeNodes const & group_by_nodes)
     {
         auto * function = node->as<FunctionNode>();
@@ -76,34 +105,6 @@ class OptimizeGroupByFunctionKeysVisitor : public InDepthQueryTreeVisitor<Optimi
         }
 
         grouping_set = std::move(new_group_by_keys);
-    }
-
-public:
-    static bool needChildVisit(QueryTreeNodePtr & /*parent*/, QueryTreeNodePtr & child)
-    {
-        return !child->as<FunctionNode>();
-    }
-
-    static void visitImpl(QueryTreeNodePtr & node)
-    {
-        auto * query = node->as<QueryNode>();
-        if (!query)
-            return;
-
-        if (!query->hasGroupBy())
-            return;
-
-        auto & group_by = query->getGroupBy().getNodes();
-        if (query->isGroupByWithGroupingSets())
-        {
-            for (auto & set : group_by)
-            {
-                auto & grouping_set = set->as<ListNode>()->getNodes();
-                optimizeGroupingSet(grouping_set);
-            }
-        }
-        else
-            optimizeGroupingSet(group_by);
     }
 };
 
