@@ -1,6 +1,5 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/Impl/BinaryRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>

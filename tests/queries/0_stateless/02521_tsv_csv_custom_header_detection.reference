@@ -92,7 +92,7 @@ x	y	z
 Hello	\N	\N
 \N	World	\N
 16
-a""b	Nullable(Int64)					
+a"b	Nullable(Int64)					
 c	Nullable(Int64)					
 1	2
 TSV

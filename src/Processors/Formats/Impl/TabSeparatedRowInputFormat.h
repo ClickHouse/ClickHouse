@@ -67,7 +67,7 @@ public:
 
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
-    FormatSettings::EscapingRule getEscapingRule() const
+    FormatSettings::EscapingRule getEscapingRule() const override
     {
         return is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped;
     }

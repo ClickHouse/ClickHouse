@@ -258,11 +258,11 @@ String readStringOrFieldByEscapingRule(ReadBuffer & buf, FormatSettings::Escapin
 {
     /// For Quoted escaping rule we can read value as string only if it starts with `'`.
     /// If there is no `'` it can be any other field number/array/etc.
-    if (escaping_rule == FormatSettings::EscapingRule::Quoted && !buf.eof() && *buf.position() == '\'')
+    if (escaping_rule == FormatSettings::EscapingRule::Quoted && !buf.eof() && *buf.position() != '\'')
         return readFieldByEscapingRule(buf, escaping_rule, format_settings);
 
     /// For JSON it's the same as for Quoted, but we check `"`.
-    if (escaping_rule == FormatSettings::EscapingRule::JSON && !buf.eof() && *buf.position() == '"')
+    if (escaping_rule == FormatSettings::EscapingRule::JSON && !buf.eof() && *buf.position() != '"')
         return readFieldByEscapingRule(buf, escaping_rule, format_settings);
 
     /// For other escaping rules we can read any field as string value.
