@@ -149,15 +149,12 @@ bool FunctionArrayShuffle::executeGeneric(const IColumn & src_data, const Column
         permutation.resize(count);
         for (size_t idx = 0; idx < count; ++idx)
             permutation[idx] = idx;
-
         std::shuffle(std::begin(permutation), std::end(permutation), rng);
-
         for (size_t unshuffled_idx = 0; unshuffled_idx != count; ++unshuffled_idx)
         {
             auto shuffled_idx = permutation[unshuffled_idx];
             res_data.insertFrom(src_data, shuffled_idx);
         }
-
         prev_off = src_offsets[i];
     }
 
@@ -178,23 +175,18 @@ bool FunctionArrayShuffle::executeNumber(const IColumn & src_data, const ColumnA
         {
             ColumnArray::Offset off = src_offsets[i];
 
-            // [prev_off, off)
             const auto * src = &src_vec[prev_off];
             const auto * src_end = &src_vec[off];
-
             if (src == src_end)
                 continue;
-
             auto * dst = &res_vec[prev_off];
-
             size_t count = off - prev_off;
-
             memcpy(dst, src, count * sizeof(T));
+
             std::shuffle(dst, dst + count, rng);
 
             prev_off = off;
         }
-
         return true;
     }
     else
@@ -211,7 +203,6 @@ bool FunctionArrayShuffle::executeFixedString(const IColumn & src_data, const Co
         res_chars.resize(src_data_chars.size());
 
         IColumn::Permutation permutation;
-
         ColumnArray::Offset prev_off = 0;
         for (size_t i = 0; i < src_offsets.size(); ++i)
         {
@@ -225,11 +216,9 @@ bool FunctionArrayShuffle::executeFixedString(const IColumn & src_data, const Co
 
             UInt8 * dst = &res_chars[prev_off * n];
 
-
             permutation.resize(count);
             for (size_t idx = 0; idx < count; ++idx)
                 permutation[idx] = idx;
-
             std::shuffle(std::begin(permutation), std::end(permutation), rng);
 
             for (size_t unshuffled_idx = 0; unshuffled_idx != count; ++unshuffled_idx)
@@ -237,7 +226,6 @@ bool FunctionArrayShuffle::executeFixedString(const IColumn & src_data, const Co
                 auto shuffled_idx = permutation[unshuffled_idx];
                 memcpy(dst + unshuffled_idx * n, src + shuffled_idx * n, n);
             }
-
             prev_off = off;
         }
         return true;
@@ -260,14 +248,11 @@ bool FunctionArrayShuffle::executeString(const IColumn & src_data, const ColumnA
         res_chars.resize(src_data_chars.size());
 
         IColumn::Permutation permutation;
-
         ColumnArray::Offset arr_prev_off = 0;
         ColumnString::Offset string_prev_off = 0;
-
         for (size_t i = 0; i < src_array_offsets.size(); ++i)
         {
             ColumnArray::Offset arr_off = src_array_offsets[i];
-
             if (arr_off != arr_prev_off)
             {
                 size_t string_count = arr_off - arr_prev_off;
@@ -275,27 +260,21 @@ bool FunctionArrayShuffle::executeString(const IColumn & src_data, const ColumnA
                 permutation.resize(string_count);
                 for (size_t idx = 0; idx < string_count; ++idx)
                     permutation[idx] = idx;
-
                 std::shuffle(std::begin(permutation), std::end(permutation), rng);
 
                 for (size_t unshuffled_idx = 0; unshuffled_idx < string_count; ++unshuffled_idx)
                 {
                     auto shuffled_idx = permutation[unshuffled_idx];
-
                     auto src_pos = src_string_offsets[arr_prev_off + shuffled_idx - 1];
-
                     size_t string_size = src_string_offsets[arr_prev_off + shuffled_idx] - src_pos;
-
                     memcpySmallAllowReadWriteOverflow15(&res_chars[string_prev_off], &src_data_chars[src_pos], string_size);
 
                     string_prev_off += string_size;
                     res_string_offsets[arr_prev_off + unshuffled_idx] = string_prev_off;
                 }
             }
-
             arr_prev_off = arr_off;
         }
-
         return true;
     }
     else
