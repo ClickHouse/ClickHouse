@@ -368,7 +368,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         part_name = new_part_info.getPartNameV0(min_date, max_date);
     }
     else
-        part_name = new_part_info.getPartName();
+        part_name = new_part_info.getPartNameV1();
 
     std::string part_dir;
     if (need_tmp_prefix)
