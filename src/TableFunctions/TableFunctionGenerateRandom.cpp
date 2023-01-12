@@ -82,7 +82,11 @@ ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextP
 
 StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context);
+    ColumnsDescription columns;
+    if (structure != "auto")
+        columns = parseColumnsListFromString(structure, context);
+    else if (!structure_hint.empty())
+        columns = structure_hint;
     auto res = std::make_shared<StorageGenerateRandom>(
         StorageID(getDatabaseName(), table_name), columns, String{}, max_array_length, max_string_length, random_seed);
     res->startup();
