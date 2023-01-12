@@ -42,6 +42,9 @@ private:
 
 #else
 
+namespace DB
+{
+
 using SharedMutex = std::shared_mutex;
 
 }
