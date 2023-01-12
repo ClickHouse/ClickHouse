@@ -191,7 +191,7 @@ Query that can be parallelized uses `max_threads` setting to limit itself. Defau
 
 Notion of CPU `slot` is introduced. Slot is a unit of concurrency: to run a thread query has to acquire a slot in advance and release it when thread stops. The number of slots is globally limited in a server. Multiple concurrent queries are competing for CPU slots if the total demand exceeds the total number of slots. `ConcurrencyControl` is responsible to resolve this competition by doing CPU slot scheduling in a fair manner.
 
-Each slot can be seen as independent state machine with the following states:
+Each slot can be seen as an independent state machine with the following states:
  * `free`: slot is available to be allocated by any query.
  * `granted`: slot is `allocated` by specific query, but not yet acquired by any thread.
  * `acquired`: slot is `allocated` by specific query and acquired by a thread.
