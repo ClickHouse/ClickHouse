@@ -37,9 +37,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        throw Exception("Table function '" + getName() + "' requires at least one argument: "
-                        " structure, [random_seed, max_string_length, max_array_length].",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        return;
 
     if (args.size() > 4)
         throw Exception("Table function '" + getName() + "' requires at most four arguments: "
