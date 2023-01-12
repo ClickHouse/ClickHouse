@@ -1075,18 +1075,11 @@ void Planner::buildPlanForQueryNode()
     if (query_node.hasPrewhere())
     {
         if (query_node.hasWhere())
-        {
-            auto function_node = std::make_shared<FunctionNode>("and");
-            auto and_function = FunctionFactory::instance().get("and", query_context);
-            function_node->getArguments().getNodes() = {query_node.getPrewhere(), query_node.getWhere()};
-            function_node->resolveAsFunction(and_function->build(function_node->getArgumentColumns()));
-            query_node.getWhere() = std::move(function_node);
-            query_node.getPrewhere() = {};
-        }
+            query_node.getWhere() = mergeConditionNodes({query_node.getPrewhere(), query_node.getWhere()}, query_context);
         else
-        {
             query_node.getWhere() = query_node.getPrewhere();
-        }
+
+        query_node.getPrewhere() = {};
     }
 
     SelectQueryInfo select_query_info;
@@ -1105,6 +1098,16 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_window = !window_function_nodes.empty();
     select_query_info.has_aggregates = !aggregate_function_nodes.empty();
     select_query_info.need_aggregate = query_node.hasGroupBy() || !aggregate_function_nodes.empty();
+
+    if (!select_query_info.need_aggregate && query_node.hasHaving())
+    {
+        if (query_node.hasWhere())
+            query_node.getWhere() = mergeConditionNodes({query_node.getWhere(), query_node.getHaving()}, query_context);
+        else
+            query_node.getWhere() = query_node.getHaving();
+
+        query_node.getHaving() = {};
+    }
 
     checkStoragesSupportTransactions(planner_context);
     collectTableExpressionData(query_tree, *planner_context);
