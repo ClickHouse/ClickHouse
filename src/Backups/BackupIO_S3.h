@@ -54,6 +54,7 @@ public:
     UInt64 getFileSize(const String & file_name) override;
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
+    void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
 
     DataSourceDescription getDataSourceDescription() const override;
@@ -61,8 +62,6 @@ public:
     void copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to) override;
 
 private:
-    Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
-
     void copyObjectImpl(
         const String & src_bucket,
         const String & src_key,
@@ -79,11 +78,14 @@ private:
         const Aws::S3::Model::HeadObjectResult & head,
         const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
 
+    void removeFilesBatch(const Strings & file_names);
+
     S3::URI s3_uri;
     std::shared_ptr<Aws::S3::S3Client> client;
     ReadSettings read_settings;
     S3Settings::RequestSettings request_settings;
     Poco::Logger * log;
+    std::optional<bool> supports_batch_delete;
 };
 
 }

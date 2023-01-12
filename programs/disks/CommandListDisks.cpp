@@ -1,5 +1,3 @@
-#pragma once
-
 #include "ICommand.h"
 #include <Interpreters/Context.h>
 
@@ -11,7 +9,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandListDisks : public ICommand
+class CommandListDisks final : public ICommand
 {
 public:
     CommandListDisks()

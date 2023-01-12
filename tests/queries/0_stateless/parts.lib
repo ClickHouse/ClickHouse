@@ -37,3 +37,6 @@ function wait_for_delete_inactive_parts()
     echo "Timed out while waiting for delete inactive parts!" >&2
     return 2
 }
+
+export -f wait_for_delete_empty_parts
+export -f wait_for_delete_inactive_parts

@@ -54,3 +54,13 @@ SELECT formatDateTime(toDateTime('2020-01-01 01:00:00', 'UTC'), '%z');
 SELECT formatDateTime(toDateTime('2020-01-01 01:00:00', 'US/Samoa'), '%z');
 SELECT formatDateTime(toDateTime('2020-01-01 01:00:00', 'Europe/Moscow'), '%z');
 SELECT formatDateTime(toDateTime('1970-01-01 00:00:00', 'Asia/Kolkata'), '%z');
+
+select formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f');
+select formatDateTime(toDateTime64('2022-12-08 18:11:29.00034', 6, 'UTC'), '%f');
+
+select formatDateTime(toDateTime64('2022-12-08 18:11:29.1234', 9, 'UTC'), '%F %T.%f');
+select formatDateTime(toDateTime64('2022-12-08 18:11:29.1234', 1, 'UTC'), '%F %T.%f');
+select formatDateTime(toDateTime64('2022-12-08 18:11:29.1234', 0, 'UTC'), '%F %T.%f');
+select formatDateTime(toDateTime('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
+select formatDateTime(toDate32('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
+select formatDateTime(toDate('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
