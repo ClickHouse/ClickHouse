@@ -37,21 +37,24 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
         if (!literal || !DB::isInt64OrUInt64FieldType(literal->value.getType()))
             return;
 
-        std::shared_ptr<ASTFunction> new_func;
-        if (func_arguments.size() == 2 && literal->value.get<UInt64>() == 1)
+        if (func_arguments.size() == 2)
         {
-            /// sumIf(1, cond) -> countIf(cond)
-            new_func = makeASTFunction("countIf", func_arguments[1]);
+            std::shared_ptr<ASTFunction> new_func;
+            if (literal->value.get<UInt64>() == 1)
+            {
+                /// sumIf(1, cond) -> countIf(cond)
+                new_func = makeASTFunction("countIf", func_arguments[1]);
+            }
+            else
+            {
+                /// sumIf(123, cond) -> 123 * countIf(cond)
+                auto count_if_func = makeASTFunction("countIf", func_arguments[1]);
+                new_func = makeASTFunction("multiply", func_arguments[0], std::move(count_if_func));
+            }
+            new_func->setAlias(func.alias);
+            ast = std::move(new_func);
+            return;
         }
-        else
-        {
-            /// sumIf(123, cond) -> 123 * countIf(cond)
-            auto count_if_func = makeASTFunction("countIf", func_arguments[1]);
-            new_func = makeASTFunction("multiply", func_arguments[0], std::move(count_if_func));
-        }
-        new_func->setAlias(func.alias);
-        ast = std::move(new_func);
-        return;
     }
     else
     {
