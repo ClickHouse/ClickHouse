@@ -6087,7 +6087,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     /// Cannot use projections in case of additional filter.
     if (query_info.additional_filter_ast)
         return std::nullopt;
-    
+
     auto query_ptr = query_info.query;
     auto original_query_ptr = query_info.original_query;
 
