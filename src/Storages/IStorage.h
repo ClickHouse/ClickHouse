@@ -110,6 +110,8 @@ public:
     /// The name of the table.
     StorageID getStorageID() const;
 
+    virtual bool isMergeTree() const { return false; }
+
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
@@ -486,7 +488,7 @@ public:
     }
 
     /// Mutate the table contents
-    virtual void mutate(const MutationCommands &, ContextPtr)
+    virtual void mutate(const MutationCommands &, ContextPtr, bool /*force_wait*/)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

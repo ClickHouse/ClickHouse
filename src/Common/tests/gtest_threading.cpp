@@ -7,7 +7,9 @@
 #include <atomic>
 
 #include "Common/Exception.h"
-#include <Common/Threading.h>
+#include <Common/CancelToken.h>
+#include <Common/SharedMutex.h>
+#include <Common/CancelableSharedMutex.h>
 #include <Common/Stopwatch.h>
 
 #include <base/demangle.h>
@@ -18,7 +20,7 @@ namespace DB
 {
     namespace ErrorCodes
     {
-        extern const int THREAD_WAS_CANCELLED;
+        extern const int THREAD_WAS_CANCELED;
     }
 }
 
@@ -126,7 +128,7 @@ void TestSharedMutexCancelReader()
             }
             catch (DB::Exception & e)
             {
-                ASSERT_EQ(e.code(), DB::ErrorCodes::THREAD_WAS_CANCELLED);
+                ASSERT_EQ(e.code(), DB::ErrorCodes::THREAD_WAS_CANCELED);
                 ASSERT_EQ(e.message(), "test");
                 cancels++;
                 cancel_sync.arrive_and_wait(); // (C) sync with writer
@@ -148,10 +150,10 @@ void TestSharedMutexCancelReader()
             sync.arrive_and_wait(); // (B) sync with readers
             //std::unique_lock lock(m); // not needed, already synced using barrier
             for (UInt64 tid : tids_to_cancel)
-                DB::CancelToken::signal(tid, DB::ErrorCodes::THREAD_WAS_CANCELLED, "test");
+                DB::CancelToken::signal(tid, DB::ErrorCodes::THREAD_WAS_CANCELED, "test");
 
             // This sync is crucial. It is needed to hold `lock` long enough.
-            // It guarantees that every cancelled thread will find `sm` blocked by writer, and thus will begin to wait.
+            // It guarantees that every canceled thread will find `sm` blocked by writer, and thus will begin to wait.
             // Wait() call is required for cancellation. Otherwise, fastpath acquire w/o wait will not generate exception.
             // And this is the desired behaviour.
             cancel_sync.arrive_and_wait(); // (C) wait for cancellation to finish, before unlock.
@@ -199,18 +201,18 @@ void TestSharedMutexCancelWriter()
                 for (UInt64 tid : all_tids)
                 {
                     if (tid != getThreadId())
-                        DB::CancelToken::signal(tid, DB::ErrorCodes::THREAD_WAS_CANCELLED, "test");
+                        DB::CancelToken::signal(tid, DB::ErrorCodes::THREAD_WAS_CANCELED, "test");
                 }
 
                 // This sync is crucial. It is needed to hold `lock` long enough.
-                // It guarantees that every cancelled thread will find `sm` blocked, and thus will begin to wait.
+                // It guarantees that every canceled thread will find `sm` blocked, and thus will begin to wait.
                 // Wait() call is required for cancellation. Otherwise, fastpath acquire w/o wait will not generate exception.
                 // And this is the desired behaviour.
                 sync.arrive_and_wait(); // (B) wait for cancellation to finish, before unlock.
             }
             catch (DB::Exception & e)
             {
-                ASSERT_EQ(e.code(), DB::ErrorCodes::THREAD_WAS_CANCELLED);
+                ASSERT_EQ(e.code(), DB::ErrorCodes::THREAD_WAS_CANCELED);
                 ASSERT_EQ(e.message(), "test");
                 cancels++;
                 sync.arrive_and_wait(); // (B) sync with race winner
@@ -341,29 +343,29 @@ void PerfTestSharedMutexRW()
     }
 }
 
-TEST(Threading, SharedMutexSmokeCancellableEnabled) { TestSharedMutex<DB::CancellableSharedMutex, DB::Cancellable>(); }
-TEST(Threading, SharedMutexSmokeCancellableDisabled) { TestSharedMutex<DB::CancellableSharedMutex>(); }
-TEST(Threading, SharedMutexSmokeFast) { TestSharedMutex<DB::FastSharedMutex>(); }
+TEST(Threading, SharedMutexSmokeCancelableEnabled) { TestSharedMutex<DB::CancelableSharedMutex, DB::Cancelable>(); }
+TEST(Threading, SharedMutexSmokeCancelableDisabled) { TestSharedMutex<DB::CancelableSharedMutex>(); }
+TEST(Threading, SharedMutexSmokeFast) { TestSharedMutex<DB::SharedMutex>(); }
 TEST(Threading, SharedMutexSmokeStd) { TestSharedMutex<std::shared_mutex>(); }
 
-TEST(Threading, PerfTestSharedMutexReadersOnlyCancellableEnabled) { PerfTestSharedMutexReadersOnly<DB::CancellableSharedMutex, DB::Cancellable>(); }
-TEST(Threading, PerfTestSharedMutexReadersOnlyCancellableDisabled) { PerfTestSharedMutexReadersOnly<DB::CancellableSharedMutex>(); }
-TEST(Threading, PerfTestSharedMutexReadersOnlyFast) { PerfTestSharedMutexReadersOnly<DB::FastSharedMutex>(); }
+TEST(Threading, PerfTestSharedMutexReadersOnlyCancelableEnabled) { PerfTestSharedMutexReadersOnly<DB::CancelableSharedMutex, DB::Cancelable>(); }
+TEST(Threading, PerfTestSharedMutexReadersOnlyCancelableDisabled) { PerfTestSharedMutexReadersOnly<DB::CancelableSharedMutex>(); }
+TEST(Threading, PerfTestSharedMutexReadersOnlyFast) { PerfTestSharedMutexReadersOnly<DB::SharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexReadersOnlyStd) { PerfTestSharedMutexReadersOnly<std::shared_mutex>(); }
 
-TEST(Threading, PerfTestSharedMutexWritersOnlyCancellableEnabled) { PerfTestSharedMutexWritersOnly<DB::CancellableSharedMutex, DB::Cancellable>(); }
-TEST(Threading, PerfTestSharedMutexWritersOnlyCancellableDisabled) { PerfTestSharedMutexWritersOnly<DB::CancellableSharedMutex>(); }
-TEST(Threading, PerfTestSharedMutexWritersOnlyFast) { PerfTestSharedMutexWritersOnly<DB::FastSharedMutex>(); }
+TEST(Threading, PerfTestSharedMutexWritersOnlyCancelableEnabled) { PerfTestSharedMutexWritersOnly<DB::CancelableSharedMutex, DB::Cancelable>(); }
+TEST(Threading, PerfTestSharedMutexWritersOnlyCancelableDisabled) { PerfTestSharedMutexWritersOnly<DB::CancelableSharedMutex>(); }
+TEST(Threading, PerfTestSharedMutexWritersOnlyFast) { PerfTestSharedMutexWritersOnly<DB::SharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexWritersOnlyStd) { PerfTestSharedMutexWritersOnly<std::shared_mutex>(); }
 
-TEST(Threading, PerfTestSharedMutexRWCancellableEnabled) { PerfTestSharedMutexRW<DB::CancellableSharedMutex, DB::Cancellable>(); }
-TEST(Threading, PerfTestSharedMutexRWCancellableDisabled) { PerfTestSharedMutexRW<DB::CancellableSharedMutex>(); }
-TEST(Threading, PerfTestSharedMutexRWFast) { PerfTestSharedMutexRW<DB::FastSharedMutex>(); }
+TEST(Threading, PerfTestSharedMutexRWCancelableEnabled) { PerfTestSharedMutexRW<DB::CancelableSharedMutex, DB::Cancelable>(); }
+TEST(Threading, PerfTestSharedMutexRWCancelableDisabled) { PerfTestSharedMutexRW<DB::CancelableSharedMutex>(); }
+TEST(Threading, PerfTestSharedMutexRWFast) { PerfTestSharedMutexRW<DB::SharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexRWStd) { PerfTestSharedMutexRW<std::shared_mutex>(); }
 
 #ifdef OS_LINUX /// These tests require cancellability
 
-TEST(Threading, SharedMutexCancelReaderCancellableEnabled) { TestSharedMutexCancelReader<DB::CancellableSharedMutex, DB::Cancellable>(); }
-TEST(Threading, SharedMutexCancelWriterCancellableEnabled) { TestSharedMutexCancelWriter<DB::CancellableSharedMutex, DB::Cancellable>(); }
+TEST(Threading, SharedMutexCancelReaderCancelableEnabled) { TestSharedMutexCancelReader<DB::CancelableSharedMutex, DB::Cancelable>(); }
+TEST(Threading, SharedMutexCancelWriterCancelableEnabled) { TestSharedMutexCancelWriter<DB::CancelableSharedMutex, DB::Cancelable>(); }
 
 #endif
