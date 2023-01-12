@@ -78,3 +78,5 @@ ClickHouse-specific aggregate functions:
 -   [cramersV](./cramersv.md)
 -   [cramersVBiasCorrected](./cramersvbiascorrected.md)
 -   [theilsU](./theilsu.md)
+-   [maxIntersections](./maxintersections.md)
+-   [maxIntersectionsPosition](./maxintersectionsposition.md)
