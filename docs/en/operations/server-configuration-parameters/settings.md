@@ -1262,7 +1262,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 [Query result cache](../query-result-cache.md) configuration.
 
-Four settings are available:
+The following settings are available:
 
 -   `size`: The maximum cache size in bytes. 0 means the query result cache is disabled. Default value: `1073741824` (1 GiB).
 -   `max_entries`: The maximum number of SELECT query results stored in the cache. Default value: `1024`.

@@ -538,7 +538,9 @@ void QueryPipeline::finalizeWriteInQueryResultCache()
 {
     auto it = std::find_if(
         processors->begin(), processors->end(),
-        [](ProcessorPtr processor){ return processor->getName() == "StreamInQueryResultCacheTransform"; });
+        [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryResultCacheTransform *>(&*processor); });
+
+    /// the pipeline should theoretically contain just one StreamInQueryResultCacheTransform
 
     if (it != processors->end())
         dynamic_cast<StreamInQueryResultCacheTransform &>(**it).finalizeWriteInQueryResultCache();

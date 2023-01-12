@@ -66,7 +66,6 @@ If the query was aborted by an exception or cancelled, no entry is written into 
 
 ### Further Configuration Options:
 
-
 Different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-result-cache) are
 available to specify the size of the query result cache, the maximum number of cache entries and the maximum size of a cache entry in bytes
 and in records.
