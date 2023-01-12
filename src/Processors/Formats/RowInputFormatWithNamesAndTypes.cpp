@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 #include <Formats/EscapingRuleUtils.h>
 
 
@@ -20,36 +21,6 @@ namespace ErrorCodes
 
 namespace
 {
-    bool checkIfAllTypesAreString(const DataTypes & types)
-    {
-        for (const auto & type : types)
-            if (!type || !isString(removeNullable(removeLowCardinality(type))))
-                return false;
-        return true;
-    }
-
-    std::vector<String> removeQuotesIfAny(std::vector<String> & names)
-    {
-        std::vector<String> result;
-        result.reserve(names.size());
-        for (auto & name : names)
-        {
-            if (name.size() > 1 && ((name.back() == '"' && name.front() == '"') || (name.back() == '\'' && name.front() == '\'')))
-                result.push_back(name.substr(1, name.size() - 2));
-            else
-                result.push_back(name);
-        }
-        return result;
-    }
-
-    bool haveNotStringAndNotNullType(const DataTypes & types)
-    {
-        for (const auto & type : types)
-            if (type && !isString(removeNullable(removeLowCardinality(type))) && !type->onlyNull())
-                return true;
-        return false;
-    }
-
     bool checkIfValuesAreTypeNames(const std::vector<String> & names)
     {
         for (const auto & name : names)
@@ -171,10 +142,8 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     /// that all values from this row is a subset of column names from provided header.
     auto column_names = getPort().getHeader().getNames();
     std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
-    /// Values can be in quotes, remove them.
-    auto possible_names = removeQuotesIfAny(first_row_values);
     bool first_row_is_a_header = true;
-    for (const auto & possible_name : possible_names)
+    for (const auto & possible_name : first_row_values)
     {
         if (!column_names_set.contains(possible_name))
         {
@@ -191,7 +160,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     }
 
     /// First row is a header with column names.
-    column_names_out = possible_names;
+    column_names_out = first_row_values;
     peekable_buf->dropCheckpoint();
     is_header_detected = true;
 
@@ -210,7 +179,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     auto second_row_values = format_reader->readRowForHeaderDetection();
 
     /// The second row can be a header with type names if it contains only valid type names.
-    if (!checkIfValuesAreTypeNames(removeQuotesIfAny(second_row_values)))
+    if (!checkIfValuesAreTypeNames(second_row_values))
     {
         /// Rollback to the beginning of the second row to parse it as data later.
         peekable_buf->rollbackToCheckpoint(true);
@@ -218,7 +187,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     }
 
     /// The second row is a header with type names.
-    type_names_out = removeQuotesIfAny(second_row_values);
+    type_names_out = second_row_values;
     peekable_buf->dropCheckpoint();
 }
 
@@ -404,6 +373,25 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
     return IRowSchemaReader::readSchema();
 }
 
+namespace
+{
+    bool checkIfAllTypesAreString(const DataTypes & types)
+    {
+        for (const auto & type : types)
+            if (!type || !isString(removeNullable(removeLowCardinality(type))))
+                return false;
+        return true;
+    }
+
+    bool haveNotStringAndNotNullType(const DataTypes & types)
+    {
+        for (const auto & type : types)
+            if (type && !isString(removeNullable(removeLowCardinality(type))) && !type->onlyNull())
+                return true;
+        return false;
+    }
+}
+
 void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names)
 {
     auto [first_row_values, first_row_types] = readRowAndGetFieldsAndDataTypes();
@@ -429,7 +417,8 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
     }
 
     DataTypes data_types;
-    bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfValuesAreTypeNames(removeQuotesIfAny(second_row_values));
+    auto possible_type_names = readNamesFromFields(second_row_values);
+    bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfValuesAreTypeNames(possible_type_names);
     size_t row = 2;
     if (!second_row_can_be_type_names)
     {
@@ -463,9 +452,9 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         if (haveNotStringAndNotNullType(data_types))
         {
             buffered_types = data_types;
-            column_names = removeQuotesIfAny(first_row_values);
+            column_names = readNamesFromFields(first_row_values);
             if (second_row_can_be_type_names)
-                type_names = removeQuotesIfAny(second_row_values);
+                type_names = possible_type_names;
             return;
         }
 
@@ -504,6 +493,19 @@ DataTypes FormatWithNamesAndTypesSchemaReader::readRowAndGetDataTypes()
     }
 
     return readRowAndGetDataTypesImpl();
+}
+
+std::vector<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(const std::vector<String> & fields)
+{
+    std::vector<String> names;
+    names.reserve(fields.size());
+    auto escaping_rule = format_reader->getEscapingRule();
+    for (const auto & field : fields)
+    {
+        ReadBufferFromString field_buf(field);
+        names.emplace_back(readStringByEscapingRule(field_buf, escaping_rule, format_settings));
+    }
+    return names;
 }
 
 }

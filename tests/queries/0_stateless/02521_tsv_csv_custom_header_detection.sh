@@ -131,7 +131,7 @@ echo 16
 echo '"a""b","c"
 1,2' | $CLICKHOUSE_LOCAL --input-format='CSV' --table='test' -q "desc test";
 
-echo -e'"a""b","c"
+echo '"a""b","c"
 1,2' | $CLICKHOUSE_LOCAL --input-format='CSV' --table='test' -q "select * from test";
 
 echo "TSV"

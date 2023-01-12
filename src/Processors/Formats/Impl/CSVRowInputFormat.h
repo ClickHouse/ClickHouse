@@ -83,6 +83,8 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
 
+    FormatSettings::EscapingRule getEscapingRule() const override { return FormatSettings::EscapingRule::CSV; }
+
 protected:
     PeekableReadBuffer * buf;
 };

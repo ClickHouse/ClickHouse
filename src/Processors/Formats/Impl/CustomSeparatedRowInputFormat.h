@@ -78,7 +78,7 @@ public:
     bool checkForSuffixImpl(bool check_eof);
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
 
-    EscapingRule getEscapingRule() { return format_settings.custom.escaping_rule; }
+    EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
 
     void setReadBuffer(ReadBuffer & in_) override;
 

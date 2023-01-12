@@ -125,6 +125,11 @@ public:
 
     virtual ~FormatWithNamesAndTypesReader() = default;
 
+    virtual FormatSettings::EscapingRule getEscapingRule() const
+    {
+        throw Exception("Format reader doesn't have an escaping rule", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
 protected:
     ReadBuffer * in;
     FormatSettings format_settings;
@@ -169,6 +174,7 @@ protected:
 
 private:
     void tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out);
+    std::vector<String> readNamesFromFields(const std::vector<String> & fields);
 
     FormatWithNamesAndTypesReader * format_reader;
     bool try_detect_header;
