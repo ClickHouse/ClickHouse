@@ -50,7 +50,7 @@ The intervals look like the following:
     3 - - - 7
 ```
 
-Notice that three of these intervals have the value 4 in common, and that is the most frequent number of intersections:
+Three of these intervals have the value 4 in common, and that is the most frequent number of intersections. (The intervals `(1,3)` and `(3,7)` share an endpoint but are not considered intersecting by the `maxIntersections` function.)
 
 ```sql
 SELECT maxIntersections(start, end) FROM my_events;
