@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/CancelToken.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 #include <chrono>
@@ -383,6 +384,16 @@ CancellationCode QueryStatus::cancelQuery(bool)
         return CancellationCode::CancelSent;
 
     is_killed.store(true);
+
+    // Cancel threads to resolve possible deadlocks that can occur due to waiting on cancelable synchronization primitives (e.g. CancelableSharedMutex).
+    // Every cancelable wait will finish and throw an exception. Any further attempt to wait on any cancelable primitive will also result in exception
+    // (unless waiting is done inside `NonCancellable` scope).
+    // Note that deadlocks are possible in the first place due to non-deterministic locking order when OvercommitTracker tries to cancel query.
+    {
+        std::lock_guard lock(thread_group->mutex);
+        for (Int64 thread_id : thread_group->thread_ids)
+            CancelToken::signal(thread_id); // TODO(serxa): pass exception code and text here to be thrown by cancelled thread
+    }
 
     std::lock_guard lock(executors_mutex);
     for (auto * e : executors)
