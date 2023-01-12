@@ -555,6 +555,7 @@ Changelog::Changelog(
     , rotate_interval(rotate_interval_)
     , log(log_)
     , write_operations(std::numeric_limits<size_t>::max())
+    , append_completion_queue(std::numeric_limits<size_t>::max())
 {
     /// Load all files in changelog directory
     namespace fs = std::filesystem;
@@ -577,6 +578,8 @@ Changelog::Changelog(
 
     write_thread = ThreadFromGlobalPool([this] { writeThread(); });
 
+    append_completion_thread = ThreadFromGlobalPool([this] { appendCompletionThread(); });
+
     current_writer = std::make_unique<ChangelogWriter>(
         existing_changelogs, compress_logs_, force_sync_, changelogs_dir, rotate_interval_, max_log_file_size);
 }
@@ -597,8 +600,6 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         start_to_read_from -= logs_to_keep;
     else
         start_to_read_from = 1;
-
-    SCOPE_EXIT({ initialized = true; });
 
     /// Got through changelog files in order of start_index
     for (const auto & [changelog_start_index, changelog_description_ptr] : existing_changelogs)
@@ -626,6 +627,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                     min_log_id = last_commited_log_index;
                     max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
                     current_writer->rotate(max_log_id + 1);
+                    initialized = true;
                     return;
                 }
                 else if (changelog_description.from_log_index > start_to_read_from)
@@ -731,6 +733,8 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
     if (!current_writer->isFileSet())
         current_writer->rotate(max_log_id + 1);
+
+    initialized = true;
 }
 
 
@@ -817,6 +821,18 @@ ChangelogRecord Changelog::buildRecord(uint64_t index, const LogEntryPtr & log_e
 
     return record;
 }
+void Changelog::appendCompletionThread()
+{
+    bool append_ok = false;
+    while (append_completion_queue.pop(append_ok))
+    {
+        // we shouldn't start the raft_server before sending it here
+        if (auto raft_server_locked = raft_server.lock())
+            raft_server_locked->notify_log_append_completion(append_ok);
+        else
+            LOG_WARNING(log, "Raft server is not set in LogStore.");
+    }
+}
 
 void Changelog::writeThread()
 {
@@ -859,11 +875,12 @@ void Changelog::writeThread()
 
             durable_idx_cv.notify_all();
 
-            // we shouldn't start the raft_server before sending it here
-            if (auto raft_server_locked = raft_server.lock())
-                raft_server_locked->notify_log_append_completion(batch_append_ok);
-            else
-                LOG_WARNING(log, "Raft server is not set in LogStore.");
+            // we need to call completion callback in another thread because it takes a global lock for the NuRaft server
+            // NuRaft will in some places wait for flush to be done while having the same global lock leading to deadlock
+            // -> future write operations are blocked by flush that cannot be completed because it cannot take NuRaft lock
+            // -> NuRaft won't leave lock until its flush is done
+            if (!append_completion_queue.push(batch_append_ok))
+                LOG_WARNING(log, "Changelog is shut down");
 
             batch_append_ok = true;
         }
@@ -882,13 +899,17 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
     logs[index] = log_entry;
     max_log_id = index;
 
-    if (!write_operations.tryPush(AppendLog{index, log_entry}))
+    if (!write_operations.push(AppendLog{index, log_entry}))
         LOG_WARNING(log, "Changelog is shut down");
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before writing records");
+
     {
+
         std::lock_guard lock(writer_mutex);
         /// This write_at require to overwrite everything in this file and also in previous file(s)
         const bool go_to_previous_file = index < current_writer->getStartIndex();
@@ -926,6 +947,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
 void Changelog::compact(uint64_t up_to_log_index)
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before compacting records");
+
     std::lock_guard lock(writer_mutex);
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
 
@@ -1096,8 +1120,12 @@ bool Changelog::flush()
 
 std::shared_ptr<bool> Changelog::flushAsync()
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before flushing records");
+
     auto failed = std::make_shared<bool>(false);
     bool pushed = write_operations.push(Flush{max_log_id, failed});
+
     if (!pushed)
     {
         LOG_WARNING(log, "Changelog is shut down");
@@ -1119,6 +1147,12 @@ void Changelog::shutdown()
 
     if (write_thread.joinable())
         write_thread.join();
+
+    if (!append_completion_queue.isFinished())
+        append_completion_queue.finish();
+
+    if (append_completion_thread.joinable())
+        append_completion_thread.join();
 
     if (current_writer)
     {
@@ -1142,17 +1176,14 @@ Changelog::~Changelog()
 
 void Changelog::cleanLogThread()
 {
-    while (!log_files_to_delete_queue.isFinishedAndEmpty())
+    std::string path;
+    while (log_files_to_delete_queue.pop(path))
     {
-        std::string path;
-        if (log_files_to_delete_queue.pop(path))
-        {
-            std::error_code ec;
-            if (std::filesystem::remove(path, ec))
-                LOG_INFO(log, "Removed changelog {} because of compaction.", path);
-            else
-                LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
-        }
+        std::error_code ec;
+        if (std::filesystem::remove(path, ec))
+            LOG_INFO(log, "Removed changelog {} because of compaction.", path);
+        else
+            LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
     }
 }
 

@@ -141,6 +141,3 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 │   1 │
 └─────┘
 ```
-
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/coordinates) <!--hide-->
