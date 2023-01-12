@@ -1258,72 +1258,30 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_log>
 ```
 
-## query_result_cache_size {#server_configuration_parameters_query-result-cache-size}
+## query_result_cache {#server_configuration_parameters_query-result-cache}
 
-Maximum size of the [query result cache](../query-result-cache.md) in bytes. 0 means the query result cache is disabled.
+[Query result cache](../query-result-cache.md) configuration.
+
+Four settings are available:
+
+-   `size`: The maximum cache size in bytes. 0 means the query result cache is disabled. Default value: `1073741824` (1 GiB).
+-   `max_entries`: The maximum number of SELECT query results stored in the cache. Default value: `1024`.
+-   `max_entry_size`: The maximum size in bytes SELECT query results may have to be saved in the cache. Default value: `1048576` (1 MiB).
+-   `max_entry_records`: The maximum number of records SELECT query results may have to be saved in the cache. Default value: `30000000` (30 mil).
 
 :::warning
-Data for the query result cache is allocated in DRAM. If memory is scarce, make sure to set a small limit or disable the query result cache altogether.
+Data for the query result cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `size` or disable the query result cache altogether.
 :::
 
-Possible values:
-
--   Positive integer >= 0.
-
-Default value: `1073741824` (1 GiB)
-
 **Example**
 
 ```xml
-<query_result_cache_size>1073741824</query_result_cache_size>
-```
-
-## query_result_cache_max_entries {#server_configuration_parameters_query-result-cache-max-entries}
-
-Maximum number of SELECT query results stored in the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- Positive integer >= 0.
-
-Default value: `1024`
-
-**Example**
-
-```xml
-<query_result_cache_max_entries>1024</query_result_cache_max_entries>
-```
-
-## query_result_cache_max_entry_size {#server_configuration_parameters_query-result-cache-max-entry-size}
-
-Maximum size in bytes SELECT query results may have to be saved in the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- Positive integer >= 0.
-
-Default value: `1048576` (1 MiB)
-
-**Example**
-
-```xml
-<query_result_cache_max_entry_size>1048567</query_result_cache_max_entry_size>
-```
-
-## query_result_cache_max_entry_records {#server_configuration_parameters_query-result-cache-max-entry-records}
-
-Maximum number of records SELECT query results may have to be saved in the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- Positive integer >= 0.
-
-Default value: `30000000` (30 mil.)
-
-**Example**
-
-```xml
-<query_result_cache_max_entry_records>30000000</query_result_cache_max_entry_records>
+<query_result_cache>
+    <size>1073741824</size>
+    <max_entries>1024</max_entries>
+    <max_entry_size>1048576</max_entry_size>
+    <max_entry_records>30000000</max_entry_records>
+</query_result_cache>
 ```
 
 ## query_thread_log {#server_configuration_parameters-query_thread_log}
