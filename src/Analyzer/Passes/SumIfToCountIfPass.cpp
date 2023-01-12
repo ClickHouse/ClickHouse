@@ -81,7 +81,7 @@ public:
         if (nested_if_function_arguments_nodes.size() != 3)
             return;
 
-        auto & cond_argument = nested_if_function_arguments_nodes[0];
+        const auto & cond_argument = nested_if_function_arguments_nodes[0];
         const auto * if_true_condition_constant_node = nested_if_function_arguments_nodes[1]->as<ConstantNode>();
         const auto * if_false_condition_constant_node = nested_if_function_arguments_nodes[2]->as<ConstantNode>();
 
