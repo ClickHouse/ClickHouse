@@ -589,16 +589,21 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
     /// Parallel replicas has been requested but there is no way to sample data.
     /// Select all data from first replica and no data from other replicas.
-    if (settings.parallel_replicas_count > 1 && !data.supportsSampling() && settings.parallel_replica_offset > 0)
+    if (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::SAMPLE_KEY
+        && !data.supportsSampling() && settings.parallel_replica_offset > 0)
     {
-        LOG_DEBUG(log, "Will use no data on this replica because parallel replicas processing has been requested"
+        LOG_DEBUG(
+            log,
+            "Will use no data on this replica because parallel replicas processing has been requested"
             " (the setting 'max_parallel_replicas') but the table does not support sampling and this replica is not the first.");
         sampling.read_nothing = true;
         return sampling;
     }
 
-    sampling.use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::SAMPLE_KEY && data.supportsSampling());
-    bool no_data = false;   /// There is nothing left after sampling.
+    sampling.use_sampling = relative_sample_size > 0
+        || (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::SAMPLE_KEY
+            && data.supportsSampling());
+    bool no_data = false; /// There is nothing left after sampling.
 
     if (sampling.use_sampling)
     {

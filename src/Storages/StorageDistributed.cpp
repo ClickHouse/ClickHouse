@@ -697,7 +697,8 @@ void StorageDistributed::read(
 
 
     auto settings = local_context->getSettingsRef();
-    bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas && !settings.use_hedged_requests;
+    bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas
+        && !settings.use_hedged_requests && settings.parallel_replicas_mode == ParallelReplicasMode::READ_TASKS;
 
     if (parallel_replicas)
         ClusterProxy::executeQueryWithParallelReplicas(

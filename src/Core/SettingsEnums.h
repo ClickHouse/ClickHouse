@@ -196,6 +196,7 @@ enum class ParallelReplicasMode : uint8_t
 {
     SAMPLE_KEY,
     CUSTOM_KEY,
+    READ_TASKS,
 };
 
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
