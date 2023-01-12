@@ -58,10 +58,12 @@ public:
 
     struct QueryResult
     {
-        Chunks chunks;
+        std::shared_ptr<Chunks> chunks = std::make_shared<Chunks>();
         size_t sizeInBytes() const;
 
-        /// Note: For performance reasons, we store the original result chunks as-is (no concatenation during cache insert or read).
+        /// Notes: 1. For performance reasons, we cache the original result chunks as-is (no concatenation during cache insert or lookup).
+        ///        2. Ref-counting (shared_ptr) ensures that eviction of an entry does not affect queries which still read from the cache.
+        ///           (this can also be achieved by copying the chunks during lookup but that would be under the cache lock --> too slow)
     };
 
 private:

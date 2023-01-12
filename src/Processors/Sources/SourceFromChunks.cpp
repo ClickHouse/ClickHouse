@@ -4,8 +4,13 @@ namespace DB
 {
 
 SourceFromChunks::SourceFromChunks(Block header, Chunks chunks_)
+    : SourceFromChunks(header, std::make_shared<Chunks>(std::move(chunks_)))
+{
+}
+
+SourceFromChunks::SourceFromChunks(Block header, std::shared_ptr<const Chunks> chunks_)
     : ISource(std::move(header))
-    , chunks(std::move(chunks_))
+    , chunks(chunks_)
 {
 }
 
@@ -16,8 +21,12 @@ String SourceFromChunks::getName() const
 
 Chunk SourceFromChunks::generate()
 {
-    if (i_chunk < chunks.size())
-        return std::move(chunks[i_chunk++]);
+    if (i_chunk < chunks->size())
+    {
+        Chunk chunk = ((*chunks)[i_chunk]).clone();
+        i_chunk++;
+        return chunk;
+    }
     else
         return {};
 }
