@@ -931,6 +931,19 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 select->prewhere()->children.clear();
                 select->setExpression(ASTSelectQuery::Expression::PREWHERE, {});
             }
+            else if (!select->where().get())
+            {
+                if (fuzz_rand() % 50 == 0)
+                {
+                    select->setExpression(ASTSelectQuery::Expression::WHERE, select->prewhere()->clone());
+
+                    if (fuzz_rand() % 2 == 0)
+                    {
+                        select->prewhere()->children.clear();
+                        select->setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+                    }
+                }
+            }
         }
         else if (fuzz_rand() % 50 == 0)
         {
