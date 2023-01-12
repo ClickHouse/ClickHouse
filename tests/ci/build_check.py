@@ -253,7 +253,7 @@ def main():
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
     # FIXME performance
     s3_performance_path = "/".join(
-        (performance_pr, pr_info.sha, build_name, "performance.tgz")
+        (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
     )
 
     # If this is rerun, then we try to find already created artifacts and just
@@ -331,13 +331,13 @@ def main():
 
     # FIXME performance
     performance_urls = []
-    performance_path = os.path.join(build_output_path, "performance.tgz")
+    performance_path = os.path.join(build_output_path, "performance.tar.zst")
     if os.path.exists(performance_path):
         performance_urls.append(
             s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
         )
         logging.info(
-            "Uploaded performance.tgz to %s, now delete to avoid duplication",
+            "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
             performance_urls[0],
         )
         os.remove(performance_path)

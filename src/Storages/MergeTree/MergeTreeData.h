@@ -424,6 +424,8 @@ public:
 
     StoragePolicyPtr getStoragePolicy() const override;
 
+    bool isMergeTree() const override { return true; }
+
     bool supportsPrewhere() const override { return true; }
 
     bool supportsFinal() const override;
@@ -533,7 +535,7 @@ public:
     std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartitionWithState(DataPartState state) const;
     std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartition() const;
 
-    size_t getMaxInactivePartsCountForPartition() const;
+    size_t getMaxOutdatedPartsCountForPartition() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
@@ -553,7 +555,7 @@ public:
 
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
-    void delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr query_context) const;
+    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.

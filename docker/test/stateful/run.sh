@@ -3,7 +3,7 @@
 set -e -x
 
 # Choose random timezone for this test run
-TZ="$(grep -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
+TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
@@ -152,21 +152,21 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
-grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
+rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 
-pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
+zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst ||:
 # FIXME: remove once only github actions will be left
 rm /var/log/clickhouse-server/clickhouse-server.log
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
 
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
-    tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
+    tar --zstd -c -h -f /test_output/clickhouse_coverage.tar.zst /profraw ||:
 fi
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
-    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
-    pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
-    pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
+    rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
+    rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
+    zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
+    zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.zst ||:
     # FIXME: remove once only github actions will be left
     rm /var/log/clickhouse-server/clickhouse-server1.log
     rm /var/log/clickhouse-server/clickhouse-server2.log

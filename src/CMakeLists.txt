@@ -606,5 +606,10 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
 
+    if (TARGET ch_contrib::azure_sdk)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
+    endif()
+
+
     add_check(unit_tests_dbms)
 endif ()

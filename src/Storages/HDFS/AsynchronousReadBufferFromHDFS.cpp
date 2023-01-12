@@ -66,7 +66,7 @@ bool AsynchronousReadBufferFromHDFS::hasPendingDataToRead()
 std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::asyncReadInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(impl);
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;

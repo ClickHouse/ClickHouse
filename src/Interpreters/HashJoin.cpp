@@ -886,20 +886,20 @@ public:
             const auto & lhs = lhs_block.getByPosition(i);
             const auto & rhs = rhs_block.getByPosition(i);
             if (lhs.name != rhs.name)
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}]",
-                    lhs_block.dumpStructure(), rhs_block.dumpStructure());
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}] ({} != {})",
+                    lhs_block.dumpStructure(), rhs_block.dumpStructure(), lhs.name, rhs.name);
 
             const auto & ltype = recursiveRemoveLowCardinality(lhs.type);
             const auto & rtype = recursiveRemoveLowCardinality(rhs.type);
             if (!ltype->equals(*rtype))
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}]",
-                    lhs_block.dumpStructure(), rhs_block.dumpStructure());
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}] ({} != {})",
+                    lhs_block.dumpStructure(), rhs_block.dumpStructure(), ltype->getName(), rtype->getName());
 
             const auto & lcol = recursiveRemoveLowCardinality(lhs.column);
             const auto & rcol = recursiveRemoveLowCardinality(rhs.column);
             if (lcol->getDataType() != rcol->getDataType())
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}]",
-                    lhs_block.dumpStructure(), rhs_block.dumpStructure());
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}] ({} != {})",
+                    lhs_block.dumpStructure(), rhs_block.dumpStructure(), lcol->getDataType(), rcol->getDataType());
         }
     }
 
