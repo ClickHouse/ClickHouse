@@ -181,6 +181,7 @@ public:
         bool hilite = false;
         bool one_line;
         bool always_quote_identifiers = false;
+        bool serialize_force_alias = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
         bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 

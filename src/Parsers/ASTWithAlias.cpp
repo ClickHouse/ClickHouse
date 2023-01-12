@@ -28,7 +28,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
         /// Because a record of the form `0 AS x + 0` is syntactically invalid.
         if (!alias.empty())
         {
-            if (force_alias)
+            if (settings.serialize_force_alias && force_alias)
                 settings.ostr << "__columnWithAliasName(";
             else if (frame.need_parens)
                 settings.ostr << '(';
@@ -39,7 +39,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
         if (!alias.empty())
         {
             writeAlias(alias, settings);
-            if (frame.need_parens || force_alias)
+            if (frame.need_parens || (settings.serialize_force_alias && force_alias))
                 settings.ostr << ')';
         }
     }

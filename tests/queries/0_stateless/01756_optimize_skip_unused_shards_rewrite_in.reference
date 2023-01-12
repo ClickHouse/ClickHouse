@@ -21,11 +21,11 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_no` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `id_no`%') and
     type = 'QueryFinish'
 order by query;
-WITH _CAST(\'default\', \'Nullable(String)\') AS `id_no` SELECT `one`.`dummy`, ignore(`id_no`) FROM `system`.`one` WHERE `dummy` IN (0, 2)
-WITH _CAST(\'default\', \'Nullable(String)\') AS `id_no` SELECT `one`.`dummy`, ignore(`id_no`) FROM `system`.`one` WHERE `dummy` IN (0, 2)
+WITH __columnWithAliasName(_CAST(\'default\', \'Nullable(String)\') AS `id_no`) SELECT `one`.`dummy`, ignore(`id_no`) FROM `system`.`one` WHERE `dummy` IN (0, 2)
+WITH __columnWithAliasName(_CAST(\'default\', \'Nullable(String)\') AS `id_no`) SELECT `one`.`dummy`, ignore(`id_no`) FROM `system`.`one` WHERE `dummy` IN (0, 2)
 --
 -- w/ optimize_skip_unused_shards_rewrite_in=1
 --
@@ -42,11 +42,11 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_02` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `id_02`%') and
     type = 'QueryFinish'
 order by query;
-WITH _CAST(\'default\', \'Nullable(String)\') AS `id_02` SELECT `one`.`dummy`, ignore(`id_02`) FROM `system`.`one` WHERE `dummy` IN tuple(0)
-WITH _CAST(\'default\', \'Nullable(String)\') AS `id_02` SELECT `one`.`dummy`, ignore(`id_02`) FROM `system`.`one` WHERE `dummy` IN tuple(2)
+WITH __columnWithAliasName(_CAST(\'default\', \'Nullable(String)\') AS `id_02`) SELECT `one`.`dummy`, ignore(`id_02`) FROM `system`.`one` WHERE `dummy` IN tuple(0)
+WITH __columnWithAliasName(_CAST(\'default\', \'Nullable(String)\') AS `id_02`) SELECT `one`.`dummy`, ignore(`id_02`) FROM `system`.`one` WHERE `dummy` IN tuple(2)
 select 'optimize_skip_unused_shards_rewrite_in(2,)';
 optimize_skip_unused_shards_rewrite_in(2,)
 with (select currentDatabase()) as id_2 select *, ignore(id_2) from dist_01756 where dummy in (2,);
@@ -56,10 +56,10 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_2` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `id_2`%') and
     type = 'QueryFinish'
 order by query;
-WITH _CAST(\'default\', \'Nullable(String)\') AS `id_2` SELECT `one`.`dummy`, ignore(`id_2`) FROM `system`.`one` WHERE `dummy` IN tuple(2)
+WITH __columnWithAliasName(_CAST(\'default\', \'Nullable(String)\') AS `id_2`) SELECT `one`.`dummy`, ignore(`id_2`) FROM `system`.`one` WHERE `dummy` IN tuple(2)
 select 'optimize_skip_unused_shards_rewrite_in(0,)';
 optimize_skip_unused_shards_rewrite_in(0,)
 with (select currentDatabase()) as id_0 select *, ignore(id_0) from dist_01756 where dummy in (0,);
@@ -70,10 +70,10 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_0` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `id_0`%') and
     type = 'QueryFinish'
 order by query;
-WITH _CAST(\'default\', \'Nullable(String)\') AS `id_0` SELECT `one`.`dummy`, ignore(`id_0`) FROM `system`.`one` WHERE `dummy` IN tuple(0)
+WITH __columnWithAliasName(_CAST(\'default\', \'Nullable(String)\') AS `id_0`) SELECT `one`.`dummy`, ignore(`id_0`) FROM `system`.`one` WHERE `dummy` IN tuple(0)
 -- signed column
 select 'signed column';
 signed column
@@ -85,11 +85,11 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `key_signed` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `key_signed`%') and
     type = 'QueryFinish'
 order by query;
-WITH _CAST(\'default\', \'Nullable(String)\') AS `key_signed` SELECT `key`, ignore(`key_signed`) FROM `default`.`data_01756_signed` WHERE `key` IN tuple(-1)
-WITH _CAST(\'default\', \'Nullable(String)\') AS `key_signed` SELECT `key`, ignore(`key_signed`) FROM `default`.`data_01756_signed` WHERE `key` IN tuple(-2)
+WITH __columnWithAliasName(_CAST(\'default\', \'Nullable(String)\') AS `key_signed`) SELECT `key`, ignore(`key_signed`) FROM `default`.`data_01756_signed` WHERE `key` IN tuple(-1)
+WITH __columnWithAliasName(_CAST(\'default\', \'Nullable(String)\') AS `key_signed`) SELECT `key`, ignore(`key_signed`) FROM `default`.`data_01756_signed` WHERE `key` IN tuple(-2)
 -- not tuple
 select * from dist_01756 where dummy in (0);
 0

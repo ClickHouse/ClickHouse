@@ -39,7 +39,7 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_no` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `id_no`%') and
     type = 'QueryFinish'
 order by query;
 
@@ -58,7 +58,7 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_02` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `id_02`%') and
     type = 'QueryFinish'
 order by query;
 
@@ -70,7 +70,7 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_2` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `id_2`%') and
     type = 'QueryFinish'
 order by query;
 
@@ -82,7 +82,7 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_0` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `id_0`%') and
     type = 'QueryFinish'
 order by query;
 
@@ -96,7 +96,7 @@ select query from system.query_log where
     event_time > now() - interval 1 hour and
     not is_initial_query and
     query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `key_signed` %') and
+    query like concat('WITH%', currentDatabase(), '%AS `key_signed`%') and
     type = 'QueryFinish'
 order by query;
 

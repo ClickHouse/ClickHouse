@@ -831,6 +831,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
         ast_format_settings.always_quote_identifiers = true;
+        ast_format_settings.serialize_force_alias = true;
         new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }
@@ -893,6 +894,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
         ast_format_settings.always_quote_identifiers = true;
+        ast_format_settings.serialize_force_alias = true;
         new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }

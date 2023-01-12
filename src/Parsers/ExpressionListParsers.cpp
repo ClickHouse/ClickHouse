@@ -1025,7 +1025,13 @@ public:
                     return false;
             }
 
-            elements = {std::move(function_node)};
+            ASTPtr node = function_node;
+            if (function_node->name == "__columnWithAliasName")
+            {
+                node = function_node->arguments->children.front();
+                dynamic_cast<ASTWithAlias &>(*node).force_alias = true;
+            }
+            elements = {std::move(node)};
             finished = true;
         }
 
