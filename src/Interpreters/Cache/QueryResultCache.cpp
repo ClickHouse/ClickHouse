@@ -153,7 +153,7 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
 UInt64 QueryResultCache::QueryResult::sizeInBytes() const
 {
     size_t res = 0;
-    for (const auto & chunk : chunks)
+    for (const auto & chunk : *chunks)
         res += chunk.allocatedBytes();
     return res;
 };
@@ -193,14 +193,16 @@ void QueryResultCache::Writer::buffer(Chunk && partial_query_result)
     if (skip_insert)
         return;
 
-    query_result.chunks.emplace_back(std::move(partial_query_result));
+    auto & chunks = query_result.chunks;
 
-    new_entry_size_in_bytes += query_result.chunks.back().allocatedBytes();
-    new_entry_size_in_rows += query_result.chunks.back().getNumRows();
+    chunks->emplace_back(std::move(partial_query_result));
+
+    new_entry_size_in_bytes += chunks->back().allocatedBytes();
+    new_entry_size_in_rows += chunks->back().getNumRows();
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
     {
-        query_result.chunks.clear(); /// eagerly free some space
+        chunks->clear(); /// eagerly free some space
         skip_insert = true;
     }
 }
@@ -275,14 +277,7 @@ QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t &
         return;
     }
 
-    /// Can't just return a pointer to the cache entry. The pointed-to data is gone after eviction. Return a deep copy for now.
-    /// TODO: Avoid the copy. For that, make the cache value a shared_ptr. Even if eviction happens, the data remains valid if there are still readers.
-    Chunks cloned_query_result;
-    cloned_query_result.reserve(it->second.chunks.size());
-    for (const auto & chunk : it->second.chunks)
-        cloned_query_result.emplace_back(chunk.clone());
-
-    pipe = Pipe(std::make_shared<SourceFromChunks>(key.header, std::move(cloned_query_result)));
+    pipe = Pipe(std::make_shared<SourceFromChunks>(it->first.header, it->second.chunks));
     LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Entry found for query {}", key.queryStringFromAst());
 }
 
