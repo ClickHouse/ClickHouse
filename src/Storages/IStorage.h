@@ -17,7 +17,6 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-#include <Common/Threading.h>
 
 #include <optional>
 #include <compare>

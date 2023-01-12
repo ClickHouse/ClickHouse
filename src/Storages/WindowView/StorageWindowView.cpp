@@ -1443,7 +1443,7 @@ void StorageWindowView::writeIntoWindowView(
         });
     }
 
-    std::shared_lock<DB::FastSharedMutex> fire_signal_lock;
+    std::shared_lock<SharedMutex> fire_signal_lock;
     QueryPipelineBuilder builder;
     if (window_view.is_proctime)
     {

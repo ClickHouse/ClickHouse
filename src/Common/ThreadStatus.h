@@ -5,7 +5,6 @@
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Threading.h>
 #include <base/StringRef.h>
 #include <Common/ConcurrentBoundedQueue.h>
 

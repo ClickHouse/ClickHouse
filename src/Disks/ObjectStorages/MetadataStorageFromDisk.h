@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SharedMutex.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
 #include <Disks/IDisk.h>
@@ -17,7 +18,7 @@ class MetadataStorageFromDisk final : public IMetadataStorage
 private:
     friend class MetadataStorageFromDiskTransaction;
 
-    mutable DB::FastSharedMutex metadata_mutex;
+    mutable SharedMutex metadata_mutex;
 
     DiskPtr disk;
     std::string object_storage_root_path;
@@ -67,8 +68,8 @@ public:
 
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
 
-    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<DB::FastSharedMutex> & lock) const;
-    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<DB::FastSharedMutex> & lock) const;
+    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
+    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
