@@ -424,6 +424,8 @@ public:
 
     StoragePolicyPtr getStoragePolicy() const override;
 
+    bool isMergeTree() const override { return true; }
+
     bool supportsPrewhere() const override { return true; }
 
     bool supportsFinal() const override;

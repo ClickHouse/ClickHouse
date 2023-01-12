@@ -29,6 +29,10 @@ from rerun_helper import RerunHelper
 IMAGE_NAME = "clickhouse/sqlancer-test"
 
 
+def get_pull_command(docker_image):
+    return f"docker pull {docker_image}"
+
+
 def get_run_command(download_url, workspace_path, image):
     return (
         f"docker run "
@@ -92,6 +96,21 @@ if __name__ == "__main__":
     if not os.path.exists(workspace_path):
         os.makedirs(workspace_path)
 
+    pull_command = get_pull_command(docker_image)
+
+    logging.info("Going to pull image %s", pull_command)
+
+    pull_log_path = os.path.join(workspace_path, "pull.log")
+    with open(pull_log_path, "w", encoding="utf-8") as log:
+        with subprocess.Popen(
+            pull_command, shell=True, stderr=log, stdout=log
+        ) as process:
+            retcode = process.wait()
+            if retcode == 0:
+                logging.info("Pull successfully")
+            else:
+                logging.info("Pull failed")
+
     run_command = get_run_command(build_url, workspace_path, docker_image)
     logging.info("Going to run %s", run_command)
 
@@ -124,6 +143,7 @@ if __name__ == "__main__":
 
     paths = [
         run_log_path,
+        pull_log_path,
         os.path.join(workspace_path, "clickhouse-server.log"),
         os.path.join(workspace_path, "stderr.log"),
         os.path.join(workspace_path, "stdout.log"),
