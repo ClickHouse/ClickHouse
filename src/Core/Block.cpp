@@ -92,7 +92,7 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
             code);
 
     if (isColumnConst(*actual.column) && isColumnConst(*expected.column)
-        && actual.column->size() > 0 && expected.column->size() > 0) /// don't check values in empty columns
+        && !actual.column->empty() && !expected.column->empty()) /// don't check values in empty columns
     {
         Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
         Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
