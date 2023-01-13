@@ -126,6 +126,10 @@ ExternalTable::ExternalTable(const boost::program_options::variables_map & exter
 
 void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, ReadBuffer & stream)
 {
+    /// After finishing this function we will be ready to receive the next file, for this we clear all the information received.
+    /// We should use SCOPE_EXIT because read_buffer should be reset correctly if there will be an exception.
+    SCOPE_EXIT(clear());
+
     const Settings & settings = getContext()->getSettingsRef();
 
     if (settings.http_max_multipart_form_data_size)
@@ -167,9 +171,6 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
-
-    /// We are ready to receive the next file, for this we clear all the information received
-    clear();
 }
 
 }
