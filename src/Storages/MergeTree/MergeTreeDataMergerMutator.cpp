@@ -65,8 +65,8 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 ///  because between selecting parts to merge and doing merge, amount of free space could have decreased.
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
-MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_)
-    : data(data_), max_tasks_count(max_tasks_count_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
+MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
+    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
 {
 }
 
@@ -75,6 +75,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
 {
     size_t scheduled_tasks_count = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
+    auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
     return getMaxSourcePartsSizeForMerge(max_tasks_count, scheduled_tasks_count);
 }
 
@@ -114,7 +115,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
 
     /// DataPart can be store only at one disk. Get maximum reservable free space at all disks.
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
-
+    auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
     /// Allow mutations only if there are enough threads, leave free threads for merges else
     if (occupied <= 1
         || max_tasks_count - occupied >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
@@ -244,7 +245,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
             * Obviously we have to check it manually only for the first part
             * of each partition because it will be automatically checked for a pair of parts. */
-            if (!can_merge_callback(nullptr, part, txn.get(), nullptr))
+            if (!can_merge_callback(nullptr, part, txn.get(), out_disable_reason))
                 continue;
 
             /// This part can be merged only with next parts (no prev part exists), so start
@@ -256,7 +257,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         {
             /// If we cannot merge with previous part we had to start new parts
             /// interval (in the same partition)
-            if (!can_merge_callback(*prev_part, part, txn.get(), nullptr))
+            if (!can_merge_callback(*prev_part, part, txn.get(), out_disable_reason))
             {
                 /// Now we have no previous part
                 prev_part = nullptr;
@@ -268,7 +269,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
                 /// for example, merge is already assigned for such parts, or they participate in quorum inserts
                 /// and so on.
                 /// Also we don't start new interval here (maybe all next parts cannot be merged and we don't want to have empty interval)
-                if (!can_merge_callback(nullptr, part, txn.get(), nullptr))
+                if (!can_merge_callback(nullptr, part, txn.get(), out_disable_reason))
                     continue;
 
                 /// Starting new interval in the same partition
@@ -523,6 +524,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const MergeTreeTransactionPtr & txn,
+    bool need_prefix,
     IMergeTreeDataPart * parent_part,
     const String & suffix)
 {
@@ -537,6 +539,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate,
         deduplicate_by_columns,
         merging_params,
+        need_prefix,
         parent_part,
         suffix,
         txn,
@@ -556,7 +559,8 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     ContextPtr context,
     const MergeTreeTransactionPtr & txn,
     ReservationSharedPtr space_reservation,
-    TableLockHolder & holder)
+    TableLockHolder & holder,
+    bool need_prefix)
 {
     return std::make_shared<MutateTask>(
         future_part,
@@ -570,7 +574,8 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
         txn,
         data,
         *this,
-        merges_blocker
+        merges_blocker,
+        need_prefix
     );
 }
 
@@ -627,7 +632,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                     + " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
     }
 
-    LOG_TRACE(log, "Merged {} parts: from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+    LOG_TRACE(log, "Merged {} parts: [{}, {}] -> {}", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
     return new_data_part;
 }
 

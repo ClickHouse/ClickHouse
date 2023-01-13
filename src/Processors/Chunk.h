@@ -113,6 +113,17 @@ private:
 
 using Chunks = std::vector<Chunk>;
 
+/// ChunkOffsets marks offsets of different sub-chunks, which will be used by async inserts.
+class ChunkOffsets : public ChunkInfo
+{
+public:
+    ChunkOffsets() = default;
+    explicit ChunkOffsets(const std::vector<size_t> & offsets_) : offsets(offsets_) {}
+    std::vector<size_t> offsets;
+};
+
+using ChunkOffsetsPtr = std::shared_ptr<ChunkOffsets>;
+
 /// Extension to support delayed defaults. AddingDefaultsProcessor uses it to replace missing values with column defaults.
 class ChunkMissingValues : public ChunkInfo
 {

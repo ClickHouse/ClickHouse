@@ -309,7 +309,7 @@ public:
         UInt64 batch_size_,
         const DataTypes & arguments_types,
         const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params, createResultType())
         , param_num(param_num_)
         , learning_rate(learning_rate_)
         , l2_reg_coef(l2_reg_coef_)
@@ -319,8 +319,7 @@ public:
     {
     }
 
-    /// This function is called when SELECT linearRegression(...) is called
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }

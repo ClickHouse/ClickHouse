@@ -509,7 +509,7 @@ bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) con
 
 bool ASTAlterQuery::isSettingsAlter() const
 {
-    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING);
+    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING) || isOneCommandTypeOnly(ASTAlterCommand::RESET_SETTING);
 }
 
 bool ASTAlterQuery::isFreezeAlter() const

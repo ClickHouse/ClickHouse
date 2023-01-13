@@ -2,7 +2,6 @@
 
 #if USE_LIBPQXX
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-#include <Storages/StoragePostgreSQL.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>

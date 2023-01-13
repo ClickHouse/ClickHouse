@@ -111,7 +111,15 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
-    rewritten_query << "SELECT name FROM system.";
+
+    if (query.full)
+    {
+        rewritten_query << "SELECT name, engine FROM system.";
+    }
+    else
+    {
+        rewritten_query << "SELECT name FROM system.";
+    }
 
     if (query.dictionaries)
         rewritten_query << "dictionaries ";

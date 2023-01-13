@@ -27,7 +27,19 @@ public:
     using FramePointers = std::vector<void *>;
 
     Exception() = default;
-    Exception(const std::string & msg, int code, bool remote_ = false);
+
+    // used to remove the sensitive information from exceptions if query_masking_rules is configured
+    struct MessageMasked
+    {
+        std::string msg;
+        MessageMasked(const std::string & msg_);
+    };
+
+    Exception(const MessageMasked & msg_masked, int code, bool remote_);
+
+    // delegating constructor to mask sensitive information from the message
+    Exception(const std::string & msg, int code, bool remote_ = false): Exception(MessageMasked(msg), code, remote_)
+    {}
 
     Exception(int code, const std::string & message)
         : Exception(message, code)
@@ -54,12 +66,17 @@ public:
     template <typename... Args>
     void addMessage(fmt::format_string<Args...> format, Args &&... args)
     {
-        extendedMessage(fmt::format(format, std::forward<Args>(args)...));
+        addMessage(fmt::format(format, std::forward<Args>(args)...));
     }
 
     void addMessage(const std::string& message)
     {
-        extendedMessage(message);
+        addMessage(MessageMasked(message));
+    }
+
+    void addMessage(const MessageMasked & msg_masked)
+    {
+        extendedMessage(msg_masked.msg);
     }
 
     /// Used to distinguish local exceptions from the one that was received from remote node.

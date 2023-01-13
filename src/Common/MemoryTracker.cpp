@@ -2,7 +2,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Common/VariableContext.h>
-#include <Interpreters/TraceCollector.h>
+#include <Common/TraceSender.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -178,7 +178,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
+        DB::TraceSender::send(DB::TraceType::Memory, StackTrace(), {.size = size});
         setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
         allocation_traced = true;
     }
@@ -187,7 +187,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     if (unlikely(sample_probability > 0.0 && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
+        DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = size});
         allocation_traced = true;
     }
 
@@ -220,7 +220,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     Int64 limit_to_check = current_hard_limit;
 
 #if USE_JEMALLOC
-    if (level == VariableContext::Global)
+    if (level == VariableContext::Global && allow_use_jemalloc_memory.load(std::memory_order_relaxed))
     {
         /// Jemalloc arenas may keep some extra memory.
         /// This memory was substucted from RSS to decrease memory drift.
@@ -305,7 +305,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     if (peak_updated && allocation_traced)
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemoryPeak, StackTrace(), will_be);
+        DB::TraceSender::send(DB::TraceType::MemoryPeak, StackTrace(), {.size = will_be});
     }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
@@ -361,7 +361,7 @@ void MemoryTracker::free(Int64 size)
     if (unlikely(sample_probability > 0.0 && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
+        DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = -size});
     }
 
     Int64 accounted_size = size;
