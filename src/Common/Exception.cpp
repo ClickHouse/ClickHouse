@@ -546,6 +546,12 @@ ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
+ExecutionStatus ExecutionStatus::fromCurrentExceptionWithStackTrace(const std::string & start_of_message)
+{
+    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(true, true);
+    return ExecutionStatus(getCurrentExceptionCode(), msg);
+}
+
 ExecutionStatus ExecutionStatus::fromText(const std::string & data)
 {
     ExecutionStatus status;

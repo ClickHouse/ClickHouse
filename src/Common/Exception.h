@@ -204,6 +204,8 @@ struct ExecutionStatus
     : code(return_code), message(exception_message) {}
 
     static ExecutionStatus fromCurrentException(const std::string & start_of_message = "");
+    
+    static ExecutionStatus fromCurrentExceptionWithStackTrace(const std::string & start_of_message = "");
 
     static ExecutionStatus fromText(const std::string & data);
 

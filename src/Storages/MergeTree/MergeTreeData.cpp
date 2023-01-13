@@ -7480,7 +7480,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
         }
         catch (...)
         {
-            write_part_log(ExecutionStatus::fromCurrentException());
+            write_part_log(ExecutionStatus::fromCurrentExceptionWithStackTrace());
             if (cloned_part)
                 cloned_part->remove();
 
