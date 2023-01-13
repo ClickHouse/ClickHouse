@@ -232,17 +232,20 @@ def need_retry(args, stdout, stderr, total_time):
 
 
 def get_processlist(args):
-    if args.replicated_database:
-        return clickhouse_execute_json(
-            args,
-            """
-        SELECT materialize((hostName(), tcpPort())) as host, *
-        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
-        WHERE query NOT LIKE '%system.processes%'
-        """,
-        )
-    else:
-        return clickhouse_execute_json(args, "SHOW PROCESSLIST")
+    try:
+        if args.replicated_database:
+            return clickhouse_execute_json(
+                args,
+                """
+            SELECT materialize((hostName(), tcpPort())) as host, *
+            FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
+            WHERE query NOT LIKE '%system.processes%'
+            """,
+            )
+        else:
+            return clickhouse_execute_json(args, "SHOW PROCESSLIST")
+    except Exception as e:
+        return "Failed to get processlist: " + str(e)
 
 
 def get_transactions_list(args):
@@ -1544,8 +1547,11 @@ def check_server_started(args):
             print(" OK")
             sys.stdout.flush()
             return True
-        except (ConnectionError, http.client.ImproperConnectionState):
-            print(".", end="")
+        except (ConnectionError, http.client.ImproperConnectionState) as e:
+            if args.hung_check:
+                print("Connection error, will retry: ", str(e))
+            else:
+                print(".", end="")
             sys.stdout.flush()
             retry_count -= 1
             sleep(0.5)
