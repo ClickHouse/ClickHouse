@@ -1,15 +1,15 @@
 #include <cerrno>
 #include <cstdlib>
-
 #include <Poco/String.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <Parsers/DumpASTNode.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/BinStringDecodeHelper.h>
 
+#include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -28,22 +28,15 @@
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnsMatcher.h>
-#include <Parsers/ASTExplainQuery.h>
-
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-
-
-#include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/parseIntervalKind.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserCase.h>
-
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
@@ -224,7 +217,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
 
     std::vector<String> parts;
-    std::vector<ASTPtr> params;
+    ASTs params;
     const auto & list = id_list->as<ASTExpressionList &>();
     for (const auto & child : list.children)
     {
@@ -833,10 +826,12 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto try_read_float = [&](const char * it, const char * end)
     {
+        std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
         char * str_end;
         errno = 0;    /// Functions strto* don't clear errno.
-        Float64 float_value = std::strtod(it, &str_end);
-        if (str_end == end && errno != ERANGE)
+        /// The usage of strtod is needed, because we parse hex floating point literals as well.
+        Float64 float_value = std::strtod(buf.c_str(), &str_end);
+        if (str_end == buf.c_str() + buf.size() && errno != ERANGE)
         {
             if (float_value < 0)
                 throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
@@ -881,7 +876,10 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     for (const auto * it = pos->begin; it != pos->end; ++it)
     {
         if (*it != '_')
-            buf[buf_size++] = *it;
+        {
+            buf[buf_size] = *it;
+            ++buf_size;
+        }
         if (unlikely(buf_size > MAX_LENGTH_OF_NUMBER))
         {
             expected.add(pos, "number");

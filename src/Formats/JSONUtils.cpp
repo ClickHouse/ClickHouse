@@ -131,19 +131,21 @@ namespace JSONUtils
     {
         skipWhitespaceIfAny(in);
         assertChar('{', in);
+        skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
         String field;
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
-                skipComma(in);
+                assertChar(',', in);
             else
                 first = false;
 
             auto name = readFieldName(in);
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
             names_and_types.emplace_back(name, type);
+            skipWhitespaceIfAny(in);
         }
 
         if (in.eof())
@@ -157,17 +159,19 @@ namespace JSONUtils
     {
         skipWhitespaceIfAny(in);
         assertChar('[', in);
+        skipWhitespaceIfAny(in);
         bool first = true;
         DataTypes types;
         String field;
         while (!in.eof() && *in.position() != ']')
         {
             if (!first)
-                skipComma(in);
+                assertChar(',', in);
             else
                 first = false;
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
             types.push_back(std::move(type));
+            skipWhitespaceIfAny(in);
         }
 
         if (in.eof())

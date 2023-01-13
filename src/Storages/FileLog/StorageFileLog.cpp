@@ -47,6 +47,8 @@ namespace
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 }
 
+static constexpr auto TMP_SUFFIX = ".tmp";
+
 StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
     ContextPtr context_,
@@ -72,6 +74,21 @@ StorageFileLog::StorageFileLog(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
+    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
+    {
+        if (attach)
+        {
+            LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
+            return;
+        }
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The absolute data path should be inside `user_files_path`({})",
+                getContext()->getUserFilesPath());
+    }
+
+    bool created_metadata_directory = false;
     try
     {
         if (!attach)
@@ -84,6 +101,7 @@ StorageFileLog::StorageFileLog(
                     metadata_base_path);
             }
             disk->createDirectories(metadata_base_path);
+            created_metadata_directory = true;
         }
 
         loadMetaFiles(attach);
@@ -101,7 +119,12 @@ StorageFileLog::StorageFileLog(
     catch (...)
     {
         if (!attach)
+        {
+            if (created_metadata_directory)
+                disk->removeRecursive(metadata_base_path);
             throw;
+        }
+
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
@@ -124,12 +147,6 @@ void StorageFileLog::loadMetaFiles(bool attach)
 
 void StorageFileLog::loadFiles()
 {
-    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
-    }
-
     auto absolute_path = std::filesystem::absolute(path);
     absolute_path = absolute_path.lexically_normal(); /// Normalize path.
 
@@ -209,77 +226,63 @@ void StorageFileLog::loadFiles()
 void StorageFileLog::serialize() const
 {
     for (const auto & [inode, meta] : file_infos.meta_by_inode)
-    {
-        auto full_name = getFullMetaPath(meta.file_name);
-        if (!disk->exists(full_name))
-        {
-            disk->createFile(full_name);
-        }
-        else
-        {
-            checkOffsetIsValid(full_name, meta.last_writen_position);
-        }
-        auto out = disk->writeFile(full_name);
-        writeIntText(inode, *out);
-        writeChar('\n', *out);
-        writeIntText(meta.last_writen_position, *out);
-    }
+        serialize(inode, meta);
 }
 
 void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 {
-    auto full_name = getFullMetaPath(file_meta.file_name);
-    if (!disk->exists(full_name))
+    auto full_path = getFullMetaPath(file_meta.file_name);
+    if (disk->exists(full_path))
     {
-        disk->createFile(full_name);
+        checkOffsetIsValid(file_meta.file_name, file_meta.last_writen_position);
     }
-    else
+
+    std::string tmp_path = full_path + TMP_SUFFIX;
+    disk->removeFileIfExists(tmp_path);
+
+    try
     {
-        checkOffsetIsValid(full_name, file_meta.last_writen_position);
+        disk->createFile(tmp_path);
+        auto out = disk->writeFile(tmp_path);
+        writeIntText(inode, *out);
+        writeChar('\n', *out);
+        writeIntText(file_meta.last_writen_position, *out);
     }
-    auto out = disk->writeFile(full_name);
-    writeIntText(inode, *out);
-    writeChar('\n', *out);
-    writeIntText(file_meta.last_writen_position, *out);
+    catch (...)
+    {
+        disk->removeFileIfExists(tmp_path);
+        throw;
+    }
+    disk->replaceFile(tmp_path, full_path);
 }
 
 void StorageFileLog::deserialize()
 {
     if (!disk->exists(metadata_base_path))
         return;
+
+    std::vector<std::string> files_to_remove;
+
     /// In case of single file (not a watched directory),
     /// iterated directory always has one file inside.
     for (const auto dir_iter = disk->iterateDirectory(metadata_base_path); dir_iter->isValid(); dir_iter->next())
     {
-        auto full_name = getFullMetaPath(dir_iter->name());
-        if (!disk->isFile(full_name))
+        const auto & filename = dir_iter->name();
+        if (filename.ends_with(TMP_SUFFIX))
         {
-            throw Exception(
-                ErrorCodes::BAD_FILE_TYPE,
-                "The file {} under {} is not a regular file when deserializing meta files",
-                dir_iter->name(),
-                metadata_base_path);
+            files_to_remove.push_back(getFullMetaPath(filename));
+            continue;
         }
 
-        auto in = disk->readFile(full_name);
-        FileMeta meta;
-        UInt64 inode, last_written_pos;
+        auto [metadata, inode] = readMetadata(filename);
+        if (!metadata)
+            continue;
 
-        if (!tryReadIntText(inode, *in))
-        {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", dir_iter->path());
-        }
-        assertChar('\n', *in);
-        if (!tryReadIntText(last_written_pos, *in))
-        {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", dir_iter->path());
-        }
-
-        meta.file_name = dir_iter->name();
-        meta.last_writen_position = last_written_pos;
-
-        file_infos.meta_by_inode.emplace(inode, meta);
+        file_infos.meta_by_inode.emplace(inode, metadata);
     }
+
+    for (const auto & file : files_to_remove)
+        disk->removeFile(file);
 }
 
 UInt64 StorageFileLog::getInode(const String & file_name)
@@ -372,42 +375,25 @@ void StorageFileLog::drop()
 
 void StorageFileLog::startup()
 {
-    try
-    {
-        if (task)
-        {
-            task->holder->activateAndSchedule();
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (task)
+        task->holder->activateAndSchedule();
 }
 
 void StorageFileLog::shutdown()
 {
-    try
+    if (task)
     {
-        if (task)
-        {
-            task->stream_cancelled = true;
+        task->stream_cancelled = true;
 
-            /// Reader thread may wait for wake up
-            wakeUp();
+        /// Reader thread may wait for wake up
+        wakeUp();
 
-            LOG_TRACE(log, "Waiting for cleanup");
-            task->holder->deactivate();
-        }
+        LOG_TRACE(log, "Waiting for cleanup");
+        task->holder->deactivate();
         /// If no reading call and threadFunc, the log files will never
         /// be opened, also just leave the work of close files and
         /// store meta to streams. because if we close files in here,
         /// may result in data race with unfinishing reading pipeline
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        task->holder->deactivate();
     }
 }
 
@@ -490,23 +476,51 @@ void StorageFileLog::storeMetas(size_t start, size_t end)
     }
 }
 
-void StorageFileLog::checkOffsetIsValid(const String & full_name, UInt64 offset) const
+void StorageFileLog::checkOffsetIsValid(const String & filename, UInt64 offset) const
 {
-    auto in = disk->readFile(full_name);
-    UInt64 _, last_written_pos;
-
-    if (!tryReadIntText(_, *in))
+    auto [metadata, _] = readMetadata(filename);
+    if (metadata.last_writen_position > offset)
     {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", full_name);
-    }
-    assertChar('\n', *in);
-    if (!tryReadIntText(last_written_pos, *in))
-    {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", full_name);
-    }
-    if (last_written_pos > offset)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Last stored last_written_pos in meta file {} is bigger than current last_written_pos", full_name);
+            ErrorCodes::LOGICAL_ERROR,
+            "Last stored last_written_position in meta file {} is bigger than current last_written_pos ({} > {})",
+            filename, metadata.last_writen_position, offset);
+    }
+}
+
+StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & filename) const
+{
+    auto full_path = getFullMetaPath(filename);
+    if (!disk->isFile(full_path))
+    {
+        throw Exception(
+            ErrorCodes::BAD_FILE_TYPE,
+            "The file {} under {} is not a regular file",
+            filename, metadata_base_path);
+    }
+
+    auto in = disk->readFile(full_path);
+    FileMeta metadata;
+    UInt64 inode, last_written_pos;
+
+    if (in->eof()) /// File is empty.
+    {
+        disk->removeFile(full_path);
+        return {};
+    }
+
+    if (!tryReadIntText(inode, *in))
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed (1)", full_path);
+
+    if (!checkChar('\n', *in))
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed (2)", full_path);
+
+    if (!tryReadIntText(last_written_pos, *in))
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed (3)", full_path);
+
+    metadata.file_name = filename;
+    metadata.last_writen_position = last_written_pos;
+    return { metadata, inode };
 }
 
 size_t StorageFileLog::getMaxBlockSize() const

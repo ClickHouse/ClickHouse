@@ -65,7 +65,7 @@ QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String
 
     auto function = FunctionFactory::instance().get(name, context);
     function_node->getArguments().getNodes() = std::move(arguments);
-    function_node->resolveAsFunction(function->build(function_node->getArgumentTypes()));
+    function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
     return function_node;
 }
 
@@ -88,7 +88,7 @@ FunctionNodePtr createResolvedAggregateFunction(const String & name, const Query
         { argument->getResultType() },
         parameters,
         properties);
-    function_node->resolveAsAggregateFunction(aggregate_function);
+    function_node->resolveAsAggregateFunction(std::move(aggregate_function));
 
     return function_node;
 }
