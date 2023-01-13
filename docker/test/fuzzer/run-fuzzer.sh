@@ -5,6 +5,7 @@ set -x
 
 # core.COMM.PID-TID
 sysctl kernel.core_pattern='core.%e.%p-%P'
+dmesg --clear ||:
 
 set -e
 set -u
