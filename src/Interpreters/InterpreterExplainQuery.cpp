@@ -288,6 +288,20 @@ struct ExplainSettings : public Settings
     }
 };
 
+struct QuerySyntaxSettings
+{
+    bool oneline = false;
+
+    constexpr static char name[] = "SYNTAX";
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+        {"oneline", oneline},
+    };
+
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+};
+
 template <typename Settings>
 ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 {
@@ -362,13 +376,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::AnalyzedSyntax:
         {
-            if (ast.getSettings())
-                throw Exception("Settings are not supported for EXPLAIN SYNTAX query.", ErrorCodes::UNKNOWN_SETTING);
+            auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
             ExplainAnalyzedSyntaxVisitor::Data data(getContext());
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, false));
+            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
             break;
         }
         case ASTExplainQuery::QueryTree:
