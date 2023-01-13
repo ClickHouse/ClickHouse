@@ -332,8 +332,7 @@ std::string buildTaggedRegex(std::string regexp_str)
   *     </default>
   * </graphite_rollup>
   */
-static const Pattern &
-appendGraphitePattern(
+static const Pattern & appendGraphitePattern(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_element, Patterns & patterns,
     bool default_rule,

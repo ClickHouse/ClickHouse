@@ -117,8 +117,9 @@ public:
             if (!function_name_if_constant_is_negative.empty() &&
                 left_argument_constant_value_literal < zeroField(left_argument_constant_value_literal))
             {
-                resolveAggregateFunctionNode(*aggregate_function_node, function_name_if_constant_is_negative);
+                lower_function_name = function_name_if_constant_is_negative;
             }
+            resolveAggregateFunctionNode(*aggregate_function_node, inner_function_arguments_nodes[1], lower_function_name);
 
             auto inner_function = aggregate_function_arguments_nodes[0];
             auto inner_function_right_argument = std::move(inner_function_arguments_nodes[1]);
@@ -133,8 +134,9 @@ public:
             if (!function_name_if_constant_is_negative.empty() &&
                 right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal))
             {
-                resolveAggregateFunctionNode(*aggregate_function_node, function_name_if_constant_is_negative);
+                lower_function_name = function_name_if_constant_is_negative;
             }
+            resolveAggregateFunctionNode(*aggregate_function_node, inner_function_arguments_nodes[0], function_name_if_constant_is_negative);
 
             auto inner_function = aggregate_function_arguments_nodes[0];
             auto inner_function_left_argument = std::move(inner_function_arguments_nodes[0]);
@@ -145,13 +147,13 @@ public:
     }
 
 private:
-    static inline void resolveAggregateFunctionNode(FunctionNode & function_node, const String & aggregate_function_name)
+    static inline void resolveAggregateFunctionNode(FunctionNode & function_node, QueryTreeNodePtr & argument, const String & aggregate_function_name)
     {
         auto function_aggregate_function = function_node.getAggregateFunction();
 
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name,
-            function_aggregate_function->getArgumentTypes(),
+            { argument->getResultType() },
             function_aggregate_function->getParameters(),
             properties);
 
