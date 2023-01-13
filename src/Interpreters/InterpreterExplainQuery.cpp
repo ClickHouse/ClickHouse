@@ -72,7 +72,7 @@ namespace
             if (query_info.view_query)
             {
                 ASTPtr tmp;
-                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp);
+                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
             }
         }
     };
@@ -423,7 +423,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             if (getContext()->getSettingsRef().allow_experimental_analyzer)
             {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
@@ -469,7 +469,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 if (getContext()->getSettingsRef().allow_experimental_analyzer)
                 {
-                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
+                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
                 }

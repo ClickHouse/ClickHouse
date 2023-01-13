@@ -29,7 +29,7 @@ private:
 
 public:
     AggregateFunctionExponentialMovingAverage(const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<ExponentiallySmoothedAverage, AggregateFunctionExponentialMovingAverage>(argument_types_, params)
+        : IAggregateFunctionDataHelper<ExponentiallySmoothedAverage, AggregateFunctionExponentialMovingAverage>(argument_types_, params, createResultType())
     {
         if (params.size() != 1)
             throw Exception{"Aggregate function " + getName() + " requires exactly one parameter: half decay time.",
@@ -43,7 +43,7 @@ public:
         return "exponentialMovingAverage";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }

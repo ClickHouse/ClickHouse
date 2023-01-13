@@ -200,7 +200,7 @@ void ReplicatedMergeTreeQueue::createLogEntriesToFetchBrokenParts()
 
     /// It will lock state_mutex
     for (const auto & broken_part_name : broken_parts)
-        storage.removePartAndEnqueueFetch(broken_part_name);
+        storage.removePartAndEnqueueFetch(broken_part_name, /* storage_init = */true);
 
     std::lock_guard lock(state_mutex);
     /// broken_parts_to_enqueue_fetches_on_loading can be assigned only once on table startup,
@@ -216,7 +216,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 {
     auto entry_virtual_parts = entry->getVirtualPartNames(format_version);
 
-    LOG_TEST(log, "Insert entry {} to queue with type {}", entry->znode_name, entry->getDescriptionForLogs(format_version));
+    LOG_TRACE(log, "Insert entry {} to queue with type {}", entry->znode_name, entry->getDescriptionForLogs(format_version));
 
     for (const String & virtual_part_name : entry_virtual_parts)
     {
@@ -1497,7 +1497,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     entry.znode_name,
                     entry.typeToString(),
                     entry.new_part_name,
-                    info.getPartName());
+                    info.getPartNameForLogs());
                 LOG_TRACE_PREFORMATTED(log, fmt_string, out_postpone_reason);
                 return false;
             }

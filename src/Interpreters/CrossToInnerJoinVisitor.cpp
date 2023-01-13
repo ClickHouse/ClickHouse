@@ -149,7 +149,7 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     if (expressions.size() == 1)
         return expressions[0]->clone();
 
-    std::vector<ASTPtr> arguments;
+    ASTs arguments;
     arguments.reserve(expressions.size());
     for (const auto & ast : expressions)
         arguments.emplace_back(ast->clone());
