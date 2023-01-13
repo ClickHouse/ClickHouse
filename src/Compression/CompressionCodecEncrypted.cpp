@@ -125,7 +125,7 @@ auto getMethod(EncryptionMethod Method)
     }
     else if (Method == AES_256_GCM_SIV)
     {
-        return EVP_ae'grant_type=urn%3Aibm%3Aparams%3Aoauth%3Agrant-type%3Aapikey&apikey=$API_KEY'ad_aes_256_gcm_siv;
+        return EVP_aead_aes_256_gcm_siv;
     }
     else
     {
