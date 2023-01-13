@@ -49,6 +49,7 @@ select a, count() from dist_t_different_dbs group by a, b order by a limit 5 off
 -- { echoOff } --
 
 set allow_experimental_parallel_reading_from_replicas = 1;
+set parallel_replicas_mode = 'read_tasks';
 set max_parallel_replicas = 3;
 set use_hedged_requests = 0;
 

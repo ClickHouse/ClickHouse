@@ -1,6 +1,5 @@
 -- Tags: replica, distributed
 
-SET allow_experimental_parallel_reading_from_replicas = 0;
 SET max_parallel_replicas = 2;
 DROP TABLE IF EXISTS report;
 
