@@ -69,10 +69,14 @@ ssize_t DDLMatcherBase::getPositionOfTableNameArgumentToVisit(const ASTFunction 
 
     if (functionIsInOrGlobalInOperator(function.name))
     {
-        if (function.children.size() < 2)
+        if (function.children.empty())
             return -1;
 
-        if (function.children[1]->as<ASTFunction>())
+        const auto * args = function.children[0]->as<ASTExpressionList>();
+        if (!args || args->children.size() != 2)
+            return -1;
+
+        if (args->children[1]->as<ASTFunction>())
             return -1;
 
         return 1;
