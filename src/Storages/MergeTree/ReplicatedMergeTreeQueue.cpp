@@ -1691,6 +1691,7 @@ bool ReplicatedMergeTreeQueue::processEntry(
     {
         std::lock_guard lock(state_mutex);
         entry->exception = saved_exception;
+        entry->last_exception_time = time(nullptr);
         return false;
     }
 
