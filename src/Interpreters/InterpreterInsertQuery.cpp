@@ -91,7 +91,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             }
         }
 
-        return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName());
+        return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName(),
+                                           /* cached_columns */ {}, /* use_global_context */ false, /* is_insert_query */true);
     }
 
     if (query.table_id)
@@ -344,7 +345,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
+    if (query.select && settings.parallel_distributed_insert_select)
         // Distributed INSERT SELECT
         distributed_pipeline = table->distributedWrite(query, getContext());
 

@@ -20,7 +20,7 @@ jobs:
         REPO_COPY=${{runner.temp}}/release_packages/ClickHouse
         EOF
     - name: Check out repository code
-      uses: actions/checkout@v2
+      uses: ClickHouse/checkout@v1
       with:
         # Always use the most recent script version
         ref: master
@@ -50,12 +50,10 @@ jobs:
   DockerServerImages:
     runs-on: [self-hosted, style-checker]
     steps:
-    - name: Clear repository
-      run: |
-        sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
     - name: Check out repository code
-      uses: actions/checkout@v2
+      uses: ClickHouse/checkout@v1
       with:
+        clear-repository: true
         fetch-depth: 0  # otherwise we will have no version info
     - name: Check docker clickhouse/clickhouse-server building
       run: |

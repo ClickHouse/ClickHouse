@@ -46,9 +46,9 @@ private:
     }
 
 public:
-    AggregateFunctionCategoricalIV(const DataTypes & arguments_, const Array & params_) :
-        IAggregateFunctionHelper<AggregateFunctionCategoricalIV>{arguments_, params_},
-        category_count{arguments_.size() - 1}
+    AggregateFunctionCategoricalIV(const DataTypes & arguments_, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionCategoricalIV>{arguments_, params_, createResultType()}
+        , category_count{arguments_.size() - 1}
     {
         // notice: argument types has been checked before
     }
@@ -121,7 +121,7 @@ public:
         buf.readStrict(place, sizeOfData());
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeNumber<Float64>>());

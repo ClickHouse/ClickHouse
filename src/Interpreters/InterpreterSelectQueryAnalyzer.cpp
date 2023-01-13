@@ -45,13 +45,17 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query)
     }
 }
 
-QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const ContextPtr & context)
+QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const SelectQueryOptions & select_query_options, const ContextPtr & context)
 {
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
-    query_tree_pass_manager.run(query_tree);
+
+    if (select_query_options.ignore_ast_optimizations)
+        query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);
+    else
+        query_tree_pass_manager.run(query_tree);
 
     return query_tree;
 }
@@ -60,24 +64,24 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const ContextP
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
-    const SelectQueryOptions & select_query_options_,
-    ContextPtr context_)
+    const ContextPtr & context_,
+    const SelectQueryOptions & select_query_options_)
     : query(normalizeAndValidateQuery(query_))
-    , query_tree(buildQueryTreeAndRunPasses(query, context_))
+    , context(Context::createCopy(context_))
     , select_query_options(select_query_options_)
-    , context(std::move(context_))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context))
     , planner(query_tree, select_query_options)
 {
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_,
-    ContextPtr context_)
+    const ContextPtr & context_,
+    const SelectQueryOptions & select_query_options_)
     : query(query_tree_->toAST())
-    , query_tree(query_tree_)
+    , context(Context::createCopy(context_))
     , select_query_options(select_query_options_)
-    , context(std::move(context_))
+    , query_tree(query_tree_)
     , planner(query_tree, select_query_options)
 {
 }
@@ -129,6 +133,19 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     return std::move(*query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(getContext()), BuildQueryPipelineSettings::fromContext(getContext())));
+}
+
+void InterpreterSelectQueryAnalyzer::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
+{
+    context->getClientInfo().collaborate_with_initiator = true;
+    context->setMergeTreeReadTaskCallback(std::move(callback));
+}
+
+void InterpreterSelectQueryAnalyzer::setProperClientInfo(size_t replica_number, size_t count_participating_replicas)
+{
+    context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    context->getClientInfo().number_of_current_replica = replica_number;
+    context->getClientInfo().count_participating_replicas = count_participating_replicas;
 }
 
 }
