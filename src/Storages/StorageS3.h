@@ -176,6 +176,23 @@ private:
         }
 
         ReaderHolder() = default;
+        ReaderHolder(const ReaderHolder & other) = delete;
+        ReaderHolder & operator=(const ReaderHolder & other) = delete;
+
+        ReaderHolder(ReaderHolder && other)
+        {
+            *this = std::move(other);
+        }
+
+        ReaderHolder & operator=(ReaderHolder && other)
+        {
+            /// The order is important.
+            /// reader uses pipeline, pipeline uses read_buf.
+            reader = std::move(other.reader);
+            pipeline = std::move(other.pipeline);
+            read_buf = std::move(other.read_buf);
+            return *this;
+        }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
