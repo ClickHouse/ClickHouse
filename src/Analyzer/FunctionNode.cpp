@@ -91,13 +91,24 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
             break;
     }
 
-    buffer << function_type << "FUNCTION(" << function_name << ") id: " << format_state.getNodeId(this);
+    buffer << function_type << "FUNCTION(" << function_name;
+    if (function)
+    {
+        buffer << ", (";
+        const auto & args = function->getArgumentTypes();
+        for (size_t i = 0; i < args.size(); ++i)
+        {
+            if (i != 0)
+                buffer << ", ";
+            buffer << args[i]->getName();
+        }
+        buffer << ") -> ";
+        buffer << function->getResultType()->getName();
+    }
+    buffer << ") id: " << format_state.getNodeId(this);
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
-
-    if (function)
-        buffer << ", result_type: " + function->getResultType()->getName();
 
     const auto & parameters = getParameters();
     parameters.dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "PARAMETERS");
