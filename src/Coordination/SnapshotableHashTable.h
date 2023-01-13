@@ -80,7 +80,7 @@ private:
                     approximate_data_size += value_size;
                     if (!snapshot_mode)
                     {
-                        approximate_data_size -= key_size;
+                        approximate_data_size += key_size;
                         approximate_data_size -= old_value_size;
                     }
                 }
@@ -132,6 +132,7 @@ public:
 
         if (!it)
         {
+
             ListElem elem{copyStringInArena(arena, key), value, current_version};
             auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
@@ -227,7 +228,7 @@ public:
             /// We in snapshot mode but updating some node which is already more
             /// fresh than snapshot distance. So it will not participate in
             /// snapshot and we don't need to copy it.
-            if (list_itr->version <= snapshot_up_to_version)
+            if (snapshot_mode && list_itr->version <= snapshot_up_to_version)
             {
                 auto elem_copy = *(list_itr);
                 list_itr->active_in_map = false;

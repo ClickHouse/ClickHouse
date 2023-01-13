@@ -7,12 +7,11 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Interpreters/ExternalModelsLoader.h>
+#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -30,26 +29,14 @@
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/TransactionLog.h>
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
-#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
-#include <Databases/DatabaseReplicated.h>
+#include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageFile.h>
-#include <Storages/StorageS3.h>
-#include <Storages/StorageURL.h>
-#include <Storages/HDFS/StorageHDFS.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -57,11 +44,10 @@
 #include <csignal>
 #include <algorithm>
 
-#include "config.h"
+#include "config_core.h"
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -182,38 +168,27 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     {
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
-            startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
+            for (auto iterator = elem.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            {
+                StoragePtr table = iterator->table();
+                if (!table)
+                    continue;
+
+                if (!access->isGranted(required_access_type, elem.first, iterator->name()))
+                {
+                    LOG_INFO(log, "Access {} denied, skipping {}.{}", toString(required_access_type), elem.first, iterator->name());
+                    continue;
+                }
+
+                if (start)
+                {
+                    manager->remove(table, action_type);
+                    table->onActionLockRemove(action_type);
+                }
+                else
+                    manager->add(table, action_type);
+            }
         }
-    }
-}
-
-void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType action_type, bool start,
-                                                       const String & database_name, const DatabasePtr & database,
-                                                       const ContextPtr & local_context, Poco::Logger * log)
-{
-    auto manager = local_context->getActionLocksManager();
-    auto access = local_context->getAccess();
-    auto required_access_type = getRequiredAccessType(action_type);
-
-    for (auto iterator = database->getTablesIterator(local_context); iterator->isValid(); iterator->next())
-    {
-        StoragePtr table = iterator->table();
-        if (!table)
-            continue;
-
-        if (!access->isGranted(required_access_type, database_name, iterator->name()))
-        {
-            LOG_INFO(log, "Access {} denied, skipping {}.{}", toString(required_access_type), database_name, iterator->name());
-            continue;
-        }
-
-        if (start)
-        {
-            manager->remove(table, action_type);
-            table->onActionLockRemove(action_type);
-        }
-        else
-            manager->add(table, action_type);
     }
 }
 
@@ -229,11 +204,7 @@ BlockIO InterpreterSystemQuery::execute()
     auto & query = query_ptr->as<ASTSystemQuery &>();
 
     if (!query.cluster.empty())
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccessForDDLOnCluster());
 
     using Type = ASTSystemQuery::Type;
 
@@ -252,8 +223,6 @@ BlockIO InterpreterSystemQuery::execute()
         table_id = getContext()->resolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveOrdinary);
     }
 
-
-    BlockIO result;
 
     volume_ptr = {};
     if (!query.storage_policy.empty() && !query.volume.empty())
@@ -327,45 +296,6 @@ BlockIO InterpreterSystemQuery::execute()
                 cache->reset();
             break;
 #endif
-        case Type::DROP_FILESYSTEM_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            if (query.filesystem_cache_path.empty())
-            {
-                auto caches = FileCacheFactory::instance().getAll();
-                for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeIfReleasable();
-            }
-            else
-            {
-                auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
-                cache->removeIfReleasable();
-            }
-            break;
-        }
-        case Type::DROP_SCHEMA_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
-            std::unordered_set<String> caches_to_drop;
-            if (query.schema_cache_storage.empty())
-                caches_to_drop = {"FILE", "S3", "HDFS", "URL"};
-            else
-                caches_to_drop = {query.schema_cache_storage};
-
-            if (caches_to_drop.contains("FILE"))
-                StorageFile::getSchemaCache(getContext()).clear();
-#if USE_AWS_S3
-            if (caches_to_drop.contains("S3"))
-                StorageS3::getSchemaCache(getContext()).clear();
-#endif
-#if USE_HDFS
-            if (caches_to_drop.contains("HDFS"))
-                StorageHDFS::getSchemaCache(getContext()).clear();
-#endif
-            if (caches_to_drop.contains("URL"))
-                StorageURL::getSchemaCache(getContext()).clear();
-            break;
-        }
         case Type::RELOAD_DICTIONARY:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
@@ -389,15 +319,17 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_MODEL:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), query.target_model);
-            bridge_helper->removeModel();
+
+            auto & external_models_loader = system_context->getExternalModelsLoader();
+            external_models_loader.reloadModel(query.target_model);
             break;
         }
         case Type::RELOAD_MODELS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext());
-            bridge_helper->removeAllModels();
+
+            auto & external_models_loader = system_context->getExternalModelsLoader();
+            external_models_loader.reloadAllTriedToLoad();
             break;
         }
         case Type::RELOAD_FUNCTION:
@@ -424,13 +356,9 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context->reloadConfig();
             break;
-        case Type::RELOAD_USERS:
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
-            system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
-            break;
         case Type::RELOAD_SYMBOLS:
         {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
             SymbolIndex::reload();
             break;
@@ -483,17 +411,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_REPLICA:
             dropReplica(query);
             break;
-        case Type::DROP_DATABASE_REPLICA:
-            dropDatabaseReplica(query);
-            break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
-            break;
-        case Type::SYNC_DATABASE_REPLICA:
-            syncReplicatedDatabase(query);
-            break;
-        case Type::SYNC_TRANSACTION_LOG:
-            syncTransactionLog();
             break;
         case Type::FLUSH_DISTRIBUTED:
             flushDistributed(query);
@@ -509,6 +428,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::RESTART_DISK:
             restartDisk(query.disk);
+            break;
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -523,11 +443,7 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
                 [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
                 [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); },
-                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); },
-                [&] { if (auto transactions_info_log = getContext()->getTransactionsInfoLog()) transactions_info_log->flush(true); },
-                [&] { if (auto processors_profile_log = getContext()->getProcessorsProfileLog()) processors_profile_log->flush(true); },
-                [&] { if (auto cache_log = getContext()->getFilesystemCacheLog()) cache_log->flush(true); },
-                [&] { if (auto asynchronous_insert_log = getContext()->getAsynchronousInsertLog()) asynchronous_insert_log->flush(true); }
+                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); }
             );
             break;
         }
@@ -542,18 +458,11 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
             break;
-        case Type::UNFREEZE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
-            /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
-            result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
-            break;
-        }
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    return result;
+    return BlockIO();
 }
 
 void InterpreterSystemQuery::restoreReplica()
@@ -591,9 +500,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 
         database->detachTable(system_context, replica.table_name);
     }
-    UUID uuid = table->getStorageID().uuid;
     table.reset();
-    database->waitDetachedTableNotInUse(uuid);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
@@ -660,7 +567,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     for (auto & guard : guards)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
-    ThreadPool pool(std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size()));
+    ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
 
     for (auto & replica : replica_names)
     {
@@ -725,7 +632,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
-                    ReplicatedTableStatus status;
+                    StorageReplicatedMergeTree::Status status;
                     storage_replicated->getStatus(status);
                     if (status.zookeeper_path == query.replica_zk_path)
                         throw Exception("There is a local table " + storage_replicated->getStorageID().getNameForLogs() +
@@ -761,7 +668,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
     if (!storage_replicated)
         return false;
 
-    ReplicatedTableStatus status;
+    StorageReplicatedMergeTree::Status status;
     auto zookeeper = getContext()->getZooKeeper();
     storage_replicated->getStatus(status);
 
@@ -771,7 +678,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
                         "if you want to clean the data and drop this replica", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
     /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
-    /// However, the main use case is to drop dead replica, which cannot become active.
+    /// However, the main usecase is to drop dead replica, which cannot become active.
     /// This check prevents only from accidental drop of some other replica.
     if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
         throw Exception("Can't drop replica: " + query.replica + ", because it's active",
@@ -781,75 +688,6 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
     LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
 
     return true;
-}
-
-void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
-{
-    if (query.replica.empty())
-        throw Exception("Replica name is empty", ErrorCodes::BAD_ARGUMENTS);
-
-    auto check_not_local_replica = [](const DatabaseReplicated * replicated, const ASTSystemQuery & query)
-    {
-        if (!query.replica_zk_path.empty() && fs::path(replicated->getZooKeeperPath()) != fs::path(query.replica_zk_path))
-            return;
-        if (replicated->getFullReplicaName() != query.replica)
-            return;
-
-        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "There is a local database {}, which has the same path in ZooKeeper "
-                        "and the same replica name. Please check the path in query. "
-                        "If you want to drop replica of this database, use `DROP DATABASE`", replicated->getDatabaseName());
-    };
-
-    if (query.database)
-    {
-        getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
-        if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
-        {
-            check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.replica);
-        }
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
-        LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
-    }
-    else if (query.is_drop_whole_replica)
-    {
-        auto databases = DatabaseCatalog::instance().getDatabases();
-        auto access = getContext()->getAccess();
-        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
-
-        for (auto & elem : databases)
-        {
-            DatabasePtr & database = elem.second;
-            auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get());
-            if (!replicated)
-                continue;
-            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            {
-                LOG_INFO(log, "Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
-                continue;
-            }
-
-            check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.replica);
-            LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
-        }
-    }
-    else if (!query.replica_zk_path.empty())
-    {
-        getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
-
-        /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases())
-            if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
-                check_not_local_replica(replicated, query);
-
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.replica);
-        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
-    }
-    else
-        throw Exception("Invalid query", ErrorCodes::LOGICAL_ERROR);
 }
 
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
@@ -863,43 +701,15 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         if (!storage_replicated->waitForShrinkingQueueSize(0, getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
-                    "See the 'receive_timeout' setting", table_id.getNameForLogs());
+            throw Exception(
+                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out. "
+                    "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
         }
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
-
-
-void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
-{
-    const auto database_name = query.getDatabase();
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
-    {
-        LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
-        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
-        {
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
-                    "See the 'receive_timeout' setting", database_name);
-        }
-        LOG_TRACE(log, "SYNC DATABASE REPLICA {}: OK", database_name);
-    }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC DATABASE REPLICA query is intended to work only with Replicated engine");
-}
-
-
-void InterpreterSystemQuery::syncTransactionLog()
-{
-    getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-    TransactionLog::instance().sync();
-}
-
 
 void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
@@ -911,10 +721,16 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
-[[noreturn]] void InterpreterSystemQuery::restartDisk(String &)
+void InterpreterSystemQuery::restartDisk(String & name)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
-    throw Exception("SYSTEM RESTART DISK is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+    auto disk = getContext()->getDisk(name);
+
+    if (DiskRestartProxy * restart_proxy = dynamic_cast<DiskRestartProxy*>(disk.get()))
+        restart_proxy->restart();
+    else
+        throw Exception("Disk " + name + " doesn't have possibility to restart", ErrorCodes::BAD_ARGUMENTS);
 }
 
 
@@ -926,42 +742,40 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
 
     switch (query.type)
     {
-        case Type::SHUTDOWN:
-        case Type::KILL:
+        case Type::SHUTDOWN: [[fallthrough]];
+        case Type::KILL: [[fallthrough]];
         case Type::SUSPEND:
         {
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
-        case Type::DROP_DNS_CACHE:
-        case Type::DROP_MARK_CACHE:
-        case Type::DROP_MMAP_CACHE:
+        case Type::DROP_DNS_CACHE: [[fallthrough]];
+        case Type::DROP_MARK_CACHE: [[fallthrough]];
+        case Type::DROP_MMAP_CACHE: [[fallthrough]];
 #if USE_EMBEDDED_COMPILER
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+        case Type::DROP_COMPILED_EXPRESSION_CACHE: [[fallthrough]];
 #endif
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_FILESYSTEM_CACHE:
-        case Type::DROP_SCHEMA_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
         }
-        case Type::RELOAD_DICTIONARY:
-        case Type::RELOAD_DICTIONARIES:
+        case Type::RELOAD_DICTIONARY: [[fallthrough]];
+        case Type::RELOAD_DICTIONARIES: [[fallthrough]];
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
             break;
         }
-        case Type::RELOAD_MODEL:
+        case Type::RELOAD_MODEL: [[fallthrough]];
         case Type::RELOAD_MODELS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
-        case Type::RELOAD_FUNCTION:
+        case Type::RELOAD_FUNCTION: [[fallthrough]];
         case Type::RELOAD_FUNCTIONS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_FUNCTION);
@@ -972,17 +786,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_CONFIG);
             break;
         }
-        case Type::RELOAD_USERS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
-            break;
-        }
         case Type::RELOAD_SYMBOLS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
             break;
         }
-        case Type::STOP_MERGES:
+        case Type::STOP_MERGES: [[fallthrough]];
         case Type::START_MERGES:
         {
             if (!query.table)
@@ -991,7 +800,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MERGES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_TTL_MERGES:
+        case Type::STOP_TTL_MERGES: [[fallthrough]];
         case Type::START_TTL_MERGES:
         {
             if (!query.table)
@@ -1000,7 +809,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_MOVES:
+        case Type::STOP_MOVES: [[fallthrough]];
         case Type::START_MOVES:
         {
             if (!query.table)
@@ -1009,7 +818,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_FETCHES:
+        case Type::STOP_FETCHES: [[fallthrough]];
         case Type::START_FETCHES:
         {
             if (!query.table)
@@ -1018,7 +827,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_FETCHES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_DISTRIBUTED_SENDS:
+        case Type::STOP_DISTRIBUTED_SENDS: [[fallthrough]];
         case Type::START_DISTRIBUTED_SENDS:
         {
             if (!query.table)
@@ -1027,7 +836,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_REPLICATED_SENDS:
+        case Type::STOP_REPLICATED_SENDS: [[fallthrough]];
         case Type::START_REPLICATED_SENDS:
         {
             if (!query.table)
@@ -1036,7 +845,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_REPLICATION_QUEUES:
+        case Type::STOP_REPLICATION_QUEUES: [[fallthrough]];
         case Type::START_REPLICATION_QUEUES:
         {
             if (!query.table)
@@ -1046,7 +855,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::DROP_REPLICA:
-        case Type::DROP_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());
             break;
@@ -1071,16 +879,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA);
             break;
         }
-        case Type::SYNC_DATABASE_REPLICA:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, query.getDatabase());
-            break;
-        }
-        case Type::SYNC_TRANSACTION_LOG:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
-            break;
-        }
         case Type::FLUSH_DISTRIBUTED:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.getDatabase(), query.getTable());
@@ -1096,16 +894,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
             break;
         }
-        case Type::UNFREEZE:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_UNFREEZE);
-            break;
-        }
-        case Type::STOP_LISTEN_QUERIES:
-        case Type::START_LISTEN_QUERIES:
-        case Type::STOP_THREAD_FUZZER:
-        case Type::START_THREAD_FUZZER:
-        case Type::UNKNOWN:
+        case Type::STOP_LISTEN_QUERIES: break;
+        case Type::START_LISTEN_QUERIES: break;
+        case Type::STOP_THREAD_FUZZER: break;
+        case Type::START_THREAD_FUZZER: break;
+        case Type::UNKNOWN: break;
         case Type::END: break;
     }
     return required_access;

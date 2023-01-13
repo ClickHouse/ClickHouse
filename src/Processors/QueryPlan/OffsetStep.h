@@ -19,11 +19,6 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override
-    {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
-    }
-
     size_t offset;
 };
 

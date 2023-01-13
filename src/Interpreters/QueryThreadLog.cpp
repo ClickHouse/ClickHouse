@@ -56,7 +56,6 @@ NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>()},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
         {"interface", std::make_shared<DataTypeUInt8>()},
-        {"is_secure", std::make_shared<DataTypeUInt8>()},
         {"os_user", std::make_shared<DataTypeString>()},
         {"client_hostname", std::make_shared<DataTypeString>()},
         {"client_name", std::make_shared<DataTypeString>()},

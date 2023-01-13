@@ -25,10 +25,9 @@
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/LightweightDeleteDescription.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
+
 
 namespace DB
 {
@@ -572,17 +571,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                         ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        auto * insert_it = constraints.end();
+        auto insert_it = constraints.end();
         constraints.emplace(insert_it, constraint_decl);
         metadata.constraints = ConstraintsDescription(constraints);
     }
     else if (type == DROP_CONSTRAINT)
     {
         auto constraints = metadata.constraints.getConstraints();
-        auto * erase_it = std::find_if(
-            constraints.begin(),
-            constraints.end(),
-            [this](const ASTPtr & constraint_ast) { return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name; });
+        auto erase_it = std::find_if(
+                constraints.begin(),
+                constraints.end(),
+                [this](const ASTPtr & constraint_ast)
+                {
+                    return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
+                });
 
         if (erase_it == constraints.end())
         {
@@ -694,24 +696,22 @@ namespace
 /// The function works for Arrays and Nullables of the same structure.
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
-    auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
+    if (from->equals(*to))
+        return true;
+
+    if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from))
     {
-        if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from_type))
-        {
-            if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to_type))
-                return to_enum8->contains(*from_enum8);
-        }
+        if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to))
+            return to_enum8->contains(*from_enum8);
+    }
 
-        if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(from_type))
-        {
-            if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to_type))
-                return to_enum16->contains(*from_enum16);
-        }
+    if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(from))
+    {
+        if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to))
+            return to_enum16->contains(*from_enum16);
+    }
 
-        return false;
-    };
-
-    static const std::unordered_multimap<std::type_index, const std::type_info &> allowed_conversions =
+    static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
         {
             { typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
             { typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
@@ -721,19 +721,12 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 
-    /// Unwrap some nested and check for valid conevrsions
     while (true)
     {
-        /// types are equal, obviously pure metadata alter
         if (from->equals(*to))
             return true;
 
-        /// We just adding something to enum, nothing changed on disk
-        if (is_compatible_enum_types_conversion(from, to))
-            return true;
-
-        /// Types changed, but representation on disk didn't
-        auto it_range = allowed_conversions.equal_range(typeid(*from));
+        auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
             if (it->second == typeid(*to))
@@ -751,10 +744,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_to)
+        if (nullable_from && nullable_to)
         {
-            /// Here we allow a conversion X -> Nullable(X) to make a metadata-only conversion.
-            from = nullable_from ? nullable_from->getNestedType().get() : from;
+            from = nullable_from->getNestedType().get();
             to = nullable_to->getNestedType().get();
             continue;
         }
@@ -784,8 +776,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
-        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name) ||
-            column_name == LightweightDeleteDescription::FILTER_COLUMN.name;
+        return metadata.columns.hasPhysical(column_name);
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
@@ -818,27 +809,22 @@ bool AlterCommand::isCommentAlter() const
 bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
 {
     if (type == MODIFY_TTL)
-    {
-        if (!metadata.table_ttl.definition_ast)
-            return true;
-        /// If TTL had not been changed, do not require mutations
-        return queryToString(metadata.table_ttl.definition_ast) != queryToString(ttl);
-    }
+        return true;
 
     if (!ttl || type != MODIFY_COLUMN)
         return false;
 
-    bool column_ttl_changed = true;
+    bool ttl_changed = true;
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
         if (name == column_name && queryToString(*ttl) == queryToString(*ttl_ast))
         {
-            column_ttl_changed = false;
+            ttl_changed = false;
             break;
         }
     }
 
-    return column_ttl_changed;
+    return ttl_changed;
 }
 
 bool AlterCommand::isRemovingProperty() const
@@ -1020,14 +1006,12 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 command.ignore = true;
         }
     }
-
     prepared = true;
 }
 
 
-void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
+void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
-    const StorageInMemoryMetadata & metadata = table->getInMemoryMetadata();
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
@@ -1035,9 +1019,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
-
-        if (command.ttl && !table->supportsTTL())
-            throw Exception("Engine " + table->getName() + " doesn't support TTL clause", ErrorCodes::BAD_ARGUMENTS);
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
@@ -1055,10 +1036,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
-            if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception{"Cannot add column " + backQuote(column_name) + ": this column name is reserved for lightweight delete feature",
-                               ErrorCodes::ILLEGAL_COLUMN};
-
             if (command.codec)
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
 
@@ -1069,17 +1046,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (!all_columns.has(column_name))
             {
                 if (!command.if_exists)
-                {
-                    String exception_message = fmt::format("Wrong column. Cannot find column {} to modify", backQuote(column_name));
-                    all_columns.appendHintsMessage(exception_message, column_name);
-                    throw Exception{exception_message,
-                        ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
-                }
+                    throw Exception{"Wrong column name. Cannot find column " + backQuote(column_name) + " to modify",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
                 else
                     continue;
             }
 
-            if (renamed_columns.contains(column_name))
+            if (renamed_columns.count(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
 
@@ -1154,9 +1127,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) ||
-                all_columns.hasNested(command.column_name) ||
-                (command.clear && column_name == LightweightDeleteDescription::FILTER_COLUMN.name))
+            if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
@@ -1181,22 +1152,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 all_columns.remove(command.column_name);
             }
             else if (!command.if_exists)
-            {
-                String exception_message = fmt::format("Wrong column name. Cannot find column {} to drop", backQuote(command.column_name));
-                all_columns.appendHintsMessage(exception_message, command.column_name);
-                throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-            }
+                throw Exception(
+                    "Wrong column name. Cannot find column " + backQuote(command.column_name) + " to drop",
+                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
             if (!all_columns.has(command.column_name))
             {
                 if (!command.if_exists)
-                {
-                    String exception_message = fmt::format("Wrong column name. Cannot find column {} to comment", backQuote(command.column_name));
-                    all_columns.appendHintsMessage(exception_message, command.column_name);
-                    throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-                }
+                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to comment",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
             }
         }
         else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
@@ -1230,11 +1196,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (!all_columns.has(command.column_name))
             {
                 if (!command.if_exists)
-                {
-                    String exception_message = fmt::format("Wrong column name. Cannot find column {} to rename", backQuote(command.column_name));
-                    all_columns.appendHintsMessage(exception_message, command.column_name);
-                    throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-                }
+                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to rename",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
                 else
                     continue;
             }
@@ -1243,11 +1206,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
                                 ErrorCodes::DUPLICATE_COLUMN};
 
-            if (command.rename_to == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": this column name is reserved for lightweight delete feature",
-                               ErrorCodes::ILLEGAL_COLUMN};
-
-            if (modified_columns.contains(column_name))
+            if (modified_columns.count(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
 
@@ -1281,7 +1240,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             throw Exception{"Table doesn't have SAMPLE BY, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
 
-        /// Collect default expressions for MODIFY and ADD commands
+        /// Collect default expressions for MODIFY and ADD comands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
         {
             if (command.default_expression)
@@ -1352,20 +1311,12 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
-    {
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context); mutation_cmd)
-        {
             result.push_back(*mutation_cmd);
-        }
-        else if (with_alters)
-        {
-            result.push_back(MutationCommand{.ast = alter_cmd.ast->clone(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
-        }
-    }
 
     if (materialize_ttl)
     {

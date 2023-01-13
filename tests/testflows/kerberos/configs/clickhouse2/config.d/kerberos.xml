@@ -1,0 +1,5 @@
+<clickhouse>
+    <kerberos>
+        <realm>EXAMPLE.COM</realm>
+    </kerberos>
+</clickhouse>

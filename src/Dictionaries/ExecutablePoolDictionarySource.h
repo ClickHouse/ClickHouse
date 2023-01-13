@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
@@ -42,17 +42,17 @@ public:
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
     ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    Pipe loadAll() override;
 
     /** The logic of this method is flawed, absolutely incorrect and ignorant.
       * It may lead to skipping some values due to clock sync or timezone changes.
       * The intended usage of "update_field" is totally different.
       */
-    QueryPipeline loadUpdatedAll() override;
+    Pipe loadUpdatedAll() override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -64,7 +64,7 @@ public:
 
     std::string toString() const override;
 
-    QueryPipeline getStreamForBlock(const Block & block);
+    Pipe getStreamForBlock(const Block & block);
 
 private:
     const DictionaryStructure dict_struct;

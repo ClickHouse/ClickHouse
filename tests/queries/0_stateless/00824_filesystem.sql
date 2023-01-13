@@ -1,1 +1,1 @@
-SELECT filesystemCapacity() >= filesystemAvailable() AND filesystemAvailable() >= 0 AND filesystemUnreserved() >= 0;
+SELECT filesystemCapacity() >= filesystemFree() AND filesystemFree() >= filesystemAvailable() AND filesystemAvailable() >= 0;

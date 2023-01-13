@@ -111,11 +111,11 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
             if (value_type == Field::Types::UInt64)
             {
                 const auto & type_tuple = assert_cast<const DataTypeTuple &>(*column_type);
-                auto index = literal->value.get<UInt64>();
+                auto index = get<UInt64>(literal->value);
                 subcolumn_name = type_tuple.getNameByPosition(index);
             }
             else if (value_type == Field::Types::String)
-                subcolumn_name = literal->value.get<const String &>();
+                subcolumn_name = get<const String &>(literal->value);
             else
                 return;
 

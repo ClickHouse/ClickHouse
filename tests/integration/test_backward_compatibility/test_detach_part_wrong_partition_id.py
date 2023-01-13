@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="detach")
 # Version 21.6.3.14 has incompatible partition id for tables with UUID in partition key.
 node_21_6 = cluster.add_instance(
     "node_21_6",

@@ -1,9 +1,10 @@
 ---
-slug: /en/interfaces/odbc
-sidebar_position: 23
-sidebar_label: ODBC Driver
+toc_priority: 23
+toc_title: ODBC Driver
 ---
 
-# ODBC Driver
+# ODBC Driver {#odbc-driver}
 
-Use the [official ODBC driver](https://github.com/ClickHouse/clickhouse-odbc) for accessing ClickHouse as a data source.
+-   [Official driver](https://github.com/ClickHouse/clickhouse-odbc)
+
+[Original article](https://clickhouse.com/docs/en/interfaces/odbc/) <!--hide-->

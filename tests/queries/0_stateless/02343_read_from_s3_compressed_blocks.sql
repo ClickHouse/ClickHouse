@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, no-s3-storage
 
 DROP TABLE IF EXISTS t_s3_compressed_blocks;
 

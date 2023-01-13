@@ -1,10 +1,40 @@
 ---
-slug: /zh/sql-reference/statements/system
-sidebar_position: 37
-sidebar_label: SYSTEM
+toc_priority: 37
+toc_title: SYSTEM
 ---
 
 # SYSTEM Queries {#query-language-system}
+
+-   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
+-   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
+-   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
+-   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
+-   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
+-   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
+-   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
+-   [DROP REPLICA](#query_language-system-drop-replica)
+-   [FLUSH LOGS](#query_language-system-flush_logs)
+-   [RELOAD CONFIG](#query_language-system-reload-config)
+-   [SHUTDOWN](#query_language-system-shutdown)
+-   [KILL](#query_language-system-kill)
+-   [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
+-   [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
+-   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
+-   [STOP MERGES](#query_language-system-stop-merges)
+-   [START MERGES](#query_language-system-start-merges)
+-   [STOP TTL MERGES](#query_language-stop-ttl-merges)
+-   [START TTL MERGES](#query_language-start-ttl-merges)
+-   [STOP MOVES](#query_language-stop-moves)
+-   [START MOVES](#query_language-start-moves)
+-   [STOP FETCHES](#query_language-system-stop-fetches)
+-   [START FETCHES](#query_language-system-start-fetches)
+-   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
+-   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
+-   [STOP REPLICATION QUEUES](#query_language-system-stop-replication-queues)
+-   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
+-   [SYNC REPLICA](#query_language-system-sync-replica)
+-   [RESTART REPLICA](#query_language-system-restart-replica)
+-   [RESTART REPLICAS](#query_language-system-restart-replicas)
 
 ## RELOAD EMBEDDED DICTIONARIES\] {#query_language-system-reload-emdedded-dictionaries}
 
@@ -173,14 +203,6 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 ```
 
-### SYSTEM UNFREEZE {#query_language-system-unfreeze}
-
-从所有磁盘中清除具有指定名称的冻结备份。 查看更多关于解冻单独部分的信息 [ALTER TABLE table_name UNFREEZE WITH NAME ](alter/partition.mdx#alter_unfreeze-partition)
-
-``` sql
-SYSTEM UNFREEZE WITH NAME <backup_name>
-```
-
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
 
 管理 [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md)表的后台复制相关进程。
@@ -257,3 +279,5 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 
 重置所有 `ReplicatedMergeTree`表的ZooKeeper会话状态。该操作会以Zookeeper为参照，对比当前状态，有需要的情况下将任务添加到ZooKeeper队列。
+
+[原始文档](https://clickhouse.com/docs/en/query_language/system/) <!--hide-->

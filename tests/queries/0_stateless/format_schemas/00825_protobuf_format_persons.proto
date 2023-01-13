@@ -75,6 +75,11 @@ message AltPerson {
     male = 0;
     female = 1;
   };
+  message Dummy {
+    message Empty {};
+    repeated Empty empty = 1;
+    float z = 2;
+  };
   repeated int32 location = 101 [packed=false];
   float pi = 103;
   bytes uuid = 300;
@@ -87,6 +92,7 @@ message AltPerson {
   OnlineStatus isOnline = 1;
   double someRatio = 100;
   fixed64 visitTime = 15;
+  Dummy newMessage = 1000;
   sfixed64 randomBigNumber = 140;
   repeated int32 newFieldInt = 104;
   repeated float color = 14;

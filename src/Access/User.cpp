@@ -1,7 +1,5 @@
 #include <Access/User.h>
 #include <Core/Protocol.h>
-#include <base/insertAtEnd.h>
-
 
 namespace DB
 {
@@ -30,24 +28,6 @@ void User::setName(const String & name_)
     if (name_ == USER_INTERSERVER_MARKER)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name '{}' is reserved", USER_INTERSERVER_MARKER);
     name = name_;
-}
-
-std::vector<UUID> User::findDependencies() const
-{
-    std::vector<UUID> res;
-    insertAtEnd(res, default_roles.findDependencies());
-    insertAtEnd(res, granted_roles.findDependencies());
-    insertAtEnd(res, grantees.findDependencies());
-    insertAtEnd(res, settings.findDependencies());
-    return res;
-}
-
-void User::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
-{
-    default_roles.replaceDependencies(old_to_new_ids);
-    granted_roles.replaceDependencies(old_to_new_ids);
-    grantees.replaceDependencies(old_to_new_ids);
-    settings.replaceDependencies(old_to_new_ids);
 }
 
 }

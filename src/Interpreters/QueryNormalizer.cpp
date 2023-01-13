@@ -9,7 +9,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -99,7 +98,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
         String node_alias = ast->tryGetAlias();
 
-        if (current_asts.contains(alias_node.get()) /// We have loop of multiple aliases
+        if (current_asts.count(alias_node.get()) /// We have loop of multiple aliases
             || (node.name() == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
             throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
 
@@ -130,7 +129,6 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     }
 }
 
-
 void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
     /// normalize JOIN ON section
@@ -144,8 +142,7 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 
 static bool needVisitChild(const ASTPtr & child)
 {
-    /// exclude interpolate elements - they are not subject for normalization and will be processed in filling transform
-    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>() || child->as<ASTInterpolateElement>());
+    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>());
 }
 
 /// special visitChildren() for ASTSelectQuery
@@ -244,7 +241,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     auto & finished_asts = data.finished_asts;
     auto & current_asts = data.current_asts;
 
-    if (finished_asts.contains(ast))
+    if (finished_asts.count(ast))
     {
         ast = finished_asts[ast];
         return;
@@ -266,10 +263,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     else if (auto * node_select = ast->as<ASTSelectQuery>())
         visit(*node_select, ast, data);
     else if (auto * node_param = ast->as<ASTQueryParameter>())
-    {
-        if (!data.is_create_parameterized_view)
-            throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
-    }
+        throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
     else if (auto * node_function = ast->as<ASTFunction>())
         if (node_function->parameters)
             visit(node_function->parameters, data);

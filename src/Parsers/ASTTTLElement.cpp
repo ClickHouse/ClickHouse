@@ -52,7 +52,7 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
     else if (mode == TTLMode::GROUP_BY)
     {
         settings.ostr << " GROUP BY ";
-        for (const auto * it = group_by_key.begin(); it != group_by_key.end(); ++it)
+        for (auto it = group_by_key.begin(); it != group_by_key.end(); ++it)
         {
             if (it != group_by_key.begin())
                 settings.ostr << ", ";
@@ -62,7 +62,7 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
         if (!group_by_assignments.empty())
         {
             settings.ostr << " SET ";
-            for (const auto * it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
+            for (auto it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
             {
                 if (it != group_by_assignments.begin())
                     settings.ostr << ", ";
@@ -93,7 +93,7 @@ void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)
     {
         if (pos == -1)
         {
-            pos = static_cast<int>(children.size());
+            pos = children.size();
             children.emplace_back(ast);
         }
         else

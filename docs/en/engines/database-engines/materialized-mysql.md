@@ -1,16 +1,16 @@
 ---
-slug: /en/engines/database-engines/materialized-mysql
-sidebar_label: MaterializedMySQL
-sidebar_position: 70
+toc_priority: 29
+toc_title: MaterializedMySQL
 ---
 
-# [experimental] MaterializedMySQL 
+# [experimental] MaterializedMySQL {#materialized-mysql}
 
-:::warning
-This is an experimental feature that should not be used in production.
-:::
+!!! warning "Warning"
+    This is an experimental feature that should not be used in production.
 
-Creates a ClickHouse database with all the tables existing in MySQL, and all the data in those tables. The ClickHouse server works as MySQL replica. It reads `binlog` and performs DDL and DML queries.
+Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables.
+
+ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.
 
 ## Creating a Database {#creating-a-database}
 
@@ -27,30 +27,16 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 -   `user` — MySQL user.
 -   `password` — User password.
 
-## Engine Settings
+**Engine Settings**
 
-### max_rows_in_buffer
-
-`max_rows_in_buffer` — Maximum number of rows that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `65 505`.
-
-### max_bytes_in_buffer
-
-`max_bytes_in_buffer` —  Maximum number of bytes that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `1 048 576`.
-
-### max_flush_data_time
-
-`max_flush_data_time` — Maximum number of milliseconds that data is allowed to cache in memory (for database and the cache data unable to query). When this time is exceeded, the data will be materialized. Default: `1000`.
-
-### max_wait_time_when_mysql_unavailable
-
-`max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disables retry. Default: `1000`.
-
-### allows_query_when_mysql_lost
-`allows_query_when_mysql_lost` — Allows to query a materialized table when MySQL is lost. Default: `0` (`false`).
-
-### materialized_mysql_tables_list
-
-`materialized_mysql_tables_list` — a comma-separated list of mysql database tables, which will be replicated by MaterializedMySQL database engine. Default value: empty list — means whole tables will be replicated.
+-   `max_rows_in_buffer` — Maximum number of rows that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `65 505`.
+-   `max_bytes_in_buffer` —  Maximum number of bytes that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `1 048 576`.
+-   `max_rows_in_buffers` — Maximum number of rows that data is allowed to cache in memory (for database and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `65 505`.
+-   `max_bytes_in_buffers` — Maximum number of bytes that data is allowed to cache in memory (for database and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `1 048 576`.
+-   `max_flush_data_time` — Maximum number of milliseconds that data is allowed to cache in memory (for database and the cache data unable to query). When this time is exceeded, the data will be materialized. Default: `1000`.
+-   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disables retry. Default: `1000`.
+-   `allows_query_when_mysql_lost` — Allows to query a materialized table when MySQL is lost. Default: `0` (`false`).
+-   `materialized_mysql_tables_list` — a comma-separated list of mysql database tables, which will be replicated by MaterializedMySQL database engine. Default value: empty list — means whole tables will be replicated.
 
 ```sql
 CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
@@ -59,33 +45,22 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
         max_wait_time_when_mysql_unavailable=10000;
 ```
 
-## Settings on MySQL-server Side
+**Settings on MySQL-server Side**
 
 For the correct work of `MaterializedMySQL`, there are few mandatory `MySQL`-side configuration settings that must be set:
 
-### default_authentication_plugin 
+- `default_authentication_plugin = mysql_native_password` since `MaterializedMySQL` can only authorize with this method.
+- `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializedMySQL` replication.
 
-`default_authentication_plugin = mysql_native_password` since `MaterializedMySQL` can only authorize with this method.
-
-### gtid_mode
-
-`gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializedMySQL` replication.
-
-:::note 
-While turning on `gtid_mode` you should also specify `enforce_gtid_consistency = on`.
-:::
+!!! attention "Attention"
+    While turning on `gtid_mode` you should also specify `enforce_gtid_consistency = on`.
 
 ## Virtual Columns {#virtual-columns}
 
-When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](/docs/en/engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
+When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
 
-### \_version
-
-`_version` — Transaction counter. Type [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
-
-### \_sign
-
-`_sign` — Deletion mark. Type [Int8](/docs/en/sql-reference/data-types/int-uint.md). Possible values:
+- `_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md).
+- `_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values:
     - `1` — Row is not deleted,
     - `-1` — Row is deleted.
 
@@ -93,29 +68,29 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 
 | MySQL                   | ClickHouse                                                   |
 |-------------------------|--------------------------------------------------------------|
-| TINY                    | [Int8](/docs/en/sql-reference/data-types/int-uint.md)           |
-| SHORT                   | [Int16](/docs/en/sql-reference/data-types/int-uint.md)          |
-| INT24                   | [Int32](/docs/en/sql-reference/data-types/int-uint.md)          |
-| LONG                    | [UInt32](/docs/en/sql-reference/data-types/int-uint.md)         |
-| LONGLONG                | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         |
-| FLOAT                   | [Float32](/docs/en/sql-reference/data-types/float.md)           |
-| DOUBLE                  | [Float64](/docs/en/sql-reference/data-types/float.md)           |
-| DECIMAL, NEWDECIMAL     | [Decimal](/docs/en/sql-reference/data-types/decimal.md)         |
-| DATE, NEWDATE           | [Date](/docs/en/sql-reference/data-types/date.md)               |
-| DATETIME, TIMESTAMP     | [DateTime](/docs/en/sql-reference/data-types/datetime.md)       |
-| DATETIME2, TIMESTAMP2   | [DateTime64](/docs/en/sql-reference/data-types/datetime64.md)   |
-| YEAR                    | [UInt16](/docs/en/sql-reference/data-types/int-uint.md)         |
-| TIME                    | [Int64](/docs/en/sql-reference/data-types/int-uint.md)          |
-| ENUM                    | [Enum](/docs/en/sql-reference/data-types/enum.md)               |
-| STRING                  | [String](/docs/en/sql-reference/data-types/string.md)           |
-| VARCHAR, VAR_STRING     | [String](/docs/en/sql-reference/data-types/string.md)           |
-| BLOB                    | [String](/docs/en/sql-reference/data-types/string.md)           |
-| GEOMETRY                | [String](/docs/en/sql-reference/data-types/string.md)           |
-| BINARY                  | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) |
-| BIT                     | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         |
-| SET                     | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         |
+| TINY                    | [Int8](../../sql-reference/data-types/int-uint.md)           |
+| SHORT                   | [Int16](../../sql-reference/data-types/int-uint.md)          |
+| INT24                   | [Int32](../../sql-reference/data-types/int-uint.md)          |
+| LONG                    | [UInt32](../../sql-reference/data-types/int-uint.md)         |
+| LONGLONG                | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| FLOAT                   | [Float32](../../sql-reference/data-types/float.md)           |
+| DOUBLE                  | [Float64](../../sql-reference/data-types/float.md)           |
+| DECIMAL, NEWDECIMAL     | [Decimal](../../sql-reference/data-types/decimal.md)         |
+| DATE, NEWDATE           | [Date32](../../sql-reference/data-types/date32.md)               |
+| DATETIME, TIMESTAMP     | [DateTime](../../sql-reference/data-types/datetime.md)       |
+| DATETIME2, TIMESTAMP2   | [DateTime64](../../sql-reference/data-types/datetime64.md)   |
+| YEAR                    | [UInt16](../../sql-reference/data-types/int-uint.md)         |
+| TIME                    | [Int64](../../sql-reference/data-types/int-uint.md)          |
+| ENUM                    | [Enum](../../sql-reference/data-types/enum.md)               |
+| STRING                  | [String](../../sql-reference/data-types/string.md)           |
+| VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
+| BLOB                    | [String](../../sql-reference/data-types/string.md)           |
+| GEOMETRY                | [String](../../sql-reference/data-types/string.md)           |
+| BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
+| BIT                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| SET                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
 
-[Nullable](/docs/en/sql-reference/data-types/nullable.md) is supported.
+[Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
 The data of TIME type in MySQL is converted to microseconds in ClickHouse.
 
@@ -133,7 +108,7 @@ Apart of the data types limitations there are few restrictions comparing to `MyS
 
 ### DDL Queries {#ddl-queries}
 
-MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](/docs/en/sql-reference/statements/alter/index.md), [CREATE](/docs/en/sql-reference/statements/create/index.md), [DROP](/docs/en/sql-reference/statements/drop.md), [RENAME](/docs/en/sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
+MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
 
 ### Data Replication {#data-replication}
 
@@ -151,7 +126,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 `SELECT` query from `MaterializedMySQL` tables has some specifics:
 
 - If `_version` is not specified in the `SELECT` query, the
-  [FINAL](/docs/en/sql-reference/statements/select/from.md/#select-from-final) modifier is used, so only rows with
+  [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used, so only rows with
   `MAX(_version)` are returned for each primary key value.
 
 - If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not
@@ -164,7 +139,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 MySQL `PRIMARY KEY` and `INDEX` clauses are converted into `ORDER BY` tuples in ClickHouse tables.
 
 ClickHouse has only one physical order, which is determined by `ORDER BY` clause. To create a new physical order, use
-[materialized views](/docs/en/sql-reference/statements/create/view.md/#materialized).
+[materialized views](../../sql-reference/statements/create/view.md#materialized).
 
 **Notes**
 
@@ -173,7 +148,7 @@ ClickHouse has only one physical order, which is determined by `ORDER BY` clause
   MySQL binlog.
 - Replication can be easily broken.
 - Manual operations on database and tables are forbidden.
-- `MaterializedMySQL` is affected by the [optimize_on_insert](/docs/en/operations/settings/settings.md/#optimize-on-insert)
+- `MaterializedMySQL` is affected by the [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert)
   setting. Data is merged in the corresponding table in the `MaterializedMySQL` database when a table in the MySQL
   server changes.
 
@@ -187,19 +162,19 @@ These are the schema conversion manipulations you can do with table overrides fo
 
  * Modify column type. Must be compatible with the original type, or replication will fail. For example,
    you can modify a UInt32 column to UInt64, but you can not modify a String column to Array(String).
- * Modify [column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
- * Modify [column compression codec](/docs/en/sql-reference/statements/create/table.md/#codecs).
- * Add [ALIAS columns](/docs/en/sql-reference/statements/create/table.md/#alias).
- * Add [skipping indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-data_skipping-indexes)
- * Add [projections](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#projections). Note that projection optimizations are
+ * Modify [column TTL](../table-engines/mergetree-family/mergetree/#mergetree-column-ttl).
+ * Modify [column compression codec](../../sql-reference/statements/create/table/#codecs).
+ * Add [ALIAS columns](../../sql-reference/statements/create/table/#alias).
+ * Add [skipping indexes](../table-engines/mergetree-family/mergetree/#table_engine-mergetree-data_skipping-indexes)
+ * Add [projections](../table-engines/mergetree-family/mergetree/#projections). Note that projection optimizations are
    disabled when using `SELECT ... FINAL` (which MaterializedMySQL does by default), so their utility is limited here.
    `INDEX ... TYPE hypothesis` as [described in the v21.12 blog post]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)
    may be more useful in this case.
- * Modify [PARTITION BY](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key/)
- * Modify [ORDER BY](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
- * Modify [PRIMARY KEY](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
- * Add [SAMPLE BY](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
- * Add [table TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
+ * Modify [PARTITION BY](../table-engines/mergetree-family/custom-partitioning-key/)
+ * Modify [ORDER BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Modify [PRIMARY KEY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Add [SAMPLE BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Add [table TTL](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
 
 ```sql
 CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
@@ -245,14 +220,13 @@ extra care needs to be taken.
 
 You may specify overrides for tables that do not exist yet.
 
-:::warning
-It is easy to break replication with table overrides if not used with care. For example:
+!!! warning "Warning"
+    It is easy to break replication with table overrides if not used with care. For example:
     
-* If an ALIAS column is added with a table override, and a column with the same name is later added to the source
-  MySQL table, the converted ALTER TABLE query in ClickHouse will fail and replication stops.
-* It is currently possible to add overrides that reference nullable columns where not-nullable are required, such as in
-  `ORDER BY` or `PARTITION BY`. This will cause CREATE TABLE queries that will fail, also causing replication to stop.
-:::
+    * If an ALIAS column is added with a table override, and a column with the same name is later added to the source
+	    MySQL table, the converted ALTER TABLE query in ClickHouse will fail and replication stops.
+    * It is currently possible to add overrides that reference nullable columns where not-nullable are required, such as in
+      `ORDER BY` or `PARTITION BY`. This will cause CREATE TABLE queries that will fail, also causing replication to stop.
 
 ## Examples of Use {#examples-of-use}
 
@@ -313,3 +287,5 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->

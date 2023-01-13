@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -16,20 +16,19 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
+    template <class Callback>
     ReplicatedMergeMutateTaskBase(
         Poco::Logger * log_,
         StorageReplicatedMergeTree & storage_,
         ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_,
-        IExecutableTask::TaskResultCallback & task_result_callback_)
+        Callback && task_result_callback_)
         : selected_entry(selected_entry_)
         , entry(*selected_entry->log_entry)
         , log(log_)
         , storage(storage_)
         /// This is needed to ask an asssignee to assign a new merge/mutate operation
         /// It takes bool argument and true means that current task is successfully executed.
-        , task_result_callback(task_result_callback_)
-    {
-    }
+        , task_result_callback(task_result_callback_) {}
 
     ~ReplicatedMergeMutateTaskBase() override = default;
     void onCompleted() override;
@@ -39,14 +38,7 @@ public:
 protected:
     using PartLogWriter =  std::function<void(const ExecutionStatus &)>;
 
-    struct PrepareResult
-    {
-        bool prepared_successfully;
-        bool need_to_check_missing_part_in_fetch;
-        PartLogWriter part_log_writer;
-    };
-
-    virtual PrepareResult prepare() = 0;
+    virtual std::pair<bool, PartLogWriter> prepare() = 0;
     virtual bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) = 0;
 
     /// Will execute a part of inner MergeTask or MutateTask

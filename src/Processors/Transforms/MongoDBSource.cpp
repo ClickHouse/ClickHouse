@@ -3,8 +3,11 @@
 #include <string>
 #include <vector>
 
+#include <base/logger_useful.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
+#include <Poco/MongoDB/Element.h>
+#include <Poco/MongoDB/Database.h>
 #include <Poco/MongoDB/ObjectId.h>
 
 #include <Columns/ColumnNullable.h>
@@ -15,6 +18,7 @@
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Version.h>
 
 // only after poco
@@ -29,10 +33,111 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int MONGODB_CANNOT_AUTHENTICATE;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int UNKNOWN_TYPE;
     extern const int MONGODB_ERROR;
 }
 
+
+#if POCO_VERSION < 0x01070800
+/// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
+void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
+{
+    Poco::MongoDB::Database db(database);
+
+    /// Challenge-response authentication.
+    std::string nonce;
+
+    /// First step: request nonce.
+    {
+        auto command = db.createCommand();
+        command->setNumberToReturn(1);
+        command->selector().add<Int32>("getnonce", 1);
+
+        Poco::MongoDB::ResponseMessage response;
+        connection.sendRequest(*command, response);
+
+        if (response.documents().empty())
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned empty response for 'getnonce' command",
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+        auto doc = response.documents()[0];
+        try
+        {
+            double ok = doc->get<double>("ok", 0);
+            if (ok != 1)
+                throw Exception(
+                    "Cannot authenticate in MongoDB: server returned response for 'getnonce' command that"
+                    " has field 'ok' missing or having wrong value",
+                    ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+            nonce = doc->get<std::string>("nonce", "");
+            if (nonce.empty())
+                throw Exception(
+                    "Cannot authenticate in MongoDB: server returned response for 'getnonce' command that"
+                    " has field 'nonce' missing or empty",
+                    ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+        catch (Poco::NotFoundException & e)
+        {
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned response for 'getnonce' command that has missing required field: "
+                    + e.displayText(),
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+    }
+
+    /// Second step: use nonce to calculate digest and send it back to the server.
+    /// Digest is hex_md5(n.nonce + username + hex_md5(username + ":mongo:" + password))
+    {
+        std::string first = user + ":mongo:" + password;
+
+        Poco::MD5Engine md5;
+        md5.update(first);
+        std::string digest_first(Poco::DigestEngine::digestToHex(md5.digest()));
+        std::string second = nonce + user + digest_first;
+        md5.reset();
+        md5.update(second);
+        std::string digest_second(Poco::DigestEngine::digestToHex(md5.digest()));
+
+        auto command = db.createCommand();
+        command->setNumberToReturn(1);
+        command->selector()
+            .add<Int32>("authenticate", 1)
+            .add<std::string>("user", user)
+            .add<std::string>("nonce", nonce)
+            .add<std::string>("key", digest_second);
+
+        Poco::MongoDB::ResponseMessage response;
+        connection.sendRequest(*command, response);
+
+        if (response.empty())
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned empty response for 'authenticate' command",
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+        auto doc = response.documents()[0];
+        try
+        {
+            double ok = doc->get<double>("ok", 0);
+            if (ok != 1)
+                throw Exception(
+                    "Cannot authenticate in MongoDB: server returned response for 'authenticate' command that"
+                    " has field 'ok' missing or having wrong value",
+                    ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+        catch (Poco::NotFoundException & e)
+        {
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned response for 'authenticate' command that has missing required field: "
+                    + e.displayText(),
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+    }
+}
+#endif
 
 std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
 {
@@ -51,11 +156,13 @@ MongoDBSource::MongoDBSource(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
     std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
     const Block & sample_block,
-    UInt64 max_block_size_)
-    : ISource(sample_block.cloneEmpty())
+    UInt64 max_block_size_,
+    bool strict_check_names_)
+    : SourceWithProgress(sample_block.cloneEmpty())
     , connection(connection_)
     , cursor{std::move(cursor_)}
     , max_block_size{max_block_size_}
+    , strict_check_names{strict_check_names_}
 {
     description.init(sample_block);
 }
@@ -80,11 +187,11 @@ namespace
                 break;
             case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
                 assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value()));
+                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Float64>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<T>(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value()));
+                assert_cast<ColumnVector<T> &>(column).getData().push_back(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<bool>::TypeId:
                 assert_cast<ColumnVector<T> &>(column).getData().push_back(
@@ -178,7 +285,7 @@ namespace
                                     ErrorCodes::TYPE_MISMATCH};
 
                 assert_cast<ColumnUInt32 &>(column).getData().push_back(
-                    static_cast<UInt32>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime()));
+                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
                 break;
             }
             case ValueType::vtUUID:
@@ -235,23 +342,16 @@ Chunk MongoDBSource::generate()
             {
                 const auto & name = description.sample_block.getByPosition(idx).name;
 
-                bool exists_in_current_document = document->exists(name);
-                if (!exists_in_current_document)
-                {
-                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
-                    continue;
-                }
+                if (strict_check_names && !document->exists(name))
+                    throw Exception(fmt::format("Column {} is absent in MongoDB collection", backQuote(name)), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
                 if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
-                {
                     insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
-                }
                 else
                 {
-                    bool is_nullable = description.types[idx].second;
-                    if (is_nullable)
+                    if (description.types[idx].second)
                     {
                         ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
                         insertValue(column_nullable.getNestedColumn(), description.types[idx].first, *value, name);

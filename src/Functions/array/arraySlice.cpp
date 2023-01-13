@@ -150,7 +150,7 @@ public:
 };
 
 
-REGISTER_FUNCTION(ArraySlice)
+void registerFunctionArraySlice(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArraySlice>();
 }

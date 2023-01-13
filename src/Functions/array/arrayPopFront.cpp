@@ -13,7 +13,7 @@ public:
     FunctionArrayPopFront() : FunctionArrayPop(true, name) {}
 };
 
-REGISTER_FUNCTION(ArrayPopFront)
+void registerFunctionArrayPopFront(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayPopFront>();
 }

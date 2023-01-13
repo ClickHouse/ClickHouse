@@ -1,14 +1,11 @@
 ---
-slug: /en/operations/tips
-sidebar_position: 58
-sidebar_label: Usage Recommendations
-title: "Usage Recommendations"
+toc_priority: 58
+toc_title: Usage Recommendations
 ---
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
 
-<SelfManaged />
+# Usage Recommendations {#usage-recommendations}
 
-## CPU Scaling Governor
+## CPU Scaling Governor {#cpu-scaling-governor}
 
 Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
@@ -36,9 +33,8 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
-:::warning
-If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
-:::
+!!! warning "Attention"
+    If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
 
 ## Storage Subsystem {#storage-subsystem}
 
@@ -73,19 +69,16 @@ Regardless of RAID use, always use replication for data security.
 Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
 For HDD, enable the write cache.
 
-Make sure that [`fstrim`](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
+Make sure that [fstrim](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
 
 ## File System {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime`. XFS works well too.
+Ext4 is the most reliable option. Set the mount options `noatime`.
+XFS should be avoided. It works mostly fine but there are some reports about lower performance.
 Most other file systems should also work fine.
-
-FAT-32 and exFAT are not supported due to lack of hard links.
 
 Do not use compressed filesystems, because ClickHouse does compression on its own and better.
 It's not recommended to use encrypted filesystems, because you can use builtin encryption in ClickHouse, which is better.
-
-While ClickHouse can work over NFS, it is not the best idea.
 
 ## Linux Kernel {#linux-kernel}
 
@@ -100,7 +93,7 @@ Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be m
 
 ## Huge Pages {#huge-pages}
 
-If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocator, which leads to significant performance degradation.
+If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
 On newer Linux kernels transparent huge pages are alright.
 
 ``` bash
@@ -113,7 +106,7 @@ If you are using OpenStack, set
 ```
 cpu_mode=host-passthrough
 ```
-in `nova.conf`.
+in nova.conf.
 
 If you are using libvirt, set
 ```
@@ -124,18 +117,17 @@ in XML configuration.
 This is important for ClickHouse to be able to get correct information with `cpuid` instruction.
 Otherwise you may get `Illegal instruction` crashes when hypervisor is run on old CPU models.
 
-## ClickHouse Keeper and ZooKeeper {#zookeeper}
+## ZooKeeper {#zookeeper}
 
-ClickHouse Keeper is recommended to replace ZooKeeper for ClickHouse clusters.  See the documentation for [ClickHouse Keeper](clickhouse-keeper.md)
+You are probably already using ZooKeeper for other purposes. You can use the same installation of ZooKeeper, if it isn’t already overloaded.
 
-If you would like to continue using ZooKeeper then it is best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the “zkcopy” utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
 
 If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
 
-You can run ClickHouse Keeper on the same server as ClickHouse in test environments, or in environments with low ingestion rate. 
-For production environments we suggest to use separate servers for ClickHouse and ZooKeeper/Keeper, or place ClickHouse files and Keeper files on to separate disks. Because ZooKeeper/Keeper are very sensitive for disk latency and ClickHouse may utilize all available system resources.
+Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
 
 You can have ZooKeeper observers in an ensemble but ClickHouse servers should not interact with observers.
 
@@ -143,7 +135,7 @@ Do not change `minSessionTimeout` setting, large values may affect ClickHouse re
 
 With the default settings, ZooKeeper is a time bomb:
 
-> The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see `autopurge`), and this is the responsibility of the operator.
+> The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
 
 This bomb must be defused.
 
@@ -189,12 +181,10 @@ preAllocSize=131072
 # especially if there are a lot of clients. To prevent ZooKeeper from running
 # out of memory due to queued requests, ZooKeeper will throttle clients so that
 # there is no more than globalOutstandingLimit outstanding requests in the
-# system. The default limit is 1000.
-# globalOutstandingLimit=1000
-
-# ZooKeeper logs transactions to a transaction log. After snapCount transactions
-# are written to a log file a snapshot is started and a new transaction log file
-# is started. The default snapCount is 100000.
+# system. The default limit is 1,000.ZooKeeper logs transactions to a
+# transaction log. After snapCount transactions are written to a log file a
+# snapshot is started and a new transaction log file is started. The default
+# snapCount is 10,000.
 snapCount=3000000
 
 # If this option is defined, requests will be will logged to a trace file named
@@ -250,7 +240,7 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
     -XX:MaxGCPauseMillis=50"
 ```
 
-Salt initialization:
+Salt init:
 
 ``` text
 description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
@@ -283,10 +273,6 @@ end script
 
 ## Antivirus software {#antivirus-software}
 
-If you use antivirus software configure it to skip folders with ClickHouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
+If you use antivirus software configure it to skip folders with Clickhouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
-[Original article](https://clickhouse.com/docs/en/operations/tips/)
-
-## Related Content
-
-- [Getting started with ClickHouse? Here are 13 "Deadly Sins" and how to avoid them](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)
+{## [Original article](https://clickhouse.com/docs/en/operations/tips/) ##}

@@ -38,7 +38,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(InitialQueryID)
+void registerFunctionInitialQueryID(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionInitialQueryID>();
     factory.registerAlias("initial_query_id", FunctionInitialQueryID::name, FunctionFactory::CaseInsensitive);

@@ -875,22 +875,6 @@ def alter_rename_table_with_materialized_mysql_database(
         "1\n2\n3\n4\n5\n",
     )
 
-    mysql_node.query(
-        "ALTER TABLE test_database_rename_table.test_table_4 RENAME test_database_rename_table.test_table_5"
-    )
-    mysql_node.query(
-        "ALTER TABLE test_database_rename_table.test_table_5 RENAME TO test_database_rename_table.test_table_6"
-    )
-    mysql_node.query(
-        "ALTER TABLE test_database_rename_table.test_table_6 RENAME AS test_database_rename_table.test_table_7"
-    )
-
-    check_query(
-        clickhouse_node,
-        "SELECT * FROM test_database_rename_table.test_table_7 ORDER BY id FORMAT TSV",
-        "1\n2\n3\n4\n5\n",
-    )
-
     clickhouse_node.query("DROP DATABASE test_database_rename_table")
     mysql_node.query("DROP DATABASE test_database_rename_table")
 
@@ -1812,7 +1796,7 @@ def mysql_settings_test(clickhouse_node, mysql_node, service_name):
         clickhouse_node.query(
             "SELECT COUNT(DISTINCT  blockNumber()) FROM test_database.a FORMAT TSV"
         )
-        == "1\n"
+        == "2\n"
     )
 
     clickhouse_node.query("DROP DATABASE test_database")
@@ -1987,7 +1971,7 @@ def materialized_database_support_all_kinds_of_mysql_datatype(
         "CREATE DATABASE test_database_datatype DEFAULT CHARACTER SET 'utf8'"
     )
     mysql_node.query(
-        """
+        """ 
        CREATE TABLE test_database_datatype.t1 (
             `v1` int(10) unsigned  AUTO_INCREMENT,
             `v2` TINYINT,
@@ -2021,7 +2005,7 @@ def materialized_database_support_all_kinds_of_mysql_datatype(
             `v29` mediumint(4) unsigned NOT NULL DEFAULT '0',
             `v30` varbinary(255) DEFAULT NULL COMMENT 'varbinary support',
             `v31`  binary(200) DEFAULT NULL,
-            `v32`  ENUM('RED','GREEN','BLUE'),
+            `v32`  ENUM('RED','GREEN','BLUE'), 
             PRIMARY KEY (`v1`)
         ) ENGINE=InnoDB;
         """
@@ -2029,8 +2013,8 @@ def materialized_database_support_all_kinds_of_mysql_datatype(
 
     mysql_node.query(
         """
-        INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v28, v29, v30, v31, v32) values
-        (1, 11, 9223372036854775807, -1,  1, 11, 18446744073709551615, -1.1,  1.1, -1.111, 1.111, 1.1111, '2021-10-06', 'text', 'varchar', 'BLOB', '2021-10-06 18:32:57',
+        INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v28, v29, v30, v31, v32) values 
+        (1, 11, 9223372036854775807, -1,  1, 11, 18446744073709551615, -1.1,  1.1, -1.111, 1.111, 1.1111, '2021-10-06', 'text', 'varchar', 'BLOB', '2021-10-06 18:32:57',  
         '2021-10-06 18:32:57.482786', '2021-10-06 18:32:57', '2021-10-06 18:32:57.482786', '2021', '838:59:59', '838:59:59.000000', ST_GeometryFromText('point(0.0 0.0)'), b'1010', 'a', 11, 'varbinary', 'binary', 'RED');
         """
     )
@@ -2055,8 +2039,8 @@ def materialized_database_support_all_kinds_of_mysql_datatype(
 
     mysql_node.query(
         """
-            INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v28, v29, v30, v31, v32) values
-            (2, 22, 9223372036854775807, -2,  2, 22, 18446744073709551615, -2.2,  2.2, -2.22, 2.222, 2.2222, '2021-10-07', 'text', 'varchar', 'BLOB',  '2021-10-07 18:32:57',
+            INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v28, v29, v30, v31, v32) values 
+            (2, 22, 9223372036854775807, -2,  2, 22, 18446744073709551615, -2.2,  2.2, -2.22, 2.222, 2.2222, '2021-10-07', 'text', 'varchar', 'BLOB',  '2021-10-07 18:32:57',  
             '2021-10-07 18:32:57.482786', '2021-10-07 18:32:57', '2021-10-07 18:32:57.482786', '2021', '-838:59:59', '-12:59:58.000001',  ST_GeometryFromText('point(120.153576 30.287459)'), b'1011', 'a,c', 22, 'varbinary', 'binary', 'GREEN' );
             """
     )
@@ -2142,9 +2126,9 @@ def materialized_database_mysql_date_type_to_date32(
     mysql_node.query(
         "CREATE TABLE test_database.a (a INT(11) NOT NULL PRIMARY KEY, b date DEFAULT NULL)"
     )
-    # can't support date that less than 1900 year for now
-    mysql_node.query("INSERT INTO test_database.a VALUES(1, '1899-04-16')")
-    # test date that is older than 1900
+    # can't support date that less than 1925 year for now
+    mysql_node.query("INSERT INTO test_database.a VALUES(1, '1900-04-16')")
+    # test date that is older than 1925
     mysql_node.query("INSERT INTO test_database.a VALUES(3, '1971-02-16')")
     mysql_node.query("INSERT INTO test_database.a VALUES(4, '2101-05-16')")
 
@@ -2167,61 +2151,3 @@ def materialized_database_mysql_date_type_to_date32(
         "SELECT b from test_database.a order by a FORMAT TSV",
         "1970-01-01\n1971-02-16\n2101-05-16\n2022-02-16\n" + "2104-06-06\n",
     )
-
-
-def savepoint(clickhouse_node, mysql_node, mysql_host):
-    db = "savepoint"
-    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"CREATE DATABASE {db}")
-    mysql_node.query(f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY)")
-    clickhouse_node.query(
-        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{mysql_host}:3306', '{db}', 'root', 'clickhouse')"
-    )
-    mysql_node.query("BEGIN")
-    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (1)")
-    mysql_node.query("SAVEPOINT savepoint_1")
-    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (2)")
-    mysql_node.query("ROLLBACK TO savepoint_1")
-    mysql_node.query("COMMIT")
-
-
-def dropddl(clickhouse_node, mysql_node, mysql_host):
-    db = "dropddl"
-    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"CREATE DATABASE {db}")
-    mysql_node.query(f"CREATE TABLE {db}.t1 (a INT PRIMARY KEY, b INT)")
-    mysql_node.query(f"CREATE TABLE {db}.t2 (a INT PRIMARY KEY, b INT)")
-    mysql_node.query(f"CREATE TABLE {db}.t3 (a INT PRIMARY KEY, b INT)")
-    mysql_node.query(f"CREATE TABLE {db}.t4 (a INT PRIMARY KEY, b INT)")
-    mysql_node.query(f"CREATE VIEW {db}.v1 AS SELECT * FROM {db}.t1")
-    mysql_node.query(f"INSERT INTO {db}.t1(a, b) VALUES(1, 1)")
-
-    clickhouse_node.query(
-        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{mysql_host}:3306', '{db}', 'root', 'clickhouse')"
-    )
-    check_query(
-        clickhouse_node,
-        f"SELECT count() FROM system.tables where database = '{db}' FORMAT TSV",
-        "4\n",
-    )
-    check_query(clickhouse_node, f"SELECT * FROM {db}.t1 FORMAT TSV", "1\t1\n")
-    mysql_node.query(f"DROP EVENT IF EXISTS {db}.event_name")
-    mysql_node.query(f"DROP VIEW IF EXISTS {db}.view_name")
-    mysql_node.query(f"DROP FUNCTION IF EXISTS {db}.function_name")
-    mysql_node.query(f"DROP TRIGGER IF EXISTS {db}.trigger_name")
-    mysql_node.query(f"DROP INDEX `PRIMARY` ON {db}.t2")
-    mysql_node.query(f"DROP TABLE {db}.t3")
-    mysql_node.query(f"DROP TABLE if EXISTS {db}.t3,{db}.t4")
-    mysql_node.query(f"TRUNCATE TABLE {db}.t1")
-    mysql_node.query(f"INSERT INTO {db}.t2(a, b) VALUES(1, 1)")
-    check_query(clickhouse_node, f"SELECT * FROM {db}.t2 FORMAT TSV", "1\t1\n")
-    check_query(clickhouse_node, f"SELECT count() FROM {db}.t1 FORMAT TSV", "0\n")
-    check_query(
-        clickhouse_node,
-        f"SELECT name FROM system.tables where database = '{db}' FORMAT TSV",
-        "t1\nt2\n",
-    )
-    mysql_node.query(f"DROP DATABASE {db}")
-    clickhouse_node.query(f"DROP DATABASE {db}")

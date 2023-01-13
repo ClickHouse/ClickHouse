@@ -33,12 +33,7 @@ DataTypePtr DataTypeFactory::get(const String & full_name) const
     /// Value 315 is known to cause stack overflow in some test configurations (debug build, sanitizers)
     /// let's make the threshold significantly lower.
     /// It is impractical for user to have complex data types with this depth.
-
-#if defined(SANITIZER) || !defined(NDEBUG)
-    static constexpr size_t data_type_max_parse_depth = 150;
-#else
-    static constexpr size_t data_type_max_parse_depth = 300;
-#endif
+    static constexpr size_t data_type_max_parse_depth = 200;
 
     ParserDataType parser;
     ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, data_type_max_parse_depth);
@@ -118,6 +113,7 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
     if (!data_types.emplace(family_name, creator).second)
         throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
+
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
@@ -208,11 +204,11 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
-    registerDataTypeIPv4andIPv6(*this);
     registerDataTypeAggregateFunction(*this);
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
+    registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainBool(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);

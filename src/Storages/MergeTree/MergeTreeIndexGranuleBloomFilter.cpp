@@ -5,6 +5,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/HashTable/Hash.h>
+#include <base/bit_cast.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <IO/WriteHelpers.h>
 
@@ -21,7 +22,7 @@ static void assertGranuleBlocksStructure(const Blocks & granule_index_blocks)
     Block prev_block;
     for (size_t index = 0; index < granule_index_blocks.size(); ++index)
     {
-        const Block & granule_index_block = granule_index_blocks[index];
+        Block granule_index_block = granule_index_blocks[index];
 
         if (index != 0)
             assertBlocksHaveEqualStructure(prev_block, granule_index_block, "Granule blocks of bloom filter has difference structure.");
@@ -91,17 +92,12 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
     readVarUInt(total_rows, istr);
-
-    static size_t atom_size = 8;
-    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
-    size_t read_size = bytes_size;
     for (auto & filter : bloom_filters)
     {
+        static size_t atom_size = 8;
+        size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
         filter = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-#endif
-        istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
+        istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), bytes_size);
     }
 }
 
@@ -110,17 +106,11 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty bloom filter index.");
 
-    writeVarUInt(total_rows, ostr);
-
     static size_t atom_size = 8;
-    size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
+    writeVarUInt(total_rows, ostr);
+    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
     for (const auto & bloom_filter : bloom_filters)
-    {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-#endif
-        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
-    }
+        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), bytes_size);
 }
 
 void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column) const

@@ -1,9 +1,13 @@
+#include <iostream>
+
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 
-#include <iostream>
-#include <cstring>
+
+#include <string.h>
+
 #include <cstdlib>
+
 #include <utility>
 
 #include <base/types.h>

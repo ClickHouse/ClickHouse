@@ -1,9 +1,7 @@
 #include <Access/Common/AccessEntityType.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <base/range.h>
 #include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
 
 
@@ -17,7 +15,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_QUOTA;
     extern const int THERE_IS_NO_PROFILE;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -84,17 +81,6 @@ const AccessEntityTypeInfo & AccessEntityTypeInfo::get(AccessEntityType type_)
         case AccessEntityType::MAX: break;
     }
     throw Exception("Unknown type: " + std::to_string(static_cast<size_t>(type_)), ErrorCodes::LOGICAL_ERROR);
-}
-
-AccessEntityType AccessEntityTypeInfo::parseType(const String & name_)
-{
-    for (auto type : collections::range(AccessEntityType::MAX))
-    {
-        const auto & info = get(type);
-        if (boost::iequals(info.name, name_))
-            return type;
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type: {}", name_);
 }
 
 }

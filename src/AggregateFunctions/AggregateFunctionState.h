@@ -23,7 +23,7 @@ private:
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, nested_->getStateType())
+        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_)
         , nested_func(nested_)
     {}
 
@@ -32,9 +32,9 @@ public:
         return nested_func->getName() + "State";
     }
 
-    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    DataTypePtr getReturnType() const override
     {
-        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
+        return getStateType();
     }
 
     DataTypePtr getStateType() const override
@@ -51,8 +51,6 @@ public:
     {
         return nested_func->getDefaultVersion();
     }
-
-    size_t getVersionFromRevision(size_t revision) const override { return nested_func->getVersionFromRevision(revision); }
 
     void create(AggregateDataPtr __restrict place) const override
     {
@@ -104,11 +102,6 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
-    }
-
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
-    {
-        assert_cast<ColumnAggregateFunction &>(to).insertFrom(place);
     }
 
     /// Aggregate function or aggregate function state.

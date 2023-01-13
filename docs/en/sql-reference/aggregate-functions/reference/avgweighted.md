@@ -1,9 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/avgweighted
-sidebar_position: 107
+toc_priority: 107
 ---
 
-# avgWeighted
+# avgWeighted {#avgweighted}
 
 Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
 

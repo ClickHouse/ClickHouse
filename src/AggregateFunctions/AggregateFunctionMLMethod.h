@@ -309,7 +309,7 @@ public:
         UInt64 batch_size_,
         const DataTypes & arguments_types,
         const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params, createResultType())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params)
         , param_num(param_num_)
         , learning_rate(learning_rate_)
         , l2_reg_coef(l2_reg_coef_)
@@ -319,7 +319,8 @@ public:
     {
     }
 
-    static DataTypePtr createResultType()
+    /// This function is called when SELECT linearRegression(...) is called
+    DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
@@ -361,7 +362,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).read(buf); }
 
     void predictValues(
-        ConstAggregateDataPtr __restrict place,
+        ConstAggregateDataPtr place,
         IColumn & to,
         const ColumnsWithTypeAndName & arguments,
         size_t offset,

@@ -4,7 +4,6 @@
 
 #include <Parsers/IAST.h>
 
-
 namespace DB
 {
 class ASTFunction;

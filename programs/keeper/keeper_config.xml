@@ -44,8 +44,6 @@
                 <!-- All settings listed in https://github.com/ClickHouse/ClickHouse/blob/master/src/Coordination/CoordinationSettings.h -->
             </coordination_settings>
 
-            <!-- enable sanity hostname checks for cluster configuration (e.g. if localhost is used with remote endpoints) -->
-            <hostname_checks_enabled>true</hostname_checks_enabled>
             <raft_configuration>
                 <server>
                     <id>1</id>
