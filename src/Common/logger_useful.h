@@ -7,6 +7,29 @@
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 
+/// This wrapper is usefult to save formatted message into a String before sending it to a logger
+class LogToStrImpl
+{
+    String & out_str;
+    Poco::Logger * logger;
+    bool propagate_to_actual_log = true;
+public:
+    LogToStrImpl(String & out_str_, Poco::Logger * logger_) : out_str(out_str_) , logger(logger_) {}
+    LogToStrImpl & operator -> () { return *this; }
+    bool is(Poco::Message::Priority priority) { propagate_to_actual_log &= logger->is(priority); return true; }
+    LogToStrImpl * getChannel() {return this; }
+    const String & name() const { return logger->name(); }
+    void log(const Poco::Message & message)
+    {
+        out_str = message.getText();
+        if (!propagate_to_actual_log)
+            return;
+        if (auto * channel = logger->getChannel())
+            channel->log(message);
+    }
+};
+
+#define LogToStr(x, y) std::make_unique<LogToStrImpl>(x, y)
 
 namespace
 {
@@ -17,6 +40,7 @@ namespace
 
     [[maybe_unused]] const ::Poco::Logger * getLogger(const ::Poco::Logger * logger) { return logger; };
     [[maybe_unused]] const ::Poco::Logger * getLogger(const std::atomic<::Poco::Logger *> & logger) { return logger.load(); };
+    [[maybe_unused]] std::unique_ptr<LogToStrImpl> getLogger(std::unique_ptr<LogToStrImpl> && logger) { return logger; };
 
     template<typename T> struct is_fmt_runtime : std::false_type {};
     template<typename T> struct is_fmt_runtime<fmt::basic_runtime<T>> : std::true_type {};
@@ -58,7 +82,7 @@ namespace
     auto _logger = ::getLogger(logger);                                           \
     const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&    \
         (DB::CurrentThread::getGroup()->client_logs_level >= (priority));         \
-    if (_logger->is((PRIORITY)) || _is_clients_log)                               \
+    if (_is_clients_log || _logger->is((PRIORITY)))                               \
     {                                                                             \
         std::string formatted_message = numArgs(__VA_ARGS__) > 1 ? fmt::format(__VA_ARGS__) : firstArg(__VA_ARGS__); \
         if (auto _channel = _logger->getChannel())                                \
@@ -74,26 +98,6 @@ namespace
     }                                                                             \
 } while (false)
 
-#define LOG_IMPL_PREFORMATTED(logger, priority, PRIORITY, FORMAT_STRING, MESSAGE) do                              \
-{                                                                                 \
-    auto _logger = ::getLogger(logger);                                           \
-    const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&    \
-        (DB::CurrentThread::getGroup()->client_logs_level >= (priority));         \
-    if (_logger->is((PRIORITY)) || _is_clients_log)                               \
-    {                                                                             \
-        if (auto _channel = _logger->getChannel())                                \
-        {                                                                         \
-            std::string file_function;                                            \
-            file_function += __FILE__;                                            \
-            file_function += "; ";                                                \
-            file_function += __PRETTY_FUNCTION__;                                 \
-            Poco::Message poco_message(_logger->name(), MESSAGE,        \
-                (PRIORITY), file_function.c_str(), __LINE__, tryGetStaticFormatString(FORMAT_STRING));    \
-            _channel->log(poco_message);                                          \
-        }                                                                         \
-    }                                                                             \
-} while (false)
-
 
 #define LOG_TEST(logger, ...)    LOG_IMPL(logger, DB::LogsLevel::test, Poco::Message::PRIO_TEST, __VA_ARGS__)
 #define LOG_TRACE(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::trace, Poco::Message::PRIO_TRACE, __VA_ARGS__)
@@ -102,12 +106,3 @@ namespace
 #define LOG_WARNING(logger, ...) LOG_IMPL(logger, DB::LogsLevel::warning, Poco::Message::PRIO_WARNING, __VA_ARGS__)
 #define LOG_ERROR(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_ERROR, __VA_ARGS__)
 #define LOG_FATAL(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_FATAL, __VA_ARGS__)
-
-
-#define LOG_TEST_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)    LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::test, Poco::Message::PRIO_TEST, FORMAT_STRING, MESSAGE)
-#define LOG_TRACE_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)   LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::trace, Poco::Message::PRIO_TRACE, FORMAT_STRING, MESSAGE)
-#define LOG_DEBUG_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)   LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG, FORMAT_STRING, MESSAGE)
-#define LOG_INFO_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)    LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION, FORMAT_STRING, MESSAGE)
-#define LOG_WARNING_PREFORMATTED(logger, FORMAT_STRING, MESSAGE) LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::warning, Poco::Message::PRIO_WARNING, FORMAT_STRING, MESSAGE)
-#define LOG_ERROR_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)   LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::error, Poco::Message::PRIO_ERROR, FORMAT_STRING, MESSAGE)
-#define LOG_FATAL_PREFORMATTED(logger, FORMAT_STRING, MESSAGE)   LOG_IMPL_PREFORMATTED(logger, DB::LogsLevel::error, Poco::Message::PRIO_FATAL, FORMAT_STRING, MESSAGE)

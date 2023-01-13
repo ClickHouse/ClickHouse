@@ -110,8 +110,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
             constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            String message = fmt::format(fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
-            LOG_WARNING_PREFORMATTED(log, fmt_string, message);
+            String message;
+            LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, message);
 

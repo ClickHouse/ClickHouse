@@ -1193,11 +1193,8 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
         const LogEntry & another_entry = *entry_for_same_part_it->second;
         constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
                                     "because another log entry {} of type {} for the same part ({}) is being processed.";
-        out_reason = fmt::format(
-            fmt_string,
-            entry.znode_name, entry.type, entry.new_part_name,
-            another_entry.znode_name, another_entry.type, another_entry.new_part_name);
-        LOG_INFO_PREFORMATTED(log, fmt_string, out_reason);
+        LOG_INFO(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.type, entry.new_part_name,
+                 another_entry.znode_name, another_entry.type, another_entry.new_part_name);
         return true;
 
         /** When the corresponding action is completed, then `isNotCoveredByFuturePart` next time, will succeed,
@@ -1241,9 +1238,7 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
             {
                 constexpr auto fmt_string = "Not executing log entry {} for part {} "
                                             "because it is not disjoint with part {} that is currently executing and another entry {} is newer.";
-                out_reason = fmt::format(
-                    fmt_string, entry.znode_name, new_part_name, future_part_elem.first, future_part_elem.second->znode_name);
-                LOG_TRACE_PREFORMATTED(log, fmt_string, out_reason);
+                LOG_TRACE(LogToStr(out_reason, log), fmt_string, entry.znode_name, new_part_name, future_part_elem.first, future_part_elem.second->znode_name);
                 return true;
             }
 
@@ -1253,8 +1248,7 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
 
         constexpr auto fmt_string = "Not executing log entry {} for part {} "
                                     "because it is not disjoint with part {} that is currently executing.";
-        out_reason = fmt::format(fmt_string, entry.znode_name, new_part_name, future_part_elem.first);
-        LOG_TEST_PREFORMATTED(log, fmt_string, out_reason);
+        LOG_TEST(LogToStr(out_reason, log), fmt_string, entry.znode_name, new_part_name, future_part_elem.first);
         return true;
     }
 
@@ -1339,8 +1333,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             {
                 constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
                       "because part {} is not ready yet (log entry for that part is being processed).";
-                out_postpone_reason = fmt::format(fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name, name);
-                LOG_TRACE_PREFORMATTED(log, fmt_string, out_postpone_reason);
+                LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name, name);
                 return false;
             }
 
@@ -1357,8 +1350,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (merger_mutator.merges_blocker.isCancelled())
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
-            out_postpone_reason = fmt::format(fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
-            LOG_DEBUG_PREFORMATTED(log, fmt_string, out_postpone_reason);
+            LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
             return false;
         }
 
@@ -1409,17 +1401,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 if (merger_mutator.ttl_merges_blocker.isCancelled())
                 {
                     constexpr auto fmt_string = "Not executing log entry {} for part {} because merges with TTL are cancelled now.";
-                    out_postpone_reason = fmt::format(fmt_string, entry.znode_name, entry.new_part_name);
-                    LOG_DEBUG_PREFORMATTED(log, fmt_string, out_postpone_reason);
+                    LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name);
                     return false;
                 }
                 size_t total_merges_with_ttl = data.getTotalMergesWithTTLInMergeList();
                 if (total_merges_with_ttl >= data_settings->max_number_of_merges_with_ttl_in_pool)
                 {
                     constexpr auto fmt_string = "Not executing log entry {} for part {} because {} merges with TTL already executing, maximum {}.";
-                    out_postpone_reason = fmt::format(fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
-                                                      data_settings->max_number_of_merges_with_ttl_in_pool);
-                    LOG_DEBUG_PREFORMATTED(log, fmt_string, out_postpone_reason);
+                    LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
+                              data_settings->max_number_of_merges_with_ttl_in_pool);
                     return false;
                 }
             }
@@ -1429,10 +1419,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {}"
                                         " because source parts size ({}) is greater than the current maximum ({}).";
-            out_postpone_reason = fmt::format(fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name,
-                ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
-
-            LOG_DEBUG_PREFORMATTED(log, fmt_string, out_postpone_reason);
+            LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name,
+                      ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
 
             return false;
         }
@@ -1446,8 +1434,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             int head_alter = alter_sequence.getHeadAlterVersion(state_lock);
             constexpr auto fmt_string = "Cannot execute alter metadata {} with version {} because another alter {} must be executed before";
-            out_postpone_reason = fmt::format(fmt_string, entry.znode_name, entry.alter_version, head_alter);
-            LOG_TRACE_PREFORMATTED(log, fmt_string, out_postpone_reason);
+            LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.alter_version, head_alter);
             return false;
         }
     }
@@ -1461,14 +1448,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             if (head_alter == entry.alter_version)
             {
                 constexpr auto fmt_string = "Cannot execute alter data {} with version {} because metadata still not altered";
-                out_postpone_reason = fmt::format(fmt_string, entry.znode_name, entry.alter_version);
-                LOG_TRACE_PREFORMATTED(log, fmt_string, out_postpone_reason);
+                LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.alter_version);
             }
             else
             {
                 constexpr auto fmt_string = "Cannot execute alter data {} with version {} because another alter {} must be executed before";
-                out_postpone_reason = fmt::format(fmt_string, entry.znode_name, entry.alter_version, head_alter);
-                LOG_TRACE_PREFORMATTED(log, fmt_string, out_postpone_reason);
+                LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.alter_version, head_alter);
             }
 
             return false;
@@ -1492,13 +1477,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     continue;
                 constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
                     "because another DROP_RANGE or REPLACE_RANGE entry with not disjoint range {} is currently executing.";
-                out_postpone_reason = fmt::format(
-                    fmt_string,
-                    entry.znode_name,
-                    entry.typeToString(),
-                    entry.new_part_name,
-                    info.getPartNameForLogs());
-                LOG_TRACE_PREFORMATTED(log, fmt_string, out_postpone_reason);
+                LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name,
+                          entry.typeToString(),
+                          entry.new_part_name,
+                          info.getPartNameForLogs());
                 return false;
             }
         }
@@ -1526,9 +1508,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     {
                         constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
                             "because it probably depends on {} (REPLACE_RANGE).";
-                        out_postpone_reason = fmt::format(
-                            fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name, replace_entry->znode_name);
-                        LOG_TRACE_PREFORMATTED(log, fmt_string, out_postpone_reason);
+                        LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(),
+                                  entry.new_part_name, replace_entry->znode_name);
                         return false;
                     }
                 }
