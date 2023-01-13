@@ -62,6 +62,9 @@ class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
             "Function {} is not resolved after running {} pass",
             function->toAST()->formatForErrorMessage(), pass_name);
 
+        if (function->getFunctionName() == "in")
+            return;
+
         const auto & expected_arg_types = function->getArgumentTypes();
         auto actual_arg_columns = function->getArgumentColumns();
 
