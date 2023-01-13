@@ -69,7 +69,9 @@ ORDER BY key
 
 向其中插入数据：
 
-    :) INSERT INTO summtt Values(1,1),(1,2),(2,1)
+``` sql
+INSERT INTO summtt Values(1,1),(1,2),(2,1)
+```
 
 ClickHouse可能不会完整的汇总所有行（[见下文](#data-processing)）,因此我们在查询中使用了聚合函数 `sum` 和 `GROUP BY` 子句。
 

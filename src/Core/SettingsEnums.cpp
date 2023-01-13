@@ -167,4 +167,9 @@ IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
     {{"sample_key", ParallelReplicasMode::SAMPLE_KEY},
      {"custom_key", ParallelReplicasMode::CUSTOM_KEY},
      {"read_tasks", ParallelReplicasMode::READ_TASKS}})
+
+IMPLEMENT_SETTING_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS,
+    {{"mmap", LocalFSReadMethod::mmap},
+     {"pread", LocalFSReadMethod::pread},
+     {"read", LocalFSReadMethod::read}})
 }

@@ -4,6 +4,7 @@
 #include <Core/Joins.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
+#include <IO/ReadSettings.h>
 
 
 namespace DB
@@ -201,4 +202,5 @@ enum class ParallelReplicasMode : uint8_t
 
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
+DECLARE_SETTING_ENUM(LocalFSReadMethod)
 }

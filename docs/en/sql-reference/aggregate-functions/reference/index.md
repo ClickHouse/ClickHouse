@@ -74,3 +74,7 @@ ClickHouse-specific aggregate functions:
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
+-   [contingency](./contingency.md)
+-   [cramersV](./cramersv.md)
+-   [cramersVBiasCorrected](./cramersvbiascorrected.md)
+-   [theilsU](./theilsu.md)
