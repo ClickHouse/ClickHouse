@@ -1728,6 +1728,9 @@ try
             is_async ? "asynchronously" : "synchronously");
     }
 
+    /// Acquire shared lock because 'relative_data_path' is used while loading parts.
+    auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+
     size_t num_loaded_parts = 0;
     while (true)
     {
