@@ -234,7 +234,7 @@ private:
     {
         if constexpr (!sharded)
             return 0;
-        return getShard(StringRefHash()(key));
+        return StringRefHash()(key) % configuration.shards;
     }
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
