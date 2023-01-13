@@ -320,11 +320,18 @@ void PocoHTTPClient::makeRequestInternal(
             const std::string & query = target_uri.getRawQuery();
             const std::string reserved = "?#:;+@&=%"; /// Poco::URI::RESERVED_QUERY_PARAM without '/' plus percent sign.
             Poco::URI::encode(target_uri.getPath(), reserved, path_and_query);
+
             if (!query.empty())
             {
                 path_and_query += '?';
                 path_and_query += query;
             }
+
+            /// `target_uri.getPath()` could return an empty string, but a proper HTTP request must
+            /// always contain a non-empty URI in its first line (e.g. "POST / HTTP/1.1").
+            if (path_and_query.empty())
+                path_and_query = "/";
+
             poco_request.setURI(path_and_query);
 
             switch (request.GetMethod())
@@ -366,11 +373,12 @@ void PocoHTTPClient::makeRequestInternal(
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Writing request body.");
 
-                if (attempt > 0) /// rewind content body buffer.
-                {
-                    request.GetContentBody()->clear();
-                    request.GetContentBody()->seekg(0);
-                }
+                /// Rewind content body buffer.
+                /// NOTE: we should do that always (even if `attempt == 0`) because the same request can be retried also by AWS,
+                /// see retryStrategy in Aws::Client::ClientConfiguration.
+                request.GetContentBody()->clear();
+                request.GetContentBody()->seekg(0);
+
                 auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Written {} bytes to request body", size);
@@ -385,8 +393,16 @@ void PocoHTTPClient::makeRequestInternal(
 
             int status_code = static_cast<int>(poco_response.getStatus());
 
-            if (enable_s3_requests_logging)
-                LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX)
+            {
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            }
+            else
+            {
+                /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
+                LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            }
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
