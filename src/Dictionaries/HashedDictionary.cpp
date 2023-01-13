@@ -706,7 +706,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(const Block & block, DictionaryKeysArenaHolder<dictionary_key_type> & arena_holder, UInt64 shard)
+void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(const Block & block, DictionaryKeysArenaHolder<dictionary_key_type> & arena_holder, UInt64 shard)
 {
     size_t skip_keys_size_offset = dict_struct.getKeysSize();
     size_t new_element_count = 0;
@@ -740,7 +740,7 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes
         }
 
         element_count += new_element_count;
-        return new_element_count;
+        return;
     }
 
     for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
@@ -802,7 +802,6 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes
     }
 
     element_count += new_element_count;
-    return new_element_count;
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
