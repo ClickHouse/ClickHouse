@@ -24,8 +24,9 @@
 
     SELECT count() FROM t_sparse_nullable WHERE NOT isNull(n);
     SELECT count() FROM t_sparse_nullable WHERE NOT isNull(s);
+    SELECT count() FROM t_sparse_nullable WHERE NOT isNull(s) AND NOT isNull(n);
 
-    SELECT sum(n), uniqExact(s) FROM t_sparse_nullable;
+    SELECT sum(n), uniqExact(n), uniqExact(s) FROM t_sparse_nullable;
     SELECT id % 10 AS key, sum(n), uniqExact(s) FROM t_sparse_nullable GROUP BY key ORDER BY key;
 
 {% endfor -%}
