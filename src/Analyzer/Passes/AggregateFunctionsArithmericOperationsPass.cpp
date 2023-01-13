@@ -144,7 +144,7 @@ public:
             auto & inner_function_clone_arguments_nodes = inner_function_clone_arguments.getNodes();
             auto inner_function_clone_left_argument = inner_function_clone_arguments_nodes[0];
             aggregate_function_arguments_nodes = {inner_function_clone_left_argument};
-            resolveAggregateFunctionNode(*aggregate_function_node, inner_function_clone_left_argument, function_name_if_constant_is_negative);
+            resolveAggregateFunctionNode(*aggregate_function_node, inner_function_clone_left_argument, lower_function_name);
             inner_function_clone_arguments_nodes[0] = node;
             node = std::move(inner_function_clone);
         }
