@@ -1,7 +1,7 @@
-#pragma once
-
 #include "ICommand.h"
+
 #include <Interpreters/Context.h>
+#include <Common/TerminalSize.h>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandMkDir : public ICommand
+class CommandMkDir final : public ICommand
 {
 public:
     CommandMkDir()
@@ -46,17 +46,17 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        String path = command_arguments[0];
+        const String & path = command_arguments[0];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = fullPathWithValidate(disk, path);
+        String relative_path = validatePathAndGetAsRelative(path);
         bool recursive = config.getBool("recursive", false);
 
         if (recursive)
-            disk->createDirectories(full_path);
+            disk->createDirectories(relative_path);
         else
-            disk->createDirectory(full_path);
+            disk->createDirectory(relative_path);
     }
 };
 }

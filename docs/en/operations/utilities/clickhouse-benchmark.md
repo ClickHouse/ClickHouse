@@ -142,5 +142,3 @@ localhost:9000, queries 3, QPS: 3.815, RPS: 76466659.385, MiB/s: 583.394, result
 
 No difference proven at 99.5% confidence
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark.md) <!--hide-->

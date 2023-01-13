@@ -84,6 +84,13 @@ public:
 
         return res_column;
     }
+
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const override
+    {
+        return {.is_monotonic = true, .is_always_monotonic = true};
+    }
 };
 
 
@@ -106,7 +113,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 1 || arguments.size() > 2)
+        if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
         if (!isInteger(arguments[0].type))
@@ -126,7 +133,7 @@ public:
         const auto & col = *src.column;
 
         if (!checkAndGetColumn<ColumnVector<T>>(col))
-            return 0;
+            return false;
 
         auto & result_data = result_column->getData();
 
@@ -135,7 +142,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = source_data[i];
 
-        return 1;
+        return true;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

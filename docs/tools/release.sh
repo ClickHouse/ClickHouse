@@ -19,13 +19,16 @@ then
     # Will make a repository with website content as the only commit.
     git init
     git remote add origin "${GIT_PROD_URI}"
-    git config user.email "robot-clickhouse@clickhouse.com"
+    git config user.email "robot-clickhouse@users.noreply.github.com"
     git config user.name "robot-clickhouse"
 
     # Add files.
     cp -R "${BUILD_DIR}"/* .
     echo -n "${BASE_DOMAIN}" > CNAME
-    echo -n "" > README.md
+    cat > README.md << 'EOF'
+## This repo is the source for https://content.clickhouse.com
+It's built in [the action](https://github.com/ClickHouse/ClickHouse/blob/master/.github/workflows/docs_release.yml) in the DocsRelease job.
+EOF
     echo -n "" > ".nojekyll"
     cp "${BASE_DIR}/../../LICENSE" .
     git add ./*
