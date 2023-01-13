@@ -1,4 +1,7 @@
 set max_threads = 16;
+set allow_aggregate_partitions_independently = 1;
+set force_aggregate_partitions_independently = 1;
+set allow_experimental_projection_optimization = 0;
 
 create table t1(a UInt32) engine=MergeTree order by tuple() partition by a % 4;
 
@@ -86,3 +89,64 @@ explain pipeline select a from t6 group by a settings read_in_order_two_level_me
 select count() from (select throwIf(count() != 2) from t6 group by a);
 
 drop table t6;
+
+create table t7(a UInt32) engine=MergeTree order by a partition by intDiv(a, 2);
+
+insert into t7 select number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select intDiv(a, 2) as a1 from t7 group by a1
+) where explain like '%Skip merging: %';
+
+drop table t7;
+
+create table t8(a UInt32) engine=MergeTree order by a partition by intDiv(a, 2) * 2 + 1;
+
+insert into t8 select number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select intDiv(a, 2) + 1 as a1 from t8 group by a1
+) where explain like '%Skip merging: %';
+
+drop table t8;
+
+create table t9(a UInt32) engine=MergeTree order by a partition by intDiv(a, 2);
+
+insert into t9 select number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select intDiv(a, 3) as a1 from t9 group by a1
+) where explain like '%Skip merging: %';
+
+drop table t9;
+
+create table t10(a UInt32, b UInt32) engine=MergeTree order by a partition by (intDiv(a, 2), intDiv(b, 3));
+
+insert into t10 select number, number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select intDiv(a, 2) + 1 as a1, intDiv(b, 3) as b1 from t10 group by a1, b1, pi()
+) where explain like '%Skip merging: %';
+
+drop table t10;
+
+-- multiplication by 2 is not injective, so optimization is not applicable
+create table t11(a UInt32, b UInt32) engine=MergeTree order by a partition by (intDiv(a, 2), intDiv(b, 3));
+
+insert into t11 select number, number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select intDiv(a, 2) + 1 as a1, intDiv(b, 3) * 2 as b1 from t11 group by a1, b1, pi()
+) where explain like '%Skip merging: %';
+
+drop table t11;
+
+create table t12(a UInt32, b UInt32) engine=MergeTree order by a partition by a % 16;
+
+insert into t12 select number, number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select a, b from t12 group by a, b, pi()
+) where explain like '%Skip merging: %';
+
+drop table t12;

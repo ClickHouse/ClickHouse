@@ -195,3 +195,9 @@ ExpressionTransform × 16
                                                                                                     ExpressionTransform × 2
                                                                                                       MergeTreeInOrder × 2 0 → 1
 1000000
+Skip merging: 1
+Skip merging: 1
+Skip merging: 0
+Skip merging: 1
+Skip merging: 0
+Skip merging: 1
