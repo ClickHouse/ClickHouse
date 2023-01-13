@@ -33,6 +33,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/ArrayJoinAction.h>
 
+#include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -262,19 +263,25 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
 QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
+    const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
     auto & join_node = join_tree_node->as<JoinNode &>();
 
+    ColumnIdentifierSet current_scope_columns = outer_scope_columns;
+    collectTopLevelColumnIdentifiers(join_tree_node, planner_context, current_scope_columns);
+
     auto left_plan = buildQueryPlanForJoinTreeNode(join_node.getLeftTableExpression(),
         select_query_info,
         select_query_options,
+        current_scope_columns,
         planner_context);
     auto left_plan_output_columns = left_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
     auto right_plan = buildQueryPlanForJoinTreeNode(join_node.getRightTableExpression(),
         select_query_info,
         select_query_options,
+        current_scope_columns,
         planner_context);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
@@ -641,6 +648,7 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
         size_t max_block_size = query_context->getSettingsRef().max_block_size;
         size_t max_streams = query_context->getSettingsRef().max_threads;
 
+        JoinPipelineType join_pipeline_type = join_algorithm->pipelineType();
         auto join_step = std::make_unique<JoinStep>(
             left_plan.getCurrentDataStream(),
             right_plan.getCurrentDataStream(),
@@ -649,7 +657,7 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             max_streams,
             false /*optimize_read_in_order*/);
 
-        join_step->setStepDescription(fmt::format("JOIN {}", JoinPipelineType::FillRightFirst));
+        join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 
         std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
@@ -664,8 +672,13 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
 
     for (auto & output : drop_unused_columns_after_join_actions_dag->getOutputs())
     {
-        if (updated_outputs_names.contains(output->result_name) || !planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output->result_name))
+        const auto & global_planner_context = planner_context->getGlobalPlannerContext();
+        if (updated_outputs_names.contains(output->result_name)
+            || !global_planner_context->hasColumnIdentifier(output->result_name)
+            || !outer_scope_columns.contains(output->result_name))
+        {
             continue;
+        }
 
         updated_outputs.push_back(output);
         updated_outputs_names.insert(output->result_name);
@@ -683,6 +696,7 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
 QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
     SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
+    const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
     auto & array_join_node = table_expression->as<ArrayJoinNode &>();
@@ -690,6 +704,7 @@ QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
     auto plan = buildQueryPlanForJoinTreeNode(array_join_node.getTableExpression(),
         select_query_info,
         select_query_options,
+        outer_scope_columns,
         planner_context);
     auto plan_output_columns = plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
@@ -729,6 +744,7 @@ QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
 QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
     SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
+    const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
     auto join_tree_node_type = join_tree_node->getNodeType();
@@ -747,11 +763,11 @@ QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
         }
         case QueryTreeNodeType::JOIN:
         {
-            return buildQueryPlanForJoinNode(join_tree_node, select_query_info, select_query_options, planner_context);
+            return buildQueryPlanForJoinNode(join_tree_node, select_query_info, select_query_options, outer_scope_columns, planner_context);
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
-            return buildQueryPlanForArrayJoinNode(join_tree_node, select_query_info, select_query_options, planner_context);
+            return buildQueryPlanForArrayJoinNode(join_tree_node, select_query_info, select_query_options, outer_scope_columns, planner_context);
         }
         default:
         {

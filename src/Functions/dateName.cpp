@@ -276,7 +276,7 @@ private:
     {
         static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
-            const auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
+            const auto day = ToDayOfWeekImpl::execute(source, timezone);
             static constexpr std::string_view day_names[] =
             {
                 "Monday",
