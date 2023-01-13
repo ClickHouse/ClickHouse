@@ -69,6 +69,10 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
                 getName(), queryToString(query_arg));
         explain_query->setExplainedQuery(query_arg);
     }
+    else if (kind != ASTExplainQuery::ExplainKind::CurrentTransaction)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires a query argument", getName());
+    }
 
     query = std::move(explain_query);
 }
