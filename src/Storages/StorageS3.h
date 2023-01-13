@@ -179,14 +179,14 @@ private:
         ReaderHolder(const ReaderHolder & other) = delete;
         ReaderHolder & operator=(const ReaderHolder & other) = delete;
 
-        ReaderHolder(ReaderHolder && other)
+        ReaderHolder(ReaderHolder && other) noexcept
         {
             *this = std::move(other);
         }
 
-        ReaderHolder & operator=(ReaderHolder && other)
+        ReaderHolder & operator=(ReaderHolder && other) noexcept
         {
-            /// The order is important.
+            /// The order of destruction is important.
             /// reader uses pipeline, pipeline uses read_buf.
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
