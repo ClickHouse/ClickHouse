@@ -465,11 +465,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
+    String prefix(settings.offset, settings.indent_char);
     if (!sort_description_for_merging.empty())
     {
-        String prefix(settings.offset, settings.indent_char);
         settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';
     }
+    settings.out << prefix << "Skip merging: " << skip_merging << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -477,6 +478,7 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     params.explain(map);
     if (!sort_description_for_merging.empty())
         map.add("Order", dumpSortDescription(sort_description_for_merging));
+    map.add("Skip merging", skip_merging);
 }
 
 void AggregatingStep::describePipeline(FormatSettings & settings) const
