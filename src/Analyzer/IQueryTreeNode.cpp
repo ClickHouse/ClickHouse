@@ -9,7 +9,6 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTWithAlias.h>
-#include <Analyzer/QueryNode.h>
 
 namespace DB
 {
@@ -99,7 +98,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
         if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
             lhs_node_to_compare->alias != rhs_node_to_compare->alias ||
             !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
+        {
             return false;
+        }
 
         const auto & lhs_children = lhs_node_to_compare->children;
         const auto & rhs_children = rhs_node_to_compare->children;
