@@ -140,6 +140,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event MainConfigLoads;
+    extern const Event ServerStartupTime;
 }
 
 namespace fs = std::filesystem;
@@ -652,6 +653,8 @@ static void sanityChecks(Server & server)
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
+    std::chrono::system_clock::time_point startup_start_time = std::chrono::system_clock::now();
+
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;
@@ -1426,6 +1429,9 @@ try
 #endif
 
     }
+
+    std::chrono::milliseconds startup_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - startup_start_time);
+    ProfileEvents::increment(ProfileEvents::ServerStartupTime, startup_duration.count());
 
     for (auto & server : servers_to_start_before_tables)
     {
