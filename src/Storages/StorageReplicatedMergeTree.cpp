@@ -1762,7 +1762,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 if (!need_to_check_missing_part)
                     return false;
 
-                throw Exception("No active replica has part " + entry.new_part_name + " or covering part", ErrorCodes::NO_REPLICA_HAS_PART);
+                throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "No active replica has part {} or covering part (cannot execute {}: {})",
+                                entry.new_part_name, entry.znode_name, entry.getDescriptionForLogs(format_version));
             }
         }
 
