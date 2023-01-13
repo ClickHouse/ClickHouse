@@ -29,10 +29,10 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
 
 protected:
-    CSVRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,
+    CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
                                bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
 
-    CSVRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
+    CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
                       bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
 private:
@@ -40,7 +40,7 @@ private:
     void syncAfterError() override;
 
 protected:
-    std::unique_ptr<PeekableReadBuffer> buf;
+    std::shared_ptr<PeekableReadBuffer> buf;
 };
 
 class CSVFormatReader : public FormatWithNamesAndTypesReader
