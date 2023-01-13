@@ -1625,6 +1625,11 @@ def test_rename(start_cluster):
         """
         )
 
+        # We want to check that after inserts, some parts were moved to external disk
+        # and some parts are still on the main disk, but because of merge all parts
+        # might end up on external disk.
+        node1.query("SYSTEM STOP MERGES default.renaming_table")
+
         # jbod1 disk is 40mb
         for _ in range(5):
             data = []
