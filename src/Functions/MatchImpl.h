@@ -118,12 +118,13 @@ struct MatchImpl
         if (haystack_offsets.empty())
             return;
 
-        /// Fast path for, because the result is always true or false
+        /// Fast path for [I]LIKE, because the result is always true or false
         /// col [i]like '%%'
         /// col not [i]like '%%'
         /// col like '%'
         /// col not [i]like '%'
-        if (is_like && (needle == "%%" or needle == "%"))
+        /// match(like, '^$')
+        if ((is_like && (needle == "%%" or needle == "%")) || (!is_like && needle == ".*"))
         {
             for (auto & re : res)
                 re = !negate;
