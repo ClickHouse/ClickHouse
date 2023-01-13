@@ -150,7 +150,7 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
     return res;
 }
 
-UInt64 QueryResultCache::QueryResult::sizeInBytes() const
+size_t QueryResultCache::QueryResult::sizeInBytes() const
 {
     size_t res = 0;
     for (const auto & chunk : *chunks)
