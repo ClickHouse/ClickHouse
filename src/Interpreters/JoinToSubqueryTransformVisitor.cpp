@@ -61,6 +61,7 @@ public:
     struct Data
     {
         std::unordered_map<String, NamesAndTypesList> table_columns;
+        std::unordered_map<String, String> table_name_alias;
         std::vector<String> tables_order;
         std::shared_ptr<ASTExpressionList> new_select_expression_list;
 
@@ -72,6 +73,7 @@ public:
                 String table_name = table.table.getQualifiedNamePrefix(false);
                 NamesAndTypesList columns = table.columns;
                 tables_order.push_back(table_name);
+                table_name_alias.emplace(table.table.table /* table_name */, table_name /* alias_name */);
                 table_columns.emplace(std::move(table_name), std::move(columns));
             }
         }
@@ -86,9 +88,21 @@ public:
             ASTs & columns,
             ShouldAddColumnPredicate should_add_column_predicate = [](const String &) { return true; })
         {
-            auto it = table_columns.find(table_name);
+            String name = table_name;
+            auto it = table_columns.find(name);
             if (it == table_columns.end())
-                throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+            {
+                auto table_name_it = table_name_alias.find(table_name);
+                if (table_name_it != table_name_alias.end())
+                {
+                    name = table_name_it->second;
+                    it = table_columns.find(table_name_it->second);
+                    if (it == table_columns.end())
+                        throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                }
+                else
+                    throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+            }
 
             for (const auto & column : it->second)
             {
@@ -152,6 +166,7 @@ private:
 
                 if (!qualified_asterisk->qualifier)
                     throw Exception("Logical error: qualified asterisk must have a qualifier", ErrorCodes::LOGICAL_ERROR);
+
                 auto & identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
 
                 data.addTableColumns(identifier.name(), columns);
@@ -159,7 +174,14 @@ private:
                 if (qualified_asterisk->transformers)
                 {
                     for (const auto & transformer : qualified_asterisk->transformers->children)
-                        IASTColumnsTransformer::transform(transformer, columns);
+                    {
+                        if (transformer.get()->as<ASTColumnsApplyTransformer>() ||
+                            transformer.get()->as<ASTColumnsExceptTransformer>() ||
+                            transformer.get()->as<ASTColumnsReplaceTransformer>())
+                            IASTColumnsTransformer::transform(transformer, columns);
+                        else
+                            throw Exception("Logical error: qualified asterisk must only have children of IASTColumnsTransformer type", ErrorCodes::LOGICAL_ERROR);
+                    }
                 }
             }
             else if (const auto * columns_list_matcher = child->as<ASTColumnsListMatcher>())
@@ -219,7 +241,7 @@ struct RewriteTablesVisitorData
     {
         if (done)
             return;
-        std::vector<ASTPtr> new_tables{left, right};
+        ASTs new_tables{left, right};
         ast->children.swap(new_tables);
         done = true;
     }

@@ -111,7 +111,7 @@ public:
             size_t idx = 0;
             for (const auto & elem : block)
             {
-                elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value);
+                elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value, {});
                 ++idx;
             }
 

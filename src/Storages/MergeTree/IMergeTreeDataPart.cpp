@@ -86,9 +86,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
         auto serialization = minmax_column_types[i]->getDefaultSerialization();
 
         Field min_val;
-        serialization->deserializeBinary(min_val, *file);
+        serialization->deserializeBinary(min_val, *file, {});
         Field max_val;
-        serialization->deserializeBinary(max_val, *file);
+        serialization->deserializeBinary(max_val, *file, {});
 
         // NULL_LAST
         if (min_val.isNull())
@@ -134,8 +134,8 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 
         auto out = part_storage.writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
         HashingWriteBuffer out_hashing(*out);
-        serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
-        serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
+        serialization->serializeBinary(hyperrectangle[i].left, out_hashing, {});
+        serialization->serializeBinary(hyperrectangle[i].right, out_hashing, {});
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -375,7 +375,7 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
         return new_part_info.getPartNameV0(min_date, max_date);
     }
     else
-        return new_part_info.getPartName();
+        return new_part_info.getPartNameV1();
 }
 
 std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & column_name) const
@@ -576,6 +576,9 @@ void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPa
             states_str += ' ';
         }
 
+        if (!states_str.empty())
+            states_str.pop_back();
+
         throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
     }
 }
@@ -755,7 +758,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
+                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -1643,6 +1646,12 @@ void IMergeTreeDataPart::remove()
             return CanRemoveDescription{.can_remove_anything = true, .files_not_to_remove = {} };
         }
 
+        if (getState() == MergeTreeDataPartState::Temporary)
+        {
+            LOG_TRACE(storage.log, "Part {} in temporary state can be removed without unlocking shared state", name);
+            return CanRemoveDescription{.can_remove_anything = false, .files_not_to_remove = {} };
+        }
+
         auto [can_remove, files_not_to_remove] = canRemovePart();
         if (!can_remove)
             LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
@@ -1713,7 +1722,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix)
     part_is_probably_removed_from_disk = true;
 }
 
-void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     auto storage_settings = storage.getSettings();
 
@@ -1726,9 +1735,9 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
     bool broken = !prefix.empty();
     auto maybe_path_in_detached = getRelativePathForDetachedPart(prefix, broken);
     if (!maybe_path_in_detached)
-        return;
+        return nullptr;
 
-    getDataPartStorage().freeze(
+    return getDataPartStorage().freeze(
         storage.relative_data_path,
         *maybe_path_in_detached,
         /*make_source_readonly*/ true,
@@ -2039,14 +2048,6 @@ std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorag
 bool isCompressedFromIndexExtension(const String & index_extension)
 {
     return index_extension == getIndexExtension(true);
-}
-
-Strings getPartsNamesWithStates(const MergeTreeDataPartsVector & parts)
-{
-    Strings part_names;
-    for (const auto & p : parts)
-        part_names.push_back(p->getNameWithState());
-    return part_names;
 }
 
 Strings getPartsNames(const MergeTreeDataPartsVector & parts)

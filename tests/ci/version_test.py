@@ -17,9 +17,9 @@ class TestFunctions(unittest.TestCase):
             ("v1.1.1.2-testing", vh.get_version_from_string("1.1.1.2")),
             ("refs/tags/v1.1.1.2-testing", vh.get_version_from_string("1.1.1.2")),
         )
-        for case in cases:
-            version = vh.version_arg(case[0])
-            self.assertEqual(case[1], version)
+        for test_case in cases:
+            version = vh.version_arg(test_case[0])
+            self.assertEqual(test_case[1], version)
         error_cases = (
             "0.0.0",
             "1.1.1.a",
@@ -28,6 +28,6 @@ class TestFunctions(unittest.TestCase):
             "v1.1.1.2-testin",
             "refs/tags/v1.1.1.2-testin",
         )
-        for case in error_cases:
+        for error_case in error_cases:
             with self.assertRaises(ArgumentTypeError):
-                version = vh.version_arg(case[0])
+                version = vh.version_arg(error_case[0])

@@ -23,4 +23,3 @@ slug: /ru/operations/system-tables/settings_profiles
 ## Смотрите также {#see-also}
 
 -   [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
-

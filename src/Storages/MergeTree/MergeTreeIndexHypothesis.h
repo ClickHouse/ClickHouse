@@ -9,8 +9,9 @@ namespace DB
 
 class MergeTreeIndexHyposesis;
 
-struct MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
+class MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
 {
+public:
     explicit MergeTreeIndexGranuleHypothesis(
         const String & index_name_);
 
@@ -31,8 +32,9 @@ struct MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
 };
 
 
-struct MergeTreeIndexAggregatorHypothesis : IMergeTreeIndexAggregator
+class MergeTreeIndexAggregatorHypothesis : public IMergeTreeIndexAggregator
 {
+public:
     explicit MergeTreeIndexAggregatorHypothesis(
         const String & index_name_, const String & column_name_);
 
