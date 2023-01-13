@@ -636,14 +636,17 @@ public:
     inline UInt8 toDayOfWeek(DateOrTime v, UInt8 week_day_mode) const
     {
         WeekDayMode mode = check_week_day_mode(week_day_mode);
-        UInt8 res = toDayOfWeek(v);
 
-        bool start_from_sunday = (mode == WeekDayMode::WeekStartsSunday0 || mode == WeekDayMode::WeekStartsSunday1);
-        bool zero_based = (mode == WeekDayMode::WeekStartsMonday0 || mode == WeekDayMode::WeekStartsSunday0);
+        UInt8 res = toDayOfWeek(v);
+        using enum WeekDayMode;
+        bool start_from_sunday = (mode == WeekStartsSunday0 || mode == WeekStartsSunday1);
+        bool zero_based = (mode == WeekStartsMonday0 || mode == WeekStartsSunday0);
+
         if (start_from_sunday)
             res = res % 7 + 1;
         if (zero_based)
             --res;
+
         return res;
     }
 
@@ -874,7 +877,6 @@ public:
     {
         return static_cast<WeekDayMode>(mode & 3);
     }
-
 
     /** Calculate weekday from d.
       * Returns 0 for monday, 1 for tuesday...
