@@ -43,13 +43,13 @@ CSVRowInputFormat::CSVRowInputFormat(
     bool with_types_,
     const FormatSettings & format_settings_)
     : CSVRowInputFormat(
-        header_, std::make_unique<PeekableReadBuffer>(in_), params_, with_names_, with_types_, format_settings_)
+        header_, std::make_shared<PeekableReadBuffer>(in_), params_, with_names_, with_types_, format_settings_)
 {
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
     const Block & header_,
-    std::unique_ptr<PeekableReadBuffer> in_,
+    std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
     bool with_types_,
@@ -72,7 +72,7 @@ CSVRowInputFormat::CSVRowInputFormat(
 
 CSVRowInputFormat::CSVRowInputFormat(
     const Block & header_,
-    std::unique_ptr<PeekableReadBuffer> in_,
+    std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
     bool with_types_,
