@@ -1814,7 +1814,7 @@ def reportCoverage(args):
         """
     )
 
-def reportLogPatterns(args):
+def reportLogStats(args):
     query = """
         WITH
             120 AS mins,
@@ -1860,7 +1860,7 @@ def reportLogPatterns(args):
         FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode()
-    print("\nTop runtime messages:\n")
+    print("\nTop messages without format string (fmt::runtime):\n")
     print(value)
     print("\n")
 
@@ -1999,7 +1999,7 @@ def main(args):
         print("All tests have finished.")
 
     if args.report_logs_stats:
-        reportLogPatterns(args)
+        reportLogStats(args)
 
     if args.report_coverage and not reportCoverage(args):
         exit_code.value = 1
