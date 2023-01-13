@@ -73,11 +73,12 @@ class Reviews:
 
         if "APPROVED" in statuses:
             logging.info(
-                "The following users approved the PR: %s",
+                "The following users from %s team approved the PR: %s",
+                TEAM_NAME,
                 ", ".join(
                     user.login
                     for user, r in self._review_per_user.items()
-                    if r.state == "APPROVED"
+                    if r.state == "APPROVED" and user in team
                 ),
             )
             # The only reliable place to get the 100% accurate last_modified
