@@ -75,13 +75,23 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 {
     buffer << std::string(indent, ' ');
 
-    std::string function_type = "ORDINARY";
-    if (isAggregateFunction())
-        function_type = "AGGREGATE";
-    else if (isWindowFunction())
-        function_type = "WINDOW";
+    std::string function_type;
+    switch (kind)
+    {
+        case FunctionKind::UNKNOWN:
+            break;
+        case FunctionKind::ORDINARY:
+            function_type = "ORDINARY ";
+            break;
+        case FunctionKind::AGGREGATE:
+            function_type = "AGGREGATE ";
+            break;
+        case FunctionKind::WINDOW:
+            function_type = "WINDOW ";
+            break;
+    }
 
-    buffer << function_type << " FUNCTION(" << function_name << ") id: " << format_state.getNodeId(this);
+    buffer << function_type << "FUNCTION(" << function_name << ") id: " << format_state.getNodeId(this);
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
