@@ -182,6 +182,9 @@ struct SelectQueryInfo
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
 
+    /// Query tree
+    QueryTreeNodePtr query_tree;
+
     /// Planner context
     PlannerContextPtr planner_context;
 
@@ -192,6 +195,9 @@ struct SelectQueryInfo
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
+
+    /// Local storage limits
+    StorageLimits local_storage_limits;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -225,6 +231,9 @@ struct SelectQueryInfo
     bool has_order_by = false;
     bool need_aggregate = false;
     PrewhereInfoPtr prewhere_info;
+
+    /// If query has aggregate functions
+    bool has_aggregates = false;
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
