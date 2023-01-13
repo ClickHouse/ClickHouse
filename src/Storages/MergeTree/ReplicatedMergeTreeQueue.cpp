@@ -216,7 +216,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 {
     auto entry_virtual_parts = entry->getVirtualPartNames(format_version);
 
-    LOG_TEST(log, "Insert entry {} to queue with type {}", entry->znode_name, entry->getDescriptionForLogs(format_version));
+    LOG_TRACE(log, "Insert entry {} to queue with type {}", entry->znode_name, entry->getDescriptionForLogs(format_version));
 
     for (const String & virtual_part_name : entry_virtual_parts)
     {
@@ -1504,7 +1504,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     entry.znode_name,
                     entry.typeToString(),
                     entry.new_part_name,
-                    info.getPartName());
+                    info.getPartNameForLogs());
                 LOG_TRACE(log, fmt::runtime(out_postpone_reason));
                 return false;
             }
