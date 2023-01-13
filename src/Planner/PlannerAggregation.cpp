@@ -91,6 +91,7 @@ public:
 
         QueryTreeNodeWeakPtr column_source;
         auto grouping_set_argument_column = std::make_shared<ColumnNode>(NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()}, column_source);
+        auto previous_arguments = function_node->getArguments().getNodes();
         function_node->getArguments().getNodes().clear();
 
         bool force_grouping_standard_compatibility = planner_context.getQueryContext()->getSettingsRef().force_grouping_standard_compatibility;
@@ -129,6 +130,9 @@ public:
                 break;
             }
         }
+
+        auto & function_node_arguments = function_node->getArguments().getNodes();
+        function_node_arguments.insert(function_node_arguments.end(), previous_arguments.begin(), previous_arguments.end());
     }
 
     static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
@@ -163,8 +167,6 @@ void resolveGroupingFunctions(QueryTreeNodePtr & node,
     visitor.visit(query_node_typed.getProjectionNode());
 }
 
-}
-
 void resolveGroupingFunctions(QueryTreeNodePtr & query_node,
     const Names & aggregation_keys,
     const GroupingSetsParamsList & grouping_sets_parameters_list,
@@ -181,6 +183,87 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node,
         group_by_kind = GroupByKind::GROUPING_SETS;
 
     resolveGroupingFunctions(query_node, group_by_kind, aggregation_keys, grouping_sets_parameters_list, planner_context);
+}
+
+}
+
+void resolveGroupingFunctions(QueryTreeNodePtr & query_node, const PlannerContext & planner_context)
+{
+    auto & query_node_typed = query_node->as<QueryNode &>();
+
+    std::unordered_set<std::string_view> used_aggregation_keys;
+    Names aggregation_keys;
+    GroupingSetsParamsList grouping_sets_parameters_list;
+
+    QueryTreeNodeToName group_by_node_to_name;
+
+    /// Add expressions from GROUP BY
+
+    if (query_node_typed.hasGroupBy())
+    {
+        if (query_node_typed.isGroupByWithGroupingSets())
+        {
+            for (const auto & grouping_set_keys_list_node : query_node_typed.getGroupBy().getNodes())
+            {
+                auto & grouping_set_keys_list_node_typed = grouping_set_keys_list_node->as<ListNode &>();
+                grouping_sets_parameters_list.emplace_back();
+                auto & grouping_sets_parameters = grouping_sets_parameters_list.back();
+
+                for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
+                {
+                    auto grouping_set_key_name = calculateActionNodeName(grouping_set_key_node, planner_context, group_by_node_to_name);
+                    grouping_sets_parameters.used_keys.push_back(grouping_set_key_name);
+
+                    if (used_aggregation_keys.contains(grouping_set_key_name))
+                        continue;
+
+                    aggregation_keys.push_back(grouping_set_key_name);
+                    used_aggregation_keys.insert(aggregation_keys.back());
+                }
+            }
+
+            for (auto & grouping_sets_parameter : grouping_sets_parameters_list)
+            {
+                NameSet grouping_sets_used_keys;
+                Names grouping_sets_keys;
+
+                for (auto & key : grouping_sets_parameter.used_keys)
+                {
+                    auto [_, inserted] = grouping_sets_used_keys.insert(key);
+                    if (inserted)
+                        grouping_sets_keys.push_back(key);
+                }
+
+                for (auto & key : aggregation_keys)
+                {
+                    if (grouping_sets_used_keys.contains(key))
+                        continue;
+
+                    grouping_sets_parameter.missing_keys.push_back(key);
+                }
+
+                grouping_sets_parameter.used_keys = std::move(grouping_sets_keys);
+            }
+
+            /// It is expected by execution layer that if there are only 1 grouping sets it will be removed
+            if (grouping_sets_parameters_list.size() == 1)
+                grouping_sets_parameters_list.clear();
+        }
+        else
+        {
+            for (auto & group_by_key_node : query_node_typed.getGroupBy().getNodes())
+            {
+                auto group_by_key_name = calculateActionNodeName(group_by_key_node, planner_context, group_by_node_to_name);
+                if (used_aggregation_keys.contains(group_by_key_name))
+                    continue;
+
+                aggregation_keys.push_back(group_by_key_name);
+                used_aggregation_keys.insert(aggregation_keys.back());
+            }
+        }
+    }
+
+    resolveGroupingFunctions(query_node, aggregation_keys, grouping_sets_parameters_list, planner_context);
 }
 
 AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context)
