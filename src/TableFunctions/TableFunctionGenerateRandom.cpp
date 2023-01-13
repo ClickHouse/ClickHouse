@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
@@ -75,16 +76,23 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
 
 ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const
 {
+    if (structure == "auto")
+    {
+        if (structure_hint.empty())
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "Table function '{}' was used without structure argument but structure could not be determined automatically. Please, "
+                "provide structure manually",
+                getName());
+        return structure_hint;
+    }
+
     return parseColumnsListFromString(structure, context);
 }
 
 StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    ColumnsDescription columns;
-    if (structure != "auto")
-        columns = parseColumnsListFromString(structure, context);
-    else if (!structure_hint.empty())
-        columns = structure_hint;
+    ColumnsDescription columns = getActualTableStructure(context);
     auto res = std::make_shared<StorageGenerateRandom>(
         StorageID(getDatabaseName(), table_name), columns, String{}, max_array_length, max_string_length, random_seed);
     res->startup();
