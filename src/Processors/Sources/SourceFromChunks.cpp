@@ -4,13 +4,18 @@ namespace DB
 {
 
 SourceFromChunks::SourceFromChunks(Block header, Chunks chunks_)
-    : SourceFromChunks(header, std::make_shared<Chunks>(std::move(chunks_)))
-{
-}
+    : SourceFromChunks(header, std::make_shared<Chunks>(std::move(chunks_)), true)
+{}
 
-SourceFromChunks::SourceFromChunks(Block header, std::shared_ptr<const Chunks> chunks_)
+SourceFromChunks::SourceFromChunks(Block header, std::shared_ptr<Chunks> chunks_)
+    : SourceFromChunks(header, chunks_, false)
+{}
+
+SourceFromChunks::SourceFromChunks(Block header, std::shared_ptr<Chunks> chunks_, bool move_from_chunks_)
     : ISource(std::move(header))
     , chunks(chunks_)
+    , it(chunks->begin())
+    , move_from_chunks(move_from_chunks_)
 {
 }
 
@@ -21,12 +26,19 @@ String SourceFromChunks::getName() const
 
 Chunk SourceFromChunks::generate()
 {
-    if (i_chunk < chunks->size())
-    {
-        Chunk chunk = ((*chunks)[i_chunk]).clone();
-        i_chunk++;
-        return chunk;
-    }
+    if (it != chunks->end())
+        if (move_from_chunks)
+        {
+            Chunk && chunk = std::move(*it);
+            it++;
+            return chunk;
+        }
+        else
+        {
+            Chunk chunk = it->clone();
+            it++;
+            return chunk;
+        }
     else
         return {};
 }
