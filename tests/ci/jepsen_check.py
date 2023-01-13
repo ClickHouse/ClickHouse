@@ -11,20 +11,21 @@ import boto3  # type: ignore
 import requests  # type: ignore
 from github import Github
 
+from build_download_helper import get_build_name_for_check
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from commit_status_helper import post_commit_status
+from compress_files import compress_fast
 from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
-from stopwatch import Stopwatch
-from upload_result_helper import upload_results
-from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
-from compress_files import compress_fast
-from commit_status_helper import post_commit_status
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from version_helper import get_version_from_repo
-from tee_popen import TeePopen
-from ssh import SSHKey
-from build_download_helper import get_build_name_for_check
+from report import TestResults, TestResult
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from ssh import SSHKey
+from stopwatch import Stopwatch
+from tee_popen import TeePopen
+from upload_result_helper import upload_results
+from version_helper import get_version_from_repo
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -44,8 +45,8 @@ CRASHED_TESTS_ANCHOR = "# Crashed tests"
 FAILED_TESTS_ANCHOR = "# Failed tests"
 
 
-def _parse_jepsen_output(path):
-    test_results = []
+def _parse_jepsen_output(path: str) -> TestResults:
+    test_results = []  # type: TestResults
     current_type = ""
     with open(path, "r") as f:
         for line in f:
@@ -59,7 +60,7 @@ def _parse_jepsen_output(path):
             if (
                 line.startswith("store/clickhouse") or line.startswith("clickhouse")
             ) and current_type:
-                test_results.append((line.strip(), current_type))
+                test_results.append(TestResult(line.strip(), current_type))
 
     return test_results
 
@@ -266,20 +267,20 @@ if __name__ == "__main__":
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
-        if any(r[1] == "FAIL" for r in test_result):
+        if any(r.status == "FAIL" for r in test_result):
             status = "failure"
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
         compress_fast(
             os.path.join(result_path, "store"),
-            os.path.join(result_path, "jepsen_store.tar.gz"),
+            os.path.join(result_path, "jepsen_store.tar.zst"),
         )
-        additional_data.append(os.path.join(result_path, "jepsen_store.tar.gz"))
+        additional_data.append(os.path.join(result_path, "jepsen_store.tar.zst"))
     except Exception as ex:
         print("Exception", ex)
         status = "failure"
         description = "No Jepsen output log"
-        test_result = [("No Jepsen output log", "FAIL")]
+        test_result = [TestResult("No Jepsen output log", "FAIL")]
 
     s3_helper = S3Helper()
     report_url = upload_results(
