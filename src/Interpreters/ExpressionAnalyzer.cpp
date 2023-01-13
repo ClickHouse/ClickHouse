@@ -75,6 +75,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -158,11 +159,13 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     size_t subquery_depth_,
     bool do_global,
     bool is_explain,
-    PreparedSetsPtr prepared_sets_)
+    PreparedSetsPtr prepared_sets_,
+    bool is_create_parameterized_view_)
     : WithContext(context_)
     , query(query_), settings(getContext()->getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
+    , is_create_parameterized_view(is_create_parameterized_view_)
 {
     /// Cache prepared sets because we might run analysis multiple times
     if (prepared_sets_)
@@ -554,7 +557,9 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         false /* no_makeset */,
         only_consts,
         !isRemoteStorage() /* create_source_for_in */,
-        getAggregationKeysInfo());
+        getAggregationKeysInfo(),
+        false /* build_expression_with_window_functions */,
+        is_create_parameterized_view);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -573,7 +578,9 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         true /* no_makeset */,
         only_consts,
         !isRemoteStorage() /* create_source_for_in */,
-        getAggregationKeysInfo());
+        getAggregationKeysInfo(),
+        false /* build_expression_with_window_functions */,
+        is_create_parameterized_view);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -594,7 +601,9 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         false /* no_makeset */,
         only_consts,
         true /* create_source_for_in */,
-        getAggregationKeysInfo());
+        getAggregationKeysInfo(),
+        false /* build_expression_with_window_functions */,
+        is_create_parameterized_view);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -1511,6 +1520,7 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActionsForHaving(select_query->having(), only_types, step.actions());
+
     step.addRequiredOutput(select_query->having()->getColumnName());
 
     return true;
@@ -1961,7 +1971,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     ExpressionActions(
                         before_where,
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
-                    auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
+
+                    auto & column_elem
+                        = before_where_sample.getByName(query.where()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
                         where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
