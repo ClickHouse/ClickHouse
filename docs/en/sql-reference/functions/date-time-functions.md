@@ -207,9 +207,16 @@ Converts a date or date with time to a UInt8 number containing the number of the
 
 Aliases: `DAYOFMONTH`, `DAY`.
 
-## toDayOfWeek
+## toDayOfWeek(date\[,mode\])
 
-Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
+Converts a date or date with time to a UInt8 number containing the number of the day of the week. The two-argument form of toDayOfWeek() enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or from 1-7. If the mode argument is ommited, the default mode is 0.
+
+| Mode | First day of week | Range                                          |
+|------|-------------------|------------------------------------------------|
+| 0    | Monday            | 1-7, Monday = 1, Tuesday = 2, ..., Sunday = 7  |
+| 1    | Monday            | 0-6, Monday = 0, Tuesday = 1, ..., Sunday = 6  |
+| 2    | Sunday            | 0-6, Sunday = 0, Monday = 1, ..., Saturday = 6 |
+| 3    | Sunday            | 1-7, Sunday = 1, Monday = 2, ..., Saturday = 7 |
 
 Alias: `DAYOFWEEK`.
 
