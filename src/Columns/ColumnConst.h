@@ -230,14 +230,14 @@ public:
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(ColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
-        callback(data);
+        callback(*data);
         data->forEachSubcolumnRecursively(callback);
     }
 

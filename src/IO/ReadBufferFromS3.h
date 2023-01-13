@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/RangeGenerator.h>
+#include <Storages/StorageS3Settings.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -33,7 +34,7 @@ private:
     String bucket;
     String key;
     String version_id;
-    UInt64 max_single_read_retries;
+    const S3Settings::RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
     /// (where it is not important to get consistent result)
@@ -52,7 +53,7 @@ public:
         const String & bucket_,
         const String & key_,
         const String & version_id_,
-        UInt64 max_single_read_retries_,
+        const S3Settings::RequestSettings & request_settings_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
         size_t offset_ = 0,
@@ -100,7 +101,7 @@ public:
         const String & version_id_,
         size_t range_step_,
         size_t object_size_,
-        UInt64 s3_max_single_read_retries_,
+        const S3Settings::RequestSettings & request_settings_,
         const ReadSettings & read_settings_)
         : client_ptr(client_ptr_)
         , bucket(bucket_)
@@ -110,7 +111,7 @@ public:
         , range_generator(object_size_, range_step_)
         , range_step(range_step_)
         , object_size(object_size_)
-        , s3_max_single_read_retries(s3_max_single_read_retries_)
+        , request_settings(request_settings_)
     {
         assert(range_step > 0);
         assert(range_step < object_size);
@@ -135,7 +136,7 @@ private:
     size_t range_step;
     size_t object_size;
 
-    UInt64 s3_max_single_read_retries;
+    const S3Settings::RequestSettings request_settings;
 };
 
 }

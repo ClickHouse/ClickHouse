@@ -156,6 +156,8 @@ private:
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
             AttributeContainerType<UUID>,
+            AttributeContainerType<IPv4>,
+            AttributeContainerType<IPv6>,
             AttributeContainerType<StringRef>,
             AttributeContainerType<Array>>
             container;

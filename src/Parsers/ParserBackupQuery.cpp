@@ -1,5 +1,6 @@
 #include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -207,7 +208,11 @@ namespace
 
     bool parseBackupName(IParser::Pos & pos, Expected & expected, ASTPtr & backup_name)
     {
-        return ParserIdentifierWithOptionalParameters{}.parse(pos, backup_name, expected);
+        if (!ParserIdentifierWithOptionalParameters{}.parse(pos, backup_name, expected))
+            return false;
+
+        backup_name->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+        return true;
     }
 
     bool parseBaseBackupSetting(IParser::Pos & pos, Expected & expected, ASTPtr & base_backup_name)
@@ -358,10 +363,15 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->kind = kind;
     query->elements = std::move(elements);
     query->cluster = std::move(cluster);
-    query->backup_name = std::move(backup_name);
+
+    if (backup_name)
+        query->set(query->backup_name, backup_name);
+
     query->settings = std::move(settings);
-    query->base_backup_name = std::move(base_backup_name);
     query->cluster_host_ids = std::move(cluster_host_ids);
+
+    if (base_backup_name)
+        query->set(query->base_backup_name, base_backup_name);
 
     return true;
 }

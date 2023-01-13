@@ -14,12 +14,15 @@
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
+#include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
+#include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <Interpreters/Context.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/Exception.h>
 
@@ -43,6 +46,23 @@ namespace
 class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
 {
     String pass_name;
+
+    void visitColumn(ColumnNode * column) const
+    {
+        if (column->getColumnSourceOrNull() == nullptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} {} query tree node does not have valid source node after running {} pass",
+                column->getColumnName(), column->getColumnType(), pass_name);
+    }
+
+    void visitFunction(FunctionNode * function) const
+    {
+        if (!function->isResolved())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Function {} is not resolved after running {} pass",
+            function->toAST()->formatForErrorMessage(), pass_name);
+    }
+
 public:
     explicit ValidationChecker(String pass_name_)
         : pass_name(std::move(pass_name_))
@@ -50,13 +70,10 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
-        auto * column = node->as<ColumnNode>();
-        if (!column)
-            return;
-        if (column->getColumnSourceOrNull() == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column {} {} query tree node does not have valid source node after running {} pass",
-                column->getColumnName(), column->getColumnType(), pass_name);
+        if (auto * column = node->as<ColumnNode>())
+            return visitColumn(column);
+        else if (auto * function = node->as<FunctionNode>())
+            return visitFunction(function);
     }
 };
 #endif
@@ -75,9 +92,7 @@ public:
   * TODO: Support setting optimize_move_functions_out_of_any.
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
-  * TODO: Support setting optimize_redundant_functions_in_order_by.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
-  * TODO: Support setting optimize_if_transform_strings_to_enum.
   * TODO: Support settings.optimize_or_like_chain.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
@@ -188,11 +203,17 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     if (settings.optimize_if_chain_to_multiif)
         manager.addPass(std::make_unique<IfChainToMultiIfPass>());
 
+    if (settings.optimize_redundant_functions_in_order_by)
+        manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
+
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
 
     if (settings.optimize_syntax_fuse_functions)
         manager.addPass(std::make_unique<FuseFunctionsPass>());
+
+    if (settings.optimize_if_transform_strings_to_enum)
+        manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
 }
 
 }

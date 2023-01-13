@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
 
-void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     const String & s = field.get<const String &>();
     ostr.write(s.data(), std::min(s.size(), n));
@@ -36,7 +36,7 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 }
 
 
-void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = String();
     String & s = field.get<String &>();
@@ -45,13 +45,13 @@ void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & ist
 }
 
 
-void SerializationFixedString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationFixedString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     ostr.write(reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n);
 }
 
 
-void SerializationFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnFixedString::Chars & data = assert_cast<ColumnFixedString &>(column).getChars();
     size_t old_size = data.size();

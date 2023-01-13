@@ -10,6 +10,6 @@ alter table t detach partition 1;
 
 alter table t attach partition 1;
 
-select count() from system.projection_parts where database = currentDatabase() and table = 't';
+select count() from system.projection_parts where database = currentDatabase() and table = 't' and active;
 
 drop table t;

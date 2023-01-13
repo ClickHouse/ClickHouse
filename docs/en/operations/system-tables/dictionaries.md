@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/dictionaries
 ---
 # dictionaries
 
-Contains information about [external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+Contains information about [dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 Columns:
 
@@ -33,7 +33,7 @@ Columns:
 -   `lifetime_min` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Minimum [lifetime](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
 -   `lifetime_max` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Maximum [lifetime](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
 -   `loading_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
--   `last_successful_update_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with external sources and investigate causes.
+-   `last_successful_update_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes.
 -   `loading_duration` ([Float32](../../sql-reference/data-types/float.md)) — Duration of a dictionary loading.
 -   `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
 -   `comment` ([String](../../sql-reference/data-types/string.md)) — Text of the comment to dictionary.
