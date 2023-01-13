@@ -32,14 +32,14 @@ public:
     * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
     * it until it is full and then allocate next file segment.
     */
-    bool write(const char * data, size_t size, size_t offset, bool is_persistent);
+    bool write(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind);
 
     void finalize();
 
     ~FileSegmentRangeWriter();
 
 private:
-    FileSegmentPtr & allocateFileSegment(size_t offset, bool is_persistent);
+    FileSegmentPtr & allocateFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void appendFilesystemCacheLog(const FileSegment & file_segment);
 
