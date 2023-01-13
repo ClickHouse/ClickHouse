@@ -25,6 +25,7 @@ CentOS
 ClickHouse
 ClickHouse's
 Config
+ConnectionDetails
 Contrib
 Ctrl
 CustomSeparated
@@ -32,6 +33,7 @@ CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBMSs
 DateTime
+DateTimes
 DockerHub
 Doxygen
 Encodings
@@ -54,6 +56,7 @@ IPv
 IntN
 Integrations
 JSONAsString
+JSONAsObject
 JSONColumns
 JSONColumnsWithMetadata
 JSONCompact
@@ -97,6 +100,7 @@ MySQLDump
 NEKUDOTAYIM
 NULLIF
 NVME
+NYPD
 NuRaft
 ObjectId
 Ok
@@ -110,13 +114,13 @@ Precompiled
 PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
-PrettyNoEscapes
-PrettySpace
-PrettySpaceNoEscapes
 PrettyCompactNoEscapesMonoBlock
 PrettyMonoBlock
+PrettyNoEscapes
 PrettyNoEscapesMonoBlock
+PrettySpace
 PrettySpaceMonoBlock
+PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
@@ -124,6 +128,7 @@ QTCreator
 RBAC
 RawBLOB
 RedHat
+ReplicatedMergeTree
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
@@ -136,6 +141,7 @@ SQLInsert
 SQLSTATE
 SSSE
 Schemas
+SelfManaged
 Stateful
 Submodules
 Subqueries
@@ -167,6 +173,7 @@ Werror
 Woboq
 WriteBuffer
 WriteBuffers
+WithNamesAndTypes
 XCode
 YAML
 YYYY
@@ -193,9 +200,9 @@ boolean
 bools
 boringssl
 brotli
-buildable
 bson
 bsoneachrow
+buildable
 camelCase
 capn
 capnproto
@@ -206,6 +213,7 @@ ccache
 cctz
 cfg
 changelog
+changelogs
 charset
 charsets
 checkouting
@@ -242,11 +250,13 @@ datafiles
 dataset
 datasets
 datetime
+datetimes
 dbms
 ddl
 deallocation
 debian
 decompressor
+denormalizing
 denormals
 deserialization
 deserialized
@@ -355,6 +365,7 @@ mysqldump
 mysqljs
 noop
 nullable
+nullability
 num
 obfuscator
 odbc
@@ -385,13 +396,13 @@ prestable
 prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
-prettynoescapes
-prettyspace
-prettyspacenoescapes
 prettycompactnoescapesmonoblock
 prettymonoblock
+prettynoescapes
 prettynoescapesmonoblock
+prettyspace
 prettyspacemonoblock
+prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prlimit
 prometheus
@@ -414,6 +425,7 @@ representable
 requestor
 resultset
 rethrow
+retriable
 risc
 riscv
 ro
@@ -423,6 +435,7 @@ rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
 rsync
+runnable
 runningAccumulate
 runtime
 russian
@@ -475,12 +488,15 @@ th
 tmp
 tokenization
 toml
+toolchain
 toolset
 tskv
 tsv
 tui
 turbostat
 txt
+ubuntu
+uint
 unary
 unencrypted
 unixodbc
@@ -489,7 +505,6 @@ userspace
 userver
 utils
 uuid
-uint
 variadic
 varint
 vectorized
@@ -510,7 +525,3 @@ zkcopy
 zlib
 znodes
 zstd
-NYPD
-denormalizing
-ConnectionDetails
-SelfManaged

@@ -20,6 +20,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/getResource.h>
+#include <Common/XMLUtils.h>
 #include <base/errnoToString.h>
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
@@ -121,16 +122,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
 
 static Node * getRootNode(Document * document)
 {
-    const NodeListPtr children = document->childNodes();
-    for (Node * child = children->item(0); child; child = child->nextSibling())
-    {
-        /// Besides the root element there can be comment nodes on the top level.
-        /// Skip them.
-        if (child->nodeType() == Node::ELEMENT_NODE)
-            return child;
-    }
-
-    throw Poco::Exception("No root node in document");
+    return XMLUtils::getRootNode(document);
 }
 
 static bool allWhitespace(const std::string & s)

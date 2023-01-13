@@ -8,6 +8,7 @@
 #include <IO/IOThreadPool.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
@@ -23,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -34,7 +36,7 @@ namespace
         auto settings = context->getStorageS3Settings().getSettings(s3_uri.uri.toString());
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-        HeaderCollection headers;
+        HTTPHeaderEntries headers;
         if (access_key_id.empty())
         {
             credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key);
@@ -78,6 +80,12 @@ namespace
         if (!outcome.IsSuccess())
             throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
         return outcome.GetResult().GetContents();
+    }
+
+    bool isNotFoundError(Aws::S3::S3Errors error)
+    {
+        return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND
+            || error == Aws::S3::S3Errors::NO_SUCH_KEY;
     }
 }
 
@@ -128,7 +136,7 @@ BackupWriterS3::BackupWriterS3(
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
     , log(&Poco::Logger::get("BackupWriterS3"))
 {
-    request_settings.updateFromSettingsIfEmpty(context_->getSettingsRef());
+    request_settings.updateFromSettings(context_->getSettingsRef());
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
 
@@ -166,7 +174,8 @@ void BackupWriterS3::copyObjectImpl(
 
     auto outcome = client->CopyObject(request);
 
-    if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "EntityTooLarge")
+    if (!outcome.IsSuccess() && (outcome.GetError().GetExceptionName() == "EntityTooLarge"
+            || outcome.GetError().GetExceptionName() == "InvalidRequest"))
     { // Can't come here with MinIO, MinIO allows single part upload for large objects.
         copyObjectMultipartImpl(src_bucket, src_key, dst_bucket, dst_key, head, metadata);
         return;
@@ -175,15 +184,6 @@ void BackupWriterS3::copyObjectImpl(
     if (!outcome.IsSuccess())
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 
-}
-
-Aws::S3::Model::HeadObjectOutcome BackupWriterS3::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
-{
-    Aws::S3::Model::HeadObjectRequest request;
-    request.SetBucket(bucket_from);
-    request.SetKey(key);
-
-    return client->HeadObject(request);
 }
 
 void BackupWriterS3::copyObjectMultipartImpl(
@@ -217,12 +217,26 @@ void BackupWriterS3::copyObjectMultipartImpl(
     std::vector<String> part_tags;
 
     size_t position = 0;
-    size_t upload_part_size = request_settings.min_upload_part_size;
+    const auto & settings = request_settings.getUploadSettings();
+    size_t upload_part_size = settings.min_upload_part_size;
 
     for (size_t part_number = 1; position < size; ++part_number)
     {
+        /// Check that part number is not too big.
+        if (part_number > settings.max_part_number)
+        {
+            throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
+                "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_operation_copy_size = {}",
+                settings.max_part_number, size, settings.min_upload_part_size, settings.max_upload_part_size,
+                settings.upload_part_size_multiply_factor, settings.upload_part_size_multiply_parts_count_threshold,
+                settings.max_single_operation_copy_size);
+        }
+
         size_t next_position = std::min(position + upload_part_size, size);
 
+        /// Make a copy request to copy a part.
         Aws::S3::Model::UploadPartCopyRequest part_request;
         part_request.SetCopySource(src_bucket + "/" + src_key);
         part_request.SetBucket(dst_bucket);
@@ -249,10 +263,11 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
         position = next_position;
 
-        if (part_number % request_settings.upload_part_size_multiply_parts_count_threshold == 0)
+        /// Maybe increase `upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
+        if (part_number % settings.upload_part_size_multiply_parts_count_threshold == 0)
         {
-            upload_part_size *= request_settings.upload_part_size_multiply_factor;
-            upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
+            upload_part_size *= settings.upload_part_size_multiply_factor;
+            upload_part_size = std::min(upload_part_size, settings.max_upload_part_size);
         }
     }
 
@@ -294,8 +309,8 @@ void BackupWriterS3::copyFileNative(DiskPtr from_disk, const String & file_name_
         std::string source_bucket = object_storage->getObjectsNamespace();
         auto file_path = fs::path(s3_uri.key) / file_name_to;
 
-        auto head = requestObjectHeadData(source_bucket, objects[0].absolute_path).GetResult();
-        if (static_cast<size_t>(head.GetContentLength()) < request_settings.max_single_operation_copy_size)
+        auto head = S3::headObject(*client, source_bucket, objects[0].absolute_path).GetResult();
+        if (static_cast<size_t>(head.GetContentLength()) < request_settings.getUploadSettings().max_single_operation_copy_size)
         {
             copyObjectImpl(
                 source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
@@ -356,7 +371,48 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
 }
 
+void BackupWriterS3::removeFile(const String & file_name)
+{
+    Aws::S3::Model::DeleteObjectRequest request;
+    request.SetBucket(s3_uri.bucket);
+    request.SetKey(fs::path(s3_uri.key) / file_name);
+    auto outcome = client->DeleteObject(request);
+    if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
+        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+}
+
 void BackupWriterS3::removeFiles(const Strings & file_names)
+{
+    try
+    {
+        if (!supports_batch_delete.has_value() || supports_batch_delete.value() == true)
+        {
+            removeFilesBatch(file_names);
+            supports_batch_delete = true;
+        }
+        else
+        {
+            for (const auto & file_name : file_names)
+                removeFile(file_name);
+        }
+    }
+    catch (const Exception &)
+    {
+        if (!supports_batch_delete.has_value())
+        {
+            supports_batch_delete = false;
+            LOG_TRACE(log, "DeleteObjects is not supported. Retrying with plain DeleteObject.");
+
+            for (const auto & file_name : file_names)
+                removeFile(file_name);
+        }
+        else
+            throw;
+    }
+
+}
+
+void BackupWriterS3::removeFilesBatch(const Strings & file_names)
 {
     /// One call of DeleteObjects() cannot remove more than 1000 keys.
     size_t chunk_size_limit = 1000;
@@ -379,7 +435,7 @@ void BackupWriterS3::removeFiles(const Strings & file_names)
         request.SetDelete(delkeys);
 
         auto outcome = client->DeleteObjects(request);
-        if (!outcome.IsSuccess())
+        if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
             throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
     }
 }

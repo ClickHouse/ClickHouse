@@ -3,8 +3,13 @@
 #include <chrono>
 #include <mutex>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <Interpreters/ProcessList.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric ThreadsInOvercommitTracker;
+}
 
 namespace ProfileEvents
 {
@@ -32,6 +37,8 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
 
     if (OvercommitTrackerBlockerInThread::isBlocked())
         return OvercommitResult::NONE;
+
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::ThreadsInOvercommitTracker);
     // NOTE: Do not change the order of locks
     //
     // global mutex must be acquired before overcommit_m, because

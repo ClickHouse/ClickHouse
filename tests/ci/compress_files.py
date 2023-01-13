@@ -5,19 +5,24 @@ import os
 
 
 def compress_file_fast(path, archive_path):
-    if os.path.exists("/usr/bin/pigz"):
+    if archive_path.endswith(".zst"):
+        subprocess.check_call("zstd < {} > {}".format(path, archive_path), shell=True)
+    elif os.path.exists("/usr/bin/pigz"):
         subprocess.check_call("pigz < {} > {}".format(path, archive_path), shell=True)
     else:
         subprocess.check_call("gzip < {} > {}".format(path, archive_path), shell=True)
 
 
 def compress_fast(path, archive_path, exclude=None):
-    pigz_part = ""
-    if os.path.exists("/usr/bin/pigz"):
+    program_part = ""
+    if archive_path.endswith(".zst"):
+        logging.info("zstd will be used for compression")
+        program_part = "--use-compress-program='zstd --threads=0'"
+    elif os.path.exists("/usr/bin/pigz"):
         logging.info("pigz found, will compress and decompress faster")
-        pigz_part = "--use-compress-program='pigz'"
+        program_part = "--use-compress-program='pigz'"
     else:
-        pigz_part = "-z"
+        program_part = "-z"
         logging.info("no pigz, compressing with default tar")
 
     if exclude is None:
@@ -32,24 +37,32 @@ def compress_fast(path, archive_path, exclude=None):
         path = os.path.dirname(path)
     else:
         path += "/.."
+
     cmd = "tar {} {} -cf {} -C {} {}".format(
-        pigz_part, exclude_part, archive_path, path, fname
+        program_part, exclude_part, archive_path, path, fname
     )
     logging.debug("compress_fast cmd: %s", cmd)
     subprocess.check_call(cmd, shell=True)
 
 
 def decompress_fast(archive_path, result_path=None):
-    pigz_part = ""
-    if os.path.exists("/usr/bin/pigz"):
+    program_part = ""
+    if archive_path.endswith(".zst"):
+        logging.info(
+            "zstd will be used for decompression ('%s' -> '%s')",
+            archive_path,
+            result_path,
+        )
+        program_part = "--use-compress-program='zstd --threads=0'"
+    elif os.path.exists("/usr/bin/pigz"):
         logging.info(
             "pigz found, will compress and decompress faster ('%s' -> '%s')",
             archive_path,
             result_path,
         )
-        pigz_part = "--use-compress-program='pigz'"
+        program_part = "--use-compress-program='pigz'"
     else:
-        pigz_part = "-z"
+        program_part = "-z"
         logging.info(
             "no pigz, decompressing with default tar ('%s' -> '%s')",
             archive_path,
@@ -58,10 +71,10 @@ def decompress_fast(archive_path, result_path=None):
 
     if result_path is None:
         subprocess.check_call(
-            "tar {} -xf {}".format(pigz_part, archive_path), shell=True
+            "tar {} -xf {}".format(program_part, archive_path), shell=True
         )
     else:
         subprocess.check_call(
-            "tar {} -xf {} -C {}".format(pigz_part, archive_path, result_path),
+            "tar {} -xf {} -C {}".format(program_part, archive_path, result_path),
             shell=True,
         )

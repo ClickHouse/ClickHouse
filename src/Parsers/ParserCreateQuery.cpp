@@ -9,6 +9,7 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -1381,6 +1382,59 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 
+}
+
+bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_create("CREATE");
+    ParserKeyword s_attach("ATTACH");
+    ParserKeyword s_named_collection("NAMED COLLECTION");
+    ParserKeyword s_as("AS");
+
+    ParserToken s_comma(TokenType::Comma);
+    ParserIdentifier name_p;
+
+    ASTPtr collection_name;
+    String cluster_str;
+
+    if (!s_create.ignore(pos, expected))
+        return false;
+
+    if (!s_named_collection.ignore(pos, expected))
+        return false;
+
+    if (!name_p.parse(pos, collection_name, expected))
+        return false;
+
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            return false;
+    }
+
+    if (!s_as.ignore(pos, expected))
+        return false;
+
+    SettingsChanges changes;
+
+    while (true)
+    {
+        if (!changes.empty() && !s_comma.ignore(pos))
+            break;
+
+        changes.push_back(SettingChange{});
+
+        if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
+            return false;
+    }
+
+    auto query = std::make_shared<ASTCreateNamedCollectionQuery>();
+
+    tryGetIdentifierNameInto(collection_name, query->collection_name);
+    query->changes = changes;
+
+    node = query;
+    return true;
 }
 
 bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)

@@ -37,6 +37,11 @@ UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
     else
         output_stream = DataStream{.header = header};
 
+    updateOutputSortDescription();
+}
+
+void UnionStep::updateOutputSortDescription()
+{
     SortDescription common_sort_description = input_streams.front().sort_description;
     DataStream::SortScope sort_scope = input_streams.front().sort_scope;
     for (const auto & input_stream : input_streams)
@@ -57,10 +62,10 @@ UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
 QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
-    QueryPipelineProcessorsCollector collector(*pipeline, this);
 
     if (pipelines.empty())
     {
+        QueryPipelineProcessorsCollector collector(*pipeline, this);
         pipeline->init(Pipe(std::make_shared<NullSource>(output_stream->header)));
         processors = collector.detachProcessors();
         return pipeline;
@@ -75,6 +80,7 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
         /// But, just in case, convert it to the same header if not.
         if (!isCompatibleHeader(cur_pipeline->getHeader(), getOutputStream().header))
         {
+            QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
                 getOutputStream().header.getColumnsWithTypeAndName(),
@@ -85,12 +91,13 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
             {
                 return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
             });
+
+            auto added_processors = collector.detachProcessors();
+            processors.insert(processors.end(), added_processors.begin(), added_processors.end());
         }
     }
 
-    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads);
-
-    processors = collector.detachProcessors();
+    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads, &processors);
     return pipeline;
 }
 

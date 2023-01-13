@@ -21,12 +21,11 @@ Subquery is another `SELECT` query that may be specified in parenthesis inside `
 
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
 
-It is applicable when selecting data from tables that use the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-engine family. Also supported for:
+It is applicable when selecting data from ReplacingMergeTree, SummingMergeTree, AggregatingMergeTree, CollapsingMergeTree and VersionedCollapsingMergeTree tables.
 
--   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) versions of `MergeTree` engines.
--   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
+`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
 
-Now `SELECT` queries with `FINAL` are executed in parallel and slightly faster. But there are drawbacks (see below). The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
+There are drawbacks to using `FINAL` (see below). 
 
 ### Drawbacks
 
