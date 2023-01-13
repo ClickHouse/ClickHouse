@@ -331,7 +331,7 @@ Chain buildPushingToViewsChain(
             Block header;
             if (context->getSettingsRef().allow_experimental_analyzer)
             {
-                header = InterpreterSelectQueryAnalyzer(query, SelectQueryOptions().analyze(), select_context).getSampleBlock();
+                header = InterpreterSelectQueryAnalyzer(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
             }
             else
             {
@@ -488,7 +488,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     QueryPipelineBuilder pipeline;
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        InterpreterSelectQueryAnalyzer select(view.query, SelectQueryOptions(), local_context);
+        InterpreterSelectQueryAnalyzer select(view.query, local_context, SelectQueryOptions());
         pipeline = select.buildQueryPipeline();
     }
     else

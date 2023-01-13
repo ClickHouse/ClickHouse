@@ -76,7 +76,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             if (getContext()->getSettingsRef().allow_experimental_analyzer)
             {
                 InterpreterSelectQueryAnalyzer interpreter_analyzer_select(
-                    query.select, SelectQueryOptions(QueryProcessingStage::Complete, 1), getContext());
+                    query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1));
                 auto tmp_pipeline = interpreter_analyzer_select.buildQueryPipeline();
                 ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
                 table_function_ptr->setStructureHint(structure_hint);
@@ -399,7 +399,7 @@ BlockIO InterpreterInsertQuery::execute()
                 if (getContext()->getSettingsRef().allow_experimental_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter_analyzer_select(
-                        query.select, SelectQueryOptions(QueryProcessingStage::Complete, 1), new_context);
+                        query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1));
                     pipeline = interpreter_analyzer_select.buildQueryPipeline();
                 }
                 else
@@ -415,7 +415,7 @@ BlockIO InterpreterInsertQuery::execute()
                 if (getContext()->getSettingsRef().allow_experimental_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter_analyzer_select(
-                        query.select, SelectQueryOptions(QueryProcessingStage::Complete, 1), getContext());
+                        query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1));
                     pipeline = interpreter_analyzer_select.buildQueryPipeline();
                 }
                 else
