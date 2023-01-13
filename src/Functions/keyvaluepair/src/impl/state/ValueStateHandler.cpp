@@ -14,7 +14,7 @@ ValueStateHandler::ValueStateHandler(
 {
 }
 
-NextState ValueStateHandler::wait(const std::string & file, size_t pos) const
+NextState ValueStateHandler::wait(std::string_view file, size_t pos) const
 {
     while (pos < file.size())
     {
@@ -41,7 +41,7 @@ NextState ValueStateHandler::wait(const std::string & file, size_t pos) const
     return {pos, State::READING_EMPTY_VALUE};
 }
 
-NextState ValueStateHandler::read(const std::string & file, size_t pos, std::string_view & value)
+NextState ValueStateHandler::read(const std::string_view file, size_t pos, std::string_view & value)
 {
     bool escape = false;
 
@@ -73,7 +73,7 @@ NextState ValueStateHandler::read(const std::string & file, size_t pos, std::str
     return {pos, State::FLUSH_PAIR};
 }
 
-NextState ValueStateHandler::readEnclosed(const std::string & file, size_t pos, std::string_view & value)
+NextState ValueStateHandler::readEnclosed(std::string_view file, size_t pos, std::string_view & value)
 {
     auto start_index = pos;
 
@@ -92,7 +92,7 @@ NextState ValueStateHandler::readEnclosed(const std::string & file, size_t pos, 
     return {pos, State::END};
 }
 
-NextState ValueStateHandler::readEmpty(const std::string &, size_t pos, std::string_view & value)
+NextState ValueStateHandler::readEmpty(std::string_view, size_t pos, std::string_view & value)
 {
     value = {};
     return {pos + 1, State::FLUSH_PAIR};
@@ -100,7 +100,7 @@ NextState ValueStateHandler::readEmpty(const std::string &, size_t pos, std::str
 
 bool ValueStateHandler::isValidCharacter(char character) const
 {
-    return special_character_allowlist.contains(character) || std::isalnum(character) || character == '_';
+    return /*special_character_allowlist.contains(character) ||*/ std::isalnum(character) || character == '_';
 }
 
 }

@@ -8,7 +8,7 @@ KeyStateHandler::KeyStateHandler(char key_value_delimiter_, char escape_characte
 {
 }
 
-NextState KeyStateHandler::wait(const std::string & file, size_t pos) const
+NextState KeyStateHandler::wait(std::string_view file, size_t pos)
 {
     while (pos < file.size())
     {
@@ -17,7 +17,7 @@ NextState KeyStateHandler::wait(const std::string & file, size_t pos) const
         {
             return {pos, State::READING_KEY};
         }
-        else if (enclosing_character && current_character == enclosing_character)
+        else if (current_character == '"')
         {
             return {pos + 1u, State::READING_ENCLOSED_KEY};
         }
@@ -30,7 +30,7 @@ NextState KeyStateHandler::wait(const std::string & file, size_t pos) const
     return {pos, State::END};
 }
 
-NextState KeyStateHandler::read(const std::string & file, size_t pos, std::string_view & key)
+NextState KeyStateHandler::read(std::string_view file, size_t pos, std::string_view & key)
 {
     bool escape = false;
 
@@ -45,11 +45,11 @@ NextState KeyStateHandler::read(const std::string & file, size_t pos, std::strin
         {
             escape = false;
         }
-        else if (escape_character == current_character)
+        else if ('\\' == current_character)
         {
             escape = true;
         }
-        else if (current_character == key_value_delimiter)
+        else if (current_character == '=')
         {
             // not checking for empty key because with current waitKey implementation
             // there is no way this piece of code will be reached for the very first key character
@@ -65,7 +65,7 @@ NextState KeyStateHandler::read(const std::string & file, size_t pos, std::strin
     return {pos, State::END};
 }
 
-NextState KeyStateHandler::readEnclosed(const std::string & file, size_t pos, std::string_view & key)
+NextState KeyStateHandler::readEnclosed(std::string_view file, size_t pos, std::string_view & key)
 {
     auto start_index = pos;
     key = {};
@@ -74,7 +74,7 @@ NextState KeyStateHandler::readEnclosed(const std::string & file, size_t pos, st
     {
         const auto current_character = file[pos++];
 
-        if (enclosing_character == current_character)
+        if ('"' == current_character)
         {
             auto is_key_empty = start_index == pos;
 
@@ -91,7 +91,7 @@ NextState KeyStateHandler::readEnclosed(const std::string & file, size_t pos, st
     return {pos, State::END};
 }
 
-NextState KeyStateHandler::readKeyValueDelimiter(const std::string & file, size_t pos) const
+NextState KeyStateHandler::readKeyValueDelimiter(std::string_view file, size_t pos)
 {
     if (pos == file.size())
     {
@@ -100,7 +100,7 @@ NextState KeyStateHandler::readKeyValueDelimiter(const std::string & file, size_
     else
     {
         const auto current_character = file[pos++];
-        return {pos, current_character == key_value_delimiter ? State::WAITING_VALUE : State::WAITING_KEY};
+        return {pos, current_character == '=' ? State::WAITING_VALUE : State::WAITING_KEY};
     }
 }
 

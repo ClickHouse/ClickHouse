@@ -14,13 +14,13 @@ class KeyStateHandler : StateHandler
 public:
     KeyStateHandler(char key_value_delimiter, char escape_character, std::optional<char> enclosing_character);
 
-    [[nodiscard]] NextState wait(const std::string & file, size_t pos) const;
-    [[nodiscard]] NextState read(const std::string & file, size_t pos, std::string_view & key);
-    [[nodiscard]] NextState readEnclosed(const std::string & file, size_t pos, std::string_view & key);
-    [[nodiscard]] NextState readKeyValueDelimiter(const std::string & file, size_t pos) const;
+    [[nodiscard]] static NextState wait(std::string_view file, size_t pos) ;
+    [[nodiscard]] static NextState read(std::string_view file, size_t pos, std::string_view & key);
+    [[nodiscard]] static NextState readEnclosed(std::string_view file, size_t pos, std::string_view & key);
+    [[nodiscard]] static NextState readKeyValueDelimiter(std::string_view file, size_t pos);
 
 private:
-    const char key_value_delimiter;
+    [[maybe_unused]] const char key_value_delimiter;
 };
 
 }

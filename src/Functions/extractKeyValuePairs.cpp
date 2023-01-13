@@ -8,6 +8,11 @@
 #include <Functions/keyvaluepair/src/KeyValuePairExtractorBuilder.h>
 #include <Common/assert_cast.h>
 
+#include <chrono>
+
+/* Only needed for the sake of this example. */
+#include <iostream>
+
 namespace DB
 {
 
@@ -41,16 +46,46 @@ String ExtractKeyValuePairs::getName() const
 
 ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
+    using std::chrono::high_resolution_clock;
+    using std::chrono::duration_cast;
+    using std::chrono::duration;
+    using std::chrono::microseconds;
+
+//    auto t1 = high_resolution_clock::now();
+
     auto [data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list]
         = parseArguments(arguments);
 
     auto extractor = getExtractor(
         escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list);
 
+//    auto t2 = high_resolution_clock::now();
     auto raw_columns = extract(extractor, data_column);
 
-    // improve escape character..
-    return escape(raw_columns, escape_character ? escape_character.value() : '\\');
+    ColumnPtr keys_ptr = std::move(raw_columns.keys);
+//    auto t3 = high_resolution_clock::now();
+
+
+    auto map = ColumnMap::create(keys_ptr, std::move(raw_columns.values), std::move(raw_columns.offsets));
+//    auto t4 = high_resolution_clock::now();
+
+//    std::cout<<"Time taken for building extractor is: "<<duration_cast<microseconds>(t2 - t1).count()<<"u\n";
+//    std::cout<<"Time taken for building extracting & creating output is: "<<duration_cast<microseconds>(t3 - t2).count()<<"u\n";
+//    std::cout<<"Time taken for whole process is: "<<duration_cast<microseconds>(t4 - t1).count()<<"u\n";
+    return map;
+
+//    return raw_columns;
+
+//
+//    // improve escape character..
+//    auto escaped_out = escape(raw_columns, escape_character ? escape_character.value() : '\\');
+//    auto t3 = high_resolution_clock::now();
+//
+//
+//    std::cout<<"Time taken for extraction is: "<<duration_cast<microseconds>(t2 - t1).count()<<"u\n";
+//    std::cout<<"Time taken for escaping is: "<<duration_cast<microseconds>(t3 - t2).count()<<"u\n";
+//
+//    return escaped_out;
 }
 
 bool ExtractKeyValuePairs::isVariadic() const
@@ -183,19 +218,37 @@ std::shared_ptr<KeyValuePairExtractor<ExtractKeyValuePairs::EscapingProcessorOut
 
 ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column)
 {
+    using std::chrono::high_resolution_clock;
+    using std::chrono::duration_cast;
+    using std::chrono::duration;
+    using std::chrono::microseconds;
+
     auto offsets = ColumnUInt64::create();
 
     auto keys = ColumnString::create();
     auto values = ColumnString::create();
 
+//    keys->reserve(data_column->byteSize());
+//    values->reserve(data_column->byteSize());
+
     auto row_offset = 0u;
+
+//    long totalExtractionTime = 0;
+//    long shortestExtractionTime = std::numeric_limits<long>::max();
+//    long longestExtractionTime = std::numeric_limits<long>::min();
+//
+//    long totalInsertionTime = 0;
+//    long shortestInsertionTime = std::numeric_limits<long>::max();
+//    long longestInsertionTime = std::numeric_limits<long>::min();
+
 
     for (auto i = 0u; i < data_column->size(); i++)
     {
-        auto row = data_column->getDataAt(i).toString();
+        auto row = data_column->getDataAt(i).toView();
+//        auto t2 = high_resolution_clock::now();
 
-        // TODO avoid copying
         auto response = extractor->extract(row);
+//        auto t3 = high_resolution_clock::now();
 
         for (auto [key, value] : response)
         {
@@ -206,7 +259,45 @@ ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<K
         }
 
         offsets->insert(row_offset);
+
+//        auto t4 = high_resolution_clock::now();
+//
+//        long extractionTime = duration_cast<microseconds>(t3 - t2).count();
+//        long insertionTime = duration_cast<microseconds>(t4 - t3).count();
+//
+//        totalExtractionTime += extractionTime;
+//        totalInsertionTime += insertionTime;
+//
+//        if (extractionTime > longestExtractionTime)
+//        {
+//            longestExtractionTime = extractionTime;
+//        }
+//
+//        if (extractionTime < shortestExtractionTime)
+//        {
+//            shortestExtractionTime = extractionTime;
+//        }
+//
+//        if (insertionTime > longestInsertionTime)
+//        {
+//            longestInsertionTime = insertionTime;
+//        }
+//
+//        if (insertionTime < shortestInsertionTime)
+//        {
+//            shortestInsertionTime = insertionTime;
+//        }
     }
+
+//    if (!data_column->empty())
+//    {
+//        auto averageInsertionTime = totalInsertionTime / data_column->size();
+//        auto averageExtractionTime = totalExtractionTime / data_column->size();
+//
+//        std::cout<<"Longest extraction time: "<<longestExtractionTime<<" - Shortest extraction time: "<<shortestExtractionTime<<" - Average extraction time: "<<averageExtractionTime<<" - Total: "<<totalExtractionTime<<"\n";
+//        std::cout<<"Longest insertion time: "<<longestInsertionTime<<" - Shortest extraction time: "<<shortestInsertionTime<<" - Average insertion time: "<<averageInsertionTime<<" - Total: "<<totalInsertionTime<<"\n";
+//
+//    }
 
     return {std::move(keys), std::move(values), std::move(offsets)};
 }
@@ -217,6 +308,9 @@ ColumnPtr ExtractKeyValuePairs::escape(RawColumns & raw_columns, char escape_cha
 
     auto escaped_keys = ColumnString::create();
     auto escaped_values = ColumnString::create();
+
+    escaped_keys->reserve(raw_keys->size());
+    escaped_values->reserve(raw_values->size());
 
     auto escape_character_string = std::string(1, escape_character);
 
