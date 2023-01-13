@@ -17,7 +17,7 @@ struct StateHandler
     const std::optional<char> enclosing_character;
 
 protected:
-    [[nodiscard]] static std::string_view createElement(const std::string & file, std::size_t begin, std::size_t end);
+    [[nodiscard]] static std::string_view createElement(std::string_view file, std::size_t begin, std::size_t end);
 };
 
 }

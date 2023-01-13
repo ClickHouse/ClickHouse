@@ -34,6 +34,12 @@ public:
 
     [[nodiscard]] Response extract(const std::string & file) override
     {
+        auto view = std::string_view {file};
+        return extract(view);
+    }
+
+    [[nodiscard]] Response extract(const std::string_view & file) override
+    {
         std::unordered_map<std::string_view, std::string_view> response_views;
 
         auto state = State::WAITING_KEY;
@@ -55,7 +61,7 @@ public:
     }
 
 private:
-    NextState processState(const std::string & file, std::size_t pos, State state,
+    NextState processState(std::string_view file, std::size_t pos, State state,
                            std::string_view & key, std::string_view & value,
                            std::unordered_map<std::string_view, std::string_view> & response_views)
     {
@@ -84,7 +90,7 @@ private:
         }
     }
 
-    NextState flushPair(const std::string & file, std::size_t pos, std::string_view key,
+    NextState flushPair(const std::string_view & file, std::size_t pos, std::string_view key,
                         std::string_view value, std::unordered_map<std::string_view, std::string_view> & response_views)
     {
         response_views[key] = value;
