@@ -1964,7 +1964,34 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool
 
 void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed)
 {
+    if (parts_to_remove.empty())
+        return;
+
     const auto settings = getSettings();
+
+    auto remove_single_thread = [this, &parts_to_remove, part_names_succeed]()
+    {
+        LOG_DEBUG(
+            log, "Removing {} parts from filesystem (serially): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
+        for (const DataPartPtr & part : parts_to_remove)
+        {
+            preparePartForRemoval(part)->remove();
+            if (part_names_succeed)
+                part_names_succeed->insert(part->name);
+        }
+    };
+
+    if (settings->max_part_removal_threads <= 1 || parts_to_remove.size() <= settings->concurrent_part_removal_threshold)
+    {
+        remove_single_thread();
+        return;
+    }
+
+    /// Parallel parts removal.
+    size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
+    std::mutex part_names_mutex;
+    ThreadPool pool(num_threads);
+
     bool has_zero_copy_parts = false;
     if (settings->allow_remote_fs_zero_copy_replication && dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr)
     {
@@ -1974,22 +2001,16 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         );
     }
 
-    if (parts_to_remove.size() > 1
-        && settings->max_part_removal_threads > 1
-        && parts_to_remove.size() > settings->concurrent_part_removal_threshold
-        && !has_zero_copy_parts) /// parts must be removed in order for zero-copy replication
-    {
-        /// Parallel parts removal.
-        size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
-        std::mutex part_names_mutex;
-        ThreadPool pool(num_threads);
 
+    if (!has_zero_copy_parts)
+    {
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         LOG_DEBUG(
             log, "Removing {} parts from filesystem (concurrently): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
+
         for (const DataPartPtr & part : parts_to_remove)
         {
-            pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
+            pool.scheduleOrThrowOnError([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
             {
                 SCOPE_EXIT_SAFE(
                     if (thread_group)
@@ -2008,18 +2029,76 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         }
 
         pool.wait();
+        return;
     }
-    else if (!parts_to_remove.empty())
+
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        LOG_DEBUG(
-            log, "Removing {} parts from filesystem (serially): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
-        for (const DataPartPtr & part : parts_to_remove)
-        {
-            preparePartForRemoval(part)->remove();
-            if (part_names_succeed)
-                part_names_succeed->insert(part->name);
-        }
+        remove_single_thread();
+        return;
     }
+
+    /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
+    LOG_DEBUG(
+        log, "Removing {} parts from filesystem (concurrently): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
+
+    /// We have "zero copy replication" parts and we are going to remove them in parallel.
+    /// The problem is that all parts in a mutation chain must be removed sequentially to avoid "key does not exits" issues.
+    /// We remove disjoint subsets of parts in parallel.
+    /// The problem is that it's not trivial to divide Outdated parts into disjoint subsets,
+    /// because Outdated parts legally can be intersecting (but intersecting parts must be separated by a DROP_RANGE).
+    /// So we ignore level and version and use block numbers only.
+    ActiveDataPartSet independent_ranges_set(format_version);
+    for (const auto & part : parts_to_remove)
+    {
+        MergeTreePartInfo range_info = part->info;
+        range_info.level = static_cast<UInt32>(range_info.max_block - range_info.min_block);
+        range_info.mutation = 0;
+        independent_ranges_set.add(range_info, range_info.getPartNameV1());
+    }
+
+    auto independent_ranges_infos = independent_ranges_set.getPartInfos();
+    size_t sum_of_ranges = 0;
+    for (auto range : independent_ranges_infos)
+    {
+        range.level = MergeTreePartInfo::MAX_LEVEL;
+        range.mutation = MergeTreePartInfo::MAX_BLOCK_NUMBER;
+
+        DataPartsVector parts_in_range;
+        for (const auto & part : parts_to_remove)
+            if (range.contains(part->info))
+                parts_in_range.push_back(part);
+        sum_of_ranges += parts_in_range.size();
+
+        pool.scheduleOrThrowOnError(
+            [this, range, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup(), batch = std::move(parts_in_range)]
+        {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
+
+            LOG_TRACE(log, "Removing {} parts in blocks range {}", batch.size(), range.getPartNameForLogs());
+
+            for (const auto & part : batch)
+            {
+                preparePartForRemoval(part)->remove();
+                if (part_names_succeed)
+                {
+                    std::lock_guard lock(part_names_mutex);
+                    part_names_succeed->insert(part->name);
+                }
+            }
+        });
+    }
+
+    pool.wait();
+
+    if (parts_to_remove.size() != sum_of_ranges)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of removed parts is not equal to number of parts in independent ranges "
+                                                   "({} != {}), it's a bug", parts_to_remove.size(), sum_of_ranges);
 }
 
 size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
@@ -3326,7 +3405,7 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
     DataPartsVector parts_to_remove;
 
     if (drop_range.min_block > drop_range.max_block)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid drop range: {}", drop_range.getPartName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid drop range: {}", drop_range.getPartNameForLogs());
 
     auto partition_range = getVisibleDataPartsVectorInPartition(txn, drop_range.partition_id, &lock);
 
@@ -3358,7 +3437,7 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
             bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block && part->info.getMutationVersion() >= drop_range.getMutationVersion();
             if (is_covered_by_min_max_block)
             {
-                LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
+                LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartNameForLogs(), part->name);
                 return {};
             }
         }
@@ -3369,7 +3448,7 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
             {
                 /// Intersect left border
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected merged part {} intersecting drop range {}",
-                                part->name, drop_range.getPartName());
+                                part->name, drop_range.getPartNameForLogs());
             }
 
             continue;
@@ -3383,7 +3462,7 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
         {
             /// Intersect right border
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected merged part {} intersecting drop range {}",
-                            part->name, drop_range.getPartName());
+                            part->name, drop_range.getPartNameForLogs());
         }
 
         parts_to_remove.emplace_back(part);
@@ -3701,7 +3780,7 @@ std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartition() c
 }
 
 
-size_t MergeTreeData::getMaxInactivePartsCountForPartition() const
+size_t MergeTreeData::getMaxOutdatedPartsCountForPartition() const
 {
     return getMaxPartsCountAndSizeForPartitionWithState(DataPartState::Outdated).first;
 }
@@ -3722,70 +3801,102 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr query_context) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getPartsCount();
+
+    /// check if have too many parts in total
     if (parts_count_in_total >= settings->max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
+        throw Exception(
+            ErrorCodes::TOO_MANY_PARTS,
+            "Too many parts ({}) in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified "
+            "with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.",
+            toString(parts_count_in_total));
     }
 
-    auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
-    ssize_t k_inactive = -1;
-    if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
+    size_t outdated_parts_over_threshold = 0;
     {
-        size_t inactive_parts_count_in_partition = getMaxInactivePartsCountForPartition();
-        if (settings->inactive_parts_to_throw_insert > 0 && inactive_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
+        size_t outdated_parts_count_in_partition = 0;
+        if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
+            outdated_parts_count_in_partition = getMaxOutdatedPartsCountForPartition();
+
+        if (settings->inactive_parts_to_throw_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTS,
                 "Too many inactive parts ({}). Parts cleaning are processing significantly slower than inserts",
-                inactive_parts_count_in_partition);
+                outdated_parts_count_in_partition);
         }
-        k_inactive = static_cast<ssize_t>(inactive_parts_count_in_partition) - static_cast<ssize_t>(settings->inactive_parts_to_delay_insert);
+        if (settings->inactive_parts_to_delay_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_delay_insert)
+            outdated_parts_over_threshold = outdated_parts_count_in_partition - settings->inactive_parts_to_delay_insert + 1;
     }
 
-    auto parts_to_delay_insert = query_settings.parts_to_delay_insert ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
-    auto parts_to_throw_insert = query_settings.parts_to_throw_insert ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
-
+    auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
-    bool parts_are_large_enough_in_average = settings->max_avg_part_size_for_too_many_parts
-        && average_part_size > settings->max_avg_part_size_for_too_many_parts;
-
-    if (parts_count_in_partition >= parts_to_throw_insert && !parts_are_large_enough_in_average)
+    const auto active_parts_to_delay_insert
+        = query_settings.parts_to_delay_insert ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
+    const auto active_parts_to_throw_insert
+        = query_settings.parts_to_throw_insert ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
+    size_t active_parts_over_threshold = 0;
     {
-        ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception(
-            ErrorCodes::TOO_MANY_PARTS,
-            "Too many parts ({} with average size of {}). Merges are processing significantly slower than inserts",
-            parts_count_in_partition, ReadableSize(average_part_size));
+        bool parts_are_large_enough_in_average
+            = settings->max_avg_part_size_for_too_many_parts && average_part_size > settings->max_avg_part_size_for_too_many_parts;
+
+        if (parts_count_in_partition >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            throw Exception(
+                ErrorCodes::TOO_MANY_PARTS,
+                "Too many parts ({} with average size of {}). Merges are processing significantly slower than inserts",
+                parts_count_in_partition,
+                ReadableSize(average_part_size));
+        }
+        if (active_parts_to_delay_insert > 0 && parts_count_in_partition >= active_parts_to_delay_insert
+            && !parts_are_large_enough_in_average)
+            /// if parts_count == parts_to_delay_insert -> we're 1 part over threshold
+            active_parts_over_threshold = parts_count_in_partition - active_parts_to_delay_insert + 1;
     }
 
-    if (k_inactive < 0 && (parts_count_in_partition < parts_to_delay_insert || parts_are_large_enough_in_average))
+    /// no need for delay
+    if (!active_parts_over_threshold && !outdated_parts_over_threshold)
         return;
 
-    const ssize_t k_active = ssize_t(parts_count_in_partition) - ssize_t(parts_to_delay_insert);
-    size_t max_k;
-    size_t k;
-    if (k_active > k_inactive)
+    UInt64 delay_milliseconds = 0;
     {
-        max_k = parts_to_throw_insert - parts_to_delay_insert;
-        k = k_active + 1;
-    }
-    else
-    {
-        max_k = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
-        k = k_inactive + 1;
-    }
+        size_t parts_over_threshold = 0;
+        size_t allowed_parts_over_threshold = 1;
+        const bool use_active_parts_threshold = (active_parts_over_threshold >= outdated_parts_over_threshold);
+        if (use_active_parts_threshold)
+        {
+            parts_over_threshold = active_parts_over_threshold;
+            allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+        }
+        else
+        {
+            parts_over_threshold = outdated_parts_over_threshold;
+            allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
+            if (settings->inactive_parts_to_throw_insert > 0)
+                allowed_parts_over_threshold = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
+        }
 
-    const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
-    /// min() as a save guard here
-    const UInt64 delay_milliseconds
-        = std::min(max_delay_milliseconds, static_cast<UInt64>(::pow(max_delay_milliseconds, static_cast<double>(k) / max_k)));
+        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold) [[unlikely]]
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Incorrect calculation of {} parts over threshold: allowed_parts_over_threshold={}, parts_over_threshold={}",
+                (use_active_parts_threshold ? "active" : "inactive"),
+                allowed_parts_over_threshold,
+                parts_over_threshold);
+
+        const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
+        double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
+        const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
+        delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+    }
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
     ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_milliseconds);
@@ -4162,8 +4273,8 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     {
         auto part_info = MergeTreePartInfo::fromPartName(partition_id, format_version);
         parts.push_back(getActiveContainingPart(part_info));
-        if (!parts.back() || parts.back()->name != part_info.getPartName())
-            throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
+        if (!parts.back() || parts.back()->name != part_info.getPartNameAndCheckFormat(format_version))
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} is not exists or not active", partition_id);
     }
     else
         parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
@@ -4204,18 +4315,18 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     {
         auto part_info = MergeTreePartInfo::fromPartName(partition_id, format_version);
         parts.emplace_back(getActiveContainingPart(part_info));
-        if (!parts.back() || parts.back()->name != part_info.getPartName())
-            throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
+        if (!parts.back() || parts.back()->name != part_info.getPartNameAndCheckFormat(format_version))
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} is not exists or not active", partition_id);
     }
     else
         parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
 
     auto volume = getStoragePolicy()->getVolumeByName(name);
     if (!volume)
-        throw Exception("Volume " + name + " does not exists on policy " + getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_DISK);
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "Volume {} does not exists on policy {}", name, getStoragePolicy()->getName());
 
     if (parts.empty())
-        throw Exception("Nothing to move (check that the partition exists).", ErrorCodes::NO_SUCH_DATA_PART);
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Nothing to move (check that the partition exists).");
 
     std::erase_if(parts, [&](auto part_ptr)
         {
@@ -4582,7 +4693,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
 void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup) const
 {
-    String part_name = part_info.getPartName();
+    String part_name = part_info.getPartNameAndCheckFormat(format_version);
     auto backup = restored_parts_holder->getBackup();
 
     UInt64 total_size_of_part = 0;
@@ -5728,6 +5839,15 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     bool need_primary_key_max_column = false;
     const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
+
+    if (required_columns_set.contains("_partition_value") && !typeid_cast<const DataTypeTuple *>(getPartitionValueType().get()))
+    {
+        throw Exception(
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "Missing column `_partition_value` because there is no partition column in table {}",
+            getStorageID().getTableName());
+    }
+
     if (!primary_key_max_column_name.empty())
         need_primary_key_max_column = required_columns_set.contains(primary_key_max_column_name);
 
@@ -5962,6 +6082,10 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
     // Currently projections don't support parallel replicas reading yet.
     if (settings.parallel_replicas_count > 1 || settings.max_parallel_replicas > 1)
+        return std::nullopt;
+
+    /// Cannot use projections in case of additional filter.
+    if (query_info.additional_filter_ast)
         return std::nullopt;
 
     auto query_ptr = query_info.original_query;

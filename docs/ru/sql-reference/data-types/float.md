@@ -89,4 +89,3 @@ SELECT 0 / 0
 ```
 
 Смотрите правила сортировки `NaN` в разделе [Секция ORDER BY ](../../sql-reference/statements/select/order-by.md).
-

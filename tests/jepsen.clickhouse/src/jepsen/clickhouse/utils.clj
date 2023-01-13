@@ -82,7 +82,7 @@
   [path]
   (do
     (c/exec :mkdir :-p (str root-folder "/unpacked"))
-    (c/exec :tar :-zxvf path :-C (str root-folder "/unpacked"))
+    (c/exec :tar :-xvf path :-C (str root-folder "/unpacked"))
     (c/exec :rm :-f path)
     (let [subdir (c/exec :ls (str root-folder "/unpacked"))]
       (c/exec :mv (str root-folder "/unpacked/" subdir "/usr/bin/clickhouse") root-folder)

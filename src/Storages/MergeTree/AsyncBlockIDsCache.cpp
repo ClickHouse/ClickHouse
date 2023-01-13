@@ -75,7 +75,7 @@ Strings AsyncBlockIDsCache::detectConflicts(const Strings & paths, UInt64 & last
         return {};
 
     std::unique_lock lk(mu);
-    cv.wait_for(lk, update_min_interval, [&]{return last_version == 0 || version != last_version;});
+    cv.wait_for(lk, update_min_interval, [&]{return version != last_version;});
 
     CachePtr cur_cache;
     cur_cache = cache_ptr;

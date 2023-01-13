@@ -480,6 +480,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
     for (auto & partition: delayed_chunk->partitions)
     {
         int retry_times = 0;
+        cache_version = 0;
         while (true)
         {
             partition.temp_part.finalize();
