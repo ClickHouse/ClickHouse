@@ -123,8 +123,8 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
             throw Exception("EXPLAIN in a subquery cannot have a table function or table override", ErrorCodes::BAD_ARGUMENTS);
 
-        /// Replace `SELECT * FROM (EXPLAIN <kind> <explain_settings> SELECT ...)`
-        /// with `SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...)`
+        /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
+        /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
 
         String kind_str = ASTExplainQuery::toString(explain_query.getKind());
 

@@ -17,6 +17,13 @@ SELECT * FROM (
     )
 ) FORMAT Null;
 
+SELECT (EXPLAIN SYNTAX oneline = 1 SELECT 1) == 'SELECT 1';
+
+SELECT * FROM viewExplain('', ''); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM viewExplain('EXPLAIN AST', ''); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM viewExplain('EXPLAIN AST', '', 1); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM viewExplain('EXPLAIN AST', '', ''); -- { serverError BAD_ARGUMENTS }
+
 CREATE TABLE t1 ( a UInt64 ) Engine = MergeTree ORDER BY tuple() AS SELECT number AS a FROM system.numbers LIMIT 100000;
 
 SELECT rows > 1000 FROM (EXPLAIN ESTIMATE SELECT sum(a) FROM t1);
@@ -67,5 +74,12 @@ SELECT * FROM (
         )
     )
 ) FORMAT Null;
+
+SELECT (EXPLAIN SYNTAX oneline = 1 SELECT 1) == 'SELECT 1 FROM system.one';
+
+SELECT * FROM viewExplain('', ''); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM viewExplain('EXPLAIN AST', ''); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM viewExplain('EXPLAIN AST', '', 1); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM viewExplain('EXPLAIN AST', '', ''); -- { serverError BAD_ARGUMENTS }
 
 -- EXPLAIN ESTIMATE is not supported in experimental analyzer
