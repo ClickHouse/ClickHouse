@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Common/NamePrompter.h>
+#include <Common/ProfileEvents.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -67,13 +68,12 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
-#include <Common/ProfileEvents.h>
 #include <Analyzer/HashUtils.h>
 
 namespace ProfileEvents
 {
-extern const Event ScalarSubqueriesGlobalCacheHit;
-extern const Event ScalarSubqueriesCacheMiss;
+    extern const Event ScalarSubqueriesGlobalCacheHit;
+    extern const Event ScalarSubqueriesCacheMiss;
 }
 
 #include <Common/checkStackSize.h>
@@ -1694,8 +1694,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     auto * query_node = node->as<QueryNode>();
     auto * union_node = node->as<UnionNode>();
     if (!query_node && !union_node)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Node must have query or union type. Actual {} {}",
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
@@ -1726,8 +1725,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     io.pipeline.setProgressCallback(context->getProgressCallback());
 
     Block block;
-    Field scalar_value;
-    DataTypePtr scalar_type;
 
     while (block.rows() == 0 && executor.pull(block))
     {
@@ -1743,8 +1740,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
         if (!type->isNullable())
         {
             if (!type->canBeInsideNullable())
-                throw Exception(
-                    ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
                     "Scalar subquery returned empty result of type {} which cannot be Nullable.",
                     type->getName());
 
@@ -1765,10 +1761,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     }
 
     if (tmp_block.rows() != 0)
-        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than zero row");
+        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
     block = materializeBlock(block);
     size_t columns = block.columns();
+
+    Field scalar_value;
+    DataTypePtr scalar_type;
 
     if (columns == 1)
     {
