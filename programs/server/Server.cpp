@@ -140,7 +140,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event MainConfigLoads;
-    extern const Event ServerStartupTime;
+    extern const Event ServerStartupMilliseconds;
 }
 
 namespace fs = std::filesystem;
@@ -653,7 +653,7 @@ static void sanityChecks(Server & server)
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
-    std::chrono::system_clock::time_point startup_start_time = std::chrono::system_clock::now();
+    Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
 
@@ -1430,9 +1430,6 @@ try
 
     }
 
-    std::chrono::milliseconds startup_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - startup_start_time);
-    ProfileEvents::increment(ProfileEvents::ServerStartupTime, startup_duration.count());
-
     for (auto & server : servers_to_start_before_tables)
     {
         server.start();
@@ -1815,6 +1812,8 @@ try
                                                                      "distributed_ddl", "DDLWorker",
                                                                      &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
         }
+
+        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
 
         {
             std::lock_guard lock(servers_lock);
