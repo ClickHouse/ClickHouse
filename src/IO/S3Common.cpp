@@ -27,7 +27,8 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/HeadObjectRequest.h>
+#    include <aws/s3/model/GetObjectAttributesRequest.h>
+#    include <aws/s3/model/GetObjectRequest.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
@@ -40,8 +41,10 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3HeadObject;
-    extern const Event DiskS3HeadObject;
+    extern const Event S3GetObjectAttributes;
+    extern const Event DiskS3GetObjectAttributes;
+    extern const Event S3GetObjectMetadata;
+    extern const Event DiskS3GetObjectMetadata;
 }
 
 namespace DB
@@ -699,6 +702,28 @@ public:
     }
 };
 
+/// Performs a GetObjectAttributes request.
+Aws::S3::Model::GetObjectAttributesOutcome getObjectAttributes(
+    const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+{
+    ProfileEvents::increment(ProfileEvents::S3GetObjectAttributes);
+    if (for_disk_s3)
+        ProfileEvents::increment(ProfileEvents::DiskS3GetObjectAttributes);
+
+    /// We must not use the `HeadObject` request, see the comment about `HeadObjectRequest` in S3Common.h.
+
+    Aws::S3::Model::GetObjectAttributesRequest req;
+    req.SetBucket(bucket);
+    req.SetKey(key);
+
+    if (!version_id.empty())
+        req.SetVersionId(version_id);
+
+    req.SetObjectAttributes({Aws::S3::Model::ObjectAttributes::ObjectSize});
+
+    return client.GetObjectAttributes(req);
+}
+
 }
 
 
@@ -894,36 +919,19 @@ namespace S3
         return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
     }
 
-    Aws::S3::Model::HeadObjectOutcome headObject(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
-    {
-        ProfileEvents::increment(ProfileEvents::S3HeadObject);
-        if (for_disk_s3)
-            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
-
-        Aws::S3::Model::HeadObjectRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        return client.HeadObject(req);
-    }
-
     S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
-        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
-
+        auto outcome = getObjectAttributes(client, bucket, key, version_id, for_disk_s3);
         if (outcome.IsSuccess())
         {
-            auto read_result = outcome.GetResultWithOwnership();
-            return {.size = static_cast<size_t>(read_result.GetContentLength()), .last_modification_time = read_result.GetLastModified().Millis() / 1000};
+            const auto & result = outcome.GetResult();
+            return {.size = static_cast<size_t>(result.GetObjectSize()), .last_modification_time = result.GetLastModified().Millis() / 1000};
         }
         else if (throw_on_error)
         {
             const auto & error = outcome.GetError();
             throw DB::Exception(ErrorCodes::S3_ERROR,
-                "Failed to HEAD object: {}. HTTP response code: {}",
+                "Failed to get object attributes: {}. HTTP response code: {}",
                 error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
         }
         return {};
@@ -936,17 +944,57 @@ namespace S3
 
     bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
     {
-        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
+        auto [exists, error] = checkObjectExists(client, bucket, key, version_id, for_disk_s3);
 
-        if (outcome.IsSuccess())
+        if (exists)
             return true;
 
-        const auto & error = outcome.GetError();
         if (isNotFoundError(error.GetErrorType()))
             return false;
 
         throw S3Exception(error.GetErrorType(),
             "Failed to check existence of key {} in bucket {}: {}",
+            key, bucket, error.GetMessage());
+    }
+
+    std::pair<bool /* exists */, Aws::S3::S3Error> checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+    {
+        auto outcome = getObjectAttributes(client, bucket, key, version_id, for_disk_s3);
+        if (outcome.IsSuccess())
+            return {true, {}};
+        return {false, std::move(outcome.GetError())};
+    }
+
+    std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    {
+        ProfileEvents::increment(ProfileEvents::S3GetObjectMetadata);
+        if (for_disk_s3)
+            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectMetadata);
+
+        /// We must not use the `HeadObject` request, see the comment about `HeadObjectRequest` in S3Common.h.
+
+        Aws::S3::Model::GetObjectRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+
+        /// Only the first byte will be read.
+        /// We don't need that first byte but the range should be set otherwise the entire object will be read.
+        req.SetRange("bytes=0-0");
+
+        if (!version_id.empty())
+            req.SetVersionId(version_id);
+
+        auto outcome = client.GetObject(req);
+
+        if (outcome.IsSuccess())
+            return outcome.GetResult().GetMetadata();
+        
+        if (!throw_on_error)
+            return {};
+
+        const auto & error = outcome.GetError();
+        throw S3Exception(error.GetErrorType(),
+            "Failed to get metadata of key {} in bucket {}: {}",
             key, bucket, error.GetMessage());
     }
 }

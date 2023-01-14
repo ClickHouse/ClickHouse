@@ -125,14 +125,19 @@ std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path
         getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 }
 
-Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
+size_t S3ObjectStorage::getObjectSize(const std::string & bucket_from, const std::string & key) const
 {
-    return S3::headObject(*client.get(), bucket_from, key, "", true);
+    return S3::getObjectSize(*client.get(), bucket_from, key, "", true);
 }
 
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
     return S3::objectExists(*client.get(), bucket, object.absolute_path, "", true);
+}
+
+std::pair<bool /* exists */, Aws::S3::S3Error> S3ObjectStorage::checkObjectExists(const std::string & bucket_from, const std::string & key) const
+{
+    return S3::checkObjectExists(*client.get(), bucket_from, key, "", true);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
@@ -409,13 +414,10 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
 {
     ObjectMetadata result;
 
-    auto object_head = requestObjectHeadData(bucket, path);
-    throwIfError(object_head);
-
-    auto & object_head_result = object_head.GetResult();
-    result.size_bytes = object_head_result.GetContentLength();
-    result.last_modified = object_head_result.GetLastModified().Millis();
-    result.attributes = object_head_result.GetMetadata();
+    auto object_info = S3::getObjectInfo(*client.get(), bucket, path, "", true, true);
+    result.size_bytes = object_info.size;
+    result.last_modified = object_info.last_modification_time;
+    result.attributes = S3::getObjectMetadata(*client.get(), bucket, path, "", true, true);
 
     return result;
 }
@@ -442,7 +444,7 @@ void S3ObjectStorage::copyObjectImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    std::optional<Aws::S3::Model::HeadObjectResult> head,
+    size_t size,
     std::optional<ObjectAttributes> metadata) const
 {
     auto client_ptr = client.get();
@@ -464,7 +466,7 @@ void S3ObjectStorage::copyObjectImpl(
     if (!outcome.IsSuccess() && (outcome.GetError().GetExceptionName() == "EntityTooLarge"
             || outcome.GetError().GetExceptionName() == "InvalidRequest"))
     { // Can't come here with MinIO, MinIO allows single part upload for large objects.
-        copyObjectMultipartImpl(src_bucket, src_key, dst_bucket, dst_key, head, metadata);
+        copyObjectMultipartImpl(src_bucket, src_key, dst_bucket, dst_key, size, metadata);
         return;
     }
 
@@ -473,8 +475,8 @@ void S3ObjectStorage::copyObjectImpl(
     auto settings_ptr = s3_settings.get();
     if (settings_ptr->request_settings.check_objects_after_upload)
     {
-        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
-        if (!object_head.IsSuccess())
+        auto [exists, error] = checkObjectExists(dst_bucket, dst_key);
+        if (!exists)
             throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
     }
 
@@ -485,15 +487,11 @@ void S3ObjectStorage::copyObjectMultipartImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    std::optional<Aws::S3::Model::HeadObjectResult> head,
+    size_t size,
     std::optional<ObjectAttributes> metadata) const
 {
-    if (!head)
-        head = requestObjectHeadData(src_bucket, src_key).GetResult();
-
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
-    size_t size = head->GetContentLength();
 
     String multipart_upload_id;
 
@@ -570,8 +568,8 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
     if (settings_ptr->request_settings.check_objects_after_upload)
     {
-        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
-        if (!object_head.IsSuccess())
+        auto [exists, error] = checkObjectExists(dst_bucket, dst_key);
+        if (!exists)
             throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
     }
 
@@ -580,18 +578,18 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> object_to_attributes)
 {
-    auto head = requestObjectHeadData(bucket, object_from.absolute_path).GetResult();
+    auto size = getObjectSize(bucket, object_from.absolute_path);
     static constexpr int64_t multipart_upload_threashold = 5UL * 1024 * 1024 * 1024;
 
-    if (head.GetContentLength() >= multipart_upload_threashold)
+    if (size >= multipart_upload_threashold)
     {
         copyObjectMultipartImpl(
-            bucket, object_from.absolute_path, bucket, object_to.absolute_path, head, object_to_attributes);
+            bucket, object_from.absolute_path, bucket, object_to.absolute_path, size, object_to_attributes);
     }
     else
     {
         copyObjectImpl(
-            bucket, object_from.absolute_path, bucket, object_to.absolute_path, head, object_to_attributes);
+            bucket, object_from.absolute_path, bucket, object_to.absolute_path, size, object_to_attributes);
     }
 }
 
