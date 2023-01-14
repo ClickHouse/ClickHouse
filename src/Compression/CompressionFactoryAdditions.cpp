@@ -62,6 +62,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         bool with_compressing_codec = false;
         bool with_none_codec = false;
         std::optional<size_t> generic_compression_codec_pos;
+        std::optional<size_t> first_delta_codec_pos;
+        std::optional<size_t> last_floating_point_time_series_codec_pos;
         std::set<size_t> encryption_codecs_pos;
 
         bool can_substitute_codec_arguments = true;
@@ -143,6 +145,12 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 
             if (result_codec->isEncryption())
                 encryption_codecs_pos.insert(i);
+
+            if (result_codec->isDelta() && !first_delta_codec_pos.has_value())
+                first_delta_codec_pos = i;
+
+            if (result_codec->isFloatingPointTimeSeries())
+                last_floating_point_time_series_codec_pos = i;
         }
 
         String codec_description = queryToString(codecs_descriptions);
@@ -185,6 +193,13 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     " because it does not make sense to apply any transformations after generic compression algorithm."
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
+            /// Floating point time series codecs usually have implicit delta compression (or something equivalent), so it does not make
+            /// sense to run delta compression manually. Another reason for blocking such combination is occasional data corruption (#45195).
+            if (first_delta_codec_pos.has_value() && last_floating_point_time_series_codec_pos.has_value()
+                && (*first_delta_codec_pos < last_floating_point_time_series_codec_pos))
+                throw Exception("The combination of compression codecs " + codec_description + " is meaningless,"
+                    " because it does not make sense to apply delta transformations before floating point time series codecs."
+                    " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
         }
 
         /// For columns with nested types like Tuple(UInt32, UInt64) we

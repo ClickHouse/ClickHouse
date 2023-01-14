@@ -11,10 +11,12 @@ CREATE TABLE codecs
     c Float32 CODEC(Gorilla),
     d UInt8 CODEC(Delta, LZ4),
     e Float64 CODEC(Gorilla, ZSTD),
-    f Float64 CODEC(Delta, Delta, Gorilla),
+    f UInt64 CODEC(Delta, Delta, T64),
     g DateTime CODEC(DoubleDelta),
     h DateTime64 CODEC(DoubleDelta, LZ4),
-    i String CODEC(NONE)
+    i String CODEC(NONE),
+    j Float64 (Gorilla, Delta),
+    k Float32 (FPC, DoubleDelta)
 ) ENGINE = MergeTree ORDER BY tuple();
 
 DROP TABLE codecs;
@@ -29,6 +31,8 @@ CREATE TABLE codecs (a UInt8 CODEC(LZ4, ZSTD)) ENGINE = MergeTree ORDER BY tuple
 CREATE TABLE codecs (a UInt8 CODEC(Delta)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE codecs (a UInt8 CODEC(Delta, Delta)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE codecs (a UInt8 CODEC(LZ4, Delta)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE codecs (a UInt8 CODEC(Delta, FPC)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE codecs (a UInt8 CODEC(DoubleDelta, Gorilla)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 -- test that sanity check is not performed in ATTACH query
 
@@ -40,6 +44,8 @@ DROP TABLE IF EXISTS codecs5;
 DROP TABLE IF EXISTS codecs6;
 DROP TABLE IF EXISTS codecs7;
 DROP TABLE IF EXISTS codecs8;
+DROP TABLE IF EXISTS codecs9;
+DROP TABLE IF EXISTS codecs10;
 
 SET allow_suspicious_codecs = 1;
 
@@ -51,6 +57,8 @@ CREATE TABLE codecs5 (a UInt8 CODEC(LZ4, ZSTD)) ENGINE = MergeTree ORDER BY tupl
 CREATE TABLE codecs6 (a UInt8 CODEC(Delta)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE codecs7 (a UInt8 CODEC(Delta, Delta)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE codecs8 (a UInt8 CODEC(LZ4, Delta)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE codecs9 (a Float64 CODEC(Delta, FPC)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE codecs10 (a Float64 CODEC(DoubleDelta, Gorilla)) ENGINE = MergeTree ORDER BY tuple();
 
 SET allow_suspicious_codecs = 0;
 
@@ -62,6 +70,8 @@ SHOW CREATE TABLE codecs5;
 SHOW CREATE TABLE codecs6;
 SHOW CREATE TABLE codecs7;
 SHOW CREATE TABLE codecs8;
+SHOW CREATE TABLE codecs9;
+SHOW CREATE TABLE codecs10;
 
 DETACH TABLE codecs1;
 DETACH TABLE codecs2;
@@ -71,6 +81,8 @@ DETACH TABLE codecs5;
 DETACH TABLE codecs6;
 DETACH TABLE codecs7;
 DETACH TABLE codecs8;
+DETACH TABLE codecs9;
+DETACH TABLE codecs10;
 
 ATTACH TABLE codecs1;
 ATTACH TABLE codecs2;
@@ -80,6 +92,8 @@ ATTACH TABLE codecs5;
 ATTACH TABLE codecs6;
 ATTACH TABLE codecs7;
 ATTACH TABLE codecs8;
+ATTACH TABLE codecs9;
+ATTACH TABLE codecs10;
 
 SHOW CREATE TABLE codecs1;
 SHOW CREATE TABLE codecs2;
@@ -89,6 +103,8 @@ SHOW CREATE TABLE codecs5;
 SHOW CREATE TABLE codecs6;
 SHOW CREATE TABLE codecs7;
 SHOW CREATE TABLE codecs8;
+SHOW CREATE TABLE codecs9;
+SHOW CREATE TABLE codecs10;
 
 SELECT * FROM codecs1;
 SELECT * FROM codecs2;
@@ -98,6 +114,8 @@ SELECT * FROM codecs5;
 SELECT * FROM codecs6;
 SELECT * FROM codecs7;
 SELECT * FROM codecs8;
+SELECT * FROM codecs9;
+SELECT * FROM codecs10;
 
 DROP TABLE codecs1;
 DROP TABLE codecs2;
@@ -107,3 +125,5 @@ DROP TABLE codecs5;
 DROP TABLE codecs6;
 DROP TABLE codecs7;
 DROP TABLE codecs8;
+DROP TABLE codecs9;
+DROP TABLE codecs10;
