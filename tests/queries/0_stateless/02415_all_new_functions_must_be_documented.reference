@@ -130,6 +130,7 @@ arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
+arrayShuffle
 arraySlice
 arraySort
 arraySplit
