@@ -6,6 +6,8 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
+#include "Core/Block.h"
+#include "Core/Names.h"
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -23,6 +25,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 static void injectNonConstVirtualColumns(
@@ -89,8 +92,8 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
         {
             PrewhereExprStep row_level_filter_step
             {
-                .actions = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings),
-                .column_name = prewhere_info->row_level_column_name,
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter->actions, actions_settings),
+                .column_name = prewhere_info->row_level_filter->column_name,
                 .remove_column = true,
                 .need_filter = true
             };
@@ -98,15 +101,18 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
             prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
         }
 
-        PrewhereExprStep prewhere_step
+        for (const auto & step : prewhere_info->prewhere_steps)
         {
-            .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
-            .column_name = prewhere_info->prewhere_column_name,
-            .remove_column = prewhere_info->remove_prewhere_column,
-            .need_filter = prewhere_info->need_filter
-        };
+            PrewhereExprStep prewhere_step
+            {
+                .actions = std::make_shared<ExpressionActions>(step.actions, actions_settings),
+                .column_name = step.column_name,
+                .remove_column = step.remove_prewhere_column,
+                .need_filter = step.need_filter
+            };
 
-        prewhere_actions->steps.emplace_back(std::move(prewhere_step));
+            prewhere_actions->steps.emplace_back(std::move(prewhere_step));
+        }
     }
 
     return prewhere_actions;
@@ -406,9 +412,9 @@ IMergeTreeSelectAlgorithm::BlockAndProgress IMergeTreeSelectAlgorithm::readFromP
 
     const auto & sample_block = task->range_reader.getSampleBlock();
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns got from MergeTreeRangeReader. "
-                        "Have {} in sample block and {} columns in list",
-                        toString(sample_block.columns()), toString(read_result.columns.size()));
+        throw Exception("Inconsistent number of columns got from MergeTreeRangeReader. "
+                        "Have " + toString(sample_block.columns()) + " in sample block "
+                        "and " + toString(read_result.columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
 
     /// TODO: check columns have the same types as in header.
 
@@ -545,7 +551,8 @@ static void injectPartConstVirtualColumns(
     if (!virtual_columns.empty())
     {
         if (unlikely(rows && !task))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert virtual columns to non-empty chunk without specified task.");
+            throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
+                            ErrorCodes::LOGICAL_ERROR);
 
         const IMergeTreeDataPart * part = nullptr;
         if (rows)
@@ -616,47 +623,85 @@ void IMergeTreeSelectAlgorithm::injectVirtualColumns(
     injectPartConstVirtualColumns(row_count, block, task, partition_value_type, virtual_columns);
 }
 
-Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info)
+Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block all_inputs, const PrewhereInfoPtr & prewhere_info)
 {
+//std::cerr
+//    << "BEFORE:\n\n"
+//    << all_inputs.dumpStructure() << "\n\n";
+
+    Block block;
+    NameSet allready_read_columns;
+
+    auto add_input_columns_for_step = [&allready_read_columns] (Block & block1, const auto & actions, const Block & all_inputs1)
+    {
+        Names column_names = actions->getRequiredColumnsNames();
+        for (const auto & name : column_names)
+        {
+            if (block1.has(name))
+                continue;
+            if (!all_inputs1.has(name))
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Column {} required for PREWHERE, but not in block", name);
+            block1.insert(all_inputs1.getByName(name));
+            allready_read_columns.insert(name);
+        }
+    };
+
     if (prewhere_info)
     {
         if (prewhere_info->row_level_filter)
         {
-            block = prewhere_info->row_level_filter->updateHeader(std::move(block));
-            auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
+            add_input_columns_for_step(block, prewhere_info->row_level_filter->actions, all_inputs);
+            block = prewhere_info->row_level_filter->actions->updateHeader(std::move(block));
+            auto & row_level_column = block.getByName(prewhere_info->row_level_filter->column_name);
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
-                    row_level_column.type->getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                    "Invalid type for filter in PREWHERE: {}", row_level_column.type->getName());
             }
 
-            block.erase(prewhere_info->row_level_column_name);
+            block.erase(prewhere_info->row_level_filter->column_name);
         }
 
-        if (prewhere_info->prewhere_actions)
-            block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
-
-        auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
-        if (!prewhere_column.type->canBeUsedInBooleanContext())
+        for (const auto & step : prewhere_info->prewhere_steps)
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
-                prewhere_column.type->getName());
-        }
+            if (step.actions)
+            {
+                add_input_columns_for_step(block, step.actions, all_inputs);
+                block = step.actions->updateHeader(std::move(block));
+            }
 
-        if (prewhere_info->remove_prewhere_column)
-            block.erase(prewhere_info->prewhere_column_name);
-        else
-        {
-            WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
-            if (which.isNativeInt() || which.isNativeUInt())
-                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
-            else if (which.isFloat())
-                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
+            auto & prewhere_column = block.getByName(step.column_name);
+            if (!prewhere_column.type->canBeUsedInBooleanContext())
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                    "Invalid type for filter in PREWHERE: {}", prewhere_column.type->getName());
+            }
+
+            if (step.remove_prewhere_column)
+                block.erase(step.column_name);
             else
-                throw Exception(
-                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                                "Illegal type {} of column for filter", prewhere_column.type->getName());
+            {
+                WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
+                if (which.isNativeInt() || which.isNativeUInt())
+                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+                else if (which.isFloat())
+                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
+                else
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter", prewhere_column.type->getName());
+            }
+
+//std::cerr
+//    << "STEP:\n\n"
+//    << (step.actions ? step.actions->dumpDAG() : String()) << "\n\n"
+//    << block.dumpStructure() << "\n\n";
         }
+    }
+
+    for (auto & column : all_inputs)
+    {
+        if (!allready_read_columns.contains(column.name))
+            block.insert(column);
     }
 
     return block;

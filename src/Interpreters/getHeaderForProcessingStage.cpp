@@ -101,15 +101,18 @@ Block getHeaderForProcessingStage(
 
                 if (prewhere_info.row_level_filter)
                 {
-                    header = prewhere_info.row_level_filter->updateHeader(std::move(header));
-                    header.erase(prewhere_info.row_level_column_name);
+                    header = prewhere_info.row_level_filter->actions->updateHeader(std::move(header));
+                    header.erase(prewhere_info.row_level_filter->column_name);
                 }
 
-                if (prewhere_info.prewhere_actions)
-                    header = prewhere_info.prewhere_actions->updateHeader(std::move(header));
+                for (const auto & step: prewhere_info.prewhere_steps)
+                {
+                    if (step.actions)
+                        header = step.actions->updateHeader(std::move(header));
 
-                if (prewhere_info.remove_prewhere_column)
-                    header.erase(prewhere_info.prewhere_column_name);
+                    if (step.remove_prewhere_column)
+                        header.erase(step.column_name);
+                }
             }
             return header;
         }

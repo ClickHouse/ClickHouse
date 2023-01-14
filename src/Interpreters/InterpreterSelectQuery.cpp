@@ -732,7 +732,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// If there is no WHERE, filter blocks as usual
     if (query.prewhere() && !query.where())
-        analysis_result.prewhere_info->need_filter = true;
+        analysis_result.prewhere_info->prewhere_steps.back().need_filter = true;
 
     if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
     {
@@ -857,9 +857,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
         if (analysis_result.prewhere_info)
         {
-            header = analysis_result.prewhere_info->prewhere_actions->updateHeader(header);
-            if (analysis_result.prewhere_info->remove_prewhere_column)
-                header.erase(analysis_result.prewhere_info->prewhere_column_name);
+            header = analysis_result.prewhere_info->prewhere_steps.back().actions->updateHeader(header);
+            if (analysis_result.prewhere_info->prewhere_steps.back().remove_prewhere_column)
+                header.erase(analysis_result.prewhere_info->prewhere_steps.back().column_name);
         }
         return header;
     }
@@ -1301,22 +1301,25 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             {
                 auto row_level_filter_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentDataStream(),
-                    expressions.prewhere_info->row_level_filter,
-                    expressions.prewhere_info->row_level_column_name,
+                    expressions.prewhere_info->row_level_filter->actions,
+                    expressions.prewhere_info->row_level_filter->column_name,
                     true);
 
                 row_level_filter_step->setStepDescription("Row-level security filter (PREWHERE)");
                 query_plan.addStep(std::move(row_level_filter_step));
             }
 
-            auto prewhere_step = std::make_unique<FilterStep>(
-                query_plan.getCurrentDataStream(),
-                expressions.prewhere_info->prewhere_actions,
-                expressions.prewhere_info->prewhere_column_name,
-                expressions.prewhere_info->remove_prewhere_column);
+            for (const auto & step : expressions.prewhere_info->prewhere_steps)
+            {
+                auto prewhere_step = std::make_unique<FilterStep>(
+                    query_plan.getCurrentDataStream(),
+                    step.actions,
+                    step.column_name,
+                    step.remove_prewhere_column);
 
-            prewhere_step->setStepDescription("PREWHERE");
-            query_plan.addStep(std::move(prewhere_step));
+                prewhere_step->setStepDescription("PREWHERE");
+                query_plan.addStep(std::move(prewhere_step));
+            }
         }
     }
     else
@@ -1840,17 +1843,20 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
             pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<FilterTransform>(header,
-                    std::make_shared<ExpressionActions>(prewhere_info.row_level_filter),
-                    prewhere_info.row_level_column_name, true);
+                    std::make_shared<ExpressionActions>(prewhere_info.row_level_filter->actions),
+                    prewhere_info.row_level_filter->column_name, true);
             });
         }
 
-        pipe.addSimpleTransform([&](const Block & header)
+        for (const auto & step : prewhere_info.prewhere_steps)
         {
-            return std::make_shared<FilterTransform>(
-                header, std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions),
-                prewhere_info.prewhere_column_name, prewhere_info.remove_prewhere_column);
-        });
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<FilterTransform>(
+                    header, std::make_shared<ExpressionActions>(step.actions),
+                    step.column_name, step.remove_prewhere_column);
+            });
+        }
     }
 
     auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -1952,21 +1958,23 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             if (does_storage_support_prewhere && shouldMoveToPrewhere())
             {
                 /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
-                expressions.prewhere_info = std::make_shared<PrewhereInfo>(
-                    std::move(expressions.filter_info->actions),
-                    std::move(expressions.filter_info->column_name));
-                expressions.prewhere_info->prewhere_actions->projectInput(false);
-                expressions.prewhere_info->remove_prewhere_column = expressions.filter_info->do_remove_column;
-                expressions.prewhere_info->need_filter = true;
+                expressions.prewhere_info = std::make_shared<PrewhereInfo>();
+                expressions.prewhere_info->prewhere_steps.push_back({});
+                expressions.prewhere_info->prewhere_steps.back().actions = std::move(expressions.filter_info->actions);
+                expressions.prewhere_info->prewhere_steps.back().column_name = std::move(expressions.filter_info->column_name);
+                expressions.prewhere_info->prewhere_steps.back().actions->projectInput(false);
+                expressions.prewhere_info->prewhere_steps.back().remove_prewhere_column = expressions.filter_info->do_remove_column;
+                expressions.prewhere_info->prewhere_steps.back().need_filter = true;
                 expressions.filter_info = nullptr;
             }
         }
         else
         {
             /// Add row level security actions to prewhere.
-            expressions.prewhere_info->row_level_filter = std::move(expressions.filter_info->actions);
-            expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
-            expressions.prewhere_info->row_level_filter->projectInput(false);
+            expressions.prewhere_info->row_level_filter.emplace();
+            expressions.prewhere_info->row_level_filter->actions = std::move(expressions.filter_info->actions);
+            expressions.prewhere_info->row_level_filter->column_name = std::move(expressions.filter_info->column_name);
+            expressions.prewhere_info->row_level_filter->actions->projectInput(false);
             expressions.filter_info = nullptr;
         }
     }
@@ -2002,12 +2010,12 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         if (prewhere_info)
         {
             /// Get some columns directly from PREWHERE expression actions
-            auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
+            auto prewhere_required_columns = prewhere_info->prewhere_steps.back().actions->getRequiredColumns().getNames();
             required_columns_from_prewhere.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
 
             if (prewhere_info->row_level_filter)
             {
-                auto row_level_required_columns = prewhere_info->row_level_filter->getRequiredColumns().getNames();
+                auto row_level_required_columns = prewhere_info->row_level_filter->actions->getRequiredColumns().getNames();
                 required_columns_from_prewhere.insert(row_level_required_columns.begin(), row_level_required_columns.end());
             }
         }
@@ -2059,13 +2067,13 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         if (prewhere_info)
         {
             NameSet columns_to_remove(columns_to_remove_after_prewhere.begin(), columns_to_remove_after_prewhere.end());
-            Block prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
+            Block prewhere_actions_result = prewhere_info->prewhere_steps.back().actions->getResultColumns();
 
             /// Populate required columns with the columns, added by PREWHERE actions and not removed afterwards.
             /// XXX: looks hacky that we already know which columns after PREWHERE we won't need for sure.
             for (const auto & column : prewhere_actions_result)
             {
-                if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
+                if (prewhere_info->prewhere_steps.back().remove_prewhere_column && column.name == prewhere_info->prewhere_steps.back().column_name)
                     continue;
 
                 if (columns_to_remove.contains(column.name))
@@ -2087,9 +2095,9 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         required_columns = alias_actions->getRequiredColumns().getNames();
 
         /// Do not remove prewhere filter if it is a column which is used as alias.
-        if (prewhere_info && prewhere_info->remove_prewhere_column)
-            if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), prewhere_info->prewhere_column_name))
-                prewhere_info->remove_prewhere_column = false;
+        if (prewhere_info && prewhere_info->prewhere_steps.back().remove_prewhere_column)
+            if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), prewhere_info->prewhere_steps.back().column_name))
+                prewhere_info->prewhere_steps.back().remove_prewhere_column = false;
 
         /// Remove columns which will be added by prewhere.
         std::erase_if(required_columns, [&](const String & name) { return required_columns_after_prewhere_set.contains(name); });
@@ -2098,7 +2106,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         {
             /// Don't remove columns which are needed to be aliased.
             for (const auto & name : required_columns)
-                prewhere_info->prewhere_actions->tryRestoreColumn(name);
+                prewhere_info->prewhere_steps.back().actions->tryRestoreColumn(name);
 
             /// Add physical columns required by prewhere actions.
             for (const auto & column : required_columns_from_prewhere)

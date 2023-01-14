@@ -275,23 +275,23 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         if (!it->viable)
             break;
 
-        bool moved_enough = false;
-        if (total_size_of_queried_columns > 0)
-        {
-            /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
-            moved_enough = total_size_of_moved_conditions > 0
-                && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
-        }
-        else
-        {
-            /// Otherwise, use number of moved columns as a fallback.
-            /// It can happen, if table has only compact parts. 25% ratio is just a guess.
-            moved_enough = total_number_of_moved_columns > 0
-                && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
-        }
-
-        if (moved_enough)
-            break;
+//        bool moved_enough = false;
+//        if (total_size_of_queried_columns > 0)
+//        {
+//            /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
+//            moved_enough = total_size_of_moved_conditions > 0
+//                && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
+//        }
+//        else
+//        {
+//            /// Otherwise, use number of moved columns as a fallback.
+//            /// It can happen, if table has only compact parts. 25% ratio is just a guess.
+//            moved_enough = total_number_of_moved_columns > 0
+//                && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
+//        }
+//
+//        if (moved_enough)
+//            break;
 
         move_condition(it);
     }

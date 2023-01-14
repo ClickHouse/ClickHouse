@@ -471,16 +471,21 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     /// To fix this, we prohibit removing any input in prewhere actions. Instead, projection actions will be added after sorting.
     /// See 02354_read_in_order_prewhere.sql as an example.
     bool have_input_columns_removed_after_prewhere = false;
-    if (prewhere_info && prewhere_info->prewhere_actions)
+    if (prewhere_info)
     {
-        auto & outputs = prewhere_info->prewhere_actions->getOutputs();
-        std::unordered_set<const ActionsDAG::Node *> outputs_set(outputs.begin(), outputs.end());
-        for (const auto * input :  prewhere_info->prewhere_actions->getInputs())
+        for (const auto & step : prewhere_info->prewhere_steps)
         {
-            if (!outputs_set.contains(input))
+            if (!step.actions)
+                continue;
+            auto & outputs = step.actions->getOutputs();
+            std::unordered_set<const ActionsDAG::Node *> outputs_set(outputs.begin(), outputs.end());
+            for (const auto * input : step.actions->getInputs())
             {
-                outputs.push_back(input);
-                have_input_columns_removed_after_prewhere = true;
+                if (!outputs_set.contains(input))
+                {
+                    outputs.push_back(input);
+                    have_input_columns_removed_after_prewhere = true;
+                }
             }
         }
     }
@@ -934,14 +939,15 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         if (prewhere_info)
         {
+            for (const auto & step : prewhere_info->prewhere_steps)
             {
-                const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+                const auto & node = step.actions->findInOutputs(step.column_name);
                 nodes.push_back(&node);
             }
 
             if (prewhere_info->row_level_filter)
             {
-                const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
+                const auto & node = prewhere_info->row_level_filter->actions->findInOutputs(prewhere_info->row_level_filter->column_name);
                 nodes.push_back(&node);
             }
         }

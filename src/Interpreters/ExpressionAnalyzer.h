@@ -398,7 +398,8 @@ private:
 
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
-    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
+    Strings appendPrewhere(ExpressionActionsChain & chain, bool only_types);
+    String appendPrewhereStep(const ASTPtr & ast, ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);

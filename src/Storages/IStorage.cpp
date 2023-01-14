@@ -281,16 +281,19 @@ std::string PrewhereInfo::dump() const
 
     if (row_level_filter)
     {
-        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
+        ss << "row_level_filter " << row_level_filter->actions->dumpDAG() << "\n";
     }
 
-    if (prewhere_actions)
+    for (const auto & step : prewhere_steps)
     {
-        ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
-    }
+        if (step.actions)
+        {
+            ss << "prewhere_actions " << step.actions->dumpDAG() << "\n";
+        }
 
-    ss << "remove_prewhere_column " << remove_prewhere_column
-       << ", need_filter " << need_filter << "\n";
+        ss << "remove_prewhere_column " << step.remove_prewhere_column
+        << ", need_filter " << step.need_filter << "\n";
+    }
 
     return ss.str();
 }

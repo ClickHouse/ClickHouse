@@ -157,12 +157,15 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
             /// Should ignore limit if there is filtering.
             limit = 0;
 
-            if (prewhere_info->prewhere_actions)
+            for (const auto & prewhere_step : prewhere_info->prewhere_steps)
             {
-                //std::cerr << "====== Adding prewhere " << std::endl;
-                appendExpression(dag, prewhere_info->prewhere_actions);
-                if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
-                    appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+                if (prewhere_step.actions)
+                {
+                    //std::cerr << "====== Adding prewhere " << std::endl;
+                    appendExpression(dag, prewhere_step.actions);
+                    if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_step.column_name))
+                        appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+                }
             }
         }
         return;

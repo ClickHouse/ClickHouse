@@ -10,6 +10,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Planner/PlannerContext.h>
+#include "Storages/MergeTree/MergeTreeRangeReader.h"
 
 #include <memory>
 
@@ -46,21 +47,36 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 struct MergeTreeDataSelectAnalysisResult;
 using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
 
+struct PrewhereStep
+{
+    /// Actions which are executed on block in order to get filter column for prewhere step.
+    ActionsDAGPtr actions;
+    String column_name;
+    bool remove_prewhere_column = false;
+    bool need_filter = false;
+
+    PrewhereStep clone() const
+    {
+        PrewhereStep cloned;
+        cloned.actions = actions->clone();
+        cloned.column_name = column_name;
+        cloned.remove_prewhere_column = remove_prewhere_column;
+        cloned.need_filter = need_filter;
+
+        return cloned;
+    }
+};
+
 struct PrewhereInfo
 {
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    ActionsDAGPtr row_level_filter;
-    /// Actions which are executed on block in order to get filter column for prewhere step.
-    ActionsDAGPtr prewhere_actions;
-    String row_level_column_name;
-    String prewhere_column_name;
-    bool remove_prewhere_column = false;
-    bool need_filter = false;
+    std::optional<PrewhereStep> row_level_filter;
+    std::vector<PrewhereStep> prewhere_steps;
 
     PrewhereInfo() = default;
-    explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
-            : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
+//    explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
+//            : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
     std::string dump() const;
 
@@ -71,13 +87,10 @@ struct PrewhereInfo
         if (row_level_filter)
             prewhere_info->row_level_filter = row_level_filter->clone();
 
-        if (prewhere_actions)
-            prewhere_info->prewhere_actions = prewhere_actions->clone();
-
-        prewhere_info->row_level_column_name = row_level_column_name;
-        prewhere_info->prewhere_column_name = prewhere_column_name;
-        prewhere_info->remove_prewhere_column = remove_prewhere_column;
-        prewhere_info->need_filter = need_filter;
+        for (const auto & step : prewhere_steps)
+        {
+            prewhere_info->prewhere_steps.emplace_back(step.clone());
+        }
 
         return prewhere_info;
     }

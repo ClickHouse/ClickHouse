@@ -375,20 +375,23 @@ void StorageBuffer::read(
                 {
                     return std::make_shared<FilterTransform>(
                             header,
-                            std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter, actions_settings),
-                            query_info.prewhere_info->row_level_column_name,
+                            std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter->actions, actions_settings),
+                            query_info.prewhere_info->row_level_filter->column_name,
                             false);
                 });
             }
 
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            for (const auto & step : query_info.prewhere_info->prewhere_steps)
             {
-                return std::make_shared<FilterTransform>(
-                        header,
-                        std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions, actions_settings),
-                        query_info.prewhere_info->prewhere_column_name,
-                        query_info.prewhere_info->remove_prewhere_column);
-            });
+                pipe_from_buffers.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                            header,
+                            std::make_shared<ExpressionActions>(step.actions, actions_settings),
+                            step.column_name,
+                            step.remove_prewhere_column);
+                });
+            }
         }
 
         for (const auto & processor : pipe_from_buffers.getProcessors())

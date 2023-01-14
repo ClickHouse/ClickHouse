@@ -144,7 +144,8 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t min_marks_to_read, size_t
     return std::make_unique<MergeTreeReadTask>(
         part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names,
         per_part.column_name_set, per_part.task_columns,
-        prewhere_info && prewhere_info->remove_prewhere_column, std::move(curr_task_size_predictor));
+        prewhere_info && !prewhere_info->prewhere_steps.empty() && prewhere_info->prewhere_steps.back().remove_prewhere_column,
+        std::move(curr_task_size_predictor));
 }
 
 Block MergeTreeReadPool::getHeader() const

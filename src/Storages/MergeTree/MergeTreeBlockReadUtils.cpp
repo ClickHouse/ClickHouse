@@ -287,7 +287,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     bool with_subcolumns)
 {
     Names column_names = required_columns;
-    Names pre_column_names;
 
     /// Read system columns such as lightweight delete mask "_row_exists" if it is persisted in the part
     for (const auto & name : system_columns)
@@ -315,7 +314,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// 1. Columns for row level filter
         if (prewhere_info->row_level_filter)
         {
-            Names row_filter_column_names = prewhere_info->row_level_filter->getRequiredColumnsNames();
+            Names row_filter_column_names = prewhere_info->row_level_filter->actions->getRequiredColumnsNames();
             injectRequiredColumns(
                 data_part_info_for_reader, storage_snapshot, with_subcolumns, row_filter_column_names);
             result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, row_filter_column_names));
@@ -323,28 +322,32 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         }
 
         /// 2. Columns for prewhere
-        Names all_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
-
-        injectRequiredColumns(
-             data_part_info_for_reader, storage_snapshot, with_subcolumns, all_pre_column_names);
-
-        for (const auto & name : all_pre_column_names)
+        for (const auto & step : prewhere_info->prewhere_steps)
         {
-            if (pre_name_set.contains(name))
-                continue;
-            pre_column_names.push_back(name);
-            pre_name_set.insert(name);
+            Names all_pre_column_names = step.actions->getRequiredColumnsNames();
+
+            injectRequiredColumns(
+                data_part_info_for_reader, storage_snapshot, with_subcolumns, all_pre_column_names);
+
+            Names pre_column_names;
+            for (const auto & name : all_pre_column_names)
+            {
+                if (pre_name_set.contains(name))
+                    continue;
+                pre_column_names.push_back(name);
+                pre_name_set.insert(name);
+            }
+
+            Names post_column_names;
+            for (const auto & name : column_names)
+                if (!pre_name_set.contains(name))
+                    post_column_names.push_back(name);
+
+            column_names = post_column_names;
+
+            result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
         }
-
-        Names post_column_names;
-        for (const auto & name : column_names)
-            if (!pre_name_set.contains(name))
-                post_column_names.push_back(name);
-
-        column_names = post_column_names;
     }
-
-    result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
 
     /// 3. Rest of the requested columns
     result.columns = storage_snapshot->getColumnsByNames(options, column_names);
