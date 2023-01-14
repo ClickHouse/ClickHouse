@@ -54,9 +54,9 @@ public:
         {
             WhichDataType which(arguments[1]);
             if (!which.isUInt() && !which.isInt())
-                throw Exception{
+                throw Exception(
                     "Illegal type " + arguments[1]->getName() + " of argument of function " + getName() + " (must be UInt or Int)",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return arguments[0];
