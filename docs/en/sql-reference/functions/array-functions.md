@@ -1109,7 +1109,7 @@ Returns an array of the same size as the original array containing the elements 
 **Arguments**
 
 -   `[arr]` — Input array. [Array](../data-types/array.md).
--   'random_seed` — Random seed manual override to produce stable results. Optional. [64 bit integer](../data-types/int-uint.md).
+-   `random_seed` — Random seed manual override to produce stable results. Optional. [64 bit integer](../data-types/int-uint.md).
 
 **Example**
 
