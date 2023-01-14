@@ -59,15 +59,15 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
     {
         ASTPtr codecs_descriptions = std::make_shared<ASTExpressionList>();
 
-        bool is_compression = false;
-        bool has_none = false;
+        bool with_compressing_codec = false;
+        bool with_none_codec = false;
         std::optional<size_t> generic_compression_codec_pos;
-        std::set<size_t> encryption_codecs;
+        std::set<size_t> encryption_codecs_pos;
 
         bool can_substitute_codec_arguments = true;
         for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
         {
-            const auto & inner_codec_ast = func->arguments->children[i];
+            const ASTPtr & inner_codec_ast = func->arguments->children[i];
             String codec_family_name;
             ASTPtr codec_arguments;
             if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
@@ -83,8 +83,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-            /// Default codec replaced with current default codec which may depend on different
-            /// settings (and properties of data) in runtime.
+            /// Replace "Default" codec by configured default codec which may depend on different settings and data properties at runtime.
             CompressionCodecPtr result_codec;
             if (codec_family_name == DEFAULT_CODEC_NAME)
             {
@@ -136,21 +135,21 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
 
-            is_compression |= result_codec->isCompression();
-            has_none |= result_codec->isNone();
+            with_compressing_codec |= result_codec->isCompression();
+            with_none_codec |= result_codec->isNone();
 
             if (!generic_compression_codec_pos && result_codec->isGenericCompression())
                 generic_compression_codec_pos = i;
 
             if (result_codec->isEncryption())
-                encryption_codecs.insert(i);
+                encryption_codecs_pos.insert(i);
         }
 
         String codec_description = queryToString(codecs_descriptions);
 
         if (sanity_check)
         {
-            if (codecs_descriptions->children.size() > 1 && has_none)
+            if (codecs_descriptions->children.size() > 1 && with_none_codec)
                 throw Exception(
                     "It does not make sense to have codec NONE along with other compression codecs: " + codec_description
                         + ". (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
@@ -159,7 +158,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
             /// Allow to explicitly specify single NONE codec if user don't want any compression.
             /// But applying other transformations solely without compression (e.g. Delta) does not make sense.
             /// It's okay to apply encryption codecs solely without anything else.
-            if (!is_compression && !has_none && encryption_codecs.size() != codecs_descriptions->children.size())
+            if (!with_compressing_codec && !with_none_codec && encryption_codecs_pos.size() != codecs_descriptions->children.size())
                 throw Exception(
                     "Compression codec " + codec_description
                         + " does not compress anything."
@@ -171,8 +170,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 
             /// It does not make sense to apply any non-encryption codecs
             /// after encryption one.
-            if (!encryption_codecs.empty() &&
-                *encryption_codecs.begin() != codecs_descriptions->children.size() - encryption_codecs.size())
+            if (!encryption_codecs_pos.empty() &&
+                *encryption_codecs_pos.begin() != codecs_descriptions->children.size() - encryption_codecs_pos.size())
                 throw Exception("The combination of compression codecs " + codec_description + " is meaningless,"
                                 " because it does not make sense to apply any non-post-processing codecs after"
                                 " post-processing ones. (Note: you can enable setting 'allow_suspicious_codecs'"
@@ -181,7 +180,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
             /// It does not make sense to apply any transformations after generic compression algorithm
             /// So, generic compression can be only one and only at the end.
             if (generic_compression_codec_pos &&
-                *generic_compression_codec_pos != codecs_descriptions->children.size() - 1 - encryption_codecs.size())
+                *generic_compression_codec_pos != codecs_descriptions->children.size() - 1 - encryption_codecs_pos.size())
                 throw Exception("The combination of compression codecs " + codec_description + " is meaningless,"
                     " because it does not make sense to apply any transformations after generic compression algorithm."
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
