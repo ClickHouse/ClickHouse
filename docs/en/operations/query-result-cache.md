@@ -7,9 +7,8 @@ title: "Query Result Cache [experimental]"
 
 # Query Result Cache [experimental]
 
-The (experimental) query result cache allows to compute SELECT queries just once and to serve further executions of the same query
-immediately from the cache. Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the
-ClickHouse server.
+The query result cache allows to compute SELECT queries just once and to serve further executions of the same query immediately from the
+cache. Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
 
 ## Background, Design and Limitations
 
@@ -30,6 +29,11 @@ Query result caches are generally either transactionally consistent or inconsist
 Transactionally inconsistent caching is traditionally provided by client tools or proxy packages interacting with the database. As a result,
 the same caching logic and configuration is often duplicated. With ClickHouse's query result cache, the caching logic moves to the server
 side. This reduces maintenance effort and avoids redundancy.
+
+:::warning
+This is an experimental feature that should not be used in production. There are known cases (e.g. in distributed query processing) where
+wrong results are cached/stored.
+:::
 
 ## Usage Examples and Configuration Settings
 
