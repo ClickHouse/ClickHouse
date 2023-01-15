@@ -137,11 +137,11 @@ struct ObjectInfo
     time_t last_modification_time = 0;
 };
 
-S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool throw_on_error = true, bool for_disk_s3 = false);
+S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
 
-size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool throw_on_error = true, bool for_disk_s3 = false);
+size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
 
-bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
+bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
 
 /// Checks if the object exists. If it doesn't exists the function returns an error without throwing any exception.
 std::pair<bool /* exists */, Aws::S3::S3Error> checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
@@ -149,7 +149,7 @@ std::pair<bool /* exists */, Aws::S3::S3Error> checkObjectExists(const Aws::S3::
 bool isNotFoundError(Aws::S3::S3Errors error);
 
 /// Returns the object's metadata.
-std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool throw_on_error = true, bool for_disk_s3 = false);
+std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
 
 }
 #endif
