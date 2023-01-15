@@ -4,6 +4,7 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
 
 #include <sys/stat.h>
@@ -303,7 +304,7 @@ private:
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
-                query = thread_group->one_line_query;
+                query = DB::toOneLineQuery(thread_group->query);
             }
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
@@ -601,34 +602,6 @@ void BaseDaemon::closeFDs()
     }
 }
 
-namespace
-{
-/// In debug version on Linux, increase oom score so that clickhouse is killed
-/// first, instead of some service. Use a carefully chosen random score of 555:
-/// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
-/// whatever errors that occur, because it's just a debugging aid and we don't
-/// care if it breaks.
-#if defined(OS_LINUX) && !defined(NDEBUG)
-void debugIncreaseOOMScore()
-{
-    const std::string new_score = "555";
-    try
-    {
-        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
-        buf.write(new_score.c_str(), new_score.size());
-        buf.close();
-    }
-    catch (const Poco::Exception & e)
-    {
-        LOG_WARNING(&Poco::Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
-        return;
-    }
-    LOG_INFO(&Poco::Logger::root(), "Set OOM score adjustment to {}", new_score);
-}
-#else
-void debugIncreaseOOMScore() {}
-#endif
-}
 
 void BaseDaemon::initialize(Application & self)
 {
@@ -795,7 +768,6 @@ void BaseDaemon::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
     logRevision();
-    debugIncreaseOOMScore();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
     {
@@ -955,7 +927,6 @@ void BaseDaemon::handleSignal(int signal_id)
         std::lock_guard lock(signal_handler_mutex);
         {
             ++terminate_signals_counter;
-            sigint_signals_counter += signal_id == SIGINT;
             signal_event.notify_all();
         }
 
@@ -970,9 +941,9 @@ void BaseDaemon::onInterruptSignals(int signal_id)
     is_cancelled = true;
     LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
-    if (sigint_signals_counter >= 2)
+    if (terminate_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
+        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
         call_default_signal_handler(signal_id);
         /// If the above did not help.
         _exit(128 + signal_id);

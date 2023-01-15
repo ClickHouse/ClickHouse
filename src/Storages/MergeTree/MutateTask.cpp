@@ -625,7 +625,8 @@ void finalizeMutatedPart(
     MergeTreeData::MutableDataPartPtr new_data_part,
     ExecuteTTLType execute_ttl_type,
     const CompressionCodecPtr & codec,
-    ContextPtr context)
+    ContextPtr context,
+    bool sync)
 {
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
@@ -634,6 +635,8 @@ void finalizeMutatedPart(
         writeUUIDText(new_data_part->uuid, out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+        if (sync)
+            out_hashing.sync();
     }
 
     if (execute_ttl_type != ExecuteTTLType::NONE)
@@ -644,6 +647,8 @@ void finalizeMutatedPart(
         new_data_part->ttl_infos.write(out_hashing);
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
         new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+        if (sync)
+            out_hashing.sync();
     }
 
     if (!new_data_part->getSerializationInfos().empty())
@@ -653,23 +658,31 @@ void finalizeMutatedPart(
         new_data_part->getSerializationInfos().writeJSON(out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
+        if (sync)
+            out_hashing.sync();
     }
 
     {
         /// Write file with checksums.
         auto out_checksums = new_data_part->getDataPartStorage().writeFile("checksums.txt", 4096, context->getWriteSettings());
         new_data_part->checksums.write(*out_checksums);
+        if (sync)
+            out_checksums->sync();
     } /// close fd
 
     {
         auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
+        if (sync)
+            out->sync();
     } /// close fd
 
     {
         /// Write a file with a description of columns.
         auto out_columns = new_data_part->getDataPartStorage().writeFile("columns.txt", 4096, context->getWriteSettings());
         new_data_part->getColumns().writeText(*out_columns);
+        if (sync)
+            out_columns->sync();
     } /// close fd
 
     new_data_part->rows_count = source_part->rows_count;
@@ -701,8 +714,6 @@ struct MutationContext
 
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
-
-    StoragePtr storage_from_source_part;
     StorageMetadataPtr metadata_snapshot;
 
     MutationCommandsConstPtr commands;
@@ -1148,7 +1159,8 @@ private:
 
     void prepare()
     {
-        ctx->new_data_part->getDataPartStorage().createDirectories();
+        if (ctx->new_data_part->isStoredOnDisk())
+            ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -1413,7 +1425,7 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->need_sync);
     }
 
 
@@ -1464,10 +1476,9 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
-    ctx->storage_from_source_part = std::make_shared<StorageFromMergeTreeDataPart>(ctx->source_part);
     ctx->need_prefix = need_prefix_;
 
-    auto storage_snapshot = ctx->storage_from_source_part->getStorageSnapshot(ctx->metadata_snapshot, context_);
+    auto storage_snapshot = ctx->data->getStorageSnapshot(ctx->metadata_snapshot, context_);
     extendObjectColumns(ctx->storage_columns, storage_snapshot->object_columns, /*with_subcolumns=*/ false);
 }
 
@@ -1540,7 +1551,7 @@ bool MutateTask::prepare()
     }
 
     if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
+        *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -1583,7 +1594,7 @@ bool MutateTask::prepare()
     if (!ctx->for_interpreter.empty())
     {
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
-            ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
+            *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();

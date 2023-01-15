@@ -111,12 +111,21 @@ def clickhouse_execute_http(
     if default_format is not None:
         params["default_format"] = default_format
 
-    client.request(
-        "POST",
-        f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
-    )
-    res = client.getresponse()
-    data = res.read()
+    for i in range(MAX_RETRIES):
+        try:
+            client.request(
+                "POST",
+                f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
+            )
+            res = client.getresponse()
+            data = res.read()
+            break
+        except Exception as ex:
+            if i == MAX_RETRIES - 1:
+                raise ex
+
+            sleep(i + 1)
+
     if res.status != 200:
         raise HTTPError(data.decode(), res.status)
 
@@ -223,17 +232,20 @@ def need_retry(args, stdout, stderr, total_time):
 
 
 def get_processlist(args):
-    if args.replicated_database:
-        return clickhouse_execute_json(
-            args,
-            """
-        SELECT materialize((hostName(), tcpPort())) as host, *
-        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
-        WHERE query NOT LIKE '%system.processes%'
-        """,
-        )
-    else:
-        return clickhouse_execute_json(args, "SHOW PROCESSLIST")
+    try:
+        if args.replicated_database:
+            return clickhouse_execute_json(
+                args,
+                """
+            SELECT materialize((hostName(), tcpPort())) as host, *
+            FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
+            WHERE query NOT LIKE '%system.processes%'
+            """,
+            )
+        else:
+            return clickhouse_execute_json(args, "SHOW PROCESSLIST")
+    except Exception as e:
+        return "Failed to get processlist: " + str(e)
 
 
 def get_transactions_list(args):
@@ -1001,18 +1013,28 @@ class TestCase:
             seconds_left = max(
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
             )
+            drop_database_query = "DROP DATABASE " + database
+            if args.replicated_database:
+                drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+
             try:
-                drop_database_query = "DROP DATABASE " + database
-                if args.replicated_database:
-                    drop_database_query += " ON CLUSTER test_cluster_database_replicated"
-                clickhouse_execute(
-                    args,
-                    drop_database_query,
-                    timeout=seconds_left,
-                    settings={
-                        "log_comment": args.testcase_basename,
-                    },
-                )
+                # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
+                for _ in range(1, 60):
+                    try:
+                        clickhouse_execute(
+                            args,
+                            drop_database_query,
+                            timeout=seconds_left,
+                            settings={
+                                "log_comment": args.testcase_basename,
+                            },
+                        )
+                    except HTTPError as e:
+                        if need_retry(args, e.message, e.message, 0):
+                            continue
+                        raise
+                    break
+
             except socket.timeout:
                 total_time = (datetime.now() - start_time).total_seconds()
                 return (
@@ -1099,7 +1121,7 @@ class TestCase:
                     args, self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
-        except (ConnectionRefusedError, ConnectionResetError):
+        except (ConnectionError, http.client.ImproperConnectionState):
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -1525,8 +1547,11 @@ def check_server_started(args):
             print(" OK")
             sys.stdout.flush()
             return True
-        except (ConnectionRefusedError, ConnectionResetError):
-            print(".", end="")
+        except (ConnectionError, http.client.ImproperConnectionState) as e:
+            if args.hung_check:
+                print("Connection error, will retry: ", str(e))
+            else:
+                print(".", end="")
             sys.stdout.flush()
             retry_count -= 1
             sleep(0.5)
@@ -1535,7 +1560,7 @@ def check_server_started(args):
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
-            print("\nUexpected exception, will not retry: ", str(e))
+            print("\nUexpected exception, will not retry: ", type(e).__name__, ": ", str(e))
             break
 
     print("\nAll connection tries failed")
@@ -1801,8 +1826,7 @@ def main(args):
     global restarted_tests
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot execute 'SELECT 1' query. \
-            If you are using split build, you have to specify -c option."
+        msg = "Server is not responding. Cannot execute 'SELECT 1' query."
         if args.hung_check:
             print(msg)
             pid = get_server_pid()
@@ -1987,14 +2011,14 @@ if __name__ == "__main__":
         "-b",
         "--binary",
         default="clickhouse",
-        help="Path to clickhouse (if monolithic build, clickhouse-server otherwise) "
+        help="Path to clickhouse"
         "binary or name of binary in PATH",
     )
 
     parser.add_argument(
         "-c",
         "--client",
-        help="Path to clickhouse-client (if split build, useless otherwise) binary of "
+        help="Path to clickhouse-client, this option is useless"
         "name of binary in PATH",
     )
 
@@ -2261,7 +2285,7 @@ if __name__ == "__main__":
         if find_binary(args.binary + "-client"):
             args.client = args.binary + "-client"
 
-            print("Using " + args.client + " as client program (expecting split build)")
+            print("Using " + args.client + " as client program")
         elif find_binary(args.binary):
             args.client = args.binary + " client"
 
