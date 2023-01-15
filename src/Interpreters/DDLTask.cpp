@@ -29,12 +29,14 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
 }
 
+
 HostID HostID::fromString(const String & host_port_str)
 {
     HostID res;
     std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
     return res;
 }
+
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
