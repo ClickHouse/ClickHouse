@@ -71,27 +71,30 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
             }
         }
 
-        bool checkSelfDeduplicate()
+        /// this function check if the block contains duplicate inserts.
+        /// if so, we keep only one insert for every duplicate ones.
+        bool filterSelfDuplicate()
         {
             if constexpr (async_insert)
             {
                 std::vector<String> dup_block_ids;
                 for (const auto & [hash_id, offset_indexes] : block_id_to_offset_idx)
                 {
-                    if (offset_idxes.size() > 1)
+                    /// It means more than one inserts have the same hash id, in this case, we should keep only one of them.
+                    if (offset_indexes.size() > 1)
                         dup_block_ids.push_back(hash_id);
                 }
                 if (dup_block_ids.empty())
                     return false;
 
-                rewriteBlock(dup_block_ids, true);
+                filterBlockDuplicate(dup_block_ids, true);
                 return true;
             }
             return false;
         }
 
         /// remove the conflict parts of block for rewriting again.
-        void rewriteBlock(const std::vector<String> & block_paths, bool self_dedup)
+        void filterBlockDuplicate(const std::vector<String> & block_paths, bool self_dedup)
         {
             if constexpr (async_insert)
             {
@@ -103,12 +106,13 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
                     auto it = block_id_to_offset_idx.find(conflict_block_id);
                     if (it == block_id_to_offset_idx.end())
                         throw Exception("Unknown conflict path " + conflict_block_id, ErrorCodes::LOGICAL_ERROR);
-                    /// in case of self dedup, we should remain one insert
+                    /// if this filter is for self_dedup, that means the block paths is selected by `filterSelfDuplicate`, which is a self purge.
+                    /// in this case, we don't know if zk has this insert, then we should keep one insert, to avoid missing this insert.
                     offset_idx.insert(std::end(offset_idx), std::begin(it->second) + self_dedup, std::end(it->second));
                 }
                 std::sort(offset_idx.begin(), offset_idx.end());
 
-                auto & offsets = block_with_partition.offsets->offsets;
+                auto & offsets = block_with_partition.offsets;
                 size_t idx = 0, remove_count = 0;
                 auto it = offset_idx.begin();
                 std::vector<size_t> new_offsets;
@@ -143,7 +147,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
 
                 LOG_TRACE(log, "New block IDs: {}, new offsets: {}, size: {}", toString(new_block_ids), toString(new_offsets), new_offsets.size());
 
-                offsets = std::move(new_offsets);
+                block_with_partition.offsets = std::move(new_offsets);
                 block_id = std::move(new_block_ids);
                 auto cols = block_with_partition.block.getColumns();
                 for (auto & col : cols)
@@ -174,18 +178,17 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
 std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes)
 {
     MutableColumnPtr column = DataTypeInt64().createColumn();
-    auto offset_ptr = std::make_shared<ChunkOffsets>(offsets);
     for (auto datum : data)
     {
         column->insert(datum);
     }
     Block block({ColumnWithTypeAndName(std::move(column), DataTypePtr(new DataTypeInt64()), "a")});
 
-    BlockWithPartition block1(std::move(block), Row(), offset_ptr);
+    BlockWithPartition block1(std::move(block), Row(), std::move(offsets));
     ReplicatedMergeTreeSinkImpl<true>::DelayedChunk::Partition part(
         &Poco::Logger::get("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1));
 
-    part.checkSelfDeduplicate();
+    part.filterSelfDuplicate();
 
     ColumnPtr col = part.block_with_partition.block.getColumns()[0];
     std::vector<Int64> result;
@@ -212,7 +215,7 @@ namespace
         size_t start = 0;
         auto cols = block.block.getColumns();
         std::vector<String> block_id_vec;
-        for (auto offset : block.offsets->offsets)
+        for (auto offset : block.offsets)
         {
             SipHash hash;
             for (size_t i = start; i < offset; ++i)
@@ -422,7 +425,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         {
             /// TODO consider insert_deduplication_token
             block_id = getHashesForBlocks(current_block, temp_part.part->info.partition_id);
-            LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(current_block.offsets->offsets), current_block.offsets->offsets.size());
+            LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(current_block.offsets), current_block.offsets.size());
         }
         else if (deduplicate)
         {
@@ -534,7 +537,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
     {
         int retry_times = 0;
         /// users may have lots of same inserts. It will be helpful to deduplicate in advance.
-        if (partition.checkSelfDeduplicate())
+        if (partition.filterSelfDuplicate())
         {
             LOG_TRACE(log, "found duplicated inserts in the block");
             partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
@@ -550,7 +553,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             ++retry_times;
             LOG_DEBUG(log, "Found duplicate block IDs: {}, retry times {}", toString(conflict_block_ids), retry_times);
             /// partition clean conflict
-            partition.rewriteBlock(conflict_block_ids, false);
+            partition.filterBlockDuplicate(conflict_block_ids, false);
             if (partition.block_id.empty())
                 break;
             partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
