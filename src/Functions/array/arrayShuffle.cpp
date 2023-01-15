@@ -141,9 +141,8 @@ bool FunctionArrayShuffle::executeGeneric(const IColumn & src_data, const Column
 
     IColumn::Permutation permutation;
     ColumnArray::Offset prev_off = 0;
-    for (size_t i = 0; i < src_offsets.size(); ++i)
+    for (auto off: src_offsets)
     {
-        ColumnArray::Offset off = src_offsets[i];
         size_t count = off - prev_off;
 
         permutation.resize(count);
@@ -155,7 +154,7 @@ bool FunctionArrayShuffle::executeGeneric(const IColumn & src_data, const Column
             auto shuffled_idx = permutation[unshuffled_idx];
             res_data.insertFrom(src_data, shuffled_idx);
         }
-        prev_off = src_offsets[i];
+        prev_off = off;
     }
 
     return true;
@@ -171,10 +170,8 @@ bool FunctionArrayShuffle::executeNumber(const IColumn & src_data, const ColumnA
         res_vec.resize(src_data.size());
 
         ColumnArray::Offset prev_off = 0;
-        for (size_t i = 0; i < src_offsets.size(); ++i)
+        for (auto off: src_offsets)
         {
-            ColumnArray::Offset off = src_offsets[i];
-
             const auto * src = &src_vec[prev_off];
             const auto * src_end = &src_vec[off];
             if (src == src_end)
@@ -204,10 +201,8 @@ bool FunctionArrayShuffle::executeFixedString(const IColumn & src_data, const Co
 
         IColumn::Permutation permutation;
         ColumnArray::Offset prev_off = 0;
-        for (size_t i = 0; i < src_offsets.size(); ++i)
+        for (auto off: src_offsets)
         {
-            ColumnArray::Offset off = src_offsets[i];
-
             const UInt8 * src = &src_data_chars[prev_off * n];
             size_t count = off - prev_off;
 
@@ -250,9 +245,8 @@ bool FunctionArrayShuffle::executeString(const IColumn & src_data, const ColumnA
         IColumn::Permutation permutation;
         ColumnArray::Offset arr_prev_off = 0;
         ColumnString::Offset string_prev_off = 0;
-        for (size_t i = 0; i < src_array_offsets.size(); ++i)
+        for (auto arr_off: src_array_offsets)
         {
-            ColumnArray::Offset arr_off = src_array_offsets[i];
             if (arr_off != arr_prev_off)
             {
                 size_t string_count = arr_off - arr_prev_off;
