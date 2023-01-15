@@ -175,9 +175,9 @@ private:
                 {
                     for (const auto & transformer : qualified_asterisk->transformers->children)
                     {
-                        if (transformer.get()->as<ASTColumnsApplyTransformer>() ||
-                            transformer.get()->as<ASTColumnsExceptTransformer>() ||
-                            transformer.get()->as<ASTColumnsReplaceTransformer>())
+                        if (transformer->as<ASTColumnsApplyTransformer>() ||
+                            transformer->as<ASTColumnsExceptTransformer>() ||
+                            transformer->as<ASTColumnsReplaceTransformer>())
                             IASTColumnsTransformer::transform(transformer, columns);
                         else
                             throw Exception("Logical error: qualified asterisk must only have children of IASTColumnsTransformer type", ErrorCodes::LOGICAL_ERROR);
