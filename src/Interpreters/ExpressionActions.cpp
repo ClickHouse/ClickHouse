@@ -620,9 +620,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
 
-            const ColumnArray * array = typeid_cast<const ColumnArray *>(array_join_key.column.get());
+            const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)
-                throw Exception("ARRAY JOIN of not array: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
+                throw Exception("ARRAY JOIN of not array nor map: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
 
             for (auto & column : columns)
                 if (column.column)
@@ -635,7 +635,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             auto & res_column = columns[action.result_position];
 
             res_column.column = array->getDataPtr();
-            res_column.type = assert_cast<const DataTypeArray &>(*array_join_key.type).getNestedType();
+            res_column.type = getArrayJoinDataType(array_join_key.type)->getNestedType();
             res_column.name = action.node->result_name;
 
             num_rows = res_column.column->size();
@@ -790,10 +790,10 @@ void ExpressionActions::assertDeterministic() const
 }
 
 
-std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
+NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
     std::optional<size_t> min_size;
-    String res;
+    NameAndTypePair result;
 
     for (const auto & column : columns)
     {
@@ -807,14 +807,14 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
         if (!min_size || size < *min_size)
         {
             min_size = size;
-            res = column.name;
+            result = column;
         }
     }
 
     if (!min_size)
         throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
 
-    return res;
+    return result;
 }
 
 std::string ExpressionActions::dumpActions() const
@@ -1008,7 +1008,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
 
         if (array_join->columns.contains(column.name))
         {
-            const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
+            const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
             /// Arrays are materialized
             column.column = nullptr;

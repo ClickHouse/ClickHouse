@@ -80,7 +80,7 @@ do
 done
 
 # if clickhouse user is defined - create it (user "default" already exists out of box)
-if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ]; then
+if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
     echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
     cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
     <clickhouse>
@@ -120,8 +120,8 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     pid="$!"
 
     # check if clickhouse is ready to accept connections
-    # will try to send ping clickhouse via http_port (max 12 retries by default, with 1 sec timeout and 1 sec delay between retries)
-    tries=${CLICKHOUSE_INIT_TIMEOUT:-12}
+    # will try to send ping clickhouse via http_port (max 1000 retries by default, with 1 sec timeout and 1 sec delay between retries)
+    tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
     while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
         if [ "$tries" -le "0" ]; then
             echo >&2 'ClickHouse init process failed.'

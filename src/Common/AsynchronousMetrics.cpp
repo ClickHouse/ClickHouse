@@ -2,12 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getCurrentProcessFDCount.h>
-#include <Common/getMaxFileDescriptorCount.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Server/ProtocolServerAdapter.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
@@ -218,18 +213,18 @@ void AsynchronousMetrics::openSensorsChips()
             if (!file)
                 continue;
 
-            String sensor_name;
-            if (sensor_name_file_exists)
-            {
-                ReadBufferFromFilePRead sensor_name_in(sensor_name_file, small_buffer_size);
-                readText(sensor_name, sensor_name_in);
-                std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
-            }
-
-            file->rewind();
-            Int64 temperature = 0;
+            String sensor_name{};
             try
             {
+                if (sensor_name_file_exists)
+                {
+                    ReadBufferFromFilePRead sensor_name_in(sensor_name_file, small_buffer_size);
+                    readText(sensor_name, sensor_name_in);
+                    std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
+                }
+
+                file->rewind();
+                Int64 temperature = 0;
                 readText(temperature, *file);
             }
             catch (const ErrnoException & e)
@@ -238,7 +233,7 @@ void AsynchronousMetrics::openSensorsChips()
                     &Poco::Logger::get("AsynchronousMetrics"),
                     "Hardware monitor '{}', sensor '{}' exists but could not be read: {}.",
                     hwmon_name,
-                    sensor_name,
+                    sensor_index,
                     errnoToString(e.getErrno()));
                 continue;
             }

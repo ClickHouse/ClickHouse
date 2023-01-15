@@ -33,6 +33,7 @@ CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBMSs
 DateTime
+DateTimes
 DockerHub
 Doxygen
 Encodings
@@ -55,6 +56,7 @@ IPv
 IntN
 Integrations
 JSONAsString
+JSONAsObject
 JSONColumns
 JSONColumnsWithMetadata
 JSONCompact
@@ -171,6 +173,7 @@ Werror
 Woboq
 WriteBuffer
 WriteBuffers
+WithNamesAndTypes
 XCode
 YAML
 YYYY
@@ -247,6 +250,7 @@ datafiles
 dataset
 datasets
 datetime
+datetimes
 dbms
 ddl
 deallocation
@@ -361,6 +365,7 @@ mysqldump
 mysqljs
 noop
 nullable
+nullability
 num
 obfuscator
 odbc
@@ -430,6 +435,7 @@ rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
 rsync
+runnable
 runningAccumulate
 runtime
 russian
