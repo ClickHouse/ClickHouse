@@ -129,7 +129,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
                         while (start_pos < end_pos)
                         {
                             *(pos + start_pos) = 0;
-                            start_pos ++;
+                            start_pos++;
                         }
                         it++;
                     }
