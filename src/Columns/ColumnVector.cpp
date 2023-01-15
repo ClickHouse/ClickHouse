@@ -486,6 +486,29 @@ static inline UInt64 blsr(UInt64 mask)
 #endif
 }
 
+/// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
+/// Otherwise it returns the special value: 0xFF.
+uint8_t prefixToCopy(UInt64 mask)
+{
+    if (mask == 0)
+        return 0;
+    if (mask == static_cast<UInt64>(-1))
+        return 64;
+    /// Row with index 0 correspond to the least significant bit.
+    /// So the length of the prefix to copy is 64 - #(leading zeroes).
+    const UInt64 leading_zeroes = __builtin_clzll(mask);
+    if (mask == ((static_cast<UInt64>(-1) << leading_zeroes) >> leading_zeroes))
+        return 64 - leading_zeroes;
+    else
+        return 0xFF;
+}
+
+uint8_t suffixToCopy(UInt64 mask)
+{
+    const auto prefix_to_copy = prefixToCopy(~mask);
+    return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
+}
+
 DECLARE_DEFAULT_CODE(
 template <typename T, typename Container, size_t SIMD_ELEMENTS>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
@@ -493,18 +516,27 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
     while (filt_pos < filt_end_aligned)
     {
         UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+        const uint8_t prefix_to_copy = prefixToCopy(mask);
 
-        if (0xffffffffffffffff == mask)
+        if (0xFF != prefix_to_copy)
         {
-            res_data.insert(data_pos, data_pos + SIMD_ELEMENTS);
+            res_data.insert(data_pos, data_pos + prefix_to_copy);
         }
         else
         {
-            while (mask)
+            const uint8_t suffix_to_copy = suffixToCopy(mask);
+            if (0xFF != suffix_to_copy)
             {
-                size_t index = std::countr_zero(mask);
-                res_data.push_back(data_pos[index]);
-                mask = blsr(mask);
+                res_data.insert(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
+            }
+            else
+            {
+                while (mask)
+                {
+                    size_t index = std::countr_zero(mask);
+                    res_data.push_back(data_pos[index]);
+                    mask = blsr(mask);
+                }
             }
         }
 
