@@ -120,7 +120,7 @@ public:
         friend class QueryResultCache; /// for createWriter()
     };
 
-    /// Looks up a result chunk for a key in the cache and (if found) constructs a pipe with the chunk as source.
+    /// Looks up a query result for a key in the cache and (if found) constructs a pipe with the query result chunks as source.
     class Reader
     {
     public:

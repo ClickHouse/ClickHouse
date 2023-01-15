@@ -19,7 +19,7 @@ protected:
     Chunk generate() override;
 
 private:
-    SourceFromChunks(Block header, std::shared_ptr<Chunks> chunks_, bool move_from_chunks);
+    SourceFromChunks(Block header, std::shared_ptr<Chunks> chunks_, bool move_from_chunks_);
 
     const std::shared_ptr<Chunks> chunks;
     Chunks::iterator it;
