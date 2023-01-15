@@ -127,17 +127,17 @@ std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path
 
 size_t S3ObjectStorage::getObjectSize(const std::string & bucket_from, const std::string & key) const
 {
-    return S3::getObjectSize(*client.get(), bucket_from, key, "", true);
+    return S3::getObjectSize(*client.get(), bucket_from, key, {}, /* for_disk_s3= */ true);
 }
 
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
-    return S3::objectExists(*client.get(), bucket, object.absolute_path, "", true);
+    return S3::objectExists(*client.get(), bucket, object.absolute_path, {}, /* for_disk_s3= */ true);
 }
 
 std::pair<bool /* exists */, Aws::S3::S3Error> S3ObjectStorage::checkObjectExists(const std::string & bucket_from, const std::string & key) const
 {
-    return S3::checkObjectExists(*client.get(), bucket_from, key, "", true);
+    return S3::checkObjectExists(*client.get(), bucket_from, key, {}, /* for_disk_s3= */ true);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
@@ -414,10 +414,10 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
 {
     ObjectMetadata result;
 
-    auto object_info = S3::getObjectInfo(*client.get(), bucket, path, "", true, true);
+    auto object_info = S3::getObjectInfo(*client.get(), bucket, path, {}, /* for_disk_s3= */ true);
     result.size_bytes = object_info.size;
     result.last_modified = object_info.last_modification_time;
-    result.attributes = S3::getObjectMetadata(*client.get(), bucket, path, "", true, true);
+    result.attributes = S3::getObjectMetadata(*client.get(), bucket, path, {}, /* for_disk_s3= */ true);
 
     return result;
 }

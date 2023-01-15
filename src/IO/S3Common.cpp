@@ -919,7 +919,7 @@ namespace S3
         return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
     }
 
-    S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
     {
         auto outcome = getObjectAttributes(client, bucket, key, version_id, for_disk_s3);
         if (outcome.IsSuccess())
@@ -937,19 +937,19 @@ namespace S3
         return {};
     }
 
-    size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
     {
-        return getObjectInfo(client, bucket, key, version_id, throw_on_error, for_disk_s3).size;
+        return getObjectInfo(client, bucket, key, version_id, for_disk_s3, throw_on_error).size;
     }
 
-    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
     {
         auto [exists, error] = checkObjectExists(client, bucket, key, version_id, for_disk_s3);
 
         if (exists)
             return true;
 
-        if (isNotFoundError(error.GetErrorType()))
+        if (!throw_on_error || isNotFoundError(error.GetErrorType()))
             return false;
 
         throw S3Exception(error.GetErrorType(),
@@ -965,7 +965,7 @@ namespace S3
         return {false, std::move(outcome.GetError())};
     }
 
-    std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
     {
         ProfileEvents::increment(ProfileEvents::S3GetObjectMetadata);
         if (for_disk_s3)
