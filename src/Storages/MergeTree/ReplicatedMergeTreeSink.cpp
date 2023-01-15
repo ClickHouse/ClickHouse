@@ -76,7 +76,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
             if constexpr (async_insert)
             {
                 std::vector<String> dup_block_ids;
-                for (const auto & [hash_id, offset_idxes] : block_id_to_offset_idx)
+                for (const auto & [hash_id, offset_indexes] : block_id_to_offset_idx)
                 {
                     if (offset_idxes.size() > 1)
                         dup_block_ids.push_back(hash_id);
