@@ -122,14 +122,7 @@ struct URI
 };
 
 /// WARNING: Don't use `HeadObjectRequest`! Use the functions below instead.
-/// Explanation: The `HeadObject` request never returns a response body (even if there is an error) however
-/// if the request was sent without specifying a region in the endpoint (i.e. for example "https://test.s3.amazonaws.com/mydata.csv"
-/// instead of "https://test.s3-us-west-2.amazonaws.com/mydata.csv") then that response body is one of the main ways
-/// to determine the correct region and try to repeat the request again with the correct region.
-/// For any other request type (`GetObject`, `ListObjects`, etc.) AWS SDK does that because they have response bodies,
-/// but for `HeadObject` there is no response body so this way doesn't work.
-/// That's why it's better to avoid using `HeadObject` requests at all.
-/// See https://github.com/aws/aws-sdk-cpp/issues/1558 and also the function S3ErrorMarshaller::ExtractRegion() for more details.
+/// For explanation see the comment about `HeadObject` request in the function tryGetObjectInfo().
 
 struct ObjectInfo
 {
@@ -137,7 +130,7 @@ struct ObjectInfo
     time_t last_modification_time = 0;
 };
 
-S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
+ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
 
 size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
 
