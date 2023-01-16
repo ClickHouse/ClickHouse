@@ -168,6 +168,10 @@ IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
      {"custom_key", ParallelReplicasMode::CUSTOM_KEY},
      {"read_tasks", ParallelReplicasMode::READ_TASKS}})
 
+IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
+    {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
+     {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
+
 IMPLEMENT_SETTING_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS,
     {{"mmap", LocalFSReadMethod::mmap},
      {"pread", LocalFSReadMethod::pread},

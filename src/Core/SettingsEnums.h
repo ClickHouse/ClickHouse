@@ -202,5 +202,13 @@ enum class ParallelReplicasMode : uint8_t
 
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
+enum class ParallelReplicasCustomKeyFilterType : uint8_t
+{
+    DEFAULT,
+    RANGE,
+};
+
+DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
+
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 }
