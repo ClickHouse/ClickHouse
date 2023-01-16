@@ -19,6 +19,9 @@ tests/ci/run_check.py
 ...
 
 ### Documentation entry for user-facing changes
+
+- [ ] Documentation is written (mandatory for new features)
+
 <!---
 Directly edit documentation source files in the "docs" folder with the same pull-request as code changes
 
