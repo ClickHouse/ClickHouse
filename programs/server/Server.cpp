@@ -60,7 +60,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Storages/NamedCollections/NamedCollectionUtils.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -140,6 +140,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event MainConfigLoads;
+    extern const Event ServerStartupMilliseconds;
 }
 
 namespace fs = std::filesystem;
@@ -652,6 +653,8 @@ static void sanityChecks(Server & server)
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
+    Stopwatch startup_watch;
+
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;
@@ -1821,6 +1824,9 @@ try
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
+
+        startup_watch.stop();
+        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
 
         try
         {

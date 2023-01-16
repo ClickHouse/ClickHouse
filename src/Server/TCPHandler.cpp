@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
@@ -120,6 +121,8 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
 {
+    if (!forwarded_for.empty())
+        LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
 }
 
 TCPHandler::~TCPHandler()
@@ -399,10 +402,14 @@ void TCPHandler::runImpl()
                     {
                         auto callback = [this]()
                         {
-                            std::lock_guard lock(fatal_error_mutex);
+                            {
+                                std::lock_guard task_callback_lock(task_callback_mutex);
 
-                            if (isQueryCancelled())
-                                return true;
+                                if (isQueryCancelled())
+                                    return true;
+                            }
+
+                            std::lock_guard lock(fatal_error_mutex);
 
                             sendProgress();
                             sendSelectProfileEvents();
@@ -1156,7 +1163,15 @@ void TCPHandler::receiveHello()
     }
 
     session = makeSession();
-    session->authenticate(user, password, socket().peerAddress());
+    auto & client_info = session->getClientInfo();
+
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
+    String forwarded_address = client_info.getLastForwardedFor();
+    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
+        session->authenticate(user, password, Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port()));
+    else
+        session->authenticate(user, password, socket().peerAddress());
 }
 
 void TCPHandler::receiveAddendum()

@@ -1,36 +1,39 @@
 #include <DataTypes/DataTypeString.h>
-#include <Databases/DatabaseReplicated.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/executeQuery.h>
-#include <Parsers/queryToString.h>
+
+#include <utility>
+
+#include <Backups/IRestoreCoordination.h>
+#include <Backups/RestorerFromBackup.h>
+#include <base/chrono_io.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/Exception.h>
+#include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
-#include <Interpreters/DDLTask.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Cluster.h>
-#include <base/getFQDNOrHostName.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/formatAST.h>
-#include <Backups/IRestoreCoordination.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Common/Macros.h>
-#include <base/chrono_io.h>
-
-#include <utility>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -905,31 +908,37 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
 
-    /// FIXME: Use proper dependency calculation instead of just moving MV to the end
-    using NameToMetadata = std::pair<String, String>;
-    std::vector<NameToMetadata> table_name_to_metadata_sorted;
-    table_name_to_metadata_sorted.reserve(table_name_to_metadata.size());
-    std::move(table_name_to_metadata.begin(), table_name_to_metadata.end(), std::back_inserter(table_name_to_metadata_sorted));
-    std::sort(table_name_to_metadata_sorted.begin(), table_name_to_metadata_sorted.end(), [](const NameToMetadata & lhs, const NameToMetadata & rhs) -> bool
-    {
-        const bool is_materialized_view_lhs = lhs.second.find("MATERIALIZED VIEW") != std::string::npos;
-        const bool is_materialized_view_rhs = rhs.second.find("MATERIALIZED VIEW") != std::string::npos;
-        return is_materialized_view_lhs < is_materialized_view_rhs;
-    });
 
-    for (const auto & name_and_meta : table_name_to_metadata_sorted)
+    /// Create all needed tables in a proper order
+    TablesDependencyGraph tables_dependencies("DatabaseReplicated (" + getDatabaseName() + ")");
+    for (const auto & [table_name, create_table_query] : table_name_to_metadata)
     {
-        if (isTableExist(name_and_meta.first, getContext()))
+        /// Note that table_name could contain a dot inside (e.g. .inner.1234-1234-1234-1234)
+        /// And QualifiedTableName::parseFromString doesn't handle this.
+        auto qualified_name = QualifiedTableName{.database = getDatabaseName(), .table = table_name};
+        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
+        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext(), qualified_name, query_ast));
+    }
+
+    tables_dependencies.checkNoCyclicDependencies();
+    auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
+
+    for (const auto & table_id : tables_to_create)
+    {
+        auto table_name = table_id.getTableName();
+        auto create_query_string = table_name_to_metadata[table_name];
+        if (isTableExist(table_name, getContext()))
         {
-            assert(name_and_meta.second == readMetadataFile(name_and_meta.first));
+            assert(create_query_string == readMetadataFile(table_name));
             continue;
         }
 
-        auto query_ast = parseQueryFromMetadataInZooKeeper(name_and_meta.first, name_and_meta.second);
+        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
         LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
         auto create_query_context = make_query_context();
         InterpreterCreateQuery(query_ast, create_query_context).execute();
     }
+    LOG_INFO(log, "All tables are created successfully");
 
     if (max_log_ptr_at_creation != 0)
     {
