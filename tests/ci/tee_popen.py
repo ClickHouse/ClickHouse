@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 from io import TextIOWrapper
+from pathlib import Path
 from subprocess import Popen, PIPE, STDOUT
 from threading import Thread
 from time import sleep
-from typing import Optional
+from typing import Optional, Union
 import logging
 import os
 import sys
@@ -18,7 +19,7 @@ class TeePopen:
     def __init__(
         self,
         command: str,
-        log_file: str,
+        log_file: Union[str, Path],
         env: Optional[dict] = None,
         timeout: Optional[int] = None,
     ):
@@ -63,7 +64,7 @@ class TeePopen:
         self.wait()
         self.log_file.close()
 
-    def wait(self):
+    def wait(self) -> int:
         if self.process.stdout is not None:
             for line in self.process.stdout:
                 sys.stdout.write(line)
