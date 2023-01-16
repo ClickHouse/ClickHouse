@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsDateTime.h>
 
 
 namespace DB
@@ -74,7 +74,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return ColumnUInt32::create(input_rows_count, time(nullptr));
+        return ColumnDateTime::create(input_rows_count, static_cast<UInt32>(time(nullptr)));
     }
 };
 

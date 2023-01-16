@@ -18,11 +18,6 @@
 #include <IO/WriteHelpers.h>
 
 
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#endif
-
 namespace DB
 {
 struct Settings;
@@ -113,7 +108,7 @@ struct AggregateFunctionUniqUpToData
         readBinary(count, rb);
 
         if (count <= threshold)
-            rb.read(data_ptr, count * sizeof(T));
+            rb.readStrict(data_ptr, count * sizeof(T));
     }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
@@ -179,7 +174,7 @@ private:
 
 public:
     AggregateFunctionUniqUpTo(UInt8 threshold_, const DataTypes & argument_types_, const Array & params_)
-        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>(argument_types_, params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>(argument_types_, params_, std::make_shared<DataTypeUInt64>())
         , threshold(threshold_)
     {
     }
@@ -190,11 +185,6 @@ public:
     }
 
     String getName() const override { return "uniqUpTo"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -240,7 +230,7 @@ private:
 
 public:
     AggregateFunctionUniqUpToVariadic(const DataTypes & arguments, const Array & params, UInt8 threshold_)
-        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<is_exact, argument_is_tuple>>(arguments, params)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<is_exact, argument_is_tuple>>(arguments, params, std::make_shared<DataTypeUInt64>())
         , threshold(threshold_)
     {
         if (argument_is_tuple)
@@ -255,11 +245,6 @@ public:
     }
 
     String getName() const override { return "uniqUpTo"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -291,7 +276,3 @@ public:
 
 
 }
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif

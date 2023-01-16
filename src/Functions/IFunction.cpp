@@ -17,7 +17,7 @@
 #include <cstdlib>
 #include <memory>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push

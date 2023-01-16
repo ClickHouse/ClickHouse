@@ -7,7 +7,7 @@
 
 #include <variant>
 
-#include "config_core.h"
+#include "config.h"
 
 
 namespace DB
@@ -111,7 +111,7 @@ public:
     std::string dumpActions() const;
     JSONBuilder::ItemPtr toTree() const;
 
-    static std::string getSmallestColumn(const NamesAndTypesList & columns);
+    static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);
 
     /// Check if column is always zero. True if it's definite, false if we can't say for sure.
     /// Call it only after subqueries for sets were executed.

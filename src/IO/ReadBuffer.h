@@ -149,7 +149,7 @@ public:
     }
 
     /// Reads a single byte.
-    bool ALWAYS_INLINE read(char & c)
+    [[nodiscard]] bool ALWAYS_INLINE read(char & c)
     {
         if (peek(c))
         {
@@ -168,7 +168,7 @@ public:
     }
 
     /** Reads as many as there are, no more than n bytes. */
-    size_t read(char * to, size_t n)
+    [[nodiscard]] size_t read(char * to, size_t n)
     {
         size_t bytes_copied = 0;
 
@@ -197,10 +197,7 @@ public:
       * By default - the same as read.
       * Don't use for small reads.
       */
-    virtual size_t readBig(char * to, size_t n)
-    {
-        return read(to, n);
-    }
+    [[nodiscard]] virtual size_t readBig(char * to, size_t n) { return read(to, n); }
 
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.

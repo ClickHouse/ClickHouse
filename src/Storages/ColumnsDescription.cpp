@@ -123,6 +123,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             {
                 default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
                 default_desc.expression = std::move(col_ast->default_expression);
+                default_desc.ephemeral_default = col_ast->ephemeral_default;
             }
 
             if (col_ast->comment)
@@ -490,7 +491,7 @@ static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
         case ColumnDefaultKind::Ephemeral:
             return GetColumnsOptions::Ephemeral;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const

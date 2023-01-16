@@ -11,7 +11,7 @@
 #include <base/scope_guard.h>
 #include <random>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>

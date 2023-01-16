@@ -14,8 +14,10 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
+#include <Common/NamedCollections/NamedCollections.h>
 
 namespace DB
 {
@@ -80,7 +82,7 @@ Pipe StorageMeiliSearch::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned)
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 
@@ -127,13 +129,13 @@ SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const Stora
 
 MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
     {
-        auto [common_configuration, storage_specific_args, _] = named_collection.value();
+        validateNamedCollection(*named_collection, {"url", "index"}, {"key"});
 
-        String url = common_configuration.addresses_expr;
-        String index = common_configuration.table;
-        String key = common_configuration.password;
+        String url = named_collection->get<String>("url");
+        String index = named_collection->get<String>("index");
+        String key = named_collection->getOrDefault<String>("key", "");
 
         if (url.empty() || index.empty())
         {

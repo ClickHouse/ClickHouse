@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Disks/IDisk.h>
+
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
@@ -54,7 +56,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     void drop() override;
 
@@ -80,6 +82,7 @@ public:
         String file_name;
         UInt64 last_writen_position = 0;
         UInt64 last_open_end = 0;
+        bool operator!() const { return file_name.empty(); }
     };
 
     using InodeToFileMeta = std::unordered_map<UInt64, FileMeta>;
@@ -147,6 +150,8 @@ private:
     const String format_name;
     Poco::Logger * log;
 
+    DiskPtr disk;
+
     uint64_t milliseconds_to_wait;
 
     /// In order to avoid data race, using a naive trick to forbid execute two select
@@ -198,7 +203,14 @@ private:
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
-    static void checkOffsetIsValid(const String & full_name, UInt64 offset);
+    void checkOffsetIsValid(const String & filename, UInt64 offset) const;
+
+    struct ReadMetadataResult
+    {
+        FileMeta metadata;
+        UInt64 inode = 0;
+    };
+    ReadMetadataResult readMetadata(const String & filename) const;
 };
 
 }

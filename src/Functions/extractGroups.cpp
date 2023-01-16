@@ -90,7 +90,8 @@ public:
             std::string_view current_row = column_haystack->getDataAt(i).toView();
 
             if (re2->Match(re2_st::StringPiece(current_row.data(), current_row.size()),
-                0, current_row.size(), re2_st::RE2::UNANCHORED, matched_groups.data(), matched_groups.size()))
+                0, current_row.size(), re2_st::RE2::UNANCHORED, matched_groups.data(),
+                static_cast<int>(matched_groups.size())))
             {
                 // 1 is to exclude group #0 which is whole re match.
                 for (size_t group = 1; group <= groups_count; ++group)

@@ -4,6 +4,7 @@
 #include <Core/Joins.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
+#include <IO/ReadSettings.h>
 
 
 namespace DB
@@ -183,4 +184,14 @@ DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
 
+enum class Dialect
+{
+    clickhouse,
+    kusto,
+    kusto_auto,
+};
+
+DECLARE_SETTING_ENUM(Dialect)
+
+DECLARE_SETTING_ENUM(LocalFSReadMethod)
 }

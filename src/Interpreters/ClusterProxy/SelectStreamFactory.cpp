@@ -69,7 +69,7 @@ void SelectStreamFactory::createForShard(
             query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
     };
 
-    auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)
+    auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
             .query = query_ast,
@@ -131,7 +131,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        UInt32 local_delay = replicated_storage->getAbsoluteDelay();
+        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
 
         if (local_delay < max_allowed_delay)
         {
@@ -174,18 +174,15 @@ void SelectStreamFactory::createForShard(
 }
 
 
-SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelReplicas(
+void SelectStreamFactory::createForShardWithParallelReplicas(
     const Cluster::ShardInfo & shard_info,
     const ASTPtr & query_ast,
     const StorageID & main_table,
-    const ASTPtr & table_function_ptr,
-    const ThrottlerPtr & throttler,
     ContextPtr context,
     UInt32 shard_count,
-    const std::shared_ptr<const StorageLimitsList> & storage_limits)
+    std::vector<QueryPlanPtr> & local_plans,
+    Shards & remote_shards)
 {
-    SelectStreamFactory::ShardPlans result;
-
     if (auto it = objects_by_shard.find(shard_info.shard_num); it != objects_by_shard.end())
         replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
 
@@ -205,7 +202,7 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
         if (!max_allowed_delay)
             return false;
 
-        UInt32 local_delay = replicated_storage->getAbsoluteDelay();
+        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
         return local_delay >= max_allowed_delay;
     };
 
@@ -213,8 +210,6 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
     size_t all_replicas_count = shard_info.getRemoteNodeCount();
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
-    auto remote_plan = std::make_unique<QueryPlan>();
-
 
     if (settings.prefer_localhost_replica && shard_info.isLocal())
     {
@@ -223,48 +218,22 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
         {
             ++all_replicas_count;
 
-            result.local_plan = createLocalPlan(
-                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, next_replica_number, all_replicas_count, coordinator);
+            local_plans.emplace_back(createLocalPlan(
+                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, next_replica_number, all_replicas_count, coordinator));
 
             ++next_replica_number;
         }
     }
 
-    Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
-    scalars.emplace(
-        "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
-    auto external_tables = context->getExternalTables();
-
-    auto shard = Shard{
-        .query = query_ast,
-        .header = header,
-        .shard_info = shard_info,
-        .lazy = false,
-        .local_delay = 0,
-    };
-
     if (shard_info.hasRemoteConnections())
-    {
-        auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            coordinator,
-            shard,
-            header,
-            processed_stage,
-            main_table,
-            table_function_ptr,
-            context,
-            throttler,
-            std::move(scalars),
-            std::move(external_tables),
-            &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-            storage_limits);
-
-        remote_plan->addStep(std::move(read_from_remote));
-        remote_plan->addInterpreterContext(context);
-        result.remote_plan = std::move(remote_plan);
-    }
-
-    return result;
+        remote_shards.emplace_back(Shard{
+            .query = query_ast,
+            .header = header,
+            .shard_info = shard_info,
+            .lazy = false,
+            .local_delay = 0,
+            .coordinator = coordinator,
+        });
 }
 
 }

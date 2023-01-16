@@ -13,7 +13,7 @@ sidebar_label: url
 **Синтаксис**
 
 ``` sql
-url(URL, format, structure)
+url(URL [,format] [,structure])
 ```
 
 **Параметры**

@@ -10,7 +10,7 @@ int main(int argc, char ** argv)
     {
         int repeats = 1;
         if (argc >= 2)
-            repeats = std::stol(argv[1]);
+            repeats = static_cast<int>(std::stol(argv[1]));
 
         std::string text((std::istreambuf_iterator<char>(std::cin)),
                           std::istreambuf_iterator<char>());

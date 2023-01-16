@@ -117,12 +117,16 @@ public:
             if (!thread.joinable())
                 thread = ThreadFromGlobalPool{&NamedSessionsStorage::cleanThread, this};
 
+            LOG_TRACE(log, "Create new session with session_id: {}, user_id: {}", key.second, key.first);
+
             return {session, true};
         }
         else
         {
             /// Use existing session.
             const auto & session = it->second;
+
+            LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
                 throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
@@ -173,6 +177,10 @@ private:
                 close_times.resize(close_index + 1);
             close_times[close_index].emplace_back(session.key);
         }
+
+        LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
+                 session.key.second, session.key.first);
+
     }
 
     void cleanThread()
@@ -214,12 +222,17 @@ private:
             {
                 if (!session->second.unique())
                 {
+                    LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}", key.second, key.first);
+
                     /// Skip but move it to close on the next cycle.
                     session->second->timeout = std::chrono::steady_clock::duration{0};
                     scheduleCloseSession(*session->second, lock);
                 }
                 else
+                {
+                    LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, key.first);
                     sessions.erase(session);
+                }
             }
         }
 
@@ -231,6 +244,8 @@ private:
     std::condition_variable cond;
     ThreadFromGlobalPool thread;
     bool quit = false;
+
+    Poco::Logger * log = &Poco::Logger::get("NamedSessionsStorage");
 };
 
 
@@ -244,7 +259,7 @@ void Session::shutdownNamedSessions()
     NamedSessionsStorage::instance().shutdown();
 }
 
-Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure)
+Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure, const std::string & certificate)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
       log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
@@ -252,15 +267,11 @@ Session::Session(const ContextPtr & global_context_, ClientInfo::Interface inter
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
     prepared_client_info->is_secure = is_secure;
+    prepared_client_info->certificate = certificate;
 }
 
 Session::~Session()
 {
-    LOG_DEBUG(log, "{} Destroying {}",
-        toString(auth_id),
-        (named_session ? "named session '" + named_session->key.second + "'" : "unnamed session")
-    );
-
     /// Early release a NamedSessionData.
     if (named_session)
         named_session->release();

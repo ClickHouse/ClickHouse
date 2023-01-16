@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/AccessRights.h>
-#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
 #include <base/scope_guard.h>
@@ -87,7 +87,7 @@ public:
 
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.
-    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr = nullptr) const;
+    RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter = {}) const;
 
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
@@ -174,7 +174,6 @@ private:
     void initialize();
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
-    void setSettingsAndConstraints() const;
     void calculateAccessRights() const;
 
     template <bool throw_if_denied, bool grant_option>

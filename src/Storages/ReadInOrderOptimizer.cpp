@@ -103,10 +103,17 @@ NameSet getFixedSortingColumns(
     return fixed_points;
 }
 
+struct MatchResult
+{
+    /// One of {-1, 0, 1} - direction of the match. 0 means - doesn't match.
+    int direction = 0;
+    /// If true then current key must be the last in the matched prefix of sort description.
+    bool is_last_key = false;
+};
+
 /// Optimize in case of exact match with order key element
 /// or in some simple cases when order key element is wrapped into monotonic function.
-/// Returns on of {-1, 0, 1} - direction of the match. 0 means - doesn't match.
-int matchSortDescriptionAndKey(
+MatchResult matchSortDescriptionAndKey(
     const ExpressionActions::Actions & actions,
     const SortColumnDescription & sort_column,
     const String & sorting_key_column)
@@ -114,12 +121,13 @@ int matchSortDescriptionAndKey(
     /// If required order depend on collation, it cannot be matched with primary key order.
     /// Because primary keys cannot have collations.
     if (sort_column.collator)
-        return 0;
+        return {};
 
-    int current_direction = sort_column.direction;
+    MatchResult result{sort_column.direction, false};
+
     /// For the path: order by (sort_column, ...)
     if (sort_column.column_name == sorting_key_column)
-        return current_direction;
+        return result;
 
     /// For the path: order by (function(sort_column), ...)
     /// Allow only one simple monotonic functions with one argument
@@ -132,44 +140,35 @@ int matchSortDescriptionAndKey(
             continue;
 
         if (found_function)
-        {
-            current_direction = 0;
-            break;
-        }
-        else
-        {
-            found_function = true;
-        }
+            return {};
 
+        found_function = true;
         if (action.node->children.size() != 1 || action.node->children.at(0)->result_name != sorting_key_column)
-        {
-            current_direction = 0;
-            break;
-        }
+            return {};
 
         const auto & func = *action.node->function_base;
         if (!func.hasInformationAboutMonotonicity())
-        {
-            current_direction = 0;
-            break;
-        }
+            return {};
 
         auto monotonicity = func.getMonotonicityForRange(*func.getArgumentTypes().at(0), {}, {});
         if (!monotonicity.is_monotonic)
-        {
-            current_direction = 0;
-            break;
-        }
-        else if (!monotonicity.is_positive)
-        {
-            current_direction *= -1;
-        }
+            return {};
+
+        /// If function is not strict monotonic, it can break order
+        /// if it's not last in the prefix of sort description.
+        /// E.g. if we have ORDER BY (d, u) -- ('2020-01-01', 1), ('2020-01-02', 0), ('2020-01-03', 1)
+        /// ORDER BY (toStartOfMonth(d), u) -- ('2020-01-01', 1), ('2020-01-01', 0), ('2020-01-01', 1)
+        if (!monotonicity.is_strict)
+            result.is_last_key = true;
+
+        if (!monotonicity.is_positive)
+            result.direction *= -1;
     }
 
     if (!found_function)
-        current_direction = 0;
+        return {};
 
-    return current_direction;
+    return result;
 }
 
 }
@@ -202,7 +201,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     const ContextPtr & context,
     UInt64 limit) const
 {
-    auto sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
+    const Names & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     int read_direction = description.at(0).direction;
 
     auto fixed_sorting_columns = getFixedSortingColumns(query, sorting_key_columns, context);
@@ -218,8 +217,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
         if (forbidden_columns.contains(description[desc_pos].column_name))
             break;
 
-        int current_direction = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos]);
-        bool is_matched = current_direction && (desc_pos == 0 || current_direction == read_direction);
+        auto match = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos]);
+        bool is_matched = match.direction && (desc_pos == 0 || match.direction == read_direction);
 
         if (!is_matched)
         {
@@ -235,12 +234,15 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
         }
 
         if (desc_pos == 0)
-            read_direction = current_direction;
+            read_direction = match.direction;
 
         sort_description_for_merging.push_back(description[desc_pos]);
 
         ++desc_pos;
         ++key_pos;
+
+        if (match.is_last_key)
+            break;
     }
 
     if (sort_description_for_merging.empty())

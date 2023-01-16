@@ -47,10 +47,10 @@ public:
         const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
     {
         const auto & storage_columns = metadata_snapshot->getColumns();
-        if (!hasObjectColumns(storage_columns))
+        if (!hasDynamicSubcolumns(storage_columns))
             return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
-        auto object_columns = getObjectColumns(
+        auto object_columns = getConcreteObjectColumns(
             parts.begin(), parts.end(),
             storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 
@@ -65,7 +65,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
-        unsigned num_streams) override
+        size_t num_streams) override
     {
         query_plan = std::move(*MergeTreeDataSelectExecutor(storage)
                                               .readFromParts(

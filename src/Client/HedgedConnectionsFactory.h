@@ -70,7 +70,7 @@ public:
 
     const ConnectionTimeouts & getConnectionTimeouts() const { return timeouts; }
 
-    int numberOfProcessingReplicas() const;
+    size_t numberOfProcessingReplicas() const;
 
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }

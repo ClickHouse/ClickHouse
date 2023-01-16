@@ -127,7 +127,7 @@ void MySQLHandlerFactory::generateRSAKeys()
 
 Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {
-    size_t connection_id = last_connection_id++;
+    uint32_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
 #if USE_SSL
     return new MySQLHandlerSSL(server, tcp_server, socket, ssl_enabled, connection_id, *public_key, *private_key);

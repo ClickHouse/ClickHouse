@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 

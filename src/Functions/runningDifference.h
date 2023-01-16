@@ -38,13 +38,13 @@ struct FunctionRunningDifferenceName<false>
 };
 
 /** Calculate difference of consecutive values in columns.
-  * So, result of function depends on partition of data to columnss and on order of data in columns.
+  * So, result of function depends on partition of data to columns and on order of data in columns.
   */
 template <bool is_first_line_zero>
 class FunctionRunningDifferenceImpl : public IFunction
 {
 private:
-    /// It is possible to track value from previous columns, to calculate continuously across all columnss. Not implemented.
+    /// It is possible to track value from previous columns, to calculate continuously across all columns. Not implemented.
 
     template <typename Src, typename Dst>
     static NO_SANITIZE_UNDEFINED void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
@@ -117,7 +117,7 @@ private:
         else if (which.isDate())
             f(DataTypeDate::FieldType());
         else if (which.isDate32())
-            f(DataTypeDate::FieldType());
+            f(DataTypeDate32::FieldType());
         else if (which.isDateTime())
             f(DataTypeDateTime::FieldType());
         else
@@ -147,7 +147,11 @@ public:
         return 1;
     }
 
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override
+    {
+        return false;
+    }
+
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;

@@ -25,7 +25,6 @@ public:
     IAST * ttl_table = nullptr;
     ASTSetQuery * settings = nullptr;
 
-
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
@@ -83,7 +82,7 @@ public:
     ASTPtr lateness_function;
     String as_database;
     String as_table;
-    ASTPtr as_table_function;
+    IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
 
@@ -93,7 +92,6 @@ public:
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
-    std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
     std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
 
     bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
@@ -119,6 +117,8 @@ public:
     }
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
+
+    bool isParameterizedView() const;
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 

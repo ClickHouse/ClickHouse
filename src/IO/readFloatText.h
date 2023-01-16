@@ -144,7 +144,7 @@ bool assertOrParseNaN(ReadBuffer & buf)
 template <typename T, typename ReturnType>
 ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextFastFloatImpl must be float or double");
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextPreciseImpl must be float or double");
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -349,11 +349,11 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     constexpr int significant_digits = std::numeric_limits<UInt64>::digits10;
     readUIntTextUpToNSignificantDigits<significant_digits>(before_point, in);
 
-    int read_digits = in.count() - count_after_sign;
+    size_t read_digits = in.count() - count_after_sign;
 
     if (unlikely(read_digits > significant_digits))
     {
-        int before_point_additional_exponent = read_digits - significant_digits;
+        int before_point_additional_exponent = static_cast<int>(read_digits) - significant_digits;
         x = static_cast<T>(shift10(before_point, before_point_additional_exponent));
     }
     else
@@ -377,11 +377,11 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
             ++in.position();
 
         auto after_leading_zeros_count = in.count();
-        auto after_point_num_leading_zeros = after_leading_zeros_count - after_point_count;
+        int after_point_num_leading_zeros = static_cast<int>(after_leading_zeros_count - after_point_count);
 
         readUIntTextUpToNSignificantDigits<significant_digits>(after_point, in);
         read_digits = in.count() - after_leading_zeros_count;
-        after_point_exponent = (read_digits > significant_digits ? -significant_digits : -read_digits) - after_point_num_leading_zeros;
+        after_point_exponent = (read_digits > significant_digits ? -significant_digits : static_cast<int>(-read_digits)) - after_point_num_leading_zeros;
     }
 
     if (checkChar('e', in) || checkChar('E', in))

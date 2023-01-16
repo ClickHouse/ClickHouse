@@ -107,7 +107,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         }
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
-        if (typeid_cast<DatabaseReplicated *>(database.get()) && !getContext()->getClientInfo().is_replicated_database_internal)
+        if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
             if (1 < descriptions.size())
                 throw Exception(
@@ -120,14 +120,14 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
+            return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
         else
         {
-            TableNamesSet dependencies;
+            std::vector<StorageID> dependencies;
             if (!exchange_tables)
-                dependencies = database_catalog.tryRemoveLoadingDependencies(StorageID(elem.from_database_name, elem.from_table_name),
-                                                                             getContext()->getSettingsRef().check_table_dependencies);
+                dependencies = database_catalog.removeDependencies(StorageID(elem.from_database_name, elem.from_table_name),
+                                                                   getContext()->getSettingsRef().check_table_dependencies);
 
             database->renameTable(
                 getContext(),
@@ -138,7 +138,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 rename.dictionary);
 
             if (!dependencies.empty())
-                DatabaseCatalog::instance().addLoadingDependencies(QualifiedTableName{elem.to_database_name, elem.to_table_name}, std::move(dependencies));
+                DatabaseCatalog::instance().addDependencies(StorageID(elem.to_database_name, elem.to_table_name), dependencies);
         }
     }
 

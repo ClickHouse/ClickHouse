@@ -2,9 +2,9 @@
 slug: /en/interfaces/cli
 sidebar_position: 17
 sidebar_label: Command-Line Client
+title: Command-Line Client
 ---
-
-# Command-line Client
+import ConnectionDetails from '@site/docs/en/_snippets/_gather_your_details_native.md';
 
 ## clickhouse-client
 
@@ -24,25 +24,75 @@ Connected to ClickHouse server version 20.13.1 revision 54442.
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version of the client as the server app. When you try to use a client of the older version, then the server, `clickhouse-client` displays the message:
 
 ```response
-ClickHouse client version is older than ClickHouse server. It may lack support for new features.
+ClickHouse client version is older than ClickHouse server.
+It may lack support for new features.
 ```
 
 ## Usage {#cli_usage}
 
-The client can be used in interactive and non-interactive (batch) mode. To use batch mode, specify the ‘query’ parameter, or send data to ‘stdin’ (it verifies that ‘stdin’ is not a terminal), or both. Similar to the HTTP interface, when using the ‘query’ parameter and sending data to ‘stdin’, the request is a concatenation of the ‘query’ parameter, a line feed, and the data in ‘stdin’. This is convenient for large INSERT queries.
+The client can be used in interactive and non-interactive (batch) mode. 
 
-Example of using the client to insert data:
+### Gather your connection details
+<ConnectionDetails />
+
+### Interactive
+
+To connect to your ClickHouse Cloud service, or any ClickHouse server using TLS and passwords, interactively use `--secure`, port 9440, and provide your username and password:
+
+```bash
+clickhouse-client --host <HOSTNAME> \
+                  --secure \
+                  --port 9440 \
+                  --user <USERNAME> \
+                  --password <PASSWORD>
+```
+
+To connect to a self-managed ClickHouse server you will need the details for that server.  Whether or not TLS is used, port numbers, and passwords are all configurable.  Use the above example for ClickHouse Cloud as a starting point.
+
+
+### Batch
+
+To use batch mode, specify the ‘query’ parameter, or send data to ‘stdin’ (it verifies that ‘stdin’ is not a terminal), or both. Similar to the HTTP interface, when using the ‘query’ parameter and sending data to ‘stdin’, the request is a concatenation of the ‘query’ parameter, a line feed, and the data in ‘stdin’. This is convenient for large INSERT queries.
+
+Examples of using the client to insert data:
+
+#### Inserting a CSV file into a remote ClickHouse service
+
+This example is appropriate for ClickHouse Cloud, or any ClickHouse server using TLS and a password. In this example a sample dataset CSV file, `cell_towers.csv` is inserted into an existing table `cell_towers` in the `default` database:
+
+```bash
+clickhouse-client --host HOSTNAME.clickhouse.cloud \
+  --secure \
+  --port 9440 \
+  --user default \
+  --password PASSWORD \
+  --query "INSERT INTO cell_towers FORMAT CSVWithNames" \
+  < cell_towers.csv
+```
+
+:::note
+To concentrate on the query syntax, the rest of the examples leave off the connection details (`--host`, `--port`, etc.).  Add them in when you try the commands.
+:::
+
+#### Three different ways of inserting data
 
 ``` bash
-$ echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | \
+  clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+```
 
-$ cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+```bash
+cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 3, 'some text', '2016-08-14 00:00:00'
 4, 'some more text', '2016-08-14 00:00:01'
 _EOF
-
-$ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
+
+```bash
+cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+```
+
+### Notes
 
 In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
 

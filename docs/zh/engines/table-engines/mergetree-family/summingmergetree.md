@@ -69,7 +69,9 @@ ORDER BY key
 
 向其中插入数据：
 
-    :) INSERT INTO summtt Values(1,1),(1,2),(2,1)
+``` sql
+INSERT INTO summtt Values(1,1),(1,2),(2,1)
+```
 
 ClickHouse可能不会完整的汇总所有行（[见下文](#data-processing)）,因此我们在查询中使用了聚合函数 `sum` 和 `GROUP BY` 子句。
 
@@ -123,5 +125,3 @@ ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含
 请求数据时，使用 [sumMap(key,value)](../../../engines/table-engines/mergetree-family/summingmergetree.md) 函数来对 `Map` 进行聚合。
 
 对于嵌套数据结构，你无需在列的元组中指定列以进行汇总。
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

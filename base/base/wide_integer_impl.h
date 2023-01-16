@@ -187,8 +187,20 @@ struct integer<Bits, Signed>::_impl
     static_assert(Bits % base_bits == 0);
 
     /// Simple iteration in both directions
-    static constexpr unsigned little(unsigned idx) { return idx; }
-    static constexpr unsigned big(unsigned idx) { return item_count - 1 - idx; }
+    static constexpr unsigned little(unsigned idx)
+    {
+        if constexpr (std::endian::native == std::endian::little)
+            return idx;
+        else
+            return item_count - 1 - idx;
+    }
+    static constexpr unsigned big(unsigned idx)
+    {
+        if constexpr (std::endian::native == std::endian::little)
+            return item_count - 1 - idx;
+        else
+            return idx;
+    }
     static constexpr unsigned any(unsigned idx) { return idx; }
 
     template <class T>
@@ -227,6 +239,8 @@ struct integer<Bits, Signed>::_impl
     template <typename T>
     __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
     {
+        /// NOTE: this can be called with DB::Decimal, and in this case, result
+        /// will be wrong
         if constexpr (std::is_signed_v<T>)
             return static_cast<int64_t>(f);
         else
@@ -238,20 +252,20 @@ struct integer<Bits, Signed>::_impl
     {
         static_assert(sizeof(Integral) <= sizeof(base_type));
 
-        self.items[0] = _impl::to_Integral(rhs);
+        self.items[little(0)] = _impl::to_Integral(rhs);
 
         if constexpr (std::is_signed_v<Integral>)
         {
             if (rhs < 0)
             {
-                for (size_t i = 1; i < item_count; ++i)
-                    self.items[i] = -1;
+                for (unsigned i = 1; i < item_count; ++i)
+                    self.items[little(i)] = -1;
                 return;
             }
         }
 
-        for (size_t i = 1; i < item_count; ++i)
-            self.items[i] = 0;
+        for (unsigned i = 1; i < item_count; ++i)
+            self.items[little(i)] = 0;
     }
 
     template <typename TupleLike, size_t i = 0>
@@ -346,7 +360,7 @@ struct integer<Bits, Signed>::_impl
         constexpr const unsigned to_copy = min_bits / base_bits;
 
         for (unsigned i = 0; i < to_copy; ++i)
-            self.items[i] = rhs.items[i];
+            self.items[little(i)] = rhs.items[little(i)];
 
         if constexpr (Bits > Bits2)
         {
@@ -355,13 +369,13 @@ struct integer<Bits, Signed>::_impl
                 if (rhs < 0)
                 {
                     for (unsigned i = to_copy; i < item_count; ++i)
-                        self.items[i] = -1;
+                        self.items[little(i)] = -1;
                     return;
                 }
             }
 
             for (unsigned i = to_copy; i < item_count; ++i)
-                self.items[i] = 0;
+                self.items[little(i)] = 0;
         }
     }
 
@@ -452,7 +466,7 @@ private:
         {
             if constexpr (sizeof(T) <= sizeof(base_type))
             {
-                if (0 == idx)
+                if (little(0) == idx)
                     return static_cast<base_type>(x);
             }
             else if (idx * sizeof(base_type) < sizeof(T))
@@ -473,7 +487,7 @@ private:
 
         for (unsigned i = 0; i < op_items; ++i)
         {
-            base_type rhs_item = get_item(rhs, i);
+            base_type rhs_item = get_item(rhs, little(i));
             base_type & res_item = res.items[little(i)];
 
             underflows[i] = res_item < rhs_item;
@@ -506,7 +520,7 @@ private:
 
         for (unsigned i = 0; i < op_items; ++i)
         {
-            base_type rhs_item = get_item(rhs, i);
+            base_type rhs_item = get_item(rhs, little(i));
             base_type & res_item = res.items[little(i)];
 
             res_item += rhs_item;
@@ -578,12 +592,12 @@ private:
         else if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
             using CompilerUInt128 = unsigned __int128;
-            CompilerUInt128 a = (CompilerUInt128(lhs.items[1]) << 64) + lhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
-            CompilerUInt128 b = (CompilerUInt128(rhs.items[1]) << 64) + rhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 a = (CompilerUInt128(lhs.items[little(1)]) << 64) + lhs.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 b = (CompilerUInt128(rhs.items[little(1)]) << 64) + rhs.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a * b;
             integer<Bits, Signed> res;
-            res.items[0] = c;
-            res.items[1] = c >> 64;
+            res.items[little(0)] = c;
+            res.items[little(1)] = c >> 64;
             return res;
         }
         else
@@ -595,7 +609,7 @@ private:
 #endif
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(rhs, i);
+                base_type rhs_item = get_item(rhs, little(i));
                 unsigned pos = i * base_bits;
 
                 while (rhs_item)
@@ -790,7 +804,7 @@ public:
             integer<Bits, Signed> res;
 
             for (unsigned i = 0; i < item_count; ++i)
-                res.items[little(i)] = lhs.items[little(i)] | get_item(rhs, i);
+                res.items[little(i)] = lhs.items[little(i)] | get_item(rhs, little(i));
             return res;
         }
         else
@@ -808,7 +822,7 @@ public:
             integer<Bits, Signed> res;
 
             for (unsigned i = 0; i < item_count; ++i)
-                res.items[little(i)] = lhs.items[little(i)] & get_item(rhs, i);
+                res.items[little(i)] = lhs.items[little(i)] & get_item(rhs, little(i));
             return res;
         }
         else
@@ -843,17 +857,17 @@ public:
         {
             using CompilerUInt128 = unsigned __int128;
 
-            CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
-            CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 a = (CompilerUInt128(numerator.items[little(1)]) << 64) + numerator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 b = (CompilerUInt128(denominator.items[little(1)]) << 64) + denominator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
-            res.items[0] = c;
-            res.items[1] = c >> 64;
+            res.items[little(0)] = c;
+            res.items[little(1)] = c >> 64;
 
             CompilerUInt128 remainder = a - b * c;
-            numerator.items[0] = remainder;
-            numerator.items[1] = remainder >> 64;
+            numerator.items[little(0)] = remainder;
+            numerator.items[little(1)] = remainder >> 64;
 
             return res;
         }
@@ -1037,15 +1051,15 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
     else
     {
         auto it = il.begin();
-        for (size_t i = 0; i < _impl::item_count; ++i)
+        for (unsigned i = 0; i < _impl::item_count; ++i)
         {
             if (it < il.end())
             {
-                items[i] = *it;
+                items[_impl::little(i)] = *it;
                 ++it;
             }
             else
-                items[i] = 0;
+                items[_impl::little(i)] = 0;
         }
     }
 }
@@ -1206,7 +1220,7 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
 
     UnsignedT res{};
     for (unsigned i = 0; i < _impl::item_count && i < (sizeof(T) + sizeof(base_type) - 1) / sizeof(base_type); ++i)
-        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+        res += UnsignedT(items[_impl::little(i)]) << (sizeof(base_type) * 8 * i); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
 
     return res;
 }

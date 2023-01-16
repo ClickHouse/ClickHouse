@@ -51,8 +51,8 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
         column_uncompressed_size.insertValue(info.uncompressed_size);
         column_compressed_size.insertValue(info.compressed_size);
         column_error.insertData(info.error_message.data(), info.error_message.size());
-        column_start_time.insertValue(std::chrono::system_clock::to_time_t(info.start_time));
-        column_end_time.insertValue(std::chrono::system_clock::to_time_t(info.end_time));
+        column_start_time.insertValue(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.start_time)));
+        column_end_time.insertValue(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.end_time)));
     };
 
     for (const auto & entry : context->getBackupsWorker().getAllInfos())

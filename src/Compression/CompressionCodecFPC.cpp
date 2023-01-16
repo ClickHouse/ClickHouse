@@ -39,6 +39,7 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
+    bool isFloatingPointTimeSeries() const override { return true; }
 
 private:
     static constexpr UInt32 HEADER_SIZE = 2;
@@ -453,9 +454,9 @@ UInt32 CompressionCodecFPC::doCompressData(const char * source, UInt32 source_si
     switch (float_width)
     {
         case sizeof(Float64):
-            return HEADER_SIZE + FPCOperation<UInt64>(destination, level).encode(src);
+            return static_cast<UInt32>(HEADER_SIZE + FPCOperation<UInt64>(destination, level).encode(src));
         case sizeof(Float32):
-            return HEADER_SIZE + FPCOperation<UInt32>(destination, level).encode(src);
+            return static_cast<UInt32>(HEADER_SIZE + FPCOperation<UInt32>(destination, level).encode(src));
         default:
             break;
     }

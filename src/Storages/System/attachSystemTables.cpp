@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #include <Databases/IDatabase.h>
 #include <Storages/System/attachSystemTables.h>
@@ -23,6 +23,7 @@
 #include <Storages/System/StorageSystemGraphite.h>
 #include <Storages/System/StorageSystemMacros.h>
 #include <Storages/System/StorageSystemMerges.h>
+#include <Storages/System/StorageSystemMoves.h>
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemModels.h>
@@ -72,6 +73,7 @@
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
 #include <Storages/System/StorageSystemTransactions.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
+#include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
@@ -158,6 +160,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemProcesses>(context, system_database, "processes");
     attach<StorageSystemMetrics>(context, system_database, "metrics");
     attach<StorageSystemMerges>(context, system_database, "merges");
+    attach<StorageSystemMoves>(context, system_database, "moves");
     attach<StorageSystemMutations>(context, system_database, "mutations");
     attach<StorageSystemReplicas>(context, system_database, "replicas");
     attach<StorageSystemReplicationQueue>(context, system_database, "replication_queue");
@@ -174,6 +177,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache");
     attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
     attach<StorageSystemCertificates>(context, system_database, "certificates");
+    attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");

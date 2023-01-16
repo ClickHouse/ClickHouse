@@ -9,4 +9,3 @@ sidebar_label: IN Operator
 ## in, notIn, globalIn, globalNotIn
 
 See the section [IN operators](../../sql-reference/operators/in.md#select-in-operators).
-

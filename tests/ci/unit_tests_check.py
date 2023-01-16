@@ -5,25 +5,27 @@ import os
 import sys
 import subprocess
 import atexit
+from typing import List, Tuple
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
-from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
 from build_download_helper import download_unit_tests
-from upload_result_helper import upload_results
-from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status, update_mergeable_check
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from stopwatch import Stopwatch
+from commit_status_helper import post_commit_status, update_mergeable_check
+from docker_pull_helper import get_image_with_version
+from env_helper import TEMP_PATH, REPORTS_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import TestResults, TestResult
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 
 IMAGE_NAME = "clickhouse/unit-test"
@@ -37,20 +39,22 @@ def get_test_name(line):
     raise Exception(f"No test name in line '{line}'")
 
 
-def process_result(result_folder):
+def process_results(
+    result_folder: str,
+) -> Tuple[str, str, TestResults, List[str]]:
     OK_SIGN = "OK ]"
     FAILED_SIGN = "FAILED  ]"
     SEGFAULT = "Segmentation fault"
     SIGNAL = "received signal SIG"
     PASSED = "PASSED"
 
-    summary = []
+    test_results = []  # type: TestResults
     total_counter = 0
     failed_counter = 0
     result_log_path = f"{result_folder}/test_result.txt"
     if not os.path.exists(result_log_path):
         logging.info("No output log on path %s", result_log_path)
-        return "error", "No output log", summary, []
+        return "error", "No output log", test_results, []
 
     status = "success"
     description = ""
@@ -61,13 +65,13 @@ def process_result(result_folder):
                 logging.info("Found ok line: '%s'", line)
                 test_name = get_test_name(line.strip())
                 logging.info("Test name: '%s'", test_name)
-                summary.append((test_name, "OK"))
+                test_results.append(TestResult(test_name, "OK"))
                 total_counter += 1
             elif FAILED_SIGN in line and "listed below" not in line and "ms)" in line:
                 logging.info("Found fail line: '%s'", line)
                 test_name = get_test_name(line.strip())
                 logging.info("Test name: '%s'", test_name)
-                summary.append((test_name, "FAIL"))
+                test_results.append(TestResult(test_name, "FAIL"))
                 total_counter += 1
                 failed_counter += 1
             elif SEGFAULT in line:
@@ -96,16 +100,15 @@ def process_result(result_folder):
             f"fail: {failed_counter}, passed: {total_counter - failed_counter}"
         )
 
-    return status, description, summary, [result_log_path]
+    return status, description, test_results, [result_log_path]
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
 
     temp_path = TEMP_PATH
-    repo_path = REPO_COPY
     reports_path = REPORTS_PATH
 
     check_name = sys.argv[1]
@@ -137,7 +140,7 @@ if __name__ == "__main__":
 
     run_command = f"docker run --cap-add=SYS_PTRACE --volume={tests_binary_path}:/unit_tests_dbms --volume={test_output}:/test_output {docker_image}"
 
-    run_log_path = os.path.join(test_output, "runlog.log")
+    run_log_path = os.path.join(test_output, "run.log")
 
     logging.info("Going to run func tests: %s", run_command)
 
@@ -151,7 +154,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     s3_helper = S3Helper()
-    state, description, test_results, additional_logs = process_result(test_output)
+    state, description, test_results, additional_logs = process_results(test_output)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)
@@ -179,5 +182,9 @@ if __name__ == "__main__":
 
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state == "error":
+    if state == "failure":
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

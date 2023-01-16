@@ -8,11 +8,11 @@ namespace DB
 class PartMetadataManagerOrdinary : public IPartMetadataManager
 {
 public:
-    explicit PartMetadataManagerOrdinary(const IMergeTreeDataPart * part_);
+    explicit PartMetadataManagerOrdinary(const IMergeTreeDataPart * part_) : IPartMetadataManager(part_) {}
 
     ~PartMetadataManagerOrdinary() override = default;
 
-    std::unique_ptr<SeekableReadBuffer> read(const String & file_name) const override;
+    std::unique_ptr<ReadBuffer> read(const String & file_name) const override;
 
     bool exists(const String & file_name) const override;
 

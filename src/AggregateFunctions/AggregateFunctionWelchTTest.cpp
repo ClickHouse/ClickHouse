@@ -40,7 +40,15 @@ struct WelchTTestData : public TTestMoments<Float64>
         Float64 denominator_x = sx2 * sx2 / (nx * nx * (nx - 1));
         Float64 denominator_y = sy2 * sy2 / (ny * ny * (ny - 1));
 
-        return numerator / (denominator_x + denominator_y);
+        auto result = numerator / (denominator_x + denominator_y);
+
+        if (result <= 0 || std::isinf(result) || isNaN(result))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot calculate p_value, because the t-distribution \
+                has inappropriate value of degrees of freedom (={}). It should be > 0", result);
+
+        return result;
     }
 
     std::tuple<Float64, Float64> getResult() const

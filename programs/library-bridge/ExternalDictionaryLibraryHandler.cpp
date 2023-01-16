@@ -1,7 +1,6 @@
 #include "ExternalDictionaryLibraryHandler.h"
 
 #include <base/scope_guard.h>
-#include <base/bit_cast.h>
 #include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
@@ -113,7 +112,7 @@ Block ExternalDictionaryLibraryHandler::loadAll()
 
 Block ExternalDictionaryLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
 {
-    const ExternalDictionaryLibraryAPI::VectorUInt64 ids_data{bit_cast<decltype(ExternalDictionaryLibraryAPI::VectorUInt64::data)>(ids.data()), ids.size()};
+    const ExternalDictionaryLibraryAPI::VectorUInt64 ids_data{std::bit_cast<decltype(ExternalDictionaryLibraryAPI::VectorUInt64::data)>(ids.data()), ids.size()};
 
     auto columns_holder = std::make_unique<ExternalDictionaryLibraryAPI::CString[]>(attributes_names.size());
     ExternalDictionaryLibraryAPI::CStrings columns_pass{static_cast<decltype(ExternalDictionaryLibraryAPI::CStrings::data)>(columns_holder.get()), attributes_names.size()};

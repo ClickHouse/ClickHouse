@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 
 namespace DB
@@ -27,6 +28,8 @@ public:
     bool operator() (Map &) const;
     bool operator() (Object &) const;
     bool operator() (UUID &) const;
+    bool operator() (IPv4 &) const;
+    bool operator() (IPv6 &) const;
     bool operator() (AggregateFunctionStateData &) const;
     bool operator() (bool &) const;
 
@@ -41,7 +44,7 @@ public:
     requires is_big_int_v<T>
     bool operator() (T & x) const
     {
-        x += rhs.reinterpret<T>();
+        x += applyVisitor(FieldVisitorConvertToNumber<T>(), rhs);
         return x != T(0);
     }
 };

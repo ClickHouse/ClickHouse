@@ -9,6 +9,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -224,6 +225,8 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
 {
     if (!ast)
         return;
+
+    checkStackSize();
 
     ASTSelectQuery * query = ast->as<ASTSelectQuery>();
     if (!query || !query->tables())

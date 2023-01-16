@@ -21,6 +21,7 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory &);
+void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactLow(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactHigh(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactInclusive(AggregateFunctionFactory &);
@@ -72,6 +73,7 @@ void registerAggregateFunctionNothing(AggregateFunctionFactory &);
 void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory &);
 void registerAggregateFunctionSparkbar(AggregateFunctionFactory &);
 void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
+void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -105,6 +107,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsQuantileDeterministic(factory);
         registerAggregateFunctionsQuantileExact(factory);
         registerAggregateFunctionsQuantileExactWeighted(factory);
+        registerAggregateFunctionsQuantileInterpolatedWeighted(factory);
         registerAggregateFunctionsQuantileExactLow(factory);
         registerAggregateFunctionsQuantileExactHigh(factory);
         registerAggregateFunctionsQuantileExactInclusive(factory);
@@ -156,6 +159,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionIntervalLengthSum(factory);
         registerAggregateFunctionExponentialMovingAverage(factory);
         registerAggregateFunctionSparkbar(factory);
+        registerAggregateFunctionAnalysisOfVariance(factory);
 
         registerWindowFunctions(factory);
     }

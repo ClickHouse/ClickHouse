@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 
 
 namespace DB
@@ -24,6 +25,17 @@ static String formattedAST(const ASTPtr & ast)
     return buf.str();
 }
 
+static String formattedASTNormalized(const ASTPtr & ast)
+{
+    if (!ast)
+        return "";
+    auto ast_normalized = ast->clone();
+    FunctionNameNormalizer().visit(ast_normalized.get());
+    WriteBufferFromOwnString buf;
+    formatAST(*ast_normalized, buf, false, true);
+    return buf.str();
+}
+
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -33,7 +45,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     }
 
     const auto data_settings = data.getSettings();
-    sampling_expression = formattedAST(metadata_snapshot->getSamplingKeyAST());
+    sampling_expression = formattedASTNormalized(metadata_snapshot->getSamplingKeyAST());
     index_granularity = data_settings->index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
@@ -45,7 +57,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
 
-    primary_key = formattedAST(metadata_snapshot->getPrimaryKey().expression_list_ast);
+    primary_key = formattedASTNormalized(metadata_snapshot->getPrimaryKey().expression_list_ast);
     if (metadata_snapshot->isPrimaryKeyDefined())
     {
         /// We don't use preparsed AST `sorting_key.expression_list_ast` because
@@ -54,15 +66,15 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         /// compatible way is just to convert definition_ast to list and
         /// serialize it. In all other places key.expression_list_ast should be
         /// used.
-        sorting_key = formattedAST(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
+        sorting_key = formattedASTNormalized(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
     }
 
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        partition_key = formattedAST(metadata_snapshot->getPartitionKey().expression_list_ast);
+        partition_key = formattedASTNormalized(metadata_snapshot->getPartitionKey().expression_list_ast);
 
-    ttl_table = formattedAST(metadata_snapshot->getTableTTLs().definition_ast);
+    ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
 
     skip_indices = metadata_snapshot->getSecondaryIndices().toString();
 

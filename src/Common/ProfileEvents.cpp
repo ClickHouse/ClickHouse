@@ -1,5 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/TraceSender.h>
 
 
 /// Available events. Add something here as you wish.
@@ -12,6 +13,7 @@
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
+    M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.") \
     M(QueryTimeMicroseconds, "Total time of all queries.") \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.") \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.") \
@@ -61,7 +63,7 @@
     M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries..") \
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
-    M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform the 'max_network_bandwidth' setting.") \
+    M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth' and other throttling settings.") \
     \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
@@ -146,6 +148,9 @@
     M(SelectedRows, "Number of rows SELECTed from all tables.") \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     \
+    M(WaitMarksLoadMicroseconds, "Time spent loading marks") \
+    M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks") \
+    \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.") \
@@ -226,6 +231,8 @@ The server successfully detected this situation and will download merged part fr
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.") \
+    M(MemoryAllocatorPurge, "Total number of times memory allocator purge was requested") \
+    M(MemoryAllocatorPurgeTimeMicroseconds, "Total number of times memory allocator purge was requested") \
     M(SoftPageFaults, "The number of soft page faults in query execution threads. Soft page fault usually means a miss in the memory allocator cache which required a new memory mapping from the OS and subsequent allocation of a page of physical memory.") \
     M(HardPageFaults, "The number of hard page faults in query execution threads. High values indicate either that you forgot to turn off swap on your server, or eviction of memory pages of the ClickHouse binary during very high memory pressure, or successful usage of the 'mmap' read method for the tables data.") \
     \
@@ -298,6 +305,30 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
     M(DiskS3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
     \
+    M(S3DeleteObjects, "Number of S3 API DeleteObject(s) calls.") \
+    M(S3CopyObject, "Number of S3 API CopyObject calls.") \
+    M(S3ListObjects, "Number of S3 API ListObjects calls.") \
+    M(S3HeadObject,  "Number of S3 API HeadObject calls.") \
+    M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.") \
+    M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.") \
+    M(S3UploadPart, "Number of S3 API UploadPart calls.") \
+    M(S3AbortMultipartUpload, "Number of S3 API AbortMultipartUpload calls.") \
+    M(S3CompleteMultipartUpload, "Number of S3 API CompleteMultipartUpload calls.") \
+    M(S3PutObject, "Number of S3 API PutObject calls.") \
+    M(S3GetObject, "Number of S3 API GetObject calls.") \
+    \
+    M(DiskS3DeleteObjects, "Number of DiskS3 API DeleteObject(s) calls.") \
+    M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.") \
+    M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
+    M(DiskS3HeadObject,  "Number of DiskS3 API HeadObject calls.") \
+    M(DiskS3CreateMultipartUpload, "Number of DiskS3 API CreateMultipartUpload calls.") \
+    M(DiskS3UploadPartCopy, "Number of DiskS3 API UploadPartCopy calls.") \
+    M(DiskS3UploadPart, "Number of DiskS3 API UploadPart calls.") \
+    M(DiskS3AbortMultipartUpload, "Number of DiskS3 API AbortMultipartUpload calls.") \
+    M(DiskS3CompleteMultipartUpload, "Number of DiskS3 API CompleteMultipartUpload calls.") \
+    M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
+    M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
+    \
     M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
@@ -327,6 +358,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
+    M(ThreadpoolReaderSubmit, "Bytes read from a threadpool task in asynchronous reading") \
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
@@ -348,6 +380,7 @@ The server successfully detected this situation and will download merged part fr
     M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
+    M(AsynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for asynchronous remote reads.") \
     \
     M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
     \
@@ -403,10 +436,21 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
     M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
     M(KeeperSaveSnapshot, "Number of snapshot save")\
+    M(KeeperCreateRequest, "Number of create requests")\
+    M(KeeperRemoveRequest, "Number of remove requests")\
+    M(KeeperSetRequest, "Number of set requests")\
+    M(KeeperCheckRequest, "Number of check requests")\
+    M(KeeperMultiRequest, "Number of multi requests")\
+    M(KeeperMultiReadRequest, "Number of multi read requests")\
+    M(KeeperGetRequest, "Number of get requests")\
+    M(KeeperListRequest, "Number of list requests")\
+    M(KeeperExistsRequest, "Number of exists requests")\
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
+    \
+    M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
 
 namespace ProfileEvents
 {
@@ -483,13 +527,42 @@ const char * getDocumentation(Event event)
     return strings[event];
 }
 
-
 Event end() { return END; }
-
 
 void increment(Event event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().increment(event, amount);
+}
+
+void incrementNoTrace(Event event, Count amount)
+{
+    DB::CurrentThread::getProfileEvents().incrementNoTrace(event, amount);
+}
+
+void Counters::increment(Event event, Count amount)
+{
+    Counters * current = this;
+    bool send_to_trace_log = false;
+
+    do
+    {
+        send_to_trace_log |= current->trace_profile_events;
+        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current = current->parent;
+    } while (current != nullptr);
+
+    if (unlikely(send_to_trace_log))
+        DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
+}
+
+void Counters::incrementNoTrace(Event event, Count amount)
+{
+    Counters * current = this;
+    do
+    {
+        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current = current->parent;
+    } while (current != nullptr);
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)

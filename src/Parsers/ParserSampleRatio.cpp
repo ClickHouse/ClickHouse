@@ -14,7 +14,7 @@ static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rat
 {
     UInt64 num_before = 0;
     UInt64 num_after = 0;
-    Int64 exponent = 0;
+    Int32 exponent = 0;
 
     const char * pos_after_first_num = tryReadIntText(num_before, pos, end);
 
@@ -28,12 +28,12 @@ static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rat
     if (!has_num_before_point && !has_point)
         return false;
 
-    size_t number_of_digits_after_point = 0;
+    int number_of_digits_after_point = 0;
 
     if (has_point)
     {
         const char * pos_after_second_num = tryReadIntText(num_after, pos, end);
-        number_of_digits_after_point = pos_after_second_num - pos;
+        number_of_digits_after_point = static_cast<int>(pos_after_second_num - pos);
         pos = pos_after_second_num;
     }
 

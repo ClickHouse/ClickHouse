@@ -10,7 +10,7 @@ Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) in parallel
 **Syntax**
 
 ``` sql
-s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+s3Cluster(cluster_name, source, [,access_key_id, secret_access_key] [,format] [,structure])
 ```
 
 **Arguments**
