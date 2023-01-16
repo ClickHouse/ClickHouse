@@ -1813,8 +1813,6 @@ try
                                                                      &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
         }
 
-        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
-
         {
             std::lock_guard lock(servers_lock);
             for (auto & server : servers)
@@ -1826,6 +1824,9 @@ try
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
+
+        startup_watch.stop();
+        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
 
         try
         {
