@@ -127,7 +127,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "OS/390")
        src/unix/os390-syscalls.c)
 endif()
 
-if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Android|Linux")
+if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   list(APPEND uv_sources src/unix/proctitle.c)
 endif()
 
@@ -156,15 +156,15 @@ target_compile_definitions(_uv PRIVATE ${uv_defines})
 target_include_directories(_uv SYSTEM PUBLIC ${SOURCE_DIR}/include PRIVATE ${SOURCE_DIR}/src)
 target_link_libraries(_uv ${uv_libraries})
 
-#if(UNIX)
-#  # Now for some gibbering horrors from beyond the stars...
-#  foreach(x ${uv_libraries})
-#    set(LIBS "${LIBS} -l${x}")
-#  endforeach(x)
-#  file(STRINGS ${SOURCE_DIR}/configure.ac configure_ac REGEX ^AC_INIT)
-#  string(REGEX MATCH [0-9]+[.][0-9]+[.][0-9]+ PACKAGE_VERSION "${configure_ac}")
-#  string(REGEX MATCH ^[0-9]+ UV_VERSION_MAJOR "${PACKAGE_VERSION}")
-#  # The version in the filename is mirroring the behaviour of autotools.
-#  set_target_properties(_uv PROPERTIES VERSION ${UV_VERSION_MAJOR}.0.0
-#                        SOVERSION ${UV_VERSION_MAJOR})
-#endif()
+if(UNIX)
+  # Now for some gibbering horrors from beyond the stars...
+  foreach(x ${uv_libraries})
+    set(LIBS "${LIBS} -l${x}")
+  endforeach(x)
+  file(STRINGS ${SOURCE_DIR}/configure.ac configure_ac REGEX ^AC_INIT)
+  string(REGEX MATCH [0-9]+[.][0-9]+[.][0-9]+ PACKAGE_VERSION "${configure_ac}")
+  string(REGEX MATCH ^[0-9]+ UV_VERSION_MAJOR "${PACKAGE_VERSION}")
+  # The version in the filename is mirroring the behaviour of autotools.
+  set_target_properties(_uv PROPERTIES VERSION ${UV_VERSION_MAJOR}.0.0
+                        SOVERSION ${UV_VERSION_MAJOR})
+endif()
