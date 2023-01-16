@@ -85,6 +85,7 @@ public:
     /// Get arguments node
     QueryTreeNodePtr & getArgumentsNode() { return children[arguments_child_index]; }
 
+    const DataTypes & getArgumentTypes() const;
     ColumnsWithTypeAndName getArgumentColumns() const;
 
     /// Returns true if function node has window, false otherwise
