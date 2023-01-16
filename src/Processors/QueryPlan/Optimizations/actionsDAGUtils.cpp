@@ -11,7 +11,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
 {
     using Parents = std::set<const ActionsDAG::Node *>;
     std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs_and_constants;
 
     {
         std::stack<const ActionsDAG::Node *> stack;
@@ -27,8 +27,8 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                 const auto * node = stack.top();
                 stack.pop();
 
-                if (node->type == ActionsDAG::ActionType::INPUT)
-                    inner_inputs.emplace(node->result_name, node);
+                if (node->type == ActionsDAG::ActionType::INPUT || node->type == ActionsDAG::ActionType::COLUMN)
+                    inner_inputs_and_constants.emplace(node->result_name, node);
 
                 for (const auto * child : node->children)
                 {
@@ -84,10 +84,10 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
             /// natch.node will be set if match is found.
             auto & match = matches[frame.node];
 
-            if (frame.node->type == ActionsDAG::ActionType::INPUT)
+            if (frame.node->type == ActionsDAG::ActionType::INPUT || frame.node->type == ActionsDAG::ActionType::COLUMN)
             {
                 const ActionsDAG::Node * mapped = nullptr;
-                if (auto it = inner_inputs.find(frame.node->result_name); it != inner_inputs.end())
+                if (auto it = inner_inputs_and_constants.find(frame.node->result_name); it != inner_inputs_and_constants.end())
                     mapped = it->second;
 
                 match.node = mapped;
@@ -153,7 +153,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                                 {
                                     bool all_children_matched = true;
                                     for (size_t i = 0; all_children_matched && i < num_children; ++i)
-                                        all_children_matched = frame.mapped_children[i] == children[i];
+                                        all_children_matched &= frame.mapped_children[i] == children[i];
 
                                     if (all_children_matched)
                                     {
