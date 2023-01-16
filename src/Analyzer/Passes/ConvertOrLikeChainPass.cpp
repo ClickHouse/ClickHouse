@@ -5,6 +5,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -56,7 +57,7 @@ public:
 
         QueryTreeNodes unique_elems;
 
-        std::unordered_map<QueryTreeNodePtr, Array> identifier_to_patterns;
+        QueryTreeNodePtrWithHashMap<Array> node_to_patterns;
         FunctionNodes match_functions;
         for (auto & arg : function_node->getArguments())
         {
@@ -88,10 +89,10 @@ public:
                 regexp = "(?i)" + regexp;
 
             unique_elems.pop_back();
-            auto it = identifier_to_patterns.find(identifier);
-            if (it == identifier_to_patterns.end())
+            auto it = node_to_patterns.find(identifier);
+            if (it == node_to_patterns.end())
             {
-                it = identifier_to_patterns.insert({identifier, Array{}}).first;
+                it = node_to_patterns.insert({identifier, Array{}}).first;
                 /// The second argument will be added when all patterns are known.
                 auto match_function = std::make_shared<FunctionNode>("multiMatchAny");
                 match_function->getArguments().getNodes().push_back(identifier);
@@ -106,7 +107,7 @@ public:
         for (auto & match_function : match_functions)
         {
             auto & arguments = match_function->getArguments().getNodes();
-            auto & patterns = identifier_to_patterns.at(arguments[0]);
+            auto & patterns = node_to_patterns.at(arguments[0]);
             arguments.push_back(std::make_shared<ConstantNode>(Field{std::move(patterns)}));
             match_function->resolveAsFunction(match_function_ref);
         }
