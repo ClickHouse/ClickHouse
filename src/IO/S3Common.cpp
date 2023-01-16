@@ -944,11 +944,11 @@ namespace S3
 
     bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
     {
-        auto [exists, error] = checkObjectExists(client, bucket, key, version_id, for_disk_s3);
-
-        if (exists)
+        auto outcome = getObjectAttributes(client, bucket, key, version_id, for_disk_s3);
+        if (outcome.IsSuccess())
             return true;
 
+        const auto & error = outcome.GetError();
         if (isNotFoundError(error.GetErrorType()))
             return false;
 
@@ -964,7 +964,7 @@ namespace S3
             return;
         const auto & error = outcome.GetError();
         throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
-                          (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetErrorMessage());
+                          (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetMessage());
     }
 
     std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
