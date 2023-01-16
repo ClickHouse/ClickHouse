@@ -164,7 +164,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     if (!hasPendingDataToRead())
         return false;
 
-    assert(file_offset_of_buffer_end <= impl->getFileSize());
+    chassert(file_offset_of_buffer_end <= impl->getFileSize());
+    chassert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
 
     Stopwatch watch;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
@@ -226,8 +227,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     /// In case of multiple files for the same file in clickhouse (i.e. log family)
     /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
     /// so we use [impl->getImplementationBufferOffset(), impl->getFileSize()]
-    assert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
-    assert(file_offset_of_buffer_end <= impl->getFileSize());
+    chassert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
+    chassert(file_offset_of_buffer_end <= impl->getFileSize());
 
     prefetch_future = {};
     return bytes_read;
