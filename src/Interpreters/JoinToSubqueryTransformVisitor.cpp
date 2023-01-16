@@ -49,7 +49,8 @@ ASTPtr makeSubqueryTemplate()
 ASTPtr makeSubqueryQualifiedAsterisk()
 {
     auto asterisk = std::make_shared<ASTQualifiedAsterisk>();
-    asterisk->children.emplace_back(std::make_shared<ASTTableIdentifier>("--.s"));
+    asterisk->qualifier = std::make_shared<ASTIdentifier>("--.s");
+    asterisk->children.push_back(asterisk->qualifier);
     return asterisk;
 }
 
@@ -153,24 +154,34 @@ private:
                 for (auto & table_name : data.tables_order)
                     data.addTableColumns(table_name, columns);
 
-                for (const auto & transformer : asterisk->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                if (asterisk->transformers)
+                {
+                    for (const auto & transformer : asterisk->transformers->children)
+                        IASTColumnsTransformer::transform(transformer, columns);
+                }
             }
             else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
             {
                 has_asterisks = true;
 
-                auto & identifier = child->children[0]->as<ASTTableIdentifier &>();
+                if (!qualified_asterisk->qualifier)
+                    throw Exception("Logical error: qualified asterisk must have a qualifier", ErrorCodes::LOGICAL_ERROR);
+
+                auto & identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
 
                 data.addTableColumns(identifier.name(), columns);
 
-                // QualifiedAsterisk's transformers start to appear at child 1
-                for (const auto * it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+                if (qualified_asterisk->transformers)
                 {
-                    if (it->get()->as<ASTColumnsApplyTransformer>() || it->get()->as<ASTColumnsExceptTransformer>() || it->get()->as<ASTColumnsReplaceTransformer>())
-                        IASTColumnsTransformer::transform(*it, columns);
-                    else
-                        throw Exception("Logical error: qualified asterisk must only have children of IASTColumnsTransformer type", ErrorCodes::LOGICAL_ERROR);
+                    for (const auto & transformer : qualified_asterisk->transformers->children)
+                    {
+                        if (transformer->as<ASTColumnsApplyTransformer>() ||
+                            transformer->as<ASTColumnsExceptTransformer>() ||
+                            transformer->as<ASTColumnsReplaceTransformer>())
+                            IASTColumnsTransformer::transform(transformer, columns);
+                        else
+                            throw Exception("Logical error: qualified asterisk must only have children of IASTColumnsTransformer type", ErrorCodes::LOGICAL_ERROR);
+                    }
                 }
             }
             else if (const auto * columns_list_matcher = child->as<ASTColumnsListMatcher>())
@@ -180,8 +191,11 @@ private:
                 for (const auto & ident : columns_list_matcher->column_list->children)
                     columns.emplace_back(ident->clone());
 
-                for (const auto & transformer : columns_list_matcher->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                if (columns_list_matcher->transformers)
+                {
+                    for (const auto & transformer : columns_list_matcher->transformers->children)
+                        IASTColumnsTransformer::transform(transformer, columns);
+                }
             }
             else if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
             {
@@ -193,8 +207,11 @@ private:
                         columns,
                         [&](const String & column_name) { return columns_regexp_matcher->isColumnMatching(column_name); });
 
-                for (const auto & transformer : columns_regexp_matcher->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                if (columns_regexp_matcher->transformers)
+                {
+                    for (const auto & transformer : columns_regexp_matcher->transformers->children)
+                        IASTColumnsTransformer::transform(transformer, columns);
+                }
             }
             else
                 data.new_select_expression_list->children.push_back(child);
@@ -425,6 +442,7 @@ private:
         {
             if (data.expression_list->children.empty())
                 data.expression_list->children.emplace_back(std::make_shared<ASTAsterisk>());
+
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.expression_list));
         }
         data.done = true;
