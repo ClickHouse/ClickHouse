@@ -6,6 +6,39 @@ slug: /en/operations/settings/settings
 
 # Settings
 
+## additional_table_filters
+
+An additional filter expression that is applied after reading
+from the specified table.
+
+Default value: 0.
+
+**Example**
+
+``` sql
+insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 2 │ bb   │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+```sql
+SELECT *
+FROM table_1
+SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+```
+```response
+┌─x─┬─y────┐
+│ 1 │ a    │
+│ 3 │ ccc  │
+│ 4 │ dddd │
+└───┴──────┘
+```
+
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
@@ -162,6 +195,75 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 Works with tables in the MergeTree family.
 
+## convert_query_to_cnf {#convert_query_to_cnf}
+
+When set to `true`, a `SELECT` query will be converted to conjuctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
+
+For example, notice how the following `SELECT` query is not modified (the default behavior):
+
+```sql
+EXPLAIN SYNTAX
+SELECT *
+FROM
+(
+    SELECT number AS x
+    FROM numbers(20)
+) AS a
+WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
+SETTINGS convert_query_to_cnf = false;
+```
+
+The result is:
+
+```response
+┌─explain────────────────────────────────────────────────────────┐
+│ SELECT x                                                       │
+│ FROM                                                           │
+│ (                                                              │
+│     SELECT number AS x                                         │
+│     FROM numbers(20)                                           │
+│     WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15)) │
+│ ) AS a                                                         │
+│ WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))     │
+│ SETTINGS convert_query_to_cnf = 0                              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Let's set `convert_query_to_cnf` to `true` and see what changes:
+
+```sql
+EXPLAIN SYNTAX
+SELECT *
+FROM
+(
+    SELECT number AS x
+    FROM numbers(20)
+) AS a
+WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
+SETTINGS convert_query_to_cnf = true;
+```
+
+Notice the `WHERE` clause is rewritten in CNF, but the result set is the identical - the Boolean logic is unchanged:
+
+```response
+┌─explain───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SELECT x                                                                                                              │
+│ FROM                                                                                                                  │
+│ (                                                                                                                     │
+│     SELECT number AS x                                                                                                │
+│     FROM numbers(20)                                                                                                  │
+│     WHERE ((x <= 15) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x >= 10) OR (x >= 1)) │
+│ ) AS a                                                                                                                │
+│ WHERE ((x >= 10) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x <= 15) OR (x <= 5))     │
+│ SETTINGS convert_query_to_cnf = 1                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Possible values: true, false
+
+Default value: false
+
+
 ## fsync_metadata {#fsync-metadata}
 
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
@@ -300,40 +402,62 @@ Default value: `ALL`.
 
 ## join_algorithm {#settings-join_algorithm}
 
-Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
+Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
 Possible values:
 
-- `default` — `hash` or `direct`, if possible (same as `direct,hash`)
+### `default` 
 
-- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
+This is the equivalent of `hash` or `direct`, if possible (same as `direct,hash`)
 
-- `parallel_hash` - a variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
+### `grace_hash` 
+
+[Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
+
+The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
+
+### `hash`
+
+[Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
+
+### `parallel_hash` 
+
+A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
 
 When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
-- `partial_merge` — a variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
+### `partial_merge` 
+
+A variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
 
 The `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 
-When using `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
+When using the `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by the `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
 
-- `direct` - can be applied when the right storage supports key-value requests.
+### `direct` 
+
+This algorithm can be applied when the storage for the right table supports key-value requests.
 
 The `direct` algorithm performs a lookup in the right table using rows from the left table as keys. It's supported only by special storage such as [Dictionary](../../engines/table-engines/special/dictionary.md/#dictionary) or [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md) and only the `LEFT` and `INNER` JOINs.
 
-- `auto` — try `hash` join and switch on the fly to another algorithm if the memory limit is violated.
+### `auto` 
 
-- `full_sorting_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
+When set to `auto`, `hash` join is tried first, and the algorithm is switched on the fly to another algorithm if the memory limit is violated.
 
-- `prefer_partial_merge` — ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
+### `full_sorting_merge` 
+
+[Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
+
+### `prefer_partial_merge` 
+
+ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
 
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
-Changes behaviour of join operations with `ANY` strictness.
+Changes the behaviour of join operations with `ANY` strictness.
 
 :::warning
 This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
@@ -396,7 +520,7 @@ Default value: 65536.
 
 Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.
 
-The bigger the value of the setting, the more RAM used and the less disk I/O needed.
+The bigger the value of the setting, the more RAM is used and the less disk I/O is needed.
 
 Possible values:
 
@@ -412,12 +536,12 @@ Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
 :::
 
-When the legacy behaviour enabled:
+When the legacy behaviour is enabled:
 
 -   Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are not equal because ClickHouse uses the logic with many-to-one left-to-right table keys mapping.
 -   Results of `ANY INNER JOIN` operations contain all rows from the left table like the `SEMI LEFT JOIN` operations do.
 
-When the legacy behaviour disabled:
+When the legacy behaviour is disabled:
 
 -   Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
 -   Results of `ANY INNER JOIN` operations contain one row per key from both the left and right tables.
@@ -470,7 +594,7 @@ Default value: `163840`.
 
 ## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge-tree-min-rows-for-concurrent-read-for-remote-filesystem}
 
-The minimum number of lines to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
+The minimum number of lines to read from one file before the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
 
 Possible values:
 
@@ -604,7 +728,7 @@ log_queries=1
 
 ## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
 
-If enabled (non-zero), queries faster then the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
+If enabled (non-zero), queries faster than the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
 
 - `system.query_log`
 - `system.query_thread_log`
@@ -639,7 +763,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Query threads log into [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting have effect only when [log_queries](#settings-log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_thread_log) server configuration parameter.
+Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#settings-log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_thread_log) server configuration parameter.
 
 Possible values:
 
@@ -658,7 +782,7 @@ log_query_threads=1
 
 Setting up query views logging.
 
-When a query run by ClickHouse with this setup on has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_views_log) server configuration parameter.
+When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_views_log) server configuration parameter.
 
 Example:
 
@@ -685,7 +809,7 @@ It can be used to improve the readability of server logs. Additionally, it helps
 
 Possible values:
 
--   Any string no longer than [max_query_size](#settings-max_query_size). If length is exceeded, the server throws an exception.
+-   Any string no longer than [max_query_size](#settings-max_query_size). If the max_query_size is exceeded, the server throws an exception.
 
 Default value: empty string.
 
@@ -719,11 +843,11 @@ The setting also does not have a purpose when using INSERT SELECT, since data is
 
 Default value: 1,048,576.
 
-The default is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
+The default is slightly more than `max_block_size`. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
 
 ## min_insert_block_size_rows {#min-insert-block-size-rows}
 
-Sets the minimum number of rows in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
+Sets the minimum number of rows in the block that can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
 Possible values:
 
@@ -789,7 +913,7 @@ Higher values will lead to higher memory usage.
 
 ## max_compress_block_size {#max-compress-block-size}
 
-The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
+The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying a smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
 :::warning
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
@@ -833,7 +957,7 @@ Default value: 1000.
 
 ## interactive_delay {#interactive-delay}
 
-The interval in microseconds for checking whether request execution has been cancelled and sending the progress.
+The interval in microseconds for checking whether request execution has been canceled and sending the progress.
 
 Default value: 100,000 (checks for cancelling and sends the progress ten times per second).
 
@@ -2408,19 +2532,6 @@ Result
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
 
-## persistent {#persistent}
-
-Disables persistency for the [Set](../../engines/table-engines/special/set.md/#set) and [Join](../../engines/table-engines/special/join.md/#join) table engines.
-
-Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-
-Default value: `1`.
-
 ## allow_nullable_key {#allow-nullable-key}
 
 Allows using of the [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md/#table_engines-mergetree) tables.
@@ -2486,6 +2597,60 @@ Possible values:
 Default value: `''`.
 
 See examples in [UNION](../../sql-reference/statements/select/union.md).
+
+## default_table_engine {#default_table_engine}
+
+Default table engine to use when `ENGINE` is not set in a `CREATE` statement.
+
+Possible values:
+
+- a string representing any valid table engine name
+
+Default value: `None`
+
+**Example**
+
+Query:
+
+```sql
+SET default_table_engine = 'Log';
+
+SELECT name, value, changed FROM system.settings WHERE name = 'default_table_engine';
+```
+
+Result:
+
+```response
+┌─name─────────────────┬─value─┬─changed─┐
+│ default_table_engine │ Log   │       1 │
+└──────────────────────┴───────┴─────────┘
+```
+
+In this example, any new table that does not specify an `Engine` will use the `Log` table engine:
+
+Query:
+
+```sql
+CREATE TABLE my_table (
+    x UInt32,
+    y UInt32
+);
+
+SHOW CREATE TABLE my_table;
+```
+
+Result:
+
+```response
+┌─statement────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.my_table
+(
+    `x` UInt32,
+    `y` UInt32
+)
+ENGINE = Log
+└──────────────────────────────────────────────────────────────────────────┘
+```
 
 ## data_type_default_nullable {#data_type_default_nullable}
 
@@ -3979,7 +4144,20 @@ Enabled by default.
 
 Serialize named tuple columns as JSON objects.
 
-Disabled by default.
+Enabled by default.
+
+### input_format_json_named_tuples_as_objects {#input_format_json_named_tuples_as_objects}
+
+Parse named tuple columns as JSON objects.
+
+Enabled by default.
+
+### input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
+
+Insert default values for missing elements in JSON object while parsing named tuple.
+This setting works only when setting `input_format_json_named_tuples_as_objects` is enabled.
+
+Enabled by default.
 
 ### output_format_json_array_of_rows {#output_format_json_array_of_rows}
 

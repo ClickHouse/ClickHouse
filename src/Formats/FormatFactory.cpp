@@ -14,7 +14,6 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
-#include <fcntl.h>
 #include <unistd.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -91,7 +90,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
     format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
-    format_settings.json.named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
+    format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
+    format_settings.json.read_named_tuples_as_objects = settings.input_format_json_named_tuples_as_objects;
+    format_settings.json.defaults_for_missing_elements_in_named_tuple = settings.input_format_json_defaults_for_missing_elements_in_named_tuple;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_64bit_floats = settings.output_format_json_quote_64bit_floats;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
@@ -103,7 +104,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
     format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
-    format_settings.json.try_infer_objects = context->getSettingsRef().allow_experimental_object_type;
+    format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
