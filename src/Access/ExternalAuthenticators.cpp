@@ -10,7 +10,6 @@
 #include <optional>
 #include <utility>
 
-
 namespace DB
 {
 
@@ -223,6 +222,7 @@ void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::
 
     params.realm = config.getString("kerberos.realm", "");
     params.principal = config.getString("kerberos.principal", "");
+    params.keytab = config.getString("kerberos.keytab", "");
 }
 
 }

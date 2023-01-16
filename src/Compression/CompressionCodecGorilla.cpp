@@ -123,6 +123,7 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
+    bool isFloatingPointTimeSeries() const override { return true; }
 
 private:
     UInt8 data_bytes_size;
@@ -444,14 +445,19 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Gorilla);
-    factory.registerCompressionCodecWithType("Gorilla", method_code,
-        [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
+    auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         if (arguments)
             throw Exception("Codec Gorilla does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
 
+        if (column_type != nullptr)
+            if (!WhichDataType(*column_type).isFloat())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Gorilla codec is not applicable for {} because the data type is not float",
+                        column_type->getName());
+
         UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
-    });
+    };
+    factory.registerCompressionCodecWithType("Gorilla", method_code, codec_builder);
 }
 }

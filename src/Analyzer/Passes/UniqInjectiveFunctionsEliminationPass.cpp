@@ -75,8 +75,7 @@ public:
             function_node->getAggregateFunction()->getParameters(),
             properties);
 
-        auto function_result_type = function_node->getResultType();
-        function_node->resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+        function_node->resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 

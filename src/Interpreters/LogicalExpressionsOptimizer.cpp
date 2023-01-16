@@ -1,13 +1,17 @@
 #include <Interpreters/LogicalExpressionsOptimizer.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Common/typeid_cast.h>
 
 #include <deque>
+#include <vector>
 
 #include <base/sort.h>
 
@@ -32,8 +36,9 @@ bool LogicalExpressionsOptimizer::OrWithExpression::operator<(const OrWithExpres
     return std::tie(this->or_function, this->expression) < std::tie(rhs.or_function, rhs.expression);
 }
 
-LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, UInt64 optimize_min_equality_disjunction_chain_length)
-    : select_query(select_query_), settings(optimize_min_equality_disjunction_chain_length)
+LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_,
+    const TablesWithColumns & tables_with_columns_, UInt64 optimize_min_equality_disjunction_chain_length)
+    : select_query(select_query_), tables_with_columns(tables_with_columns_), settings(optimize_min_equality_disjunction_chain_length)
 {
 }
 
@@ -196,13 +201,41 @@ inline ASTs & getFunctionOperands(const ASTFunction * or_function)
 
 }
 
+bool LogicalExpressionsOptimizer::isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const
+{
+    if (functions.size() > 1)
+    {
+        /// Check if identifier is LowCardinality type
+        auto & first_operands = getFunctionOperands(functions[0]);
+        const auto * identifier = first_operands[0]->as<ASTIdentifier>();
+        if (identifier)
+        {
+            auto pos = IdentifierSemantic::getMembership(*identifier);
+            if (!pos)
+                pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables_with_columns, true);
+            if (pos)
+            {
+                if (auto data_type_and_name = tables_with_columns[*pos].columns.tryGetByName(identifier->shortName()))
+                {
+                    if (typeid_cast<const DataTypeLowCardinality *>(data_type_and_name->type.get()))
+                        return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const
 {
     const auto & equalities = chain.second;
     const auto & equality_functions = equalities.functions;
 
-    /// We eliminate too short chains.
-    if (equality_functions.size() < settings.optimize_min_equality_disjunction_chain_length)
+    /// For LowCardinality column, the dict is usually smaller and the index is relatively large.
+    /// In most cases, merging OR-chain as IN is better than converting each LowCardinality into full column individually.
+    /// For non-LowCardinality, we need to eliminate too short chains.
+    if (equality_functions.size() < settings.optimize_min_equality_disjunction_chain_length &&
+            !isLowCardinalityEqualityChain(equality_functions))
         return false;
 
     /// We check that the right-hand sides of all equalities have the same type.
@@ -313,7 +346,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
     for (const auto & entry : garbage_map)
     {
         const auto * function = entry.first;
-        auto first_erased = entry.second;
+        auto * first_erased = entry.second;
 
         auto & operands = getFunctionOperands(function);
         operands.erase(first_erased, operands.end());
