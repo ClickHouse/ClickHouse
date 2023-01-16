@@ -942,14 +942,14 @@ namespace S3
         return getObjectInfo(client, bucket, key, version_id, for_disk_s3, throw_on_error).size;
     }
 
-    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
+    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
     {
         auto [exists, error] = checkObjectExists(client, bucket, key, version_id, for_disk_s3);
 
         if (exists)
             return true;
 
-        if (!throw_on_error || isNotFoundError(error.GetErrorType()))
+        if (isNotFoundError(error.GetErrorType()))
             return false;
 
         throw S3Exception(error.GetErrorType(),
@@ -957,12 +957,14 @@ namespace S3
             key, bucket, error.GetMessage());
     }
 
-    std::pair<bool /* exists */, Aws::S3::S3Error> checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+    void checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, const std::string_view & description)
     {
         auto outcome = getObjectAttributes(client, bucket, key, version_id, for_disk_s3);
         if (outcome.IsSuccess())
-            return {true, {}};
-        return {false, std::move(outcome.GetError())};
+            return;
+        const auto & error = outcome.GetError();
+        throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
+                          (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetErrorMessage());
     }
 
     std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
@@ -988,7 +990,7 @@ namespace S3
 
         if (outcome.IsSuccess())
             return outcome.GetResult().GetMetadata();
-        
+
         if (!throw_on_error)
             return {};
 
