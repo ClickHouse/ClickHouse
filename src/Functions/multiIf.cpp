@@ -18,7 +18,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -232,8 +232,14 @@ public:
         size_t rows = input_rows_count;
         const auto & settings = context->getSettingsRef();
         const WhichDataType which(result_type);
-        if (settings.allow_execute_multiif_columnar && (which.isInt() || which.isUInt() || which.isFloat()))
+        bool execute_multiif_columnar = settings.allow_execute_multiif_columnar && (which.isInt() || which.isUInt() || which.isFloat());
+        if (!execute_multiif_columnar)
         {
+            MutableColumnPtr res = return_type->createColumn();
+            executeInstructions(instructions, rows, res);
+            return std::move(res);
+        }
+
 #define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE) \
     if (which.is##TYPE()) \
     { \
@@ -258,20 +264,12 @@ public:
     M(Float32) \
     M(Float64)
 
-            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR)
-        }
-        else
-        {
-            MutableColumnPtr res = return_type->createColumn();
-            executeInstructions(instructions, rows, res);
-            return std::move(res);
-        }
-
-        return {};
-    }
+    ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columnar multiIf not implemented for type {}", result_type->getName());
+}
 
 private:
-    static NO_INLINE void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
         for (size_t i = 0; i < rows; ++i)
         {
@@ -308,7 +306,7 @@ private:
     }
 
     /// We should read source from which instruction on each row?
-    static NO_INLINE void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<Int64> & inserts)
+    static void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<Int64> & inserts)
     {
         for (Int64 i = instructions.size() - 1; i >= 0; --i)
         {
@@ -352,7 +350,7 @@ private:
     }
 
     template <typename T>
-    static NO_INLINE void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
         PaddedPODArray<Int64> inserts(rows, -1);
         calculateInserts(instructions, rows, inserts);
@@ -361,8 +359,8 @@ private:
         for (size_t row_i = 0; row_i < rows; ++row_i)
         {
             auto & instruction = instructions[inserts[row_i]];
-            auto str_ref = instruction.source->getDataAt(row_i);
-            memcpy(&res_data[row_i], str_ref.data, str_ref.size);
+            auto ref = instruction.source->getDataAt(row_i);
+            memcpy(&res_data[row_i], ref.data, ref.size);
         }
     }
 
