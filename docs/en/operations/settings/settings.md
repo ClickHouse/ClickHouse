@@ -4122,7 +4122,20 @@ Enabled by default.
 
 Serialize named tuple columns as JSON objects.
 
-Disabled by default.
+Enabled by default.
+
+### input_format_json_named_tuples_as_objects {#input_format_json_named_tuples_as_objects}
+
+Parse named tuple columns as JSON objects.
+
+Enabled by default.
+
+### input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
+
+Insert default values for missing elements in JSON object while parsing named tuple.
+This setting works only when setting `input_format_json_named_tuples_as_objects` is enabled.
+
+Enabled by default.
 
 ### output_format_json_array_of_rows {#output_format_json_array_of_rows}
 

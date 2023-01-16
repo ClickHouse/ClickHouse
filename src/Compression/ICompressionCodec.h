@@ -113,12 +113,6 @@ public:
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
-    /// If the only purpose of the codec is to delta (or double-delta) the data.
-    virtual bool isDelta() const { return false; }
-
-    /// If the codec is specialized for floating point time series.
-    virtual bool isFloatingPointTimeSeries() const { return false; }
-
 protected:
     /// This is used for fuzz testing
     friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
