@@ -51,7 +51,7 @@ namespace
     }
 
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data, std::optional<String> & temporary_password_for_checks)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data, std::optional<String> & temporary_password)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -172,9 +172,16 @@ namespace
 
             /// Save password separately for future complexity rules check
             if (expect_password)
-                temporary_password_for_checks = value;
+                temporary_password = value;
 
             auth_data = AuthenticationData{*type};
+
+            /// bcrypt requires 'workfactor' parameter for encryption.
+            /// We will fill the auth_data with hash later after parsing is complete
+            /// in InterpreterCreateUserQuery.cpp or ClientBase.cpp.
+            if (auth_data.getType() == AuthenticationType::BCRYPT_PASSWORD && expect_password)
+                return true;
+
             if (auth_data.getType() == AuthenticationType::SHA256_PASSWORD)
             {
                 if (!parsed_salt.empty())
@@ -447,7 +454,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     std::optional<String> new_name;
     std::optional<AuthenticationData> auth_data;
-    std::optional<String> temporary_password_for_checks;
+    std::optional<String> temporary_password;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
@@ -462,11 +469,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!auth_data)
         {
             AuthenticationData new_auth_data;
-            std::optional<String> new_temporary_password_for_checks;
-            if (parseAuthenticationData(pos, expected, new_auth_data, new_temporary_password_for_checks))
+            std::optional<String> new_temporary_password;
+            if (parseAuthenticationData(pos, expected, new_auth_data, new_temporary_password))
             {
                 auth_data = std::move(new_auth_data);
-                temporary_password_for_checks = std::move(new_temporary_password_for_checks);
+                temporary_password = std::move(new_temporary_password);
                 continue;
             }
         }
@@ -551,7 +558,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->auth_data = std::move(auth_data);
-    query->temporary_password_for_checks = std::move(temporary_password_for_checks);
+    query->temporary_password = std::move(temporary_password);
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);

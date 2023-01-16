@@ -95,18 +95,26 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
 #endif
 }
 
-AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_view text [[maybe_unused]])
+AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_view text [[maybe_unused]], int workfactor [[maybe_unused]])
 {
 #if USE_BCRYPT
+    if (text.size() > 72)
+        throw DB::Exception(
+            "bcrypt does not support passwords with a length of more than 72 bytes",
+            DB::ErrorCodes::BAD_ARGUMENTS);
+
     char salt[BCRYPT_HASHSIZE];
     Digest hash;
     hash.resize(64);
-    int ret = bcrypt_gensalt(12, salt);
+
+    int ret = bcrypt_gensalt(workfactor, salt);
     if (ret != 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
+
     ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));
     if (ret != 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
+
     return hash;
 #else
     throw DB::Exception(
@@ -160,8 +168,6 @@ void AuthenticationData::setPassword(const String & password_)
             return setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
 
         case AuthenticationType::BCRYPT_PASSWORD:
-            return setPasswordHashBinary(Util::encodeBcrypt(password_));
-
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
@@ -172,6 +178,14 @@ void AuthenticationData::setPassword(const String & password_)
             break;
     }
     throw Exception("setPassword(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_)
+{
+    if (type != AuthenticationType::BCRYPT_PASSWORD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
+
+    return setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
 }
 
 

@@ -95,6 +95,8 @@ public:
 
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return password_complexity_rules; }
 
+    int getBcryptWorkfactor() const override { return static_cast<int>(bcrypt_workfactor); }
+
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
@@ -210,6 +212,8 @@ private:
     ThrottlerPtr throttler;
 
     std::vector<std::pair<String, String>> password_complexity_rules;
+
+    UInt64 bcrypt_workfactor;
 
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;

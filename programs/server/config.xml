@@ -466,6 +466,8 @@
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
 
+    <bcrypt_workfactor>12</bcrypt_workfactor>
+
     <!-- Complexity requirements for user passwords. -->
     <!-- <password_complexity>
         <rule>

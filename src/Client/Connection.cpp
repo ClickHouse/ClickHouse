@@ -324,6 +324,8 @@ void Connection::receiveHello()
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
         }
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_BCRYPT_PASSWORD_TYPE)
+            readVarUInt(bcrypt_workfactor, *in);
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
