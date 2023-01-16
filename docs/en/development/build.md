@@ -147,7 +147,7 @@ hash cmake
 
 ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
 
-The CI checks build on each commit to [ClickHouse](https://github.com/clickhouse/clickhouse/).  To download the compiled build:
+The CI checks build the binaries on each commit to [ClickHouse](https://github.com/clickhouse/clickhouse/). To download them:
 
 1. Open the [commits list](https://github.com/ClickHouse/ClickHouse/commits/master)
 1. Choose a **Merge pull request** commit that includes the new feature, or was added after the new feature
