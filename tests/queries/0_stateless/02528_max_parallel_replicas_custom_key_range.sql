@@ -13,7 +13,7 @@ SELECT * FROM remote('127.0.0.{2|3|4}', currentDatabase(), t) SETTINGS parallel_
 
 DROP TABLE t;
 
-CREATE TABLE t (x String, y Int32) ENGINE = MergeTree ORDER BY cityHash64(x) SAMPLE BY cityHash64(x);
+CREATE TABLE t (x String, y UInt32) ENGINE = MergeTree ORDER BY cityHash64(x) SAMPLE BY cityHash64(x);
 INSERT INTO t SELECT toString(number), number FROM numbers(1000);
 
 SET max_parallel_replicas = 1;
