@@ -8,6 +8,8 @@
 
 #include <IO/WriteBufferFromString.h>
 
+#include <Functions/FunctionFactory.h>
+
 #include <Interpreters/Context.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -306,6 +308,16 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
     }
 
     return false;
+}
+
+QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context)
+{
+    auto function_node = std::make_shared<FunctionNode>("and");
+    auto and_function = FunctionFactory::instance().get("and", context);
+    function_node->getArguments().getNodes() = condition_nodes;
+    function_node->resolveAsFunction(and_function->build(function_node->getArgumentColumns()));
+
+    return function_node;
 }
 
 }

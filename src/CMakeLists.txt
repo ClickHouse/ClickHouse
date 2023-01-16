@@ -364,6 +364,10 @@ if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
 endif()
 
+if (TARGET ch_contrib::crc32-vpmsum)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
+ endif()
+
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
 
