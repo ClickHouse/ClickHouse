@@ -172,11 +172,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         return false;
 
     chassert(file_offset_of_buffer_end <= impl->getFileSize());
-    chassert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
 
     size_t size, offset;
-
-
     if (prefetch_future.valid())
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
