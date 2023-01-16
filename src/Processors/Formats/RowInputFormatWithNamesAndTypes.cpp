@@ -417,8 +417,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
     }
 
     DataTypes data_types;
-    auto possible_type_names = readNamesFromFields(second_row_values);
-    bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfValuesAreTypeNames(possible_type_names);
+    bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfValuesAreTypeNames(readNamesFromFields(second_row_values));
     size_t row = 2;
     if (!second_row_can_be_type_names)
     {
@@ -454,7 +453,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
             buffered_types = data_types;
             column_names = readNamesFromFields(first_row_values);
             if (second_row_can_be_type_names)
-                type_names = possible_type_names;
+                type_names = readNamesFromFields(second_row_values);
             return;
         }
 
