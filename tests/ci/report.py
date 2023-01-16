@@ -3,6 +3,7 @@ from ast import literal_eval
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
+from html import escape
 import csv
 import os
 import datetime
@@ -372,9 +373,10 @@ def create_test_html_report(
             row += "</tr>"
             rows_part += row
             if test_result.raw_logs is not None:
+                raw_logs = escape(test_result.raw_logs)
                 row = (
                     '<tr class="failed-content">'
-                    f'<td colspan="{colspan}"><pre>{test_result.raw_logs}</pre></td>'
+                    f'<td colspan="{colspan}"><pre>{raw_logs}</pre></td>'
                     "</tr>"
                 )
                 rows_part += row
