@@ -72,7 +72,7 @@ namespace
             if (query_info.view_query)
             {
                 ASTPtr tmp;
-                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp);
+                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
             }
         }
     };
@@ -288,6 +288,20 @@ struct ExplainSettings : public Settings
     }
 };
 
+struct QuerySyntaxSettings
+{
+    bool oneline = false;
+
+    constexpr static char name[] = "SYNTAX";
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+        {"oneline", oneline},
+    };
+
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+};
+
 template <typename Settings>
 ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 {
@@ -362,13 +376,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::AnalyzedSyntax:
         {
-            if (ast.getSettings())
-                throw Exception("Settings are not supported for EXPLAIN SYNTAX query.", ErrorCodes::UNKNOWN_SETTING);
+            auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
             ExplainAnalyzedSyntaxVisitor::Data data(getContext());
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, false));
+            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
             break;
         }
         case ASTExplainQuery::QueryTree:
@@ -423,7 +436,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             if (getContext()->getSettingsRef().allow_experimental_analyzer)
             {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
@@ -469,7 +482,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 if (getContext()->getSettingsRef().allow_experimental_analyzer)
                 {
-                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
+                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
                 }

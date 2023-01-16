@@ -3,9 +3,11 @@
 import os
 import unittest
 from unittest.mock import patch, MagicMock
+from pathlib import Path
 
 from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
+from report import TestResult
 import docker_images_check as di
 
 with patch("git_helper.Git"):
@@ -223,40 +225,48 @@ class TestDockerImageCheck(unittest.TestCase):
 
     @patch("docker_images_check.build_and_push_one_image")
     def test_process_image_with_parents(self, mock_build):
-        mock_build.side_effect = lambda v, w, x, y, z: (True, f"{v.repo}_{w}.log")
+        mock_build.side_effect = lambda v, w, x, y, z: (True, Path(f"{v.repo}_{w}.log"))
         im1 = di.DockerImage("path1", "repo1", False)
         im2 = di.DockerImage("path2", "repo2", False, im1)
         im3 = di.DockerImage("path3", "repo3", False, im2)
         im4 = di.DockerImage("path4", "repo4", False, im1)
         # We use list to have determined order of image builgings
         images = [im4, im1, im3, im2, im1]
-        results = [
+        test_results = [
             di.process_image_with_parents(im, ["v1", "v2", "latest"], "", True)
             for im in images
         ]
+        # The time is random, so we check it's not None and greater than 0,
+        # and then set to 1
+        for results in test_results:
+            for result in results:
+                self.assertIsNotNone(result.time)
+                self.assertGreater(result.time, 0)  # type: ignore
+                result.time = 1
 
+        self.maxDiff = None
         expected = [
             [  # repo4 -> repo1
-                ("repo1:v1", "repo1_v1.log", "OK"),
-                ("repo1:v2", "repo1_v2.log", "OK"),
-                ("repo1:latest", "repo1_latest.log", "OK"),
-                ("repo4:v1", "repo4_v1.log", "OK"),
-                ("repo4:v2", "repo4_v2.log", "OK"),
-                ("repo4:latest", "repo4_latest.log", "OK"),
+                TestResult("repo1:v1", "OK", 1, [Path("repo1_v1.log")]),
+                TestResult("repo1:v2", "OK", 1, [Path("repo1_v2.log")]),
+                TestResult("repo1:latest", "OK", 1, [Path("repo1_latest.log")]),
+                TestResult("repo4:v1", "OK", 1, [Path("repo4_v1.log")]),
+                TestResult("repo4:v2", "OK", 1, [Path("repo4_v2.log")]),
+                TestResult("repo4:latest", "OK", 1, [Path("repo4_latest.log")]),
             ],
             [],  # repo1 is built
             [  # repo3 -> repo2 -> repo1
-                ("repo2:v1", "repo2_v1.log", "OK"),
-                ("repo2:v2", "repo2_v2.log", "OK"),
-                ("repo2:latest", "repo2_latest.log", "OK"),
-                ("repo3:v1", "repo3_v1.log", "OK"),
-                ("repo3:v2", "repo3_v2.log", "OK"),
-                ("repo3:latest", "repo3_latest.log", "OK"),
+                TestResult("repo2:v1", "OK", 1, [Path("repo2_v1.log")]),
+                TestResult("repo2:v2", "OK", 1, [Path("repo2_v2.log")]),
+                TestResult("repo2:latest", "OK", 1, [Path("repo2_latest.log")]),
+                TestResult("repo3:v1", "OK", 1, [Path("repo3_v1.log")]),
+                TestResult("repo3:v2", "OK", 1, [Path("repo3_v2.log")]),
+                TestResult("repo3:latest", "OK", 1, [Path("repo3_latest.log")]),
             ],
             [],  # repo2 -> repo1 are built
             [],  # repo1 is built
         ]
-        self.assertEqual(results, expected)
+        self.assertEqual(test_results, expected)
 
 
 class TestDockerServer(unittest.TestCase):
