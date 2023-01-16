@@ -25,6 +25,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -61,6 +62,36 @@ class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
             throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Function {} is not resolved after running {} pass",
             function->toAST()->formatForErrorMessage(), pass_name);
+
+        if (function->getFunctionName() == "in")
+            return;
+
+        const auto & expected_arg_types = function->getArgumentTypes();
+        auto actual_arg_columns = function->getArgumentColumns();
+
+        if (expected_arg_types.size() != actual_arg_columns.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Function {} expects {} arguments but has {} after running {} pass",
+            function->toAST()->formatForErrorMessage(),
+            expected_arg_types.size(),
+            actual_arg_columns.size(),
+            pass_name);
+
+        for (size_t i = 0; i < expected_arg_types.size(); ++i)
+        {
+            // Skip lambdas
+            if (WhichDataType(expected_arg_types[i]).isFunction())
+                continue;
+
+            if (!expected_arg_types[i]->equals(*actual_arg_columns[i].type))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function {} expects {} argument to have {} type but receives {} after running {} pass",
+                function->toAST()->formatForErrorMessage(),
+                i,
+                expected_arg_types[i]->getName(),
+                actual_arg_columns[i].type->getName(),
+                pass_name);
+        }
     }
 
 public:
