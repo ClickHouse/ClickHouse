@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -217,37 +218,60 @@ public:
                 break;
         }
 
-        MutableColumnPtr res = return_type->createColumn();
 
         /// Special case if first instruction condition is always true and source is constant
         if (instructions.size() == 1 && instructions.front().source_is_constant
             && instructions.front().condition_always_true)
         {
+            MutableColumnPtr res = return_type->createColumn();
             auto & instruction = instructions.front();
             res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
             return ColumnConst::create(std::move(res), instruction.source->size());
         }
 
         size_t rows = input_rows_count;
-
-        /*
-            executeInstructionsColumnar<UInt8>(instructions, rows, res) || executeInstructionsColumnar<Int8>(instructions, rows, res) ||
-            executeInstructionsColumnar<UInt16>(instructions, rows, res) || executeInstructionsColumnar<Int16>(instructions, rows, res) ||
-            executeInstructionsColumnar<UInt32>(instructions, rows, res) || executeInstructionsColumnar<Int32>(instructions, rows, res) ||
-            executeInstructionsColumnar<UInt64>(instructions, rows, res) || executeInstructionsColumnar<Int64>(instructions, rows, res) ||
-            executeInstructionsColumnar<Int128>(instructions, rows, res) || executeInstructionsColumnar<Int256>(instructions, rows, res) ||
-            executeInstructionsColumnar<Int128>(instructions, rows, res) || executeInstructionsColumnar<Int256>(instructions, rows, res) ||
-        */
         const auto & settings = context->getSettingsRef();
-        if (settings.allow_execute_multiif_columnar)
-            executeInstructionsColumnar(instructions, rows, res);
+        const WhichDataType which(result_type);
+        if (settings.allow_execute_multiif_columnar && (which.isInt() || which.isUInt() || which.isFloat()))
+        {
+#define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE) \
+    if (which.is##TYPE()) \
+    { \
+        MutableColumnPtr res = ColumnVector<TYPE>::create(rows); \
+        executeInstructionsColumnar<TYPE>(instructions, rows, res); \
+        return std::move(res); \
+    }
+
+#define ENUMERATE_NUMERIC_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(UInt128) \
+    M(UInt256) \
+    M(Int128) \
+    M(Int256) \
+    M(Float32) \
+    M(Float64)
+
+            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR)
+        }
         else
+        {
+            MutableColumnPtr res = return_type->createColumn();
             executeInstructions(instructions, rows, res);
-        return res;
+            return std::move(res);
+        }
+
+        return {};
     }
 
 private:
-    static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static NO_INLINE void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
         for (size_t i = 0; i < rows; ++i)
         {
@@ -283,12 +307,9 @@ private:
         }
     }
 
-    // template <typename T>
-    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    /// We should read source from which instruction on each row?
+    static NO_INLINE void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<Int64> & inserts)
     {
-        /// We should read source from which instruction on each row?
-        PaddedPODArray<UInt64> inserts(rows, instructions.size());
-        // PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
         for (Int64 i = instructions.size() - 1; i >= 0; --i)
         {
             auto & instruction = instructions[i];
@@ -303,29 +324,45 @@ private:
                 for (size_t row_i = 0; row_i < rows; ++row_i)
                 {
                     size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : row_i;
-                    if (cond_data[condition_index])
-                        inserts[row_i] = i;
+
+                    /// Equivalent to below code. But it is able to utilize SIMD instructions.
+                    /// if (cond_data[condition_index])
+                    ///     inserts[row_i] = i;
+                    inserts[row_i] += cond_data[condition_index] * (i - inserts[row_i]);
                 }
             }
             else
             {
                 const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
                 const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
+                const auto & condition_nested_data = condition_nested.getData();
                 const NullMap & condition_null_map = condition_nullable.getNullMapData();
 
                 for (size_t row_i = 0; row_i < rows; ++row_i)
                 {
                     size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : row_i;
-                    if (!condition_null_map[condition_index] && condition_nested.getData()[condition_index])
-                        inserts[row_i] = i;
+                    /// Equivalent to below code. But it is able to utilize SIMD instructions.
+                    /// if (!condition_null_map[condition_index] && condition_nested.getData()[condition_index])
+                    ///     inserts[row_i] = i;
+                    inserts[row_i] += (~condition_null_map[condition_index] & condition_nested_data[condition_index])
+                        * (i - inserts[row_i]);
                 }
             }
         }
+    }
 
+    template <typename T>
+    static NO_INLINE void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    {
+        PaddedPODArray<Int64> inserts(rows, -1);
+        calculateInserts(instructions, rows, inserts);
+
+        PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
         for (size_t row_i = 0; row_i < rows; ++row_i)
         {
             auto & instruction = instructions[inserts[row_i]];
-            (*res)[row_i] = (*instruction.source)[row_i];
+            auto str_ref = instruction.source->getDataAt(row_i);
+            memcpy(&res_data[row_i], str_ref.data, str_ref.size);
         }
     }
 
