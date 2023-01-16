@@ -101,7 +101,7 @@ The `TabSeparated` format supports outputting total values (when using WITH TOTA
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 ```
 
-``` text
+``` response
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -177,7 +177,7 @@ INSERT INTO nestedt Values ( 1, [1], ['a'])
 SELECT * FROM nestedt FORMAT TSV
 ```
 
-``` text
+``` response
 1  [1]    ['a']
 ```
 
@@ -761,7 +761,7 @@ SELECT * FROM json_as_string;
 
 Result:
 
-``` text
+``` response
 ┌─json──────────────────────────────┐
 │ {"foo":{"bar":{"x":"y"},"baz":1}} │
 │ {}                                │
@@ -782,7 +782,7 @@ SELECT * FROM json_square_brackets;
 
 Result:
 
-```text
+```response
 ┌─field──────────────────────┐
 │ {"id": 1, "name": "name1"} │
 │ {"id": 2, "name": "name2"} │
@@ -1118,7 +1118,7 @@ When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHo
 
 Consider the `UserActivity` table as an example:
 
-``` text
+``` response
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -1127,7 +1127,7 @@ Consider the `UserActivity` table as an example:
 
 The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
-``` text
+``` response
 {"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
 {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
@@ -1171,7 +1171,7 @@ Without this setting, ClickHouse throws an exception.
 SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
 ```
 
-``` text
+``` response
 ┌─name────────────────────────────┬─value─┐
 │ input_format_import_nested_json │ 0     │
 └─────────────────────────────────┴───────┘
@@ -1181,7 +1181,7 @@ SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
 ```
 
-``` text
+``` response
 Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
 ```
 
@@ -1191,7 +1191,7 @@ INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], 
 SELECT * FROM json_each_row_nested
 ```
 
-``` text
+``` response
 ┌─n.s───────────┬─n.i────┐
 │ ['abc','def'] │ [1,23] │
 └───────────────┴────────┘
@@ -1203,12 +1203,14 @@ SELECT * FROM json_each_row_nested
 - [input_format_json_read_bools_as_numbers](/docs/en/operations/settings/settings.md/#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
 - [input_format_json_read_numbers_as_strings](/docs/en/operations/settings/settings.md/#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `false`.
 - [input_format_json_read_objects_as_strings](/docs/en/operations/settings/settings.md/#input_format_json_read_objects_as_strings) - allow to parse JSON objects as strings in JSON input formats. Default value - `false`.
+- [input_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings.md/#input_format_json_named_tuples_as_objects) - parse named tuple columns as JSON objects. Default value - `true`.
+- [input_format_json_defaults_for_missing_elements_in_named_tuple](/docs/en/operations/settings/settings.md/#input_format_json_defaults_for_missing_elements_in_named_tuple) - insert default values for missing elements in JSON object while parsing named tuple. Default value - `true`.
 - [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings.md/#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
 - [output_format_json_quote_64bit_floats](/docs/en/operations/settings/settings.md/#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
 - [output_format_json_quote_denormals](/docs/en/operations/settings/settings.md/#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
 - [output_format_json_quote_decimals](/docs/en/operations/settings/settings.md/#output_format_json_quote_decimals) - controls quoting of decimals in JSON output format. Default value - `false`.
 - [output_format_json_escape_forward_slashes](/docs/en/operations/settings/settings.md/#output_format_json_escape_forward_slashes) - controls escaping forward slashes for string outputs in JSON output format. Default value - `true`.
-- [output_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings.md/#output_format_json_named_tuples_as_objects) - serialize named tuple columns as JSON objects. Default value - `false`.
+- [output_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings.md/#output_format_json_named_tuples_as_objects) - serialize named tuple columns as JSON objects. Default value - `true`.
 - [output_format_json_array_of_rows](/docs/en/operations/settings/settings.md/#output_format_json_array_of_rows) - output a JSON array of all rows in JSONEachRow(Compact) format. Default value - `false`.
 - [output_format_json_validate_utf8](/docs/en/operations/settings/settings.md/#output_format_json_validate_utf8) - enables validation of UTF-8 sequences in JSON output formats (note that it doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8). Default value - `false`.
 
@@ -1265,7 +1267,7 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x10` int32                             | [Int32/UInt32](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal32](/docs/en/sql-reference/data-types/decimal.md)                                                         |
 | `\x12` int64                             | [Int64/UInt64](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal64](/docs/en/sql-reference/data-types/decimal.md)/[DateTime64](/docs/en/sql-reference/data-types/datetime64.md) |
 
-Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8). 
+Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8).
 Big integers and decimals (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) can be parsed from BSON Binary value with `\x00` binary subtype. In this case this format will validate that the size of binary data equals the size of expected value.
 
 Note: this format don't work properly on Big-Endian platforms.
@@ -1300,7 +1302,7 @@ Example (shown for the [PrettyCompact](#prettycompact) format):
 SELECT * FROM t_null
 ```
 
-``` text
+``` response
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
@@ -1312,7 +1314,7 @@ Rows are not escaped in Pretty\* formats. Example is shown for the [PrettyCompac
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
-``` text
+``` response
 ┌─Escaping_test────────────────────────┐
 │ String with 'quotes' and      character │
 └──────────────────────────────────────┘
@@ -1327,7 +1329,7 @@ The Pretty format supports outputting total values (when using WITH TOTALS) and 
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-``` text
+``` response
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -1488,7 +1490,7 @@ Example:
 SELECT * FROM t_null FORMAT Vertical
 ```
 
-``` text
+``` response
 Row 1:
 ──────
 x: 1
@@ -1501,7 +1503,7 @@ Rows are not escaped in Vertical format:
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
 ```
 
-``` text
+``` response
 Row 1:
 ──────
 test: string with 'quotes' and      with some special
@@ -2319,25 +2321,22 @@ INSERT INTO `test2` VALUES (1),(2),(3);
 Queries:
 
 ```sql
-:) desc file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
+DESCRIBE TABLE file(dump.sql, MySQLDump) SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
 
-DESCRIBE TABLE file(dump.sql, MySQLDump)
-SETTINGS input_format_mysql_dump_table_name = 'test2'
-
-Query id: 25e66c89-e10a-42a8-9b42-1ee8bbbde5ef
-
+```text
 ┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ x    │ Nullable(Int32) │              │                    │         │                  │                │
 └──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
 
-:) select * from file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
-
+```sql
 SELECT *
 FROM file(dump.sql, MySQLDump)
          SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
 
-Query id: 17d59664-ebce-4053-bb79-d46a516fb590
-
+```text
 ┌─x─┐
 │ 1 │
 │ 2 │

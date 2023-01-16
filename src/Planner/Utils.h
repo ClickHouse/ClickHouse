@@ -59,4 +59,7 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node);
   */
 bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node);
 
+/// Returns `and` function node that has condition nodes as its arguments
+QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context);
+
 }
