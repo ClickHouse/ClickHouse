@@ -195,6 +195,75 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 Works with tables in the MergeTree family.
 
+## convert_query_to_cnf {#convert_query_to_cnf}
+
+When set to `true`, a `SELECT` query will be converted to conjuctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
+
+For example, notice how the following `SELECT` query is not modified (the default behavior):
+
+```sql
+EXPLAIN SYNTAX
+SELECT *
+FROM
+(
+    SELECT number AS x
+    FROM numbers(20)
+) AS a
+WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
+SETTINGS convert_query_to_cnf = false;
+```
+
+The result is:
+
+```response
+┌─explain────────────────────────────────────────────────────────┐
+│ SELECT x                                                       │
+│ FROM                                                           │
+│ (                                                              │
+│     SELECT number AS x                                         │
+│     FROM numbers(20)                                           │
+│     WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15)) │
+│ ) AS a                                                         │
+│ WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))     │
+│ SETTINGS convert_query_to_cnf = 0                              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Let's set `convert_query_to_cnf` to `true` and see what changes:
+
+```sql
+EXPLAIN SYNTAX
+SELECT *
+FROM
+(
+    SELECT number AS x
+    FROM numbers(20)
+) AS a
+WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
+SETTINGS convert_query_to_cnf = true;
+```
+
+Notice the `WHERE` clause is rewritten in CNF, but the result set is the identical - the Boolean logic is unchanged:
+
+```response
+┌─explain───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SELECT x                                                                                                              │
+│ FROM                                                                                                                  │
+│ (                                                                                                                     │
+│     SELECT number AS x                                                                                                │
+│     FROM numbers(20)                                                                                                  │
+│     WHERE ((x <= 15) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x >= 10) OR (x >= 1)) │
+│ ) AS a                                                                                                                │
+│ WHERE ((x >= 10) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x <= 15) OR (x <= 5))     │
+│ SETTINGS convert_query_to_cnf = 1                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Possible values: true, false
+
+Default value: false
+
+
 ## fsync_metadata {#fsync-metadata}
 
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
@@ -2581,6 +2650,60 @@ Possible values:
 Default value: `''`.
 
 See examples in [UNION](../../sql-reference/statements/select/union.md).
+
+## default_table_engine {#default_table_engine}
+
+Default table engine to use when `ENGINE` is not set in a `CREATE` statement.
+
+Possible values:
+
+- a string representing any valid table engine name
+
+Default value: `None`
+
+**Example**
+
+Query:
+
+```sql
+SET default_table_engine = 'Log';
+
+SELECT name, value, changed FROM system.settings WHERE name = 'default_table_engine';
+```
+
+Result:
+
+```response
+┌─name─────────────────┬─value─┬─changed─┐
+│ default_table_engine │ Log   │       1 │
+└──────────────────────┴───────┴─────────┘
+```
+
+In this example, any new table that does not specify an `Engine` will use the `Log` table engine:
+
+Query:
+
+```sql
+CREATE TABLE my_table (
+    x UInt32,
+    y UInt32
+);
+
+SHOW CREATE TABLE my_table;
+```
+
+Result:
+
+```response
+┌─statement────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.my_table
+(
+    `x` UInt32,
+    `y` UInt32
+)
+ENGINE = Log
+└──────────────────────────────────────────────────────────────────────────┘
+```
 
 ## data_type_default_nullable {#data_type_default_nullable}
 

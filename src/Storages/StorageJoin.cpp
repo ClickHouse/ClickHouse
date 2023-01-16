@@ -229,11 +229,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     return join_clone;
 }
 
-
 void StorageJoin::insertBlock(const Block & block, ContextPtr context)
 {
+    Block block_to_insert = block;
+    convertRightBlock(block_to_insert);
+
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
-    join->addJoinedBlock(block, true);
+    join->addJoinedBlock(block_to_insert, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -263,6 +265,16 @@ ColumnWithTypeAndName StorageJoin::joinGet(const Block & block, const Block & bl
 {
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return join->joinGet(block, block_with_columns_to_add);
+}
+
+void StorageJoin::convertRightBlock(Block & block) const
+{
+    bool need_covert = use_nulls && isLeftOrFull(kind);
+    if (!need_covert)
+        return;
+
+    for (auto & col : block)
+        JoinCommon::convertColumnToNullable(col);
 }
 
 void registerStorageJoin(StorageFactory & factory)
