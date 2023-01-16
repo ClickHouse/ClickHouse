@@ -894,7 +894,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
             readText(cgroup_mem_limit_in_bytes, *cgroupmem_limit_in_bytes);
             readText(cgroup_mem_usage_in_bytes, *cgroupmem_usage_in_bytes);
 
-            if (!cgroup_mem_limit_in_bytes || !cgroup_mem_usage_in_bytes) {
+            if (!cgroup_mem_limit_in_bytes || !cgroup_mem_usage_in_bytes)
+            {
                 break;
             }
 
