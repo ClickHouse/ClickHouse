@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
@@ -41,54 +42,48 @@ public:
     }
 private:
 
-    static bool canBeEliminated(QueryTreeNodePtr & node, QueryTreeNodes const & group_by_nodes)
+    static bool canBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
     {
         auto * function = node->as<FunctionNode>();
         if (!function || function->getArguments().getNodes().empty())
             return false;
 
-        std::queue<QueryTreeNodePtr> candidates;
-        for (auto & arg : function->getArguments().getNodes())
-            candidates.emplace(arg);
+        QueryTreeNodes candidates;
+        auto & function_arguments = function->getArguments().getNodes();
+        for (auto it = function_arguments.rbegin(); it != function_arguments.rend(); ++it)
+            candidates.push_back(*it);
 
-        // Using BFS we traverse function tree and try to find if it uses other keys as function arguments.
+        // Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
         // TODO: Also process CONSTANT here. We can simplify GROUP BY x, x + 1 to GROUP BY x.
         while (!candidates.empty())
         {
-            auto candidate = candidates.front();
-            candidates.pop();
+            auto candidate = candidates.back();
+            candidates.pop_back();
 
-            auto it = std::find_if(
-                group_by_nodes.begin(),
-                group_by_nodes.end(),
-                [candidate](QueryTreeNodePtr group_by_elem)
-                {
-                    return group_by_elem->isEqual(*candidate);
-                });
-            bool found = it != group_by_nodes.end();
+            bool found = group_by_keys.contains(candidate);
 
             switch (candidate->getNodeType())
             {
-            case QueryTreeNodeType::FUNCTION:
-            {
-                auto * func = candidate->as<FunctionNode>();
-                auto & arguments = func->getArguments().getNodes();
-                if (arguments.empty())
-                    return false;
-
-                if (!found)
+                case QueryTreeNodeType::FUNCTION:
                 {
-                    for (auto & arg : arguments)
-                        candidates.emplace(arg);
+                    auto * func = candidate->as<FunctionNode>();
+                    auto & arguments = func->getArguments().getNodes();
+                    if (arguments.empty())
+                        return false;
+
+                    if (!found)
+                    {
+                        for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
+                            candidates.push_back(*it);
+                    }
+                    break;
                 }
-                break;
-            }
-            case QueryTreeNodeType::COLUMN:
-                if (!found)
+                case QueryTreeNodeType::COLUMN:
+                    if (!found)
+                        return false;
+                    break;
+                default:
                     return false;
-                break;
-            default:
-                return false;
             }
         }
         return true;
@@ -96,11 +91,13 @@ private:
 
     static void optimizeGroupingSet(QueryTreeNodes & grouping_set)
     {
+        QueryTreeNodePtrWithHashSet group_by_keys(grouping_set.begin(), grouping_set.end());
+
         QueryTreeNodes new_group_by_keys;
         new_group_by_keys.reserve(grouping_set.size());
         for (auto & group_by_elem : grouping_set)
         {
-            if (!canBeEliminated(group_by_elem, grouping_set))
+            if (!canBeEliminated(group_by_elem, group_by_keys))
                 new_group_by_keys.push_back(group_by_elem);
         }
 
