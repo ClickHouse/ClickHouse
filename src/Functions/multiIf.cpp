@@ -7,6 +7,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -36,7 +37,9 @@ class FunctionMultiIf final : public FunctionIfBase
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMultiIf>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionMultiIf>(context_); }
+
+    explicit FunctionMultiIf(ContextPtr context_) : context(context_) { }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -117,6 +120,21 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
+    struct Instruction
+    {
+        IColumn::Ptr condition = nullptr;
+        IColumn::Ptr source = nullptr;
+
+        bool condition_always_true = false;
+        bool condition_is_nullable = false;
+        bool source_is_constant = false;
+
+        bool condition_is_short = false;
+        bool source_is_short = false;
+        size_t condition_index = 0;
+        size_t source_index = 0;
+    };
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName arguments = args;
@@ -124,26 +142,13 @@ public:
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
         */
-        struct Instruction
-        {
-            IColumn::Ptr condition = nullptr;
-            IColumn::Ptr source = nullptr;
 
-            bool condition_always_true = false;
-            bool condition_is_nullable = false;
-            bool source_is_constant = false;
-
-            bool condition_is_short = false;
-            bool source_is_short = false;
-            size_t condition_index = 0;
-            size_t source_index = 0;
-        };
 
         std::vector<Instruction> instructions;
         instructions.reserve(arguments.size() / 2 + 1);
 
         Columns converted_columns_holder;
-        converted_columns_holder.reserve(instructions.size());
+        converted_columns_holder.reserve(instructions.capacity());
 
         const DataTypePtr & return_type = result_type;
 
@@ -225,6 +230,25 @@ public:
 
         size_t rows = input_rows_count;
 
+        /*
+            executeInstructionsColumnar<UInt8>(instructions, rows, res) || executeInstructionsColumnar<Int8>(instructions, rows, res) ||
+            executeInstructionsColumnar<UInt16>(instructions, rows, res) || executeInstructionsColumnar<Int16>(instructions, rows, res) ||
+            executeInstructionsColumnar<UInt32>(instructions, rows, res) || executeInstructionsColumnar<Int32>(instructions, rows, res) ||
+            executeInstructionsColumnar<UInt64>(instructions, rows, res) || executeInstructionsColumnar<Int64>(instructions, rows, res) ||
+            executeInstructionsColumnar<Int128>(instructions, rows, res) || executeInstructionsColumnar<Int256>(instructions, rows, res) ||
+            executeInstructionsColumnar<Int128>(instructions, rows, res) || executeInstructionsColumnar<Int256>(instructions, rows, res) ||
+        */
+        const auto & settings = context->getSettingsRef();
+        if (settings.allow_execute_multiif_columnar)
+            executeInstructionsColumnar(instructions, rows, res);
+        else
+            executeInstructions(instructions, rows, res);
+        return res;
+    }
+
+private:
+    static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    {
         for (size_t i = 0; i < rows; ++i)
         {
             for (auto & instruction : instructions)
@@ -257,11 +281,54 @@ public:
                 }
             }
         }
-
-        return res;
     }
 
-private:
+    // template <typename T>
+    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    {
+        /// We should read source from which instruction on each row?
+        PaddedPODArray<UInt64> inserts(rows, instructions.size());
+        // PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
+        for (Int64 i = instructions.size() - 1; i >= 0; --i)
+        {
+            auto & instruction = instructions[i];
+            if (instruction.condition_always_true)
+            {
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                    inserts[row_i] = i;
+            }
+            else if (!instruction.condition_is_nullable)
+            {
+                const auto & cond_data = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData();
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                {
+                    size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : row_i;
+                    if (cond_data[condition_index])
+                        inserts[row_i] = i;
+                }
+            }
+            else
+            {
+                const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
+                const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
+                const NullMap & condition_null_map = condition_nullable.getNullMapData();
+
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                {
+                    size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : row_i;
+                    if (!condition_null_map[condition_index] && condition_nested.getData()[condition_index])
+                        inserts[row_i] = i;
+                }
+            }
+        }
+
+        for (size_t row_i = 0; row_i < rows; ++row_i)
+        {
+            auto & instruction = instructions[inserts[row_i]];
+            (*res)[row_i] = (*instruction.source)[row_i];
+        }
+    }
+
     static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
     {
         int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
@@ -330,6 +397,8 @@ private:
         for (; i <= last_short_circuit_argument_index; ++i)
             executeColumnIfNeeded(arguments[i], true);
     }
+
+    ContextPtr context;
 };
 
 }
