@@ -1958,19 +1958,22 @@ def main(args):
 
 
 def find_binary(name):
-    if os.path.exists(name) and os.access(name, os.X_OK):
-        return True
+    if os.access(name, os.X_OK):
+        return name
     paths = os.environ.get("PATH").split(":")
     for path in paths:
-        if os.access(os.path.join(path, name), os.X_OK):
-            return True
+        bin_path = os.path.join(path, name)
+        if os.access(bin_path, os.X_OK):
+            return bin_path
 
     # maybe it wasn't in PATH
-    if os.access(os.path.join("/usr/local/bin", name), os.X_OK):
-        return True
-    if os.access(os.path.join("/usr/bin", name), os.X_OK):
-        return True
-    return False
+    bin_path = os.path.join("/usr/local/bin", name)
+    if os.access(bin_path, os.X_OK):
+        return bin_path
+    bin_path = os.path.join("/usr/bin", name)
+    if os.access(bin_path, os.X_OK):
+        return bin_path
+    return None
 
 
 def get_additional_client_options(args):
@@ -2010,9 +2013,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-b",
         "--binary",
-        default="clickhouse",
-        help="Path to clickhouse"
-        "binary or name of binary in PATH",
+        default=find_binary("clickhouse"),
+        help="Path to clickhouse binary or name of binary in PATH",
     )
 
     parser.add_argument(
@@ -2282,18 +2284,13 @@ if __name__ == "__main__":
     if args.tmp is None:
         args.tmp = args.queries
     if args.client is None:
-        if find_binary(args.binary + "-client"):
-            args.client = args.binary + "-client"
-
-            print("Using " + args.client + " as client program")
-        elif find_binary(args.binary):
+        client_bin = find_binary(args.binary + "-client")
+        if client_bin is not None:
+            args.client = client_bin
+            print("Using {args.client} as client program")
+        elif args.binary:
             args.client = args.binary + " client"
-
-            print(
-                "Using "
-                + args.client
-                + " as client program (expecting monolithic build)"
-            )
+            print(f"Using {args.client} as client program (expecting monolithic build)")
         else:
             print(
                 "No 'clickhouse' or 'clickhouse-client' client binary found",
