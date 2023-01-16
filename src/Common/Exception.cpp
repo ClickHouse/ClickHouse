@@ -481,6 +481,11 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
+    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).message;
+}
+
+PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+{
     WriteBufferFromOwnString stream;
 
     try
@@ -511,7 +516,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
     }
     catch (...) {}
 
-    return stream.str();
+    return PreformattedMessage{stream.str(), e.tryGetMessageFormatString()};
 }
 
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)

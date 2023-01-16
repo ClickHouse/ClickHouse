@@ -535,7 +535,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, fmt::runtime(getExceptionMessage(e, true)));
+                LOG_ERROR(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ true));
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
