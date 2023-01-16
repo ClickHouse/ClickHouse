@@ -150,6 +150,7 @@ public:
         size_t current_variant,
         size_t max_threads,
         size_t temporary_data_merge_threads,
+        bool should_produce_results_in_order_of_bucket_number_ = true,
         bool skip_merging_ = false);
     ~AggregatingTransform() override;
 
@@ -182,7 +183,8 @@ private:
     AggregatedDataVariants & variants;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
-    bool skip_merging = false; /// if we aggregate partitioned data merging is not needed
+    bool should_produce_results_in_order_of_bucket_number = true; /// Currently makes difference only if skip_merging == true.
+    bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
