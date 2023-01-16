@@ -5,6 +5,7 @@ set -x
 
 # core.COMM.PID-TID
 sysctl kernel.core_pattern='core.%e.%p-%P'
+dmesg --clear ||:
 
 set -e
 set -u
@@ -368,6 +369,7 @@ if [ -f core.zst ]; then
 fi
 
 rg --text -F '<Fatal>' server.log > fatal.log ||:
+dmesg -T > dmesg.log ||:
 
 zstd --threads=0 server.log
 
@@ -396,6 +398,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="fuzzer.log">fuzzer.log</a>
   <a href="server.log.zst">server.log.zst</a>
   <a href="main.log">main.log</a>
+  <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
 </p>
 <table>
