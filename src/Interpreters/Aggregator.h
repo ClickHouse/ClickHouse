@@ -364,7 +364,7 @@ struct AggregationMethodStringNullableNoCache
 
     static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
+        static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
     }
 };
 
@@ -460,7 +460,7 @@ struct AggregationMethodFixedStringNullableNoCache
 
     static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
+        static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
     }
 };
 

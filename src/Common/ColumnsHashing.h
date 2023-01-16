@@ -169,7 +169,7 @@ struct HashMethodStringNullable
     HashMethodStringNullable(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : Base(checkAndGetColumn<ColumnNullable>(key_columns[0]))
     {
-        const IColumn & column = *key_columns[0];
+        const IColumn & column = *checkAndGetColumn<ColumnNullable>(key_columns[0])->getNestedColumnPtr();
         const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         offsets = column_string.getOffsets().data();
         chars = column_string.getChars().data();
@@ -250,7 +250,7 @@ struct HashMethodFixedStringNullable
     HashMethodFixedStringNullable(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : Base(checkAndGetColumn<ColumnNullable>(key_columns[0]))
     {
-        const IColumn & column = *key_columns[0];
+        const IColumn & column = *checkAndGetColumn<ColumnNullable>(key_columns[0])->getNestedColumnPtr();
         const ColumnFixedString & column_string = assert_cast<const ColumnFixedString &>(column);
         n = column_string.getN();
         chars = &column_string.getChars();
