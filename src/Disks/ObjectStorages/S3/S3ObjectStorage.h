@@ -187,7 +187,7 @@ private:
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
     size_t getObjectSize(const std::string & bucket_from, const std::string & key) const;
-    void checkObjectExists(const std::string & bucket_from, const std::string & key, const std::string_view & description) const;
+    void checkObjectExists(const std::string & bucket_from, const std::string & key, std::string_view description) const;
 
     std::string bucket;
 

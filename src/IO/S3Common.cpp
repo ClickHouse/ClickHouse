@@ -957,7 +957,7 @@ namespace S3
             key, bucket, error.GetMessage());
     }
 
-    void checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, const std::string_view & description)
+    void checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, std::string_view description)
     {
         auto outcome = getObjectAttributes(client, bucket, key, version_id, for_disk_s3);
         if (outcome.IsSuccess())

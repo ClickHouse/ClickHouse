@@ -135,7 +135,7 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
     return S3::objectExists(*client.get(), bucket, object.absolute_path, {}, /* for_disk_s3= */ true);
 }
 
-void S3ObjectStorage::checkObjectExists(const std::string & bucket_from, const std::string & key, const std::string_view & description) const
+void S3ObjectStorage::checkObjectExists(const std::string & bucket_from, const std::string & key, std::string_view description) const
 {
     return S3::checkObjectExists(*client.get(), bucket_from, key, {}, /* for_disk_s3= */ true, description);
 }
