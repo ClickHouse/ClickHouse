@@ -235,6 +235,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                             j,
                             merge_threads,
                             temporary_data_merge_threads,
+                            should_produce_results_in_order_of_bucket_number,
                             skip_merging);
                         // For each input stream we have `grouping_sets_size` copies, so port index
                         // for transform #j should skip ports of first (j-1) streams.
@@ -437,7 +438,14 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             [&](const Block & header)
             {
                 return std::make_shared<AggregatingTransform>(
-                    header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads, skip_merging);
+                    header,
+                    transform_params,
+                    many_data,
+                    counter++,
+                    merge_threads,
+                    temporary_data_merge_threads,
+                    should_produce_results_in_order_of_bucket_number,
+                    skip_merging);
             });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);

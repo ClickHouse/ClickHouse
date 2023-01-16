@@ -498,7 +498,14 @@ private:
 
 AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_)
     : AggregatingTransform(
-        std::move(header), std::move(params_), std::make_unique<ManyAggregatedData>(1), 0, 1, 1, false /* skip_merging */)
+        std::move(header),
+        std::move(params_),
+        std::make_unique<ManyAggregatedData>(1),
+        0,
+        1,
+        1,
+        true /* should_produce_results_in_order_of_bucket_number */,
+        false /* skip_merging */)
 {
 }
 
@@ -509,6 +516,7 @@ AggregatingTransform::AggregatingTransform(
     size_t current_variant,
     size_t max_threads_,
     size_t temporary_data_merge_threads_,
+    bool should_produce_results_in_order_of_bucket_number_,
     bool skip_merging_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
@@ -518,6 +526,7 @@ AggregatingTransform::AggregatingTransform(
     , variants(*many_data->variants[current_variant])
     , max_threads(std::min(many_data->variants.size(), max_threads_))
     , temporary_data_merge_threads(temporary_data_merge_threads_)
+    , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
 {
 }
@@ -707,10 +716,19 @@ void AggregatingTransform::initGenerate()
             for (auto & variant : prepared_data)
                 pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant));
             Pipe pipe = Pipe::unitePipes(std::move(pipes));
-            /// Groups chunks with the same bucket_id and outputs them (as a vector of chunks) in order of bucket_id.
-            pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
-            /// Outputs one chunk from group at a time in order of bucket_id.
-            pipe.addTransform(std::make_shared<FlattenChunksToMergeTransform>(pipe.getHeader(), params->getHeader()));
+            if (should_produce_results_in_order_of_bucket_number)
+            {
+                /// Groups chunks with the same bucket_id and outputs them (as a vector of chunks) in order of bucket_id.
+                pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
+                /// Outputs one chunk from group at a time in order of bucket_id.
+                pipe.addTransform(std::make_shared<FlattenChunksToMergeTransform>(pipe.getHeader(), params->getHeader()));
+            }
+            else
+            {
+                /// AggregatingTransform::expandPipeline expects single output port.
+                /// It's not a big problem because we do resize() to max_threads after AggregatingTransform.
+                pipe.resize(1);
+            }
             processors = Pipe::detachProcessors(std::move(pipe));
         }
     }
