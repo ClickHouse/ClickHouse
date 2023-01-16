@@ -48,6 +48,8 @@
   "test_system_replicated_fetches/test.py::test_system_replicated_fetches",
   "test_zookeeper_config_load_balancing/test.py::test_round_robin",
 
+  "test_global_overcommit_tracker/test.py::test_global_overcommit",
+
   "test_user_ip_restrictions/test.py::test_ipv4",
   "test_user_ip_restrictions/test.py::test_ipv6"
 ]

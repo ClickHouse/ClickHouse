@@ -19,12 +19,12 @@ private:
 
     void assertExists(const std::string & path) const;
 
-    bool initializeIfNeeded(const std::string & path) const;
+    void initializeIfNeeded(const std::string & path) const;
 
 public:
     explicit MetadataStorageFromStaticFilesWebServer(const WebObjectStorage & object_storage_);
 
-    MetadataTransactionPtr createTransaction() const override;
+    MetadataTransactionPtr createTransaction() override;
 
     const std::string & getPath() const override;
 
@@ -36,29 +36,28 @@ public:
 
     uint64_t getFileSize(const String & path) const override;
 
-    Poco::Timestamp getLastModified(const std::string & path) const override;
-
-    time_t getLastChanged(const std::string & path) const override;
-
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
-
-    std::string readFileToString(const std::string & path) const override;
-
-    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
-
-    uint32_t getHardlinkCount(const std::string & path) const override;
 
     StoredObjects getStorageObjects(const std::string & path) const override;
 
     std::string getObjectStorageRootPath() const override { return ""; }
 
+    struct stat stat(const String & /* path */) const override { return {}; }
+
+    Poco::Timestamp getLastModified(const std::string & /* path */) const override
+    {
+        /// Required by MergeTree
+        return {};
+    }
+    uint32_t getHardlinkCount(const std::string & /* path */) const override
+    {
+        return 1;
+    }
+
     bool supportsChmod() const override { return false; }
-
     bool supportsStat() const override { return false; }
-
-    struct stat stat(const String &) const override { return {}; }
 };
 
 class MetadataStorageFromStaticFilesWebServerTransaction final : public IMetadataTransaction
@@ -73,47 +72,28 @@ public:
         : metadata_storage(metadata_storage_)
     {}
 
-    ~MetadataStorageFromStaticFilesWebServerTransaction() override = default;
-
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
 
-    void commit() override;
+    void createEmptyMetadataFile(const std::string & /* path */) override
+    {
+        /// No metadata, no need to create anything.
+    }
 
-    void writeStringToFile(const std::string & path, const std::string & data) override;
-
-    void createEmptyMetadataFile(const std::string & path) override;
-
-    void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
-
-    void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
-
-    void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
-
-    void setReadOnly(const std::string & path) override;
-
-    void unlinkFile(const std::string & path) override;
+    void createMetadataFile(const std::string & /* path */, const std::string & /* blob_name */, uint64_t /* size_in_bytes */) override
+    {
+        /// Noop
+    }
 
     void createDirectory(const std::string & path) override;
 
     void createDirectoryRecursive(const std::string & path) override;
 
-    void removeDirectory(const std::string & path) override;
-
-    void removeRecursive(const std::string & path) override;
-
-    void createHardLink(const std::string & path_from, const std::string & path_to) override;
-
-    void moveFile(const std::string & path_from, const std::string & path_to) override;
-
-    void moveDirectory(const std::string & path_from, const std::string & path_to) override;
-
-    void replaceFile(const std::string & path_from, const std::string & path_to) override;
-
-    void unlinkMetadata(const std::string & path) override;
+    void commit() override
+    {
+        /// Nothing to commit.
+    }
 
     bool supportsChmod() const override { return false; }
-
-    void chmod(const String &, mode_t) override;
 };
 
 }

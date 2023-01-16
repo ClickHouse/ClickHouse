@@ -195,7 +195,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
-    /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
 
@@ -447,8 +447,8 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
+    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)

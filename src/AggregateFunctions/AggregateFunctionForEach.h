@@ -66,6 +66,7 @@ private:
         if (old_size < new_size)
         {
             char * old_state = state.array_of_aggregate_datas;
+
             char * new_state = arena.alignedAlloc(
                 new_size * nested_size_of_data,
                 nested_func->alignOfData());
@@ -106,7 +107,7 @@ private:
 
 public:
     AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
-        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
         nested_size_of_data = nested_func->sizeOfData();
@@ -124,9 +125,9 @@ public:
         return nested_func->getName() + "ForEach";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(AggregateFunctionPtr nested_)
     {
-        return std::make_shared<DataTypeArray>(nested_func->getReturnType());
+        return std::make_shared<DataTypeArray>(nested_->getResultType());
     }
 
     bool isVersioned() const override
@@ -134,26 +135,46 @@ public:
         return nested_func->isVersioned();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
     }
 
-    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    template <bool up_to_state>
+    void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
         AggregateFunctionForEachData & state = data(place);
 
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->destroy(nested_state);
+            if constexpr (up_to_state)
+                nested_func->destroyUpToState(nested_state);
+            else
+                nested_func->destroy(nested_state);
+
             nested_state += nested_size_of_data;
         }
     }
 
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<false>(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<true>(place);
+    }
+
     bool hasTrivialDestructor() const override
     {
-        return nested_func->hasTrivialDestructor();
+        return std::is_trivially_destructible_v<AggregateFunctionForEachData> && nested_func->hasTrivialDestructor();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -236,7 +257,8 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    template <bool merge>
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         AggregateFunctionForEachData & state = data(place);
 
@@ -247,11 +269,24 @@ public:
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->insertResultInto(nested_state, elems_to, arena);
+            if constexpr (merge)
+                nested_func->insertMergeResultInto(nested_state, elems_to, arena);
+            else
+                nested_func->insertResultInto(nested_state, elems_to, arena);
             nested_state += nested_size_of_data;
         }
 
         offsets_to.push_back(offsets_to.back() + state.dynamic_array_size);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

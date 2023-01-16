@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 
 #if USE_AWS_S3
@@ -26,6 +26,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Storages/StorageS3Settings.h>
 
 #include "TestPocoHTTPServer.h"
@@ -76,7 +77,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
 
     DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
-    DB::S3::URI uri(Poco::URI(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt"));
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
@@ -88,14 +89,16 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
         remote_host_filter,
         s3_max_redirects,
         enable_s3_requests_logging,
-        /* for_disk_s3 = */ false
+        /* for_disk_s3 = */ false,
+        /* get_request_throttler = */ {},
+        /* put_request_throttler = */ {}
     );
 
     client_configuration.endpointOverride = uri.endpoint;
     client_configuration.retryStrategy = std::make_shared<NoRetryStrategy>();
 
     String server_side_encryption_customer_key_base64 = "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=";
-    DB::HeaderCollection headers;
+    DB::HTTPHeaderEntries headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
@@ -113,12 +116,14 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     ASSERT_TRUE(client);
 
     DB::ReadSettings read_settings;
+    DB::S3Settings::RequestSettings request_settings;
+    request_settings.max_single_read_retries = max_single_read_retries;
     DB::ReadBufferFromS3 read_buffer(
         client,
         uri.bucket,
         uri.key,
         version_id,
-        max_single_read_retries,
+        request_settings,
         read_settings
     );
 

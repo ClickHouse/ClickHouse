@@ -102,7 +102,7 @@ private:
             Float64 ellipse_data[4];
             for (const auto idx : collections::range(0, 4))
             {
-                int arg_idx = 2 + 4 * ellipse_idx + idx;
+                size_t arg_idx = 2 + 4 * ellipse_idx + idx;
                 const auto * column = arguments[arg_idx].column.get();
                 if (const auto * col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
                 {

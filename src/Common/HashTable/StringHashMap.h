@@ -98,7 +98,7 @@ public:
     ///  have a key equals to the given cell, a new cell gets emplaced into that map,
     ///  and func is invoked with the third argument emplaced set to true. Otherwise
     ///  emplaced is set to false.
-    template <typename Func>
+    template <typename Func, bool>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
         if (this->m0.hasZero() && that.m0.hasZero())

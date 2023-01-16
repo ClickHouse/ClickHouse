@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
@@ -100,6 +101,7 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
 
         {"database", std::make_shared<DataTypeString>()},
         {"table", std::make_shared<DataTypeString>()},
+        {"table_uuid", std::make_shared<DataTypeUUID>()},
         {"part_name", std::make_shared<DataTypeString>()},
         {"partition_id", std::make_shared<DataTypeString>()},
         {"part_type", std::make_shared<DataTypeString>()},
@@ -137,6 +139,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(database_name);
     columns[i++]->insert(table_name);
+    columns[i++]->insert(table_uuid);
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
     columns[i++]->insert(part_type.toString());
@@ -169,16 +172,6 @@ bool PartLog::addNewPart(
     return addNewParts(current_context, {part}, elapsed_ns, execution_status);
 }
 
-static inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-
-static inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
-}
 
 bool PartLog::addNewParts(
     ContextPtr current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
@@ -209,16 +202,17 @@ bool PartLog::addNewParts(
             // construct event_time and event_time_microseconds using the same time point
             // so that the two times will always be equal up to a precision of a second.
             const auto time_now = std::chrono::system_clock::now();
-            elem.event_time = time_in_seconds(time_now);
-            elem.event_time_microseconds = time_in_microseconds(time_now);
+            elem.event_time = timeInSeconds(time_now);
+            elem.event_time_microseconds = timeInMicroseconds(time_now);
             elem.duration_ms = elapsed_ns / 1000000;
 
             elem.database_name = table_id.database_name;
             elem.table_name = table_id.table_name;
+            elem.table_uuid = table_id.uuid;
             elem.partition_id = part->info.partition_id;
             elem.part_name = part->name;
-            elem.disk_name = part->data_part_storage->getDiskName();
-            elem.path_on_disk = part->data_part_storage->getFullPath();
+            elem.disk_name = part->getDataPartStorage().getDiskName();
+            elem.path_on_disk = part->getDataPartStorage().getFullPath();
             elem.part_type = part->getType();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();

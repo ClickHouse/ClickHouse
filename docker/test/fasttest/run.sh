@@ -116,9 +116,9 @@ function clone_submodules
             contrib/base64
             contrib/cctz
             contrib/libcpuid
+            contrib/libdivide
             contrib/double-conversion
-            contrib/libcxx
-            contrib/libcxxabi
+            contrib/llvm-project
             contrib/lz4
             contrib/zstd
             contrib/fastops
@@ -136,6 +136,8 @@ function clone_submodules
             contrib/wyhash
             contrib/hashidsxx
             contrib/c-ares
+            contrib/morton-nd
+            contrib/xxHash
         )
 
         git submodule sync
@@ -157,7 +159,6 @@ function run_cmake
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
         "-DENABLE_JEMALLOC=1"
-        "-DENABLE_REPLXX=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
@@ -187,7 +188,7 @@ function build
             cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
 
             strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
-            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
+            zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache --show-stats ||:
         ccache --evict-older-than 1d ||:

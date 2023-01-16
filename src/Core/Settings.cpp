@@ -148,31 +148,30 @@ std::vector<String> Settings::getAllRegisteredNames() const
 
 void Settings::set(std::string_view name, const Field & value)
 {
-    BaseSettings::set(name, value);
-
     if (name == "compatibility")
-        applyCompatibilitySetting();
+        applyCompatibilitySetting(value.get<String>());
     /// If we change setting that was changed by compatibility setting before
     /// we should remove it from settings_changed_by_compatibility_setting,
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
     else if (settings_changed_by_compatibility_setting.contains(name))
         settings_changed_by_compatibility_setting.erase(name);
+
+    BaseSettings::set(name, value);
 }
 
-void Settings::applyCompatibilitySetting()
+void Settings::applyCompatibilitySetting(const String & compatibility_value)
 {
     /// First, revert all changes applied by previous compatibility setting
     for (const auto & setting_name : settings_changed_by_compatibility_setting)
         resetToDefault(setting_name);
 
     settings_changed_by_compatibility_setting.clear();
-    String compatibility = getString("compatibility");
     /// If setting value is empty, we don't need to change settings
-    if (compatibility.empty())
+    if (compatibility_value.empty())
         return;
 
-    ClickHouseVersion version(compatibility);
+    ClickHouseVersion version(compatibility_value);
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)

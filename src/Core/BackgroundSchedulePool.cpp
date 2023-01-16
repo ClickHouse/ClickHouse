@@ -149,9 +149,9 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
 
     threads.resize(size_);
     for (auto & thread : threads)
-        thread = ThreadFromGlobalPool([this] { threadFunction(); });
+        thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
 
-    delayed_thread = ThreadFromGlobalPool([this] { delayExecutionThreadFunction(); });
+    delayed_thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { delayExecutionThreadFunction(); });
 }
 
 
@@ -168,7 +168,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 
     threads.resize(new_threads_count);
     for (size_t i = old_threads_count; i < new_threads_count; ++i)
-        threads[i] = ThreadFromGlobalPool([this] { threadFunction(); });
+        threads[i] = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
 }
 
 
@@ -244,8 +244,14 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
 }
 
 
-void BackgroundSchedulePool::attachToThreadGroup()
+scope_guard BackgroundSchedulePool::attachToThreadGroup()
 {
+    scope_guard guard = [&]()
+        {
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        };
+
     std::lock_guard lock(delayed_tasks_mutex);
 
     if (thread_group)
@@ -258,6 +264,7 @@ void BackgroundSchedulePool::attachToThreadGroup()
         CurrentThread::initializeQuery();
         thread_group = CurrentThread::getGroup();
     }
+    return guard;
 }
 
 
@@ -265,7 +272,7 @@ void BackgroundSchedulePool::threadFunction()
 {
     setThreadName(thread_name.c_str());
 
-    attachToThreadGroup();
+    auto detach_thread_guard = attachToThreadGroup();
 
     while (!shutdown)
     {
@@ -296,7 +303,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName((thread_name + "/D").c_str());
 
-    attachToThreadGroup();
+    auto detach_thread_guard = attachToThreadGroup();
 
     while (!shutdown)
     {

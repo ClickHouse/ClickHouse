@@ -185,8 +185,10 @@ public:
             const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
             if (!data_type_function)
-                throw Exception("First argument for function " + getName() + " must be a function",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} must be a function. Actual {}",
+                    getName(),
+                    arguments[0].type->getName());
 
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 

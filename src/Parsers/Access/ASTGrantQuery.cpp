@@ -96,7 +96,15 @@ String ASTGrantQuery::getID(char) const
 
 ASTPtr ASTGrantQuery::clone() const
 {
-    return std::make_shared<ASTGrantQuery>(*this);
+    auto res = std::make_shared<ASTGrantQuery>(*this);
+
+    if (roles)
+        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+
+    if (grantees)
+        res->grantees = std::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
+
+    return res;
 }
 
 

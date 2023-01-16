@@ -48,7 +48,7 @@ UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_si
         compressed_size = codec->getCompressedReserveSize(compressed_size);
 
     ///    TotalCodecs  ByteForEachCodec       data
-    return sizeof(UInt8) + codecs.size() + compressed_size;
+    return static_cast<UInt32>(sizeof(UInt8) + codecs.size() + compressed_size);
 }
 
 UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -73,7 +73,7 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
 
     memcpy(&dest[1 + codecs.size()], uncompressed_buf.data(), source_size);
 
-    return 1 + codecs.size() + source_size;
+    return static_cast<UInt32>(1 + codecs.size() + source_size);
 }
 
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const

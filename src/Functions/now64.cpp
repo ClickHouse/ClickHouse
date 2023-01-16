@@ -87,9 +87,15 @@ public:
         return std::make_unique<ExecutableFunctionNow64>(time_value);
     }
 
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isDeterministic() const override
+    {
+        return false;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
+    {
+        return false;
+    }
 
 private:
     Field time_value;
@@ -130,7 +136,7 @@ public:
                                 ". Expected const integer.",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            scale = argument.column->get64(0);
+            scale = static_cast<UInt32>(argument.column->get64(0));
         }
         if (arguments.size() == 2)
         {

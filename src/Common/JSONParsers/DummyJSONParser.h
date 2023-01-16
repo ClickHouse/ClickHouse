@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <base/types.h>
 #include <base/defines.h>
+#include "ElementTypes.h"
 
 
 namespace DB
@@ -25,6 +26,7 @@ struct DummyJSONParser
     {
     public:
         Element() = default;
+        static ElementType type() { return ElementType::NULL_VALUE; }
         static bool isInt64() { return false; }
         static bool isUInt64() { return false; }
         static bool isDouble() { return false; }

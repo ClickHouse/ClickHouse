@@ -113,14 +113,23 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             if (!is_cycle)
             {
                 /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
+                /// Check size of the alias before cloning too large alias AST
+                alias_node->checkSize(data.settings.max_expanded_ast_elements);
                 ast = alias_node->clone();
                 ast->setAlias(node_alias);
             }
         }
         else
-            ast = alias_node;
+        {
+            /// Check size of the alias before cloning too large alias AST
+            alias_node->checkSize(data.settings.max_expanded_ast_elements);
+            auto alias_name = ast->getAliasOrColumnName();
+            ast = alias_node->clone();
+            ast->setAlias(alias_name);
+        }
     }
 }
+
 
 void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
@@ -257,7 +266,10 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     else if (auto * node_select = ast->as<ASTSelectQuery>())
         visit(*node_select, ast, data);
     else if (auto * node_param = ast->as<ASTQueryParameter>())
-        throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
+    {
+        if (!data.is_create_parameterized_view)
+            throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
+    }
     else if (auto * node_function = ast->as<ASTFunction>())
         if (node_function->parameters)
             visit(node_function->parameters, data);

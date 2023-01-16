@@ -22,11 +22,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// The regex-based code style check script in CI complains when it sees "ErrorCodes:: ErrorCode" (space added to avoid another match).
-/// Because this expression is only used in this file, don't add some suppression mechanism to the already complex style checker, instead
-/// work around by creating a namespace alias.
-namespace ErrorCodeAlias = ErrorCodes;
-
 /// Throw an exception if the argument is non zero.
 class FunctionThrowIf : public IFunction
 {
@@ -93,7 +88,7 @@ public:
             custom_message = message_column->getValue<String>();
         }
 
-        std::optional<ErrorCodeAlias::ErrorCode> custom_error_code;
+        std::optional<ErrorCodes::ErrorCode> custom_error_code;
         if (allow_custom_error_code_argument && arguments.size() == 3)
         {
             if (!isColumnConst(*(arguments[2].column)))
@@ -125,7 +120,7 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr execute(const IColumn * in_untyped, const std::optional<String> & message, const std::optional<ErrorCodeAlias::ErrorCode> & error_code) const
+    ColumnPtr execute(const IColumn * in_untyped, const std::optional<String> & message, const std::optional<ErrorCodes::ErrorCode> & error_code) const
     {
         const auto * in = checkAndGetColumn<ColumnVector<T>>(in_untyped);
 

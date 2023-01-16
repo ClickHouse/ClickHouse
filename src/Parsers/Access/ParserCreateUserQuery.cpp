@@ -16,7 +16,7 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-#include <Common/config.h>
+#include "config.h"
 #include <Common/hex.h>
 #if USE_SSL
 #     include <openssl/crypto.h>
@@ -51,7 +51,7 @@ namespace
     }
 
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data, std::optional<String> & temporary_password_for_checks)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -164,6 +164,10 @@ namespace
                 for (const auto & ast_child : ast->children)
                     common_names.insert(ast_child->as<const ASTLiteral &>().value.safeGet<String>());
             }
+
+            /// Save password separately for future complexity rules check
+            if (expect_password)
+                temporary_password_for_checks = value;
 
             auth_data = AuthenticationData{*type};
             if (auth_data.getType() == AuthenticationType::SHA256_PASSWORD)
@@ -295,11 +299,11 @@ namespace
     }
 
 
-    bool parseHosts(IParserBase::Pos & pos, Expected & expected, const String & prefix, AllowedClientHosts & hosts)
+    bool parseHosts(IParserBase::Pos & pos, Expected & expected, std::string_view prefix, AllowedClientHosts & hosts)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!prefix.empty() && !ParserKeyword{prefix.c_str()}.ignore(pos, expected))
+            if (!prefix.empty() && !ParserKeyword{prefix}.ignore(pos, expected))
                 return false;
 
             if (!ParserKeyword{"HOST"}.ignore(pos, expected))
@@ -438,6 +442,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     std::optional<String> new_name;
     std::optional<AuthenticationData> auth_data;
+    std::optional<String> temporary_password_for_checks;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
@@ -452,9 +457,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!auth_data)
         {
             AuthenticationData new_auth_data;
-            if (parseAuthenticationData(pos, expected, new_auth_data))
+            std::optional<String> new_temporary_password_for_checks;
+            if (parseAuthenticationData(pos, expected, new_auth_data, new_temporary_password_for_checks))
             {
                 auth_data = std::move(new_auth_data);
+                temporary_password_for_checks = std::move(new_temporary_password_for_checks);
                 continue;
             }
         }
@@ -492,7 +499,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (alter)
         {
-            String maybe_new_name;
             if (!new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
                 continue;
 
@@ -540,6 +546,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->auth_data = std::move(auth_data);
+    query->temporary_password_for_checks = std::move(temporary_password_for_checks);
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);

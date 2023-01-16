@@ -280,6 +280,7 @@ def test_store_cleanup(started_cluster):
         "Removing unused directory", timeout=90, look_behind_lines=1000
     )
     node1.wait_for_log_line("directories from store")
+    node1.wait_for_log_line("Nothing to clean up from store/")
 
     store = node1.exec_in_container(["ls", f"{path_to_data}/store"])
     assert "100" in store

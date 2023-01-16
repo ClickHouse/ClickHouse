@@ -39,7 +39,6 @@ public:
     /// This is a temporary table for transferring to remote servers for distributed query processing.
     StoragePtr table;
 
-private:
     /// The source is obtained using the InterpreterSelectQuery subquery.
     std::unique_ptr<QueryPlan> source;
 };

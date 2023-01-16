@@ -22,6 +22,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_,
+    ThreadPool * load_marks_threadpool_,
     ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
@@ -42,6 +43,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
           data_part_info_for_read_->getIndexGranularityInfo(),
           settings.save_marks_in_cache,
           settings.read_settings,
+          load_marks_threadpool_,
           data_part_info_for_read_->getColumns().size())
 {
     try
@@ -57,13 +59,15 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
         const String path = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+        auto data_part_storage = data_part_info_for_read->getDataPartStorage();
+
         if (uncompressed_cache)
         {
             auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-                std::string(fs::path(data_part_info_for_read->getDataPartStorage()->getFullPath()) / path),
-                [this, path]()
+                std::string(fs::path(data_part_storage->getFullPath()) / path),
+                [this, path, data_part_storage]()
                 {
-                    return data_part_info_for_read->getDataPartStorage()->readFile(
+                    return data_part_storage->readFile(
                         path,
                         settings.read_settings,
                         std::nullopt, std::nullopt);
@@ -85,7 +89,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         {
             auto buffer =
                 std::make_unique<CompressedReadBufferFromFile>(
-                    data_part_info_for_read->getDataPartStorage()->readFile(
+                    data_part_storage->readFile(
                         path,
                         settings.read_settings,
                         std::nullopt, std::nullopt),

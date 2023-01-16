@@ -3,6 +3,7 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -50,6 +51,11 @@ def get_connection_zk(nodename, timeout=30.0):
     return _fake_zk_instance
 
 
+def restart_clickhouse():
+    node.restart_clickhouse(kill=True)
+    keeper_utils.wait_until_connected(cluster, node)
+
+
 def test_state_after_restart(started_cluster):
     try:
         node_zk = None
@@ -69,7 +75,7 @@ def test_state_after_restart(started_cluster):
             else:
                 existing_children.append("node" + str(i))
 
-        node.restart_clickhouse(kill=True)
+        restart_clickhouse()
 
         node_zk2 = get_connection_zk("node")
 
@@ -123,7 +129,7 @@ def test_ephemeral_after_restart(started_cluster):
             else:
                 existing_children.append("node" + str(i))
 
-        node.restart_clickhouse(kill=True)
+        restart_clickhouse()
 
         node_zk2 = get_connection_zk("node")
 

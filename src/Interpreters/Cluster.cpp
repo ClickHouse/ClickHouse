@@ -423,7 +423,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             info.all_addresses.push_back(address);
 
             auto pool = ConnectionPoolFactory::instance().get(
-                settings.distributed_connections_pool_size,
+                static_cast<unsigned>(settings.distributed_connections_pool_size),
                 address.host_name, address.port,
                 address.default_database, address.user, address.password, address.quota_key,
                 address.cluster, address.cluster_secret,
@@ -497,7 +497,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             for (const auto & replica : replica_addresses)
             {
                 auto replica_pool = ConnectionPoolFactory::instance().get(
-                    settings.distributed_connections_pool_size,
+                    static_cast<unsigned>(settings.distributed_connections_pool_size),
                     replica.host_name, replica.port,
                     replica.default_database, replica.user, replica.password, replica.quota_key,
                     replica.cluster, replica.cluster_secret,
@@ -585,11 +585,11 @@ Cluster::Cluster(
         for (const auto & replica : current)
         {
             auto replica_pool = ConnectionPoolFactory::instance().get(
-                        settings.distributed_connections_pool_size,
-                        replica.host_name, replica.port,
-                        replica.default_database, replica.user, replica.password, replica.quota_key,
-                        replica.cluster, replica.cluster_secret,
-                        "server", replica.compression, replica.secure, replica.priority);
+                static_cast<unsigned>(settings.distributed_connections_pool_size),
+                replica.host_name, replica.port,
+                replica.default_database, replica.user, replica.password, replica.quota_key,
+                replica.cluster, replica.cluster_secret,
+                "server", replica.compression, replica.secure, replica.priority);
             all_replicas.emplace_back(replica_pool);
             if (replica.is_local && !treat_local_as_remote)
                 shard_local_addresses.push_back(replica);
@@ -693,7 +693,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
             info.all_addresses.push_back(address);
 
             auto pool = ConnectionPoolFactory::instance().get(
-                settings.distributed_connections_pool_size,
+                static_cast<unsigned>(settings.distributed_connections_pool_size),
                 address.host_name,
                 address.port,
                 address.default_database,

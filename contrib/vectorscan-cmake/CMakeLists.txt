@@ -304,7 +304,7 @@ target_include_directories (_vectorscan SYSTEM PUBLIC "${LIBRARY_DIR}/src")
 # Please regenerate these files if you update vectorscan.
 
 if (ARCH_AMD64)
-    target_include_directories (_vectorscan PRIVATE x86_64)
+    target_include_directories (_vectorscan PRIVATE amd64)
 endif ()
 
 if (ARCH_AARCH64)

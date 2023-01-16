@@ -41,7 +41,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned threads) override;
+        size_t threads) override;
 
 private:
     ExecutableSettings settings;

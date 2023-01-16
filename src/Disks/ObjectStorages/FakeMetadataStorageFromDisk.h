@@ -9,6 +9,7 @@
 namespace DB
 {
 
+/// Store metadata in the disk itself.
 class FakeMetadataStorageFromDisk final : public IMetadataStorage
 {
 private:
@@ -26,7 +27,7 @@ public:
         ObjectStoragePtr object_storage_,
         const std::string & object_storage_root_path_);
 
-    MetadataTransactionPtr createTransaction() const override;
+    MetadataTransactionPtr createTransaction() override;
 
     const std::string & getPath() const override;
 
@@ -53,6 +54,8 @@ public:
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 
     std::string readFileToString(const std::string & path) const override;
+
+    std::string readInlineDataToString(const std::string & path) const override;
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
 
@@ -86,6 +89,8 @@ public:
     void commit() final {}
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
+
+    void writeInlineDataToFile(const std::string & path, const std::string & data) override;
 
     void createEmptyMetadataFile(const std::string & path) override;
 

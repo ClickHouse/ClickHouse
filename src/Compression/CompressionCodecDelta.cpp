@@ -28,6 +28,7 @@ protected:
 
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
+    bool isDelta() const override { return true; }
 
 private:
     UInt8 delta_bytes_size;
@@ -134,6 +135,9 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
 {
     if (source_size < 2)
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+
+    if (uncompressed_size == 0)
+        return;
 
     UInt8 bytes_size = source[0];
 

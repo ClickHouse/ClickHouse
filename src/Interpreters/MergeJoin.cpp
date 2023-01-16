@@ -4,12 +4,13 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/SortCursor.h>
-#include <Formats/TemporaryFileStream.h>
+#include <Formats/TemporaryFileStreamLegacy.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -1032,7 +1033,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStream input(flushed_right_blocks[pos]->path(), materializeBlock(right_sample_block));
+            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getPath(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 
@@ -1113,7 +1114,7 @@ private:
 };
 
 
-std::shared_ptr<NotJoinedBlocks> MergeJoin::getNonJoinedBlocks(
+IBlocksStreamPtr MergeJoin::getNonJoinedBlocks(
     const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (table_join->strictness() == JoinStrictness::All && (is_right || is_full))
@@ -1121,7 +1122,7 @@ std::shared_ptr<NotJoinedBlocks> MergeJoin::getNonJoinedBlocks(
         size_t left_columns_count = left_sample_block.columns();
         assert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
-        return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
     }
     return nullptr;
 }

@@ -72,11 +72,47 @@ SELECT JSONExtract('{"a":123456, "b":3.55}', 'Tuple(a LowCardinality(Int32), b D
 SELECT JSONExtract('{"a":1, "b":"417ddc5d-e556-4d27-95dd-a34d84e46a50"}', 'Tuple(a Int8, b UUID)');
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'a', 'LowCardinality(String)');
 SELECT JSONExtract('{"a":3333.6333333333333333333333, "b":"test"}', 'Tuple(a Decimal(10,1), b LowCardinality(String))');
+SELECT JSONExtract('{"a":"3333.6333333333333333333333", "b":"test"}', 'Tuple(a Decimal(10,1), b LowCardinality(String))');
 SELECT JSONExtract('{"a":3333.6333333333333333333333, "b":"test"}', 'Tuple(a Decimal(20,10), b LowCardinality(String))');
+SELECT JSONExtract('{"a":"3333.6333333333333333333333", "b":"test"}', 'Tuple(a Decimal(20,10), b LowCardinality(String))');
 SELECT JSONExtract('{"a":123456.123456}', 'a', 'Decimal(20, 4)') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"123456.123456"}', 'a', 'Decimal(20, 4)') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"123456789012345.12"}', 'a', 'Decimal(30, 4)') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"1234567890.12345678901234567890", "b":"test"}', 'Tuple(a Decimal(35,20), b LowCardinality(String))') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"1234567890.123456789012345678901234567890", "b":"test"}', 'Tuple(a Decimal(45,30), b LowCardinality(String))') as a, toTypeName(a);
 SELECT toDecimal64(123456789012345.12, 4), JSONExtract('{"a":123456789012345.12}', 'a', 'Decimal(30, 4)');
 SELECT toDecimal128(1234567890.12345678901234567890, 20), JSONExtract('{"a":1234567890.12345678901234567890, "b":"test"}', 'Tuple(a Decimal(35,20), b LowCardinality(String))');
 SELECT toDecimal256(1234567890.123456789012345678901234567890, 30), JSONExtract('{"a":1234567890.12345678901234567890, "b":"test"}', 'Tuple(a Decimal(45,30), b LowCardinality(String))');
+SELECT JSONExtract('{"a":-1234567890}', 'a', 'Int32') as a, toTypeName(a);
+SELECT JSONExtract('{"a":1234567890}', 'a', 'UInt32') as a, toTypeName(a);
+SELECT JSONExtract('{"a":-1234567890123456789}', 'a', 'Int64') as a, toTypeName(a);
+SELECT JSONExtract('{"a":1234567890123456789}', 'a', 'UInt64') as a, toTypeName(a);
+SELECT JSONExtract('{"a":-1234567890123456789}', 'a', 'Int128') as a, toTypeName(a);
+SELECT JSONExtract('{"a":1234567890123456789}', 'a', 'UInt128') as a, toTypeName(a);
+SELECT JSONExtract('{"a":-1234567890123456789}', 'a', 'Int256') as a, toTypeName(a);
+SELECT JSONExtract('{"a":1234567890123456789}', 'a', 'UInt256') as a, toTypeName(a);
+SELECT JSONExtract('{"a":-123456789.345}', 'a', 'Int32') as a, toTypeName(a);
+SELECT JSONExtract('{"a":123456789.345}', 'a', 'UInt32') as a, toTypeName(a);
+SELECT JSONExtract('{"a":-123456789012.345}', 'a', 'Int64') as a, toTypeName(a);
+SELECT JSONExtract('{"a":123456789012.345}', 'a', 'UInt64') as a, toTypeName(a);
+SELECT JSONExtract('{"a":-123456789012.345}', 'a', 'Int128') as a, toTypeName(a);
+SELECT JSONExtract('{"a":123456789012.345}', 'a', 'UInt128') as a, toTypeName(a);
+SELECT JSONExtract('{"a":-123456789012.345}', 'a', 'Int256') as a, toTypeName(a);
+SELECT JSONExtract('{"a":123456789012.345}', 'a', 'UInt256') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"-123456789"}', 'a', 'Int32') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"123456789"}', 'a', 'UInt32') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"-1234567890123456789"}', 'a', 'Int64') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"1234567890123456789"}', 'a', 'UInt64') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"-12345678901234567890123456789012345678"}', 'a', 'Int128') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"12345678901234567890123456789012345678"}', 'a', 'UInt128') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"-11345678901234567890123456789012345678901234567890123456789012345678901234567"}', 'a', 'Int256') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"11345678901234567890123456789012345678901234567890123456789012345678901234567"}', 'a', 'UInt256') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"-1234567899999"}', 'a', 'Int32') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"1234567899999"}', 'a', 'UInt32') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"-1234567890123456789999"}', 'a', 'Int64') as a, toTypeName(a);
+SELECT JSONExtract('{"a":"1234567890123456789999"}', 'a', 'UInt64') as a, toTypeName(a);
+SELECT JSONExtract('{"a":0}', 'a', 'Bool') as a, toTypeName(a);
+SELECT JSONExtract('{"a":1}', 'a', 'Bool') as a, toTypeName(a);
 
 SELECT '--JSONExtractKeysAndValues--';
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'String');
@@ -244,3 +280,6 @@ SELECT JSONExtractString(json, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"
 SELECT '--show error: type should be const string';
 SELECT JSONExtractKeysAndValues([], JSONLength('^?V{LSwp')); -- { serverError 44 }
 WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, 'i')); -- { serverError 44 }
+
+SELECT '--show error: index type should be integer';
+SELECT JSONExtract('[]', JSONExtract('0', 'UInt256'), 'UInt256'); -- { serverError 43 }

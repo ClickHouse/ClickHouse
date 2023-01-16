@@ -209,7 +209,7 @@ namespace
             case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 }
 

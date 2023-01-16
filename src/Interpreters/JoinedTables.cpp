@@ -154,7 +154,7 @@ private:
 
     static void visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)
     {
-        auto & identifier = node.children[0]->as<ASTTableIdentifier &>();
+        auto & identifier = node.qualifier->as<ASTIdentifier &>();
         bool rewritten = false;
         for (const auto & table : data)
         {
@@ -173,12 +173,13 @@ using RenameQualifiedIdentifiersVisitor = InDepthNodeVisitor<RenameQualifiedIden
 
 }
 
-JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query, bool include_all_columns_)
+JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query_, bool include_all_columns_)
     : context(context_)
-    , table_expressions(getTableExpressions(select_query))
+    , table_expressions(getTableExpressions(select_query_))
     , include_all_columns(include_all_columns_)
-    , left_table_expression(extractTableExpression(select_query, 0))
-    , left_db_and_table(getDatabaseAndTable(select_query, 0))
+    , left_table_expression(extractTableExpression(select_query_, 0))
+    , left_db_and_table(getDatabaseAndTable(select_query_, 0))
+    , select_query(select_query_)
 {}
 
 bool JoinedTables::isLeftTableSubquery() const
@@ -206,7 +207,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
         return {};
 
     if (isLeftTableFunction())
-        return context->getQueryContext()->executeTableFunction(left_table_expression);
+        return context->getQueryContext()->executeTableFunction(left_table_expression, &select_query);
 
     StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)

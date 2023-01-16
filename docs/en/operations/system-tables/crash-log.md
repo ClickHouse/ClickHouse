@@ -7,8 +7,8 @@ Contains information about stack traces for fatal errors. The table does not exi
 
 Columns:
 
--   `event_date` ([Datetime](../../sql-reference/data-types/datetime.md)) — Date of the event.
--   `event_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Time of the event.
+-   `event_date` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date of the event.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Time of the event.
 -   `timestamp_ns` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Timestamp of the event with nanoseconds.
 -   `signal` ([Int32](../../sql-reference/data-types/int-uint.md)) — Signal number.
 -   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread ID.

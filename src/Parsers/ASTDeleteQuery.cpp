@@ -20,6 +20,12 @@ ASTPtr ASTDeleteQuery::clone() const
         res->children.push_back(res->predicate);
     }
 
+    if (settings_ast)
+    {
+        res->settings_ast = settings_ast->clone();
+        res->children.push_back(res->settings_ast);
+    }
+
     cloneTableOptions(*res);
     return res;
 }

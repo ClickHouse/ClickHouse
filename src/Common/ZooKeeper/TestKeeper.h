@@ -34,7 +34,7 @@ using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 class TestKeeper final : public IKeeper
 {
 public:
-    TestKeeper(const zkutil::ZooKeeperArgs & args_);
+    explicit TestKeeper(const zkutil::ZooKeeperArgs & args_);
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }

@@ -3,9 +3,11 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
+#include <Core/IResolvedFunction.h>
+#include <Common/Exception.h>
 #include <DataTypes/IDataType.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #include <memory>
 
@@ -122,11 +124,11 @@ using Values = std::vector<llvm::Value *>;
 /** Function with known arguments and return type (when the specific overload was chosen).
   * It is also the point where all function-specific properties are known.
   */
-class IFunctionBase
+class IFunctionBase : public IResolvedFunction
 {
 public:
 
-    virtual ~IFunctionBase() = default;
+    ~IFunctionBase() override = default;
 
     virtual ColumnPtr execute( /// NOLINT
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
@@ -137,8 +139,10 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    virtual const DataTypes & getArgumentTypes() const = 0;
-    virtual const DataTypePtr & getResultType() const = 0;
+    const Array & getParameters() const final
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IFunctionBase doesn't support getParameters method");
+    }
 
     /// Do preparations and return executable.
     /// sample_columns should contain data types of arguments and values of constants, if relevant.
@@ -265,9 +269,10 @@ public:
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
-        bool is_monotonic = false;    /// Is the function monotonous (non-decreasing or non-increasing).
-        bool is_positive = true;    /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
+        bool is_monotonic = false;   /// Is the function monotonous (non-decreasing or non-increasing).
+        bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
+        bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
@@ -280,7 +285,7 @@ public:
 
 };
 
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).
@@ -381,7 +386,7 @@ protected:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
-    // /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
+    /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
 private:

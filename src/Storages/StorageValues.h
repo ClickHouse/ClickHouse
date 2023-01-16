@@ -23,7 +23,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     /// Why we may have virtual columns in the storage from a single block?
     /// Because it used as tmp storage for pushing blocks into views, and some

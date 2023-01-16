@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 
 #if USE_PROTOBUF
 #    include <Formats/FormatSchemaInfo.h>
@@ -32,6 +32,8 @@ public:
         bool flatten_google_wrappers_);
 
     String getName() const override { return "ProtobufListInputFormat"; }
+
+    void setReadBuffer(ReadBuffer & in_) override;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;

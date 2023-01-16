@@ -141,7 +141,12 @@ String ASTCreateQuotaQuery::getID(char) const
 
 ASTPtr ASTCreateQuotaQuery::clone() const
 {
-    return std::make_shared<ASTCreateQuotaQuery>(*this);
+    auto res = std::make_shared<ASTCreateQuotaQuery>(*this);
+
+    if (roles)
+        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+
+    return res;
 }
 
 

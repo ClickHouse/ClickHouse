@@ -221,7 +221,7 @@ public:
     }
 
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params, std::make_shared<DataTypeUInt8>())
     {
         events_size = arguments.size() - 1;
         window = params.at(0).safeGet<UInt64>();
@@ -245,19 +245,7 @@ public:
         }
     }
 
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
-
     bool allocatesMemoryInArena() const override { return false; }
-
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
-        const AggregateFunctionProperties & /*properties*/) const override
-    {
-        return std::make_shared<AggregateFunctionNullVariadic<false, false, false>>(nested_function, arguments, params);
-    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {

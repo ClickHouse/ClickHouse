@@ -69,6 +69,10 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
 
 static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
+    SCOPE_EXIT_SAFE(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
     setThreadName("QueryPullPipeEx");
 
     try
@@ -127,6 +131,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (lazy_format)
     {
         chunk = lazy_format->getChunk(milliseconds);
+        data->rethrowExceptionIfHas();
         return true;
     }
 

@@ -59,10 +59,6 @@ public:
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
 
     StringRef getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
-    {
-        return getDictionary().getDataAtWithTerminatingZero(getIndexes().getUInt(n));
-    }
 
     bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
@@ -168,13 +164,26 @@ public:
     size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
-    void forEachSubcolumn(ColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(idx.getPositionsPtr());
 
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
             callback(dictionary.getColumnUniquePtr());
+    }
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    {
+        callback(*idx.getPositionsPtr());
+        idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
+
+        /// Column doesn't own dictionary if it's shared.
+        if (!dictionary.isShared())
+        {
+            callback(*dictionary.getColumnUniquePtr());
+            dictionary.getColumnUniquePtr()->forEachSubcolumnRecursively(callback);
+        }
     }
 
     bool structureEquals(const IColumn & rhs) const override
@@ -269,6 +278,7 @@ public:
 
         const ColumnPtr & getPositions() const { return positions; }
         WrappedPtr & getPositionsPtr() { return positions; }
+        const WrappedPtr & getPositionsPtr() const { return positions; }
         size_t getPositionAt(size_t row) const;
         void insertPosition(UInt64 position);
         void insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit);

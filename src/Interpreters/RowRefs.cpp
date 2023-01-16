@@ -37,7 +37,7 @@ void callWithType(TypeIndex type, F && f)
     DISPATCH(DateTime64)
 #undef DISPATCH
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 template <typename TKey, ASOFJoinInequality inequality>
@@ -89,7 +89,7 @@ public:
 
         assert(!sorted.load(std::memory_order_acquire));
 
-        entries.emplace_back(key, row_refs.size());
+        entries.emplace_back(key, static_cast<UInt32>(row_refs.size()));
         row_refs.emplace_back(RowRef(block, row_num));
     }
 

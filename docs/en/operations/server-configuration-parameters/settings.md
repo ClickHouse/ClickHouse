@@ -268,14 +268,14 @@ The path to the table in ZooKeeper.
 
 ## dictionaries_config {#server_configuration_parameters-dictionaries_config}
 
-The path to the config file for external dictionaries.
+The path to the config file for dictionaries.
 
 Path:
 
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
+See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
 
 **Example**
 
@@ -666,6 +666,7 @@ Keys:
 -   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
 -   `tmp_path` - Filesystem path for temporary crash report state.
+-   `environment` - An arbitrary name of an environment in which the ClickHouse server is running. It will be mentioned in each crash report. The default value is `test` or `prod` depending on the version of ClickHouse.
 
 **Recommended way to use**
 
@@ -889,7 +890,7 @@ The maximum number of open files.
 
 By default: `maximum`.
 
-We recommend using this option in Mac OS X since the `getrlimit()` function returns an incorrect value.
+We recommend using this option in macOS since the `getrlimit()` function returns an incorrect value.
 
 **Example**
 
@@ -1498,8 +1499,23 @@ If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 - `move_factor` is ignored.
 - `keep_free_space_bytes` is ignored.
 - `max_data_part_size_bytes` is ignored.
-- Уou must have exactly one volume in that policy.
+- Policy should have exactly one volume with local disks.
 :::
+
+## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
+
+Limit the amount of disk space consumed by temporary files in `tmp_path` for the server.
+Queries that exceed this limit will fail with an exception.
+
+Default value: `0`.
+
+**See also**
+
+-   [max_temporary_data_on_disk_size_for_user](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_user)
+-   [max_temporary_data_on_disk_size_for_query](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_query)
+-   [tmp_path](#tmp-path)
+-   [tmp_policy](#tmp-policy)
+-   [max_server_memory_usage](#max_server_memory_usage)
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 

@@ -18,13 +18,14 @@ namespace DB
 bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_show("SHOW");
+    ParserKeyword s_full("FULL");
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_tables("TABLES");
     ParserKeyword s_databases("DATABASES");
     ParserKeyword s_clusters("CLUSTERS");
     ParserKeyword s_cluster("CLUSTER");
     ParserKeyword s_dictionaries("DICTIONARIES");
-    ParserKeyword s_caches("CACHES");
+    ParserKeyword s_caches("FILESYSTEM CACHES");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_changed("CHANGED");
     ParserKeyword s_from("FROM");
@@ -45,6 +46,11 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (!s_show.ignore(pos, expected))
         return false;
+
+    if (s_full.ignore(pos, expected))
+    {
+        query->full = true;
+    }
 
     if (s_databases.ignore(pos, expected))
     {

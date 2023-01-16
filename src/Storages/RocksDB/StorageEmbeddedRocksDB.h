@@ -46,13 +46,13 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands &, ContextPtr) override;
+    void mutate(const MutationCommands &, ContextPtr, bool) override;
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
@@ -79,6 +79,8 @@ public:
     Chunk getBySerializedKeys(
         const std::vector<std::string> & keys,
         PaddedPODArray<UInt8> * out_null_map) const;
+
+    bool supportsDelete() const override { return true; }
 
 private:
     const String primary_key;

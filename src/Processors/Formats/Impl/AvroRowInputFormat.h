@@ -1,7 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
-#include "config_core.h"
+#include "config.h"
 
 #if USE_AVRO
 
@@ -164,6 +163,7 @@ public:
 
 private:
     virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
 
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;

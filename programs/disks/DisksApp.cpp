@@ -1,10 +1,11 @@
 #include "DisksApp.h"
+#include "ICommand.h"
 
 #include <Disks/registerDisks.h>
 
-#include <base/argsToConfig.h>
-
+#include <Common/TerminalSize.h>
 #include <Formats/registerFormats.h>
+
 
 namespace DB
 {
@@ -57,8 +58,8 @@ void DisksApp::addOptions(
         ("config-file,C", po::value<String>(), "Set config file")
         ("disk", po::value<String>(), "Set disk name")
         ("command_name", po::value<String>(), "Name for command to do")
-        ("send-logs", "Send logs")
-        ("log-level", "Logging level")
+        ("save-logs", "Save logs to a file")
+        ("log-level", po::value<String>(), "Logging level")
         ;
 
     positional_options_description.add("command_name", 1);
@@ -82,10 +83,10 @@ void DisksApp::processOptions()
         config().setString("config-file", options["config-file"].as<String>());
     if (options.count("disk"))
         config().setString("disk", options["disk"].as<String>());
-    if (options.count("send-logs"))
-        config().setBool("send-logs", true);
+    if (options.count("save-logs"))
+        config().setBool("save-logs", true);
     if (options.count("log-level"))
-        Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+        config().setString("log-level", options["log-level"].as<String>());
 }
 
 void DisksApp::init(std::vector<String> & common_arguments)
@@ -149,15 +150,6 @@ void DisksApp::parseAndCheckOptions(
 
 int DisksApp::main(const std::vector<String> & /*args*/)
 {
-    if (config().has("send-logs"))
-    {
-        auto log_level = config().getString("log-level", "trace");
-        Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
-
-        auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel(log_path)));
-    }
-
     if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))
     {
         String config_path = config().getString("config-file", getDefaultConfigFileName());
@@ -171,7 +163,21 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No config-file specifiged");
     }
 
-    registerDisks();
+    if (config().has("save-logs"))
+    {
+        auto log_level = config().getString("log-level", "trace");
+        Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
+
+        auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
+        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel(log_path)));
+    }
+    else
+    {
+        auto log_level = config().getString("log-level", "none");
+        Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
+    }
+
+    registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
     shared_context = Context::createShared();
