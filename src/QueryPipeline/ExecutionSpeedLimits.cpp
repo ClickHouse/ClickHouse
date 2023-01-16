@@ -101,7 +101,7 @@ void ExecutionSpeedLimits::throttle(
 }
 
 template <typename... Args>
-static bool handleOverflowMode(OverflowMode mode, int code, fmt::format_string<Args...> fmt, Args &&... args)
+static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
 {
     switch (mode)
     {
