@@ -402,8 +402,7 @@ void TCPHandler::runImpl()
                     {
                         auto callback = [this]()
                         {
-                            std::lock_guard lock1(task_callback_mutex);
-                            std::lock_guard lock2(fatal_error_mutex);
+                            std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
 
                             if (isQueryCancelled())
                                 return true;
@@ -447,7 +446,7 @@ void TCPHandler::runImpl()
                 break;
 
             {
-                std::lock_guard lock1(task_callback_mutex);
+                std::lock_guard lock(task_callback_mutex);
                 sendLogs();
                 sendEndOfStream();
             }
@@ -763,6 +762,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         }
     }
 
+    /// Defer locking to cover a part of the scope below and everything after it
+    std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
+
     {
         PullingAsyncPipelineExecutor executor(pipeline);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
@@ -799,7 +801,10 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             }
         }
 
-        std::lock_guard lock(task_callback_mutex);
+        /// This lock wasn't acquired before and we make .lock() call here
+        /// so everything under this line is covered even together
+        /// with sendProgress() out of the scope
+        progress_lock.lock();
 
         /** If data has run out, we will send the profiling data and total values to
           * the last zero block to be able to use
@@ -825,7 +830,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         last_sent_snapshots.clear();
     }
 
-    std::lock_guard lock(task_callback_mutex);
     sendProgress();
 }
 
