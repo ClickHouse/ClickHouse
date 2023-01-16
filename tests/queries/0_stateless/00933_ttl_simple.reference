@@ -14,9 +14,3 @@ CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL today() -
 1	0
 CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL today() + 1\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 1	1
-ILLEGAL_COLUMN
-ILLEGAL_COLUMN
-BAD_TTL_EXPRESSION
-BAD_TTL_EXPRESSION
-BAD_ARGUMENTS
-BAD_ARGUMENTS

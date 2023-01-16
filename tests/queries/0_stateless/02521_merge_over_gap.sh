@@ -4,6 +4,10 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+# shellcheck source=./transactions.lib
+. "$CURDIR"/transactions.lib
+# shellcheck source=./parts.lib
+. "$CURDIR"/parts.lib
 set -e
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_with_gap;"
