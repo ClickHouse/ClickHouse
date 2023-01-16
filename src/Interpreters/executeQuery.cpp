@@ -396,8 +396,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (const auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
             query_end = insert_query->data;
 
+        bool is_create_parameterized_view = false;
+        if (const auto * create_query = ast->as<ASTCreateQuery>())
+            is_create_parameterized_view = create_query->isParameterizedView();
+
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        if (context->hasQueryParameters())
+        if (!is_create_parameterized_view && context->hasQueryParameters())
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);
