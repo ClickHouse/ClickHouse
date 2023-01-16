@@ -28,6 +28,7 @@ protected:
 
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
+    bool isDelta() const override { return true; }
 
 private:
     UInt8 delta_bytes_size;
