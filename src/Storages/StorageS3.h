@@ -191,6 +191,7 @@ private:
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
             read_buf = std::move(other.read_buf);
+            path = std::move(other.path);
             return *this;
         }
 
