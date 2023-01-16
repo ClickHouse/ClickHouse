@@ -6,6 +6,10 @@ sidebar_label: JSON
 
 # JSON
 
+:::warning
+This feature is experimental and is not production ready. If you need to work with JSON document, consider using [this guide](https://clickhouse.com/docs/en/guides/developer/working-with-json) instead.
+:::
+
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
 `JSON` is an alias for `Object('json')`.
