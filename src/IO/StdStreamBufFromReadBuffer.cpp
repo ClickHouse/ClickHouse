@@ -12,13 +12,12 @@ namespace ErrorCodes
 }
 
 
-StdStreamBufFromReadBuffer::StdStreamBufFromReadBuffer(std::unique_ptr<ReadBuffer> read_buffer_)
+StdStreamBufFromReadBuffer::StdStreamBufFromReadBuffer(std::unique_ptr<ReadBuffer> read_buffer_, size_t size_)
+    : read_buffer(std::move(read_buffer_)), seekable_read_buffer(dynamic_cast<SeekableReadBuffer *>(read_buffer.get())), size(size_)
 {
-    read_buffer = std::move(read_buffer_);
-    seekable_read_buffer = dynamic_cast<SeekableReadBuffer *>(read_buffer.get());
 }
 
-StdStreamBufFromReadBuffer::StdStreamBufFromReadBuffer(ReadBuffer & read_buffer_)
+StdStreamBufFromReadBuffer::StdStreamBufFromReadBuffer(ReadBuffer & read_buffer_, size_t size_) : size(size_)
 {
     if (dynamic_cast<SeekableReadBuffer *>(&read_buffer_))
     {
@@ -55,11 +54,12 @@ std::streampos StdStreamBufFromReadBuffer::seekoff(std::streamoff off, std::ios_
 {
     if (dir == std::ios_base::beg)
         return seekpos(off, which);
-
-    if (dir == std::ios_base::cur)
+    else if (dir == std::ios_base::cur)
         return seekpos(getCurrentPosition() + off, which);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong seek's base {}", static_cast<int>(dir));
+    else if (dir == std::ios_base::end)
+        return seekpos(size, which);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong seek's base {}", static_cast<int>(dir));
 }
 
 std::streampos StdStreamBufFromReadBuffer::seekpos(std::streampos pos, std::ios_base::openmode which)
