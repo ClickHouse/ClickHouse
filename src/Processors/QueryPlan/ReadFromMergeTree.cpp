@@ -46,7 +46,8 @@ namespace
 template <typename Container, typename Getter>
 size_t countPartitions(const Container & parts, Getter get_partition_id)
 {
-    assert(!parts_with_ranges.empty());
+    if (parts.empty())
+        return 1;
     String cur_partition_id = get_partition_id(parts[0]);
     size_t unique_partitions = 1;
     for (size_t i = 1; i < parts.size(); ++i)
@@ -1317,14 +1318,39 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     const auto & settings = context->getSettingsRef();
 
     const auto partitions_cnt = countPartitions(prepared_parts);
-    if (partitions_cnt < settings.max_threads / 20000)
+    if (!settings.force_aggregate_partitions_independently && (partitions_cnt == 1 || partitions_cnt < settings.max_threads / 2))
     {
-        LOG_TRACE(log, "no cartoons");
+        LOG_TRACE(
+            log,
+            "Independent aggregation by partitions won't be used because there are too few of them: {}. You can set "
+            "force_aggregate_partitions_independently to suppress this check",
+            partitions_cnt);
         return false;
     }
 
-    /* size_t min_marks_in_partition = -1; */
-    /* size_t max_marks_in_partition = 0; */
+    if (!settings.force_aggregate_partitions_independently
+        && (partitions_cnt > settings.max_number_of_partitions_for_independent_aggregation))
+    {
+        LOG_TRACE(
+            log,
+            "Independent aggregation by partitions won't be used because there are too many of them: {}. You can increase "
+            "max_number_of_partitions_for_independent_aggregation (current value is {}) or set "
+            "force_aggregate_partitions_independently to suppress this check",
+            settings.max_number_of_partitions_for_independent_aggregation,
+            partitions_cnt);
+        return false;
+    }
+
+    /// todo: check how big is the difference in the number of rows between parts and disable optimization if it is > 2.
+    /* if (!settings.force_aggregate_partitions_independently) */
+    /* { */
+    /* LOG_TRACE( */
+    /* log, */
+    /* "Independent aggregation by partitions won't be used because there are too big skew in the number of rows between partitions: " */
+    /* "{} {} ." */
+    /* "You can set force_aggregate_partitions_independently to suppress this check"); */
+    /* return false; */
+    /* } */
 
     return output_each_partition_through_separate_port = true;
 }
