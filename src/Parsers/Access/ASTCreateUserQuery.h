@@ -44,9 +44,8 @@ public:
     std::shared_ptr<ASTUserNamesWithHost> names;
     std::optional<String> new_name;
 
-    std::optional<AuthenticationData> auth_data;
-
-    mutable std::optional<String> temporary_password_for_checks;
+    mutable std::optional<AuthenticationData> auth_data;
+    mutable std::optional<String> temporary_password;
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;

@@ -1211,6 +1211,12 @@ void TCPHandler::sendHello()
             writeStringBinary(exception_message, *out);
         }
     }
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_BCRYPT_PASSWORD_TYPE)
+    {
+        UInt64 bcrypt_workfactor = server.context()->getAccessControl().getBcryptWorkfactor();
+        writeVarUInt(bcrypt_workfactor, *out);
+    }
+
     out->next();
 }
 

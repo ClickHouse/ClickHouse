@@ -93,6 +93,8 @@ public:
 
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
 
+    int getBcryptWorkfactor() const override { return 12; }
+
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,

@@ -275,6 +275,8 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
     setPasswordComplexityRulesFromConfig(config_);
 
+    setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
+
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
     setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", false));
@@ -669,6 +671,19 @@ void AccessControl::checkPasswordComplexityRules(const String & password_) const
 std::vector<std::pair<String, String>> AccessControl::getPasswordComplexityRules() const
 {
     return password_rules->getPasswordComplexityRules();
+}
+
+void AccessControl::setBcryptWorkfactor(int workfactor_)
+{
+    if (workfactor_ < 4)
+        bcrypt_workfactor = 4;
+    else
+        bcrypt_workfactor = workfactor_;
+}
+
+int AccessControl::getBcryptWorkfactor()
+{
+    return bcrypt_workfactor;
 }
 
 

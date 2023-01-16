@@ -154,6 +154,10 @@ public:
     void checkPasswordComplexityRules(const String & password_) const;
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const;
 
+    /// Workfactor for bcrypt encoded passwords
+    void setBcryptWorkfactor(int workfactor_);
+    int getBcryptWorkfactor();
+
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there two users A, B and a row policy is defined only for A, then
     /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
@@ -242,6 +246,7 @@ private:
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
+    std::atomic_int bcrypt_workfactor = 12;
 };
 
 }
