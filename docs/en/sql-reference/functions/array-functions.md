@@ -1102,31 +1102,6 @@ SELECT arrayReverse([1, 2, 3])
 
 Synonym for [“arrayReverse”](#arrayreverse)
 
-## arrayShuffle(arr[, random_seed])
-
-Returns an array of the same size as the original array containing the elements in shuffled order. Elements are being reordered in such a way that each possible permutation of those elements has equal probability of appearance.
-
-**Arguments**
-
--   `[arr]` — Input array. [Array](../data-types/array.md).
--   `random_seed` — Random seed manual override to produce stable results. Optional. [64 bit integer](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT arrayShuffle([1, 2, 3, 4], 41)
-```
-
-Result:
-
-``` text
-┌─arrayShuffle([1, 2, 3, 4], 41)─┐
-│ [3,2,1,4]                      │
-└────────────────────────────────┘
-```
-
 ## arrayFlatten
 
 Converts an array of arrays to a flat array.

@@ -277,7 +277,24 @@ bool FunctionArrayShuffle::executeString(const IColumn & src_data, const ColumnA
 
 REGISTER_FUNCTION(ArrayShuffle)
 {
-    factory.registerFunction<FunctionArrayShuffle>();
+    factory.registerFunction<FunctionArrayShuffle>(
+        {
+            R"(
+Returns an array of the same size as the original array containing the elements in shuffled order.
+Elements are being reordered in such a way that each possible permutation of those elements has equal probability of appearance.
+
+If no seed is provided a random one will be used:
+[example:random_seed]
+
+It is possible to override the seed to produce stable results:
+[example:explicit_seed]
+)",
+         Documentation::Examples{
+                {"random_seed", "SELECT arrayShuffle([1, 2, 3, 4])"},
+                {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)"}},
+            Documentation::Categories{"Array"}
+        },
+        FunctionFactory::CaseInsensitive);
 }
 
 }
