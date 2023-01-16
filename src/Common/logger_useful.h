@@ -7,7 +7,7 @@
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 
-/// This wrapper is usefult to save formatted message into a String before sending it to a logger
+/// This wrapper is useful to save formatted message into a String before sending it to a logger
 class LogToStrImpl
 {
     String & out_str;
