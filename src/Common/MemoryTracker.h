@@ -2,9 +2,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
+#include <Common/AllocationTrace.h>
 
 #if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
@@ -65,7 +67,7 @@ private:
     double fault_probability = 0;
 
     /// To randomly sample allocations and deallocations in trace_log.
-    double sample_probability = 0;
+    std::optional<double> sample_probability;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
@@ -90,8 +92,8 @@ private:
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
-    void free(Int64 size);
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
+    [[nodiscard]] AllocationTrace free(Int64 size);
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
@@ -145,6 +147,8 @@ public:
     {
         sample_probability = value;
     }
+
+    double getSampleProbability();
 
     void setProfilerStep(Int64 value)
     {
