@@ -25,5 +25,3 @@ SELECT * FROM system.numbers LIMIT 10;
 -- 生成2010-01-01至2010-12-31的日期序列
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
-
-[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/numbers/) <!--hide-->

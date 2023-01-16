@@ -15,4 +15,3 @@ ALTER SETTINGS PROFILE [IF EXISTS] TO name1 [ON CLUSTER cluster_name1] [RENAME T
         [, name2 [ON CLUSTER cluster_name2] [RENAME TO new_name2] ...]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
 ```
-

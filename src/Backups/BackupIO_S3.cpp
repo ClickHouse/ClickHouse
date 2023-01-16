@@ -8,6 +8,7 @@
 #include <IO/IOThreadPool.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
@@ -35,7 +36,7 @@ namespace
         auto settings = context->getStorageS3Settings().getSettings(s3_uri.uri.toString());
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-        HeaderCollection headers;
+        HTTPHeaderEntries headers;
         if (access_key_id.empty())
         {
             credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key);
@@ -79,6 +80,12 @@ namespace
         if (!outcome.IsSuccess())
             throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
         return outcome.GetResult().GetContents();
+    }
+
+    bool isNotFoundError(Aws::S3::S3Errors error)
+    {
+        return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND
+            || error == Aws::S3::S3Errors::NO_SUCH_KEY;
     }
 }
 
@@ -370,7 +377,7 @@ void BackupWriterS3::removeFile(const String & file_name)
     request.SetBucket(s3_uri.bucket);
     request.SetKey(fs::path(s3_uri.key) / file_name);
     auto outcome = client->DeleteObject(request);
-    if (!outcome.IsSuccess())
+    if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
@@ -428,7 +435,7 @@ void BackupWriterS3::removeFilesBatch(const Strings & file_names)
         request.SetDelete(delkeys);
 
         auto outcome = client->DeleteObjects(request);
-        if (!outcome.IsSuccess())
+        if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
             throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
     }
 }

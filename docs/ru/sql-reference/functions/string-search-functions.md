@@ -547,7 +547,7 @@ SELECT * FROM Months WHERE ilike(name, '%j%');
 
 **Смотрите также**
 
--   [like](https://clickhouse.com/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+
 
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 
