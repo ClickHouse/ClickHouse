@@ -35,8 +35,7 @@ void copyDataToS3(
 /// Copies a file from S3 to S3.
 /// The same functionality can be done by using the function copyData() and the classes ReadBufferFromS3 and WriteBufferFromS3
 /// however copyFileS3ToS3() is faster and spends less network traffic and memory.
-/// The parameters `src_offset` and `src_size` specify a part in the source to copy;
-/// if `src_offset == 0` and `src_size == -1` that means the entire source file will be copied.
+/// The parameters `src_offset` and `src_size` specify a part in the source to copy.
 void copyFileS3ToS3(
     const std::shared_ptr<const Aws::S3::S3Client> & s3_client,
     const String & src_bucket,

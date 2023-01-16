@@ -34,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -83,7 +84,9 @@ namespace
             std::exception_ptr exception;
         };
 
+        size_t normal_part_size;
         String multipart_upload_id;
+        std::atomic<bool> multipart_upload_aborted = false;
         Strings part_tags;
 
         std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
@@ -122,6 +125,9 @@ namespace
 
         void completeMultipartUpload()
         {
+            if (multipart_upload_aborted)
+                return;
+
             LOG_TRACE(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
 
             if (part_tags.empty())
@@ -172,11 +178,13 @@ namespace
 
         void abortMultipartUpload()
         {
+            LOG_TRACE(log, "Aborting multipart upload. Bucket: {}, Key: {}, Upload_id: {}", dest_bucket, dest_key, multipart_upload_id);
             Aws::S3::Model::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dest_bucket);
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
             client_ptr->AbortMultipartUpload(abort_request);
+            multipart_upload_aborted = true;
         }
 
         void checkObjectAfterUpload()
@@ -192,33 +200,82 @@ namespace
 
         void performMultipartUpload(size_t start_offset, size_t size)
         {
+            calculatePartSize(size);
             createMultipartUpload();
 
             size_t position = start_offset;
             size_t end_position = start_offset + size;
-            size_t upload_part_size = settings.min_upload_part_size;
 
             for (size_t part_number = 1; position < end_position; ++part_number)
             {
-                size_t next_position = std::min(position + upload_part_size, end_position);
+                if (multipart_upload_aborted)
+                    break; /// No more part uploads.
 
-                uploadPart(part_number, position, next_position - position, size);
+                size_t next_position = std::min(position + normal_part_size, end_position);
+                size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
+
+                uploadPart(part_number, position, part_size);
 
                 position = next_position;
-
-                /// Maybe increase `upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
-                if (part_number % settings.upload_part_size_multiply_parts_count_threshold == 0)
-                {
-                    upload_part_size *= settings.upload_part_size_multiply_factor;
-                    upload_part_size = std::min(upload_part_size, settings.max_upload_part_size);
-                }
             }
 
             waitForAllBackGroundTasks();
             completeMultipartUpload();
         }
 
-        void uploadPart(size_t part_number, size_t part_offset, size_t part_size, size_t total_size)
+        void calculatePartSize(size_t total_size)
+        {
+            if (!total_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
+
+            if (!settings.max_part_number)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
+            else if (!settings.min_upload_part_size)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "min_upload_part_size must not be 0");
+            else if (settings.max_upload_part_size < settings.min_upload_part_size)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
+
+            size_t part_size = settings.min_upload_part_size;
+            size_t num_parts = (total_size + part_size - 1) / part_size;
+
+            if (num_parts > settings.max_part_number)
+            {
+                part_size = (total_size + settings.max_part_number - 1) / settings.max_part_number;
+                num_parts = (total_size + part_size - 1) / part_size;
+            }
+
+            if (part_size > settings.max_upload_part_size)
+            {
+                part_size = settings.max_upload_part_size;
+                num_parts = (total_size + part_size - 1) / part_size;
+            }
+
+            if (num_parts < 1 || num_parts > settings.max_part_number || part_size < settings.min_upload_part_size
+                || part_size > settings.max_upload_part_size)
+            {
+                String msg;
+                if (num_parts < 1)
+                    msg = "Number of parts is zero";
+                else if (num_parts > settings.max_part_number)
+                    msg = fmt::format("Number of parts exceeds {}", num_parts, settings.max_part_number);
+                else if (part_size < settings.min_upload_part_size)
+                    msg = fmt::format("Size of a part is less than {}", part_size, settings.min_upload_part_size);
+                else
+                    msg = fmt::format("Size of a part exceeds {}", part_size, settings.max_upload_part_size);
+
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "{} while writing {} bytes to S3. Check max_part_number = {}, "
+                    "min_upload_part_size = {}, max_upload_part_size = {}, max_single_part_upload_size = {}",
+                    msg, total_size, settings.max_part_number, settings.min_upload_part_size,
+                    settings.max_upload_part_size, settings.max_single_part_upload_size);
+            }
+
+            /// We've calculated the size of a normal part (the final part can be smaller).
+            normal_part_size = part_size;
+        }
+
+        void uploadPart(size_t part_number, size_t part_offset, size_t part_size)
         {
             LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", dest_bucket, dest_key, multipart_upload_id, part_size);
 
@@ -226,17 +283,6 @@ namespace
             {
                 LOG_TRACE(log, "Skipping writing an empty part.");
                 return;
-            }
-
-            if (part_number > settings.max_part_number)
-            {
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
-                    "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_part_upload_size = {}",
-                    settings.max_part_number, total_size, settings.min_upload_part_size, settings.max_upload_part_size,
-                    settings.upload_part_size_multiply_factor, settings.upload_part_size_multiply_parts_count_threshold,
-                    settings.max_single_part_upload_size);
             }
 
             if (schedule)
@@ -319,7 +365,15 @@ namespace
             for (auto & task : tasks)
             {
                 if (task.exception)
+                {
+                    /// abortMultipartUpload() might be called already, see processUploadPartRequest().
+                    /// However if there were concurrent uploads at that time, those part uploads might or might not succeed.
+                    /// As a result, it might be necessary to abort a given multipart upload multiple times in order to completely free
+                    /// all storage consumed by all parts.
+                    abortMultipartUpload();
+
                     std::rethrow_exception(task.exception);
+                }
 
                 part_tags.push_back(task.tag);
             }
@@ -377,7 +431,7 @@ namespace
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetContentLength(size);
-            request.SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer)));
+            request.SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), size));
 
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
@@ -457,7 +511,7 @@ namespace
             request->SetPartNumber(static_cast<int>(part_number));
             request->SetUploadId(multipart_upload_id);
             request->SetContentLength(part_size);
-            request->SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer)));
+            request->SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), part_size));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request->SetContentType("binary/octet-stream");
@@ -507,9 +561,6 @@ namespace
 
         void performCopy()
         {
-            if (size == static_cast<size_t>(-1))
-                size = getSourceSize() - offset;
-
             if (size <= settings.max_single_operation_copy_size)
                 performSingleOperationCopy();
             else
@@ -634,12 +685,6 @@ namespace
             }
 
             return outcome.GetResult().GetCopyPartResult().GetETag();
-        }
-
-        size_t getSourceSize()
-        {
-            auto head = S3::headObject(*client_ptr, src_bucket, src_key).GetResult();
-            return head.GetContentLength();
         }
     };
 }
