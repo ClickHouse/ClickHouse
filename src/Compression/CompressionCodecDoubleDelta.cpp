@@ -133,6 +133,7 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
+    bool isDelta() const override { return true; }
 
 private:
     UInt8 data_bytes_size;
