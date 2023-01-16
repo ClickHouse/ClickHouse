@@ -46,29 +46,25 @@ void InternalTextLogsQueue::pushBlock(Block && log_block)
         LOG_WARNING(&Poco::Logger::get("InternalTextLogsQueue"), "Log block have different structure");
 }
 
-// ARRAY_SIZE for C++ using constexpr
-template <typename T, size_t N>
-constexpr size_t array_size(T (&)[N]) { return N; }
-
-const char * InternalTextLogsQueue::getPriorityName(int priority)
+std::string_view InternalTextLogsQueue::getPriorityName(int priority)
 {
-    /// See Poco::Message::Priority
-    static constexpr const char * const PRIORITIES[] =
-    {
-        "Unknown",
-        "Fatal",
-        "Critical",
-        "Error",
-        "Warning",
-        "Notice",
-        "Information",
-        "Debug",
-        "Trace",
-        "Test",
-    };
-    static_assert(array_size(PRIORITIES) > 0);
+    using namespace std::literals;
 
-    return (priority >= 1 && priority < static_cast<int>(array_size(PRIORITIES))) ? PRIORITIES[priority] : PRIORITIES[0];
+    /// See Poco::Message::Priority
+    static constexpr std::array PRIORITIES =
+    {
+        "Unknown"sv,
+        "Fatal"sv,
+        "Critical"sv,
+        "Error"sv,
+        "Warning"sv,
+        "Notice"sv,
+        "Information"sv,
+        "Debug"sv,
+        "Trace"sv,
+        "Test"sv,
+    };
+    return (priority >= 1 && priority < static_cast<int>(PRIORITIES.size())) ? PRIORITIES[priority] : PRIORITIES[0];
 }
 
 bool InternalTextLogsQueue::isNeeded(int priority, const String & source) const
