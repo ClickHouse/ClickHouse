@@ -182,12 +182,8 @@ void WriteBufferFromS3::finalizeImpl()
     if (check_objects_after_upload)
     {
         LOG_TRACE(log, "Checking object {} exists after upload", key);
-
-        auto [exists, error] = S3::checkObjectExists(*client_ptr, bucket, key, "", write_settings.for_object_storage);
-        if (exists)
-            LOG_TRACE(log, "Object {} exists after upload", key);
-        else
-            throw S3Exception(fmt::format("Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", key, bucket), error.GetErrorType());
+        S3::checkObjectExists(*client_ptr, bucket, key, {}, /* for_disk_s3= */ write_settings.for_object_storage, "Immediately after upload");
+        LOG_TRACE(log, "Object {} exists after upload", key);
     }
 }
 

@@ -141,10 +141,10 @@ S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bu
 
 size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
 
-bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
+bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
 
-/// Checks if the object exists. If it doesn't exists the function returns an error without throwing any exception.
-std::pair<bool /* exists */, Aws::S3::S3Error> checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
+/// Throws an exception if a specified object doesn't exist. `description` is used as a part of the error message.
+void checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, const std::string_view & description = {});
 
 bool isNotFoundError(Aws::S3::S3Errors error);
 

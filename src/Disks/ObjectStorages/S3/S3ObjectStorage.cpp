@@ -135,9 +135,9 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
     return S3::objectExists(*client.get(), bucket, object.absolute_path, {}, /* for_disk_s3= */ true);
 }
 
-std::pair<bool /* exists */, Aws::S3::S3Error> S3ObjectStorage::checkObjectExists(const std::string & bucket_from, const std::string & key) const
+void S3ObjectStorage::checkObjectExists(const std::string & bucket_from, const std::string & key, const std::string_view & description) const
 {
-    return S3::checkObjectExists(*client.get(), bucket_from, key, {}, /* for_disk_s3= */ true);
+    return S3::checkObjectExists(*client.get(), bucket_from, key, {}, /* for_disk_s3= */ true, description);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
@@ -474,12 +474,7 @@ void S3ObjectStorage::copyObjectImpl(
 
     auto settings_ptr = s3_settings.get();
     if (settings_ptr->request_settings.check_objects_after_upload)
-    {
-        auto [exists, error] = checkObjectExists(dst_bucket, dst_key);
-        if (!exists)
-            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
-    }
-
+        checkObjectExists(dst_bucket, dst_key, "Immediately after upload");
 }
 
 void S3ObjectStorage::copyObjectMultipartImpl(
@@ -567,12 +562,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
     }
 
     if (settings_ptr->request_settings.check_objects_after_upload)
-    {
-        auto [exists, error] = checkObjectExists(dst_bucket, dst_key);
-        if (!exists)
-            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
-    }
-
+        checkObjectExists(dst_bucket, dst_key, "Immediately after upload");
 }
 
 void S3ObjectStorage::copyObject( // NOLINT
