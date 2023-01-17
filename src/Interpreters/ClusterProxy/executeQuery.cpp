@@ -127,7 +127,8 @@ void executeQuery(
     const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster)
+    const ClusterPtr & not_optimized_cluster,
+    std::function<void(ASTPtr &, uint64_t)> add_additional_shard_filter = {})
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -177,7 +178,10 @@ void executeQuery(
             visitor.visit(query_ast_for_shard);
         }
         else
-            query_ast_for_shard = query_ast;
+            query_ast_for_shard = query_ast->clone();
+
+        if (add_additional_shard_filter)
+            add_additional_shard_filter(query_ast_for_shard, shard_info.shard_num);
 
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,

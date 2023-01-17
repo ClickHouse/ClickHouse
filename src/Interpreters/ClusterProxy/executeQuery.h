@@ -50,7 +50,8 @@ void executeQuery(
     const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster);
+    const ClusterPtr & not_optimized_cluster,
+    std::function<void(ASTPtr &, uint64_t)> add_additional_shard_filter);
 
 
 void executeQueryWithParallelReplicas(
