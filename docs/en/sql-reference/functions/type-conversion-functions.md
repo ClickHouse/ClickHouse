@@ -1455,7 +1455,7 @@ Converts an `Int64` to a `DateTime64` value with fixed sub-second precision and 
 **Syntax**
 
 ``` sql
-fromUnixTimestamp64Milli(value [, ti])
+fromUnixTimestamp64Nano(value [, ti])
 ```
 
 **Arguments**
