@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Common/NamePrompter.h>
+#include <Common/ProfileEvents.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -66,6 +67,14 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/HashUtils.h>
+
+namespace ProfileEvents
+{
+    extern const Event ScalarSubqueriesGlobalCacheHit;
+    extern const Event ScalarSubqueriesCacheMiss;
+}
 
 #include <Common/checkStackSize.h>
 
@@ -1097,7 +1106,7 @@ private:
 
     static QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
 
-    static void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth, ContextPtr context);
+    void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth, ContextPtr context);
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
@@ -1206,6 +1215,9 @@ private:
 
     /// Global resolve expression node to projection names map
     std::unordered_map<QueryTreeNodePtr, ProjectionNames> resolved_expressions;
+
+    /// Results of scalar sub queries
+    std::unordered_map<QueryTreeNodeConstRawPtrWithHash, std::shared_ptr<ConstantValue>> scalars;
 
 };
 
@@ -1687,6 +1699,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
+    auto scalars_iterator = scalars.find(node.get());
+    if (scalars_iterator != scalars.end())
+    {
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+        node = std::make_shared<ConstantNode>(scalars_iterator->second, node);
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
+
     auto subquery_context = Context::createCopy(context);
 
     Settings subquery_settings = context->getSettings();
@@ -1695,13 +1717,14 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     subquery_context->setSettings(subquery_settings);
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
-    auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, options, subquery_context);
+    auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, subquery_context, options);
 
     auto io = interpreter->execute();
 
-    Block block;
     PullingAsyncPipelineExecutor executor(io.pipeline);
     io.pipeline.setProgressCallback(context->getProgressCallback());
+
+    Block block;
 
     while (block.rows() == 0 && executor.pull(block))
     {
@@ -1743,7 +1766,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     block = materializeBlock(block);
     size_t columns = block.columns();
 
-    // Block scalar;
     Field scalar_value;
     DataTypePtr scalar_type;
 
@@ -1770,6 +1792,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     }
 
     auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
+    scalars[node.get()] = constant_value;
     node = std::make_shared<ConstantNode>(std::move(constant_value), node);
 }
 
@@ -2027,7 +2050,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
     auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
 
-    return std::make_shared<TableNode>(std::move(storage), storage_lock, storage_snapshot);
+    return std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
 }
 
 /// Resolve identifier from compound expression

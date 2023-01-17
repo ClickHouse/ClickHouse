@@ -38,6 +38,11 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 
+#include <Analyzer/TableNode.h>
+
+#include <Planner/Planner.h>
+#include <Planner/Utils.h>
+
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -66,6 +71,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -123,6 +129,7 @@ namespace ErrorCodes
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace ActionLocks
@@ -566,13 +573,14 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
-    /// TODO: Analyzer syntax analyzer result
-    if (!query_info.syntax_analyzer_result)
-        return {};
-
     // GROUP BY
     const ASTPtr group_by = select.groupBy();
-    if (!query_info.syntax_analyzer_result->aggregates.empty() || group_by)
+
+    bool has_aggregates = query_info.has_aggregates;
+    if (query_info.syntax_analyzer_result)
+        has_aggregates = query_info.syntax_analyzer_result->aggregates.empty();
+
+    if (!has_aggregates || group_by)
     {
         if (!optimize_sharding_key_aggregation || !group_by || !expr_contains_sharding_key(group_by->children))
             return {};
@@ -651,6 +659,31 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
+namespace
+{
+
+QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const SelectQueryInfo & query_info, StorageID remote_storage_id)
+{
+    const auto & query_context = query_info.planner_context->getQueryContext();
+    auto resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
+    auto storage = DatabaseCatalog::instance().tryGetTable(resolved_remote_storage_id, query_context);
+    if (!storage)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Distributed local table {} does not exists on coordinator",
+            remote_storage_id.getFullTableName());
+
+    auto storage_lock = storage->lockForShare(query_context->getInitialQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), query_context);
+    auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
+
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    replacement_map.emplace(query_info.table_expression.get(), std::move(replacement_table_expression));
+
+    return query_info.query_tree->cloneAndReplace(replacement_map);
+}
+
+}
+
 void StorageDistributed::read(
     QueryPlan & query_plan,
     const Names &,
@@ -665,12 +698,28 @@ void StorageDistributed::read(
     if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)
         throw Exception(ErrorCodes::ILLEGAL_FINAL, "Final modifier is not allowed together with parallel reading from replicas feature");
 
-    const auto & modified_query_ast = rewriteSelectQuery(
-        local_context, query_info.query,
-        remote_database, remote_table, remote_table_function_ptr);
+    Block header;
+    ASTPtr query_ast;
 
-    Block header =
-        InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    {
+        StorageID remote_storage_id{remote_database, remote_table};
+        auto query_tree_with_replaced_distributed_table = buildQueryTreeDistributedTableReplacedWithLocalTable(query_info, remote_storage_id);
+        query_ast = queryNodeToSelectQuery(query_tree_with_replaced_distributed_table);
+        Planner planner(query_tree_with_replaced_distributed_table, SelectQueryOptions(processed_stage), PlannerConfiguration{.only_analyze = true});
+        planner.buildQueryPlanIfNeeded();
+        header = planner.getQueryPlan().getCurrentDataStream().header;
+    }
+    else
+    {
+        header =
+            InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        query_ast = query_info.query;
+    }
+
+    auto modified_query_ast = rewriteSelectQuery(
+        local_context, query_ast,
+        remote_database, remote_table, remote_table_function_ptr);
 
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
@@ -718,6 +767,22 @@ void StorageDistributed::read(
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
         throw Exception("Pipeline is not initialized", ErrorCodes::LOGICAL_ERROR);
+
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    {
+        Planner planner(query_info.query_tree, SelectQueryOptions(processed_stage), PlannerConfiguration{.only_analyze = true});
+        planner.buildQueryPlanIfNeeded();
+        auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
+
+        auto rename_actions_dag = ActionsDAG::makeConvertingActions(
+            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            expected_header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position,
+            true /*ignore_constant_values*/);
+        auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
+        rename_step->setStepDescription("Change remote column names to local column names");
+        query_plan.addStep(std::move(rename_step));
+    }
 }
 
 
@@ -1140,11 +1205,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         const auto & dir_path = it->path();
         if (std::filesystem::is_directory(dir_path))
         {
+            /// Created by DistributedSink
             const auto & tmp_path = dir_path / "tmp";
-
-            /// "tmp" created by DistributedSink
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
+
+            const auto & broken_path = dir_path / "broken";
+            if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
+                std::filesystem::remove(broken_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
@@ -1174,7 +1242,8 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
             *this, disk, relative_data_path + name,
             data.connection_pool,
             monitors_blocker,
-            getContext()->getDistributedSchedulePool());
+            getContext()->getDistributedSchedulePool(),
+            /* initialize_from_disk= */ startup);
         return data;
     };
 
