@@ -36,6 +36,7 @@ public:
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
+        WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
         SYNC_REPLICA,

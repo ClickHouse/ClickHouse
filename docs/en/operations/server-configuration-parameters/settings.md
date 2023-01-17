@@ -757,6 +757,10 @@ Possible values:
 
 Default value: `0`.
 
+**See Also**
+
+-   [Concurrency Control](/docs/en/development/architecture.md#concurrency-control)
+
 ## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores}
 The maximum number of query processing threads as multiple of number of logical cores.
 More details: [concurrent_threads_soft_limit_num](#concurrent-threads-soft-limit-num).
@@ -767,6 +771,12 @@ Possible values:
 -   0 — No limit.
 
 Default value: `0`.
+
+**Example**
+
+``` xml
+<concurrent_threads_soft_limit_ratio_to_cores>3</concurrent_threads_soft_limit_ratio_to_cores>
+```
 
 ## max_concurrent_queries {#max-concurrent-queries}
 

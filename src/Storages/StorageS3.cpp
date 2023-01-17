@@ -444,7 +444,7 @@ public:
             /// (which means we eventually need this info anyway, so it should be ok to do it now)
             if (object_infos_)
             {
-                info = S3::getObjectInfo(client_, bucket, key, version_id_, true, false);
+                info = S3::getObjectInfo(client_, bucket, key, version_id_);
                 total_size += info->size;
 
                 String path = fs::path(bucket) / key;
@@ -569,9 +569,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     if (current_key.empty())
         return {};
 
-    size_t object_size = info
-        ? info->size
-        : S3::getObjectSize(*client, bucket, current_key, version_id, true, false);
+    size_t object_size = info ? info->size : S3::getObjectSize(*client, bucket, current_key, version_id);
 
     int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
     auto read_buf = wrapReadBufferWithCompressionMethod(
@@ -1523,7 +1521,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
                 /// Note that in case of exception in getObjectInfo returned info will be empty,
                 /// but schema cache will handle this case and won't return columns from cache
                 /// because we can't say that it's valid without last modification time.
-                info = S3::getObjectInfo(*s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, false, false);
+                info = S3::getObjectInfo(*s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, {}, /* throw_on_error= */ false);
                 if (object_infos)
                     (*object_infos)[path] = info;
             }
