@@ -190,11 +190,7 @@ namespace
         void checkObjectAfterUpload()
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-
-            auto outcome = S3::headObject(*client_ptr, dest_bucket, dest_key, "", false);
-            if (!outcome.IsSuccess())
-                throw S3Exception(fmt::format("Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dest_key, dest_bucket), outcome.GetError().GetErrorType());
-
+            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, {}, "Immediately after upload");
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
