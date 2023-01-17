@@ -3,6 +3,7 @@
 # pylint: disable=too-many-return-statements
 # pylint: disable=global-variable-not-assigned
 # pylint: disable=too-many-lines
+# pylint: anomalous-backslash-in-string
 
 import enum
 from queue import Full
