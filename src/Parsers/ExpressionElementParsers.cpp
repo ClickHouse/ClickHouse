@@ -113,7 +113,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ParserKQLTaleFunction().parse(pos, result_node, expected))
             return false;
     }
-    else 
+    else
     {
         if (pos->type != TokenType::OpeningRoundBracket)
             return false;

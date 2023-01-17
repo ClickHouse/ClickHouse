@@ -19,7 +19,7 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;    
+    extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
 }
 namespace DB
