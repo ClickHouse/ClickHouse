@@ -682,7 +682,10 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
             /// prefilter by cache
             conflict_block_ids = storage.async_block_ids_cache.detectConflicts(block_id, cache_version);
             if (!conflict_block_ids.empty())
+            {
+                cache_version = 0;
                 return;
+            }
             for (const auto & single_block_id : block_id)
                 block_id_path.push_back(storage.zookeeper_path + "/async_blocks/" + single_block_id);
         }
