@@ -156,10 +156,9 @@ void BackupWriterS3::copyObjectImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    const Aws::S3::Model::HeadObjectResult & head,
+    size_t size,
     const std::optional<ObjectAttributes> & metadata) const
 {
-    size_t size = head.GetContentLength();
     LOG_TRACE(log, "Copying {} bytes using single-operation copy", size);
 
     Aws::S3::Model::CopyObjectRequest request;
@@ -177,7 +176,7 @@ void BackupWriterS3::copyObjectImpl(
     if (!outcome.IsSuccess() && (outcome.GetError().GetExceptionName() == "EntityTooLarge"
             || outcome.GetError().GetExceptionName() == "InvalidRequest"))
     { // Can't come here with MinIO, MinIO allows single part upload for large objects.
-        copyObjectMultipartImpl(src_bucket, src_key, dst_bucket, dst_key, head, metadata);
+        copyObjectMultipartImpl(src_bucket, src_key, dst_bucket, dst_key, size, metadata);
         return;
     }
 
@@ -191,10 +190,9 @@ void BackupWriterS3::copyObjectMultipartImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    const Aws::S3::Model::HeadObjectResult & head,
+    size_t size,
     const std::optional<ObjectAttributes> & metadata) const
 {
-    size_t size = head.GetContentLength();
     LOG_TRACE(log, "Copying {} bytes using multipart upload copy", size);
 
     String multipart_upload_id;
@@ -309,16 +307,16 @@ void BackupWriterS3::copyFileNative(DiskPtr from_disk, const String & file_name_
         std::string source_bucket = object_storage->getObjectsNamespace();
         auto file_path = fs::path(s3_uri.key) / file_name_to;
 
-        auto head = S3::headObject(*client, source_bucket, objects[0].absolute_path).GetResult();
-        if (static_cast<size_t>(head.GetContentLength()) < request_settings.getUploadSettings().max_single_operation_copy_size)
+        auto size = S3::getObjectSize(*client, source_bucket, objects[0].absolute_path);
+        if (size < request_settings.getUploadSettings().max_single_operation_copy_size)
         {
             copyObjectImpl(
-                source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
+                source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, size);
         }
         else
         {
             copyObjectMultipartImpl(
-                source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
+                source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, size);
         }
     }
 }
