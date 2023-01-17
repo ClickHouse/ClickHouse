@@ -31,7 +31,8 @@ struct HasTokenImpl
         const ColumnString::Offsets & haystack_offsets,
         const std::string & pattern,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        ColumnUInt8* null_map = nullptr)
     {
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' does not support start_pos argument", name);
@@ -46,10 +47,24 @@ struct HasTokenImpl
         /// The current index in the array of strings.
         size_t i = 0;
 
-        TokenSearcher searcher(pattern.data(), pattern.size(), end - pos);
+        std::optional<TokenSearcher> searcher;
+        try
+        {
+            searcher.emplace(pattern.data(), pattern.size(), end - pos);
+            if (null_map)
+                null_map->getData().resize_fill(haystack_offsets.size(), false);
+        }
+        catch (...)
+        {
+            if (!null_map)
+                throw;
+
+            null_map->getData().resize_fill(haystack_offsets.size(), true);
+            return;
+        }
 
         /// We will search for the next occurrence in all rows at once.
-        while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+        while (pos < end && end != (pos = searcher->search(pos, end - pos)))
         {
             /// Let's determine which index it refers to.
             while (begin + haystack_offsets[i] <= pos)
