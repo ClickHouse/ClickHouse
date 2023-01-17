@@ -67,7 +67,7 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        const Aws::S3::Model::HeadObjectResult & head,
+        size_t size,
         const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
 
     void copyObjectMultipartImpl(
@@ -75,7 +75,7 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        const Aws::S3::Model::HeadObjectResult & head,
+        size_t size,
         const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
 
     void removeFilesBatch(const Strings & file_names);
