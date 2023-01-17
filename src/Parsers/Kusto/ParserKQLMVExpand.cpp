@@ -124,7 +124,8 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
 
         if (String(pos->begin, pos->end) == "limit")
             break;
-        ++pos;
+        if (!pos->isEnd())
+            ++pos;
         if (pos->isEnd() || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
         {
             if (expr_end_pos < expr_begin_pos)
