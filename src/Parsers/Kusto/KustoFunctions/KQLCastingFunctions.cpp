@@ -4,18 +4,12 @@
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 
 #include <format>
+#include <regex>
 #include <Poco/String.h>
-#include<regex>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 bool ToBool::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
@@ -85,7 +79,7 @@ bool ToString::convertImpl(String & out, IParser::Pos & pos)
     const auto param = getArgument(function_name, pos);
     out = std::format("ifNull(toString({0}), '')", param);
     return true;
-} 
+}
 bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
@@ -93,28 +87,28 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         return false;
     ++pos;
     String arg;
-     if (pos->type == TokenType::QuotedIdentifier)
+    if (pos->type == TokenType::QuotedIdentifier)
         arg = String(pos->begin + 1, pos->end - 1);
     else if (pos->type == TokenType::StringLiteral)
         arg = String(pos->begin, pos->end);
     else
         arg = getConvertedArgument(function_name, pos);
-    
+
     if (pos->type == TokenType::StringLiteral || pos->type == TokenType::QuotedIdentifier)
     {
         ++pos;
         try
         {
-           auto result =  kqlCallToExpression("time", {arg}, pos.max_depth);
-            out = std::format("{}" , result);
+            auto result = kqlCallToExpression("time", {arg}, pos.max_depth);
+            out = std::format("{}", result);
         }
-        catch(...)
+        catch (...)
         {
             out = "NULL";
         }
     }
     else
-        out = std::format("{}" , arg);
+        out = std::format("{}", arg);
 
     return true;
 }
@@ -129,10 +123,10 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
     String res;
     int scale = 0;
     int precision;
-    
+
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
     {
-        res =  String(pos->begin+1, pos->end -1);
+        res = String(pos->begin + 1, pos->end - 1);
         ++pos;
         precision = 34;
     }
@@ -143,7 +137,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
     }
     static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
     bool is_string = std::any_of(res.begin(), res.end(), ::isalpha) && !(std::regex_match(res, expr));
-     
+
     if (is_string)
         out = "NULL";
     else if (std::regex_match(res, expr))
@@ -161,7 +155,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
         if (const auto dot_pos = res.find("."); dot_pos != String::npos)
         {
             const auto tmp = res.substr(0, dot_pos - 1);
-            const auto tmp_length  = static_cast<int>(std::ssize(tmp));
+            const auto tmp_length = static_cast<int>(std::ssize(tmp));
             scale = std::max(precision - tmp_length, 0);
         }
         if (scale < 0)

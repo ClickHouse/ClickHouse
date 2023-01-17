@@ -1,3 +1,5 @@
+#pragma once
+
 #include "IParserKQLFunction.h"
 
 namespace DB

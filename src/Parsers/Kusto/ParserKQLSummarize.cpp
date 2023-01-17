@@ -20,7 +20,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
-#include <vector>
 #include <format>
 
 namespace DB
@@ -43,25 +42,53 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     std::vector<String> expr_aggregations;
     std::vector<String> expr_groupbys;
 
-    std::unordered_set<String> aggregate_functions
-    ({
-        "arg_max",        "arg_min",        "avg",              "avgif",        "binary_all_and",        "binary_all_or",
-        "binary_all_xor", "buildschema",    "count",            "countif",      "dcount",                 "dcountif",
-        "make_bag",       "make_bag_if",    "make_list",        "make_list_if", "make_list_with_nulls",   "make_set",
-        "make_set_if",    "max",            "maxif",            "min",          "minif",                  "percentile",
-        "percentilew",    "percentiles",    "percentiles_array","percentilesw",  "percentilesw_array",     "stdev",
-        "stdevif",        "sum",            "sumif",            "take_any",      "take_anyif",             "variance",
-        "varianceif"
-    });
+    std::unordered_set<String> aggregate_functions(
+        {"arg_max",
+         "arg_min",
+         "avg",
+         "avgif",
+         "binary_all_and",
+         "binary_all_or",
+         "binary_all_xor",
+         "buildschema",
+         "count",
+         "countif",
+         "dcount",
+         "dcountif",
+         "make_bag",
+         "make_bag_if",
+         "make_list",
+         "make_list_if",
+         "make_list_with_nulls",
+         "make_set",
+         "make_set_if",
+         "max",
+         "maxif",
+         "min",
+         "minif",
+         "percentile",
+         "percentilew",
+         "percentiles",
+         "percentiles_array",
+         "percentilesw",
+         "percentilesw_array",
+         "stdev",
+         "stdevif",
+         "sum",
+         "sumif",
+         "take_any",
+         "take_anyif",
+         "variance",
+         "varianceif"});
 
-    auto apply_aliais =[&](Pos & begin_pos, Pos & end_pos, bool is_groupby)
+    auto apply_aliais = [&](Pos & begin_pos, Pos & end_pos, bool is_groupby)
     {
         auto expr = String(begin_pos->begin, end_pos->end);
         auto equal_pos = begin_pos;
         ++equal_pos;
         if (!is_groupby)
         {
-            if (String(equal_pos->begin , equal_pos->end) != "=")
+            if (String(equal_pos->begin, equal_pos->end) != "=")
             {
                 String alias;
                 String aggregate_fun = String(begin_pos->begin, begin_pos->end);
@@ -93,7 +120,8 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (String(equal_pos->begin, equal_pos->end) != "=")
             {
                 String groupby_fun = String(begin_pos->begin, begin_pos->end);
-                if (equal_pos->isEnd() || equal_pos->type == TokenType::Comma || equal_pos->type == TokenType::Semicolon || equal_pos->type == TokenType::PipeMark)
+                if (equal_pos->isEnd() || equal_pos->type == TokenType::Comma || equal_pos->type == TokenType::Semicolon
+                    || equal_pos->type == TokenType::PipeMark)
                 {
                     expr = groupby_fun;
                 }
@@ -125,13 +153,13 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
-        if(pos->type == TokenType::OpeningRoundBracket)
+        if (pos->type == TokenType::OpeningRoundBracket)
             ++bracket_count;
 
-        if(pos->type == TokenType::ClosingRoundBracket)
+        if (pos->type == TokenType::ClosingRoundBracket)
             --bracket_count;
 
-        if ((bracket_count ==0 and pos->type == TokenType::Comma) || String(pos->begin, pos->end) == "by")
+        if ((bracket_count == 0 and pos->type == TokenType::Comma) || String(pos->begin, pos->end) == "by")
         {
             auto end_pos = pos;
             --end_pos;
@@ -160,10 +188,10 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (expr_columns.empty())
             expr_columns = expr_aggregation;
         else
-            expr_columns =  expr_columns + "," + expr_aggregation;
+            expr_columns = expr_columns + "," + expr_aggregation;
     }
 
-    String converted_columns =  getExprFromToken(expr_columns, pos.max_depth);
+    String converted_columns = getExprFromToken(expr_columns, pos.max_depth);
 
     Tokens token_converted_columns(converted_columns.c_str(), converted_columns.c_str() + converted_columns.size());
     IParser::Pos pos_converted_columns(token_converted_columns, pos.max_depth);
@@ -175,7 +203,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     if (groupby)
     {
-        String converted_groupby =  getExprFromToken(expr_groupby, pos.max_depth);
+        String converted_groupby = getExprFromToken(expr_groupby, pos.max_depth);
 
         Tokens token_converted_groupby(converted_groupby.c_str(), converted_groupby.c_str() + converted_groupby.size());
         IParser::Pos postoken_converted_groupby(token_converted_groupby, pos.max_depth);

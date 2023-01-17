@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Parsers/IParserBase.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IParserBase.h>
 
 namespace DB
 {
@@ -18,9 +18,8 @@ public:
 
 class ParserKQLQuery : public IParserBase
 {
-
 protected:
-    static std::unique_ptr<IParserBase> getOperator(String &op_name);
+    static std::unique_ptr<IParserBase> getOperator(String & op_name);
     const char * getName() const override { return "KQL query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -35,7 +34,8 @@ protected:
 class ParserSimpleCHSubquery : public ParserKQLBase
 {
 public:
-    ParserSimpleCHSubquery(ASTPtr parent_select_node_ = nullptr) {parent_select_node = parent_select_node_;}
+    ParserSimpleCHSubquery(ASTPtr parent_select_node_ = nullptr) { parent_select_node = parent_select_node_; }
+
 protected:
     const char * getName() const override { return "Simple ClickHouse subquery"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

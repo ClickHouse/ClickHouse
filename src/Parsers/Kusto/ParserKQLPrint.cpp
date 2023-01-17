@@ -1,6 +1,6 @@
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLPrint.h>
+#include <Parsers/Kusto/ParserKQLQuery.h>
 namespace DB
 {
 

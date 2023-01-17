@@ -1,11 +1,11 @@
-#include <Parsers/IParserBase.h>
-#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
-#include <Parsers/CommonParsers.h>
+#include <Parsers/ParserSetQuery.h>
 
 namespace DB
 {
@@ -15,8 +15,7 @@ bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKQLWithOutput query_with_output_p(end, allow_settings_after_format_in_insert);
     ParserSetQuery set_p;
 
-    bool res = query_with_output_p.parse(pos, node, expected)
-        || set_p.parse(pos, node, expected);
+    bool res = query_with_output_p.parse(pos, node, expected) || set_p.parse(pos, node, expected);
 
     return res;
 }
@@ -67,11 +66,11 @@ bool ParserKQLTaleFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
 
     auto begin = pos;
-    auto paren_count = 0 ;
+    auto paren_count = 0;
     String kql_statement;
 
     if (s_lparen.ignore(pos, expected))
-    {   
+    {
         ++paren_count;
         auto pos_start = pos;
         while (!pos->isEnd())
@@ -98,7 +97,7 @@ bool ParserKQLTaleFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return true;
         }
     }
-    pos =  begin;
+    pos = begin;
     return false;
 };
 
