@@ -639,16 +639,18 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
 
         buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
 
-        Blocks current_blocks;
-        current_blocks.reserve(right_blocks.size());
-        for (const auto & right_block : right_blocks)
         {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
-            current_blocks.emplace_back(std::move(blocks[bucket_index]));
-        }
+            Blocks current_blocks;
+            current_blocks.reserve(right_blocks.size());
+            for (const auto & right_block : right_blocks)
+            {
+                Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
+                flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
+                current_blocks.emplace_back(std::move(blocks[bucket_index]));
+            }
 
-        current_block = concatenateBlocks(std::move(current_blocks));
+            current_block = concatenateBlocks(current_blocks);
+        }
 
         hash_join = makeInMemoryJoin();
 
