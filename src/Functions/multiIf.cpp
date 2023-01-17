@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -240,33 +241,49 @@ public:
             return std::move(res);
         }
 
-#define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE) \
+#define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE, INDEX) \
     if (which.is##TYPE()) \
     { \
         MutableColumnPtr res = ColumnVector<TYPE>::create(rows); \
-        executeInstructionsColumnar<TYPE>(instructions, rows, res); \
+        executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res); \
         return std::move(res); \
     }
 
-#define ENUMERATE_NUMERIC_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(UInt128) \
-    M(UInt256) \
-    M(Int128) \
-    M(Int256) \
-    M(Float32) \
-    M(Float64)
+#define ENUMERATE_NUMERIC_TYPES(M, INDEX) \
+    M(UInt8, INDEX) \
+    M(UInt16, INDEX) \
+    M(UInt32, INDEX) \
+    M(UInt64, INDEX) \
+    M(Int8, INDEX) \
+    M(Int16, INDEX) \
+    M(Int32, INDEX) \
+    M(Int64, INDEX) \
+    M(UInt128, INDEX) \
+    M(UInt256, INDEX) \
+    M(Int128, INDEX) \
+    M(Int256, INDEX) \
+    M(Float32, INDEX) \
+    M(Float64, INDEX) \
+    throw Exception( \
+        ErrorCodes::NOT_IMPLEMENTED, "Columnar execution of function {} not implemented for type {}", getName(), result_type->getName());
 
-    ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR)
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columnar multiIf not implemented for type {}", result_type->getName());
-}
+        size_t num_instructions = instructions.size();
+        if (num_instructions <= std::numeric_limits<Int16>::max())
+        {
+            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, Int16)
+        }
+        else if (num_instructions <= std::numeric_limits<Int32>::max())
+        {
+            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, Int32)
+        }
+        else if (num_instructions <= std::numeric_limits<Int64>::max())
+        {
+            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, Int64)
+        }
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Instruction size({}) of function {} is out of range", getName(), result_type->getName());
+    }
 
 private:
     static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
@@ -306,9 +323,10 @@ private:
     }
 
     /// We should read source from which instruction on each row?
-    static void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<Int64> & inserts)
+    template <typename S>
+    static NO_INLINE void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
-        for (Int64 i = instructions.size() - 1; i >= 0; --i)
+        for (S i = static_cast<S>(instructions.size() - 1); i >= 0; --i)
         {
             auto & instruction = instructions[i];
             if (instruction.condition_always_true)
@@ -349,10 +367,10 @@ private:
         }
     }
 
-    template <typename T>
-    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    template <typename T, typename S>
+    static NO_INLINE void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
-        PaddedPODArray<Int64> inserts(rows, -1);
+        PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
         PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
