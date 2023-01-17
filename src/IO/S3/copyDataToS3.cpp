@@ -338,6 +338,9 @@ namespace
 
         void processUploadTask(UploadPartTask & task)
         {
+            if (multipart_upload_aborted)
+                return; /// Already aborted.
+
             auto tag = processUploadPartRequest(*task.req);
 
             std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
