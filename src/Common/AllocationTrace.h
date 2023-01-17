@@ -8,7 +8,7 @@
 struct AllocationTrace
 {
     AllocationTrace() = default;
-    explicit AllocationTrace(double sample_probability_);
+    explicit AllocationTrace(double sample_probability_) : sample_probability(sample_probability_) {}
 
     ALWAYS_INLINE void onAlloc(void * ptr, size_t size) const
     {
