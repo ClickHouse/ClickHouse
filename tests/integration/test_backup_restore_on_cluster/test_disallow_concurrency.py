@@ -19,12 +19,25 @@ def generate_cluster_def():
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
-        f.write("<clickhouse>\n\t<remote_servers>\n\t\t<cluster>\n\t\t\t<shard>\n")
+        f.write("""
+        <clickhouse>
+            <remote_servers>
+                <cluster>
+                    <shard>
+        """)
         for i in range(num_nodes):
-            f.write(
-                f"\t\t\t\t<replica>\n\t\t\t\t\t<host>node{i}</host>\n\t\t\t\t\t<port>9000</port>\n\t\t\t\t</replica>\n"
-            )
-        f.write("\t\t\t</shard>\n\t\t</cluster>\n\t</remote_servers>\n</clickhouse>")
+            f.write("""
+                        <replica>
+                            <host>node"""+str(i)+"""</host>
+                            <port>9000</port>
+                        </replica>
+            """)
+        f.write("""
+                    </shard>
+                </cluster>
+            </remote_servers>
+        </clickhouse>
+        """)
     return path
 
 

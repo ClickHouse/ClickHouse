@@ -103,6 +103,8 @@ private:
     void setStatus(const OperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
     void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size);
+    std::vector<Info> getAllActiveBackupInfos() const;
+    std::vector<Info> getAllActiveRestoreInfos() const;
 
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
