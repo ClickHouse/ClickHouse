@@ -382,7 +382,7 @@ void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name)
 {
     assert(!database_name.empty());
     if (databases.end() == databases.find(database_name))
-        throw Exception("Database " + backQuoteIfNeed(database_name) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
 }
 
 
@@ -544,7 +544,7 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr co
 void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, ContextPtr context_) const
 {
     if (isTableExist(table_id, context_))
-        throw Exception("Table " + table_id.getNameForLogs() + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id);
 }
 
 DatabasePtr DatabaseCatalog::getDatabaseForTemporaryTables() const
