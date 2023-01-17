@@ -37,7 +37,7 @@ public:
 
     /// Add term(which length is 'len' and located at 'data') and its row ID to
     /// the postings list builder for building inverted index for the given store.
-    void add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store, UInt64 limit);
+    void add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store, UInt64 limit) const;
 
     /// Accumulate (segmentID, RowIDStart, RowIDEnd) for building skipping index
     void addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt32 rowIDEnd);
@@ -47,7 +47,7 @@ public:
 
     /// Check if the filter(built from query string) contains any rows in given filter 'af' by using
     /// given postings list cache
-    bool contains(const GinFilter& af, PostingsCacheForStore &store) const;
+    bool contains(const GinFilter & filter, PostingsCacheForStore &cache_store) const;
 
     /// Const getter for the row ID ranges
     const GinSegmentWithRowIDRanges& getFilter() const { return rowid_ranges; }
