@@ -1401,7 +1401,7 @@ The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
 **Syntax**
 
 ```sql
-toUnixTimestamp64Milli(value)
+toUnixTimestamp64Nano(value)
 ```
 
 **Arguments**
@@ -1472,16 +1472,16 @@ fromUnixTimestamp64Nano(value [, ti])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
-SELECT fromUnixTimestamp64Milli(i64, 'UTC');
+WITH CAST(1673982906788569020, 'Int64') AS i64
+SELECT fromUnixTimestamp64Nano(i64, 'UTC');
 ```
 
 Result:
 
 ```response
-┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
-│              2009-02-13 23:31:31.011 │
-└──────────────────────────────────────┘
+┌─fromUnixTimestamp64Nano(i64, 'UTC')─┐
+│       2023-01-17 19:15:06.788569020 │
+└─────────────────────────────────────┘
 ```
 
 ## formatRow
