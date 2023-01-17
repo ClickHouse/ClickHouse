@@ -282,7 +282,16 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     {
         /// skip sorting if stream is already sorted
         if (input_sort_mode == DataStream::SortScope::Global && input_sort_desc.hasPrefix(result_description))
+        {
+            if (pipeline.getNumStreams() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "If input stream is globally sorted then there should be only 1 input stream at this stage. Number of input streams: "
+                    "{}",
+                    pipeline.getNumStreams());
+
             return;
+        }
 
         /// merge sorted
         if (input_sort_mode == DataStream::SortScope::Stream && input_sort_desc.hasPrefix(result_description))
