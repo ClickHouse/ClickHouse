@@ -126,7 +126,7 @@ public:
         const auto & [level, prio] = convertLogLevel(log_level);
         if (tag_loggers.contains(tag))
         {
-            LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
+            LOG_IMPL(tag_loggers[tag], level, prio, fmt::runtime(message));
         }
         else
         {
