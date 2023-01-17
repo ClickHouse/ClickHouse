@@ -33,13 +33,11 @@ namespace ErrorCodes
  * Then, another thread add temporary buffers into a "real" WriteBuffer.
  *
  *                   Formatters
- *      |   |   |   |   |   |   |   |   |   |
- *      v   v   v   v   v   v   v   v   v   v
- *    |---|---|---|---|---|---|---|---|---|---|
- *    | 1 | 2 | 3 | 4 | 5 | . | . | . | . | N | <-- Processing units
- *    |---|---|---|---|---|---|---|---|---|---|
- *      ^               ^
- *      |               |
+ *      ↓   ↓   ↓   ↓   ↓   ↓   ↓   ↓   ↓   ↓
+ *    ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
+ *    | 1 | 2 | 3 | 4 | 5 | . | . | . | . | N | ← Processing units
+ *    └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
+ *      ↑               ↑
  *   Collector       addChunk
  *
  * There is a container of ProcessingUnits - internal entity, storing a Chunk to format,
