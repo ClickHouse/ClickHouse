@@ -133,6 +133,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int UNSUPPORTED_METHOD;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 namespace ActionLocks
@@ -779,6 +780,7 @@ void StorageDistributed::read(
                 parser, settings.parallel_replicas_custom_key.value.data(), settings.parallel_replicas_custom_key.value.data() + settings.parallel_replicas_custom_key.value.size(),
                 "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
 
+            ASTPtr shard_filter = nullptr ;
             if (settings.parallel_replicas_custom_key_filter_type == ParallelReplicasCustomKeyFilterType::DEFAULT)
             {
                 // first we do modulo with replica count
@@ -801,8 +803,7 @@ void StorageDistributed::read(
                 equals_function->arguments = args;
                 equals_function->children.push_back(equals_function->arguments);
 
-                auto & select_query = query->as<ASTSelectQuery &>();
-                select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(equals_function));
+                shard_filter = equals_function;
             }
             else
             {
@@ -895,16 +896,37 @@ void StorageDistributed::read(
                     args->children.push_back(lower_function);
                     args->children.push_back(upper_function);
 
-                    auto f = std::make_shared<ASTFunction>();
-                    f->name = "and";
-                    f->arguments = args;
-                    f->children.push_back(f->arguments);
+                    auto and_function = std::make_shared<ASTFunction>();
+                    and_function->name = "and";
+                    and_function->arguments = args;
+                    and_function->children.push_back(and_function->arguments);
 
-                    return f;
+                    return and_function;
                 };
 
+                shard_filter = filter_function();
+            }
+
+            if (shard_filter)
+            {
                 auto & select_query = query->as<ASTSelectQuery &>();
-                select_query.setExpression(ASTSelectQuery::Expression::WHERE, filter_function());
+
+                auto where_expression = select_query.where();
+                if (where_expression)
+                {
+                    ASTPtr args = std::make_shared<ASTExpressionList>();
+                    args->children.push_back(where_expression);
+                    args->children.push_back(shard_filter);
+
+                    auto and_function = std::make_shared<ASTFunction>();
+                    and_function->name = "and";
+                    and_function->arguments = args;
+                    and_function->children.push_back(and_function->arguments);
+
+                    shard_filter = std::move(and_function);
+                }
+
+                select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
             }
         };
     }
