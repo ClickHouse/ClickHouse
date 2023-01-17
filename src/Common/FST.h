@@ -83,7 +83,7 @@ public:
 
     UInt64 hash() const;
 
-    Arc * getArc(char label);
+    Arc * getArc(char label) const;
 
     void addArc(char label, Output output, StatePtr target);
 
@@ -170,7 +170,7 @@ class FiniteStateTransducer
 {
 public:
     FiniteStateTransducer() = default;
-    FiniteStateTransducer(std::vector<UInt8> data_);
+    explicit FiniteStateTransducer(std::vector<UInt8> data_);
     std::pair<UInt64, bool> getOutput(const String & term);
     void clear();
     std::vector<UInt8> & getData() { return data; }

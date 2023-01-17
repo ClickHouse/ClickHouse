@@ -33,7 +33,7 @@ GinFilter::GinFilter(const GinFilterParameters & params_)
 {
 }
 
-void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store, UInt64 limit)
+void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store, UInt64 limit) const
 {
     if (len > FST::MAX_TERM_LENGTH)
         return;
@@ -49,7 +49,7 @@ void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr
     else
     {
         UInt64 threshold = std::lround(limit * params.density);
-        GinIndexPostingsBuilderPtr builder = std::make_shared<GinIndexPostingsBuilder>(threshold);
+        GinIndexStore::GinIndexPostingsBuilderPtr builder = std::make_shared<GinIndexPostingsBuilder>(threshold);
         builder->add(rowID);
 
         store->setPostingsBuilder(term, builder);

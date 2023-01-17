@@ -112,10 +112,6 @@ struct GinIndexSegment
 
 using GinIndexSegments = std::vector<GinIndexSegment>;
 
-using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
-
-/// Container for all term's Gin Index Postings List Builder
-using GinIndexPostingsBuilderContainer = std::unordered_map<std::string, GinIndexPostingsBuilderPtr>;
 struct SegmentTermDictionary
 {
     /// .gin_post file offset of this segment's postings lists
@@ -138,6 +134,10 @@ using SegmentTermDictionaries = std::unordered_map<UInt32, SegmentTermDictionary
 class GinIndexStore
 {
 public:
+    using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
+    /// Container for all term's Gin Index Postings List Builder
+    using GinIndexPostingsBuilderContainer = std::unordered_map<std::string, GinIndexPostingsBuilderPtr>;
+
     explicit GinIndexStore(const String & name_, DataPartStoragePtr storage_);
 
     GinIndexStore(const String& name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);

@@ -100,13 +100,13 @@ bool LabelsAsBitmap::hasLabel(char label) const
     return ((data & bit_label) != 0);
 }
 
-Arc* State::getArc(char label)
+Arc* State::getArc(char label) const
 {
     auto it = arcs.find(label);
     if (it == arcs.cend())
         return nullptr;
 
-    return &it->second;
+    return const_cast<Arc *>(&it->second);
 }
 
 void State::addArc(char label, Output output, StatePtr target)

@@ -770,7 +770,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (index.arguments.size() > 2)
         throw Exception("Inverted index must have less than two arguments.", ErrorCodes::INCORRECT_QUERY);
 
-    if (index.arguments.size() >= 1 && index.arguments[0].getType() != Field::Types::UInt64)
+    if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64)
         throw Exception("The first Inverted index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
 
     if (index.arguments.size() == 2 && (index.arguments[1].getType() != Field::Types::Float64 || index.arguments[1].get<Float64>() <= 0 || index.arguments[1].get<Float64>() > 1))

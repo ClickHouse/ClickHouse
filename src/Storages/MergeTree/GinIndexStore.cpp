@@ -18,7 +18,7 @@
 namespace DB
 {
 
-using TokenPostingsBuilderPair = std::pair<std::string_view, GinIndexPostingsBuilderPtr>;
+using TokenPostingsBuilderPair = std::pair<std::string_view, GinIndexStore::GinIndexPostingsBuilderPtr>;
 using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
 
 namespace ErrorCodes
@@ -280,7 +280,7 @@ void GinIndexStore::writeSegment()
 
     for (const auto& [token, postings_list] : current_postings)
     {
-        token_postings_list_pairs.push_back({std::string_view(token), postings_list});
+        token_postings_list_pairs.push_back({token, postings_list});
     }
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
