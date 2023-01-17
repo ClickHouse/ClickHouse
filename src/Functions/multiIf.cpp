@@ -219,6 +219,15 @@ public:
                 break;
         }
 
+        for (size_t i = 0; i < instructions.size(); ++i)
+        {
+            auto & instruction = instructions[i];
+            auto source = instruction.source;
+            for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
+            {
+                std::cout << "number:" << row_i << ",instruction:" << i << ",field" << toString((*source)[row_i]) << std::endl;
+            }
+        }
 
         /// Special case if first instruction condition is always true and source is constant
         if (instructions.size() == 1 && instructions.front().source_is_constant
@@ -240,6 +249,7 @@ public:
             executeInstructions(instructions, rows, res);
             return std::move(res);
         }
+
 
 #define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE, INDEX) \
     if (which.is##TYPE()) \
@@ -373,12 +383,15 @@ private:
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
+
+
         PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
         for (size_t row_i = 0; row_i < rows; ++row_i)
         {
             auto & instruction = instructions[inserts[row_i]];
             auto ref = instruction.source->getDataAt(row_i);
             res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
+            std::cout << "number:" << row_i << ",instruction:" << inserts[row_i] << std::endl;
         }
     }
 
