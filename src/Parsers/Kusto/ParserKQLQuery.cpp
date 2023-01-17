@@ -18,12 +18,12 @@
 #include <Parsers/Kusto/ParserKQLExtend.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <format>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
+#include <format>
 namespace DB
 {
 
