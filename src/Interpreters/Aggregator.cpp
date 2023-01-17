@@ -233,7 +233,8 @@ void initDataVariantsWithSizeHint(
                     stats_collecting_params.max_size_to_preallocate_for_aggregation,
                     hint->median_size * max_threads);
             }
-            else
+            /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
+            else if ((max_threads > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
             {
                 const auto adjusted = std::max(lower_limit, hint->median_size);
                 if (worthConvertToTwoLevel(

@@ -64,6 +64,7 @@ NEED_RERUN_WORKFLOWS = {
     "DocsCheck",
     "DocsReleaseChecks",
     "MasterCI",
+    "NightlyBuilds",
     "PullRequestCI",
     "ReleaseBranchCI",
 }
