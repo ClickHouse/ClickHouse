@@ -324,7 +324,7 @@ private:
 
     /// We should read source from which instruction on each row?
     template <typename S>
-    static NO_INLINE void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
+    static void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
         for (S i = static_cast<S>(instructions.size() - 1); i >= 0; --i)
         {
@@ -368,7 +368,7 @@ private:
     }
 
     template <typename T, typename S>
-    static NO_INLINE void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
