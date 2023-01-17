@@ -5,7 +5,6 @@
 #include <Core/BackgroundSchedulePool.h>
 
 #include <chrono>
-#include <unordered_set>
 
 namespace DB
 {
@@ -14,7 +13,7 @@ class StorageReplicatedMergeTree;
 
 class AsyncBlockIDsCache
 {
-    using Cache = std::unordered_set<String>;
+    struct Cache;
     using CachePtr = std::shared_ptr<Cache>;
 
     std::vector<String> getChildren();

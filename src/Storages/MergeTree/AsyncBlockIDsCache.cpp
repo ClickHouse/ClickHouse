@@ -1,11 +1,31 @@
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
-#include <chrono>
-#include <mutex>
+#include <unordered_set>
+
+namespace ProfileEvents
+{
+    extern const Event AsyncInsertCacheHits;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric AsyncInsertCacheSize;
+}
 
 namespace DB
 {
+
+struct AsyncBlockIDsCache::Cache : public std::unordered_set<String>
+{
+    CurrentMetrics::Increment cache_size_increment;
+    explicit Cache(std::unordered_set<String> && set_)
+        : std::unordered_set<String>(std::move(set_))
+        , cache_size_increment(CurrentMetrics::AsyncInsertCacheSize, size())
+    {}
+};
 
 std::vector<String> AsyncBlockIDsCache::getChildren()
 {
@@ -32,15 +52,14 @@ void AsyncBlockIDsCache::update()
 try
 {
     std::vector<String> paths = getChildren();
-    Cache cache;
+    std::unordered_set<String> set;
     for (String & p : paths)
     {
-        cache.insert(std::move(p));
+        set.insert(std::move(p));
     }
-    LOG_TRACE(log, "Updating async block succeed. {} block ids has been updated.", cache.size());
     {
         std::lock_guard lock(mu);
-        cache_ptr = std::make_shared<Cache>(std::move(cache));
+        cache_ptr = std::make_shared<Cache>(std::move(set));
         ++version;
     }
     cv.notify_all();
@@ -94,6 +113,8 @@ Strings AsyncBlockIDsCache::detectConflicts(const Strings & paths, UInt64 & last
             conflicts.push_back(p);
         }
     }
+
+    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheHits);
 
     return conflicts;
 }
