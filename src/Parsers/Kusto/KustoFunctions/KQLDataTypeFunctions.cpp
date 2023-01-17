@@ -9,7 +9,7 @@
 #include <Parsers/ParserSetQuery.h>
 
 #include <format>
-#include<regex>
+#include <regex>
 
 namespace DB
 {
@@ -39,10 +39,13 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
     else if (pos->type == TokenType::BareWord)
     {
         datetime_str = getConvertedArgument(fn_name, pos);
-        if(Poco::toUpper(datetime_str) == "NULL")
+        if (Poco::toUpper(datetime_str) == "NULL")
             out = "NULL";
         else
-            out = std::format("if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32'OR toTypeName({0}) = 'Float64' OR  toTypeName({0}) = 'UInt32' OR  toTypeName({0}) = 'UInt64', toDateTime64({0},9,'UTC'), parseDateTime64BestEffortOrNull({0}::String,9,'UTC'))", datetime_str);      
+            out = std::format(
+                "if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32'OR toTypeName({0}) = 'Float64' OR  toTypeName({0}) = 'UInt32' OR "
+                " toTypeName({0}) = 'UInt64', toDateTime64({0},9,'UTC'), parseDateTime64BestEffortOrNull({0}::String,9,'UTC'))",
+                datetime_str);
         return true;
     }
     else
@@ -221,19 +224,19 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
     --pos;
     arg = getArgument(fn_name, pos);
 
-    //NULL expr returns NULL not execption
-     static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
-    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(std::regex_match(arg , expr));
+    //NULL expr returns NULL not exception
+    static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
+    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(std::regex_match(arg, expr));
     if (is_string)
         throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
-    
-    if (std::regex_match(arg , expr))
+
+    if (std::regex_match(arg, expr))
     {
         auto exponential_pos = arg.find("e");
-        if(arg[exponential_pos +1] == '+' || arg[exponential_pos +1] == '-' )
-            scale = std::stoi(arg.substr(exponential_pos+2,arg.length()));
+        if (arg[exponential_pos + 1] == '+' || arg[exponential_pos + 1] == '-')
+            scale = std::stoi(arg.substr(exponential_pos + 2, arg.length()));
         else
-            scale = std::stoi(arg.substr(exponential_pos+1 , arg.length()));
+            scale = std::stoi(arg.substr(exponential_pos + 1, arg.length()));
 
         out = std::format("toDecimal128({}::String,{})", arg, scale);
         return true;

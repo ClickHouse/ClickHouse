@@ -9,7 +9,7 @@ namespace DB
 class ParserKQLDateTypeTimespan : public ParserKQLBase
 {
 public:
-    enum class KQLTimespanUint: uint8_t
+    enum class KQLTimespanUint : uint8_t
     {
         day,
         hour,
@@ -20,7 +20,7 @@ public:
         nanosec,
         tick
     };
-    bool parseConstKQLTimespan(const String &text);
+    bool parseConstKQLTimespan(const String & text);
     double toSeconds();
 
 protected:
@@ -33,4 +33,3 @@ private:
 };
 
 }
-

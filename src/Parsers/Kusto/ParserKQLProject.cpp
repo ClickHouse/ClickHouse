@@ -1,17 +1,17 @@
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLProject.h>
+#include <Parsers/Kusto/ParserKQLQuery.h>
 namespace DB
 {
 
-bool ParserKQLProject :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLProject ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr select_expression_list;
     String expr;
 
     expr = getExprFromToken(pos);
 
-    Tokens tokens(expr.c_str(), expr.c_str()+expr.size());
+    Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
     IParser::Pos new_pos(tokens, pos.max_depth);
 
     if (!ParserNotEmptyExpressionList(false).parse(new_pos, select_expression_list, expected))

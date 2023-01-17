@@ -1,24 +1,24 @@
-#include <Parsers/IParserBase.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <cstdlib>
-#include <unordered_map>
 #include <format>
-#include <math.h> 
+#include <unordered_map>
+#include <math.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
+#include <Parsers/Kusto/ParserKQLQuery.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
 
-bool ParserKQLDateTypeTimespan :: parseImpl(Pos & pos,  [[maybe_unused]] ASTPtr & node, Expected & expected)
+bool ParserKQLDateTypeTimespan ::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expected & expected)
 {
     String token;
     const char * current_word = pos->begin;
     expected.add(pos, current_word);
 
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral )
-        token = String(pos->begin + 1, pos->end -1);
+    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+        token = String(pos->begin + 1, pos->end - 1);
     else
         token = String(pos->begin, pos->end);
     if (!parseConstKQLTimespan(token))
@@ -27,18 +27,18 @@ bool ParserKQLDateTypeTimespan :: parseImpl(Pos & pos,  [[maybe_unused]] ASTPtr 
     return true;
 }
 
-double ParserKQLDateTypeTimespan :: toSeconds()
+double ParserKQLDateTypeTimespan ::toSeconds()
 {
-    switch (time_span_unit) 
+    switch (time_span_unit)
     {
         case KQLTimespanUint::day:
             return time_span * 24 * 60 * 60;
         case KQLTimespanUint::hour:
             return time_span * 60 * 60;
         case KQLTimespanUint::minute:
-            return time_span *  60;
+            return time_span * 60;
         case KQLTimespanUint::second:
-            return time_span ;
+            return time_span;
         case KQLTimespanUint::millisec:
             return time_span / 1000.0;
         case KQLTimespanUint::microsec:
@@ -50,45 +50,43 @@ double ParserKQLDateTypeTimespan :: toSeconds()
     }
 }
 
-bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
+bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
 {
-    std::unordered_map <String, KQLTimespanUint> TimespanSuffixes =
-    {
-        {"d", KQLTimespanUint::day},
-        {"day", KQLTimespanUint::day},
-        {"days", KQLTimespanUint::day},
-        {"h", KQLTimespanUint::hour},
-        {"hr", KQLTimespanUint::hour},
-        {"hrs", KQLTimespanUint::hour},
-        {"hour", KQLTimespanUint::hour},
-        {"hours", KQLTimespanUint::hour},
-        {"m", KQLTimespanUint::minute},
-        {"min", KQLTimespanUint::minute},
-        {"minute", KQLTimespanUint::minute},
-        {"minutes", KQLTimespanUint::minute},
-        {"s", KQLTimespanUint::second},
-        {"sec", KQLTimespanUint::second},
-        {"second", KQLTimespanUint::second},
-        {"seconds", KQLTimespanUint::second},
-        {"ms", KQLTimespanUint::millisec},
-        {"milli", KQLTimespanUint::millisec},
-        {"millis", KQLTimespanUint::millisec},
-        {"millisec", KQLTimespanUint::millisec},
-        {"millisecond", KQLTimespanUint::millisec},
-        {"milliseconds", KQLTimespanUint::millisec},
-        {"micro", KQLTimespanUint::microsec},
-        {"micros", KQLTimespanUint::microsec},
-        {"microsec", KQLTimespanUint::microsec},
-        {"microsecond", KQLTimespanUint::microsec},
-        {"microseconds", KQLTimespanUint::microsec},
-        {"nano", KQLTimespanUint::nanosec},
-        {"nanos", KQLTimespanUint::nanosec},
-        {"nanosec", KQLTimespanUint::nanosec},
-        {"nanosecond", KQLTimespanUint::nanosec},
-        {"nanoseconds", KQLTimespanUint::nanosec},
-        {"tick", KQLTimespanUint::tick},
-        {"ticks", KQLTimespanUint::tick}
-    };
+    std::unordered_map<String, KQLTimespanUint> TimespanSuffixes
+        = {{"d", KQLTimespanUint::day},
+           {"day", KQLTimespanUint::day},
+           {"days", KQLTimespanUint::day},
+           {"h", KQLTimespanUint::hour},
+           {"hr", KQLTimespanUint::hour},
+           {"hrs", KQLTimespanUint::hour},
+           {"hour", KQLTimespanUint::hour},
+           {"hours", KQLTimespanUint::hour},
+           {"m", KQLTimespanUint::minute},
+           {"min", KQLTimespanUint::minute},
+           {"minute", KQLTimespanUint::minute},
+           {"minutes", KQLTimespanUint::minute},
+           {"s", KQLTimespanUint::second},
+           {"sec", KQLTimespanUint::second},
+           {"second", KQLTimespanUint::second},
+           {"seconds", KQLTimespanUint::second},
+           {"ms", KQLTimespanUint::millisec},
+           {"milli", KQLTimespanUint::millisec},
+           {"millis", KQLTimespanUint::millisec},
+           {"millisec", KQLTimespanUint::millisec},
+           {"millisecond", KQLTimespanUint::millisec},
+           {"milliseconds", KQLTimespanUint::millisec},
+           {"micro", KQLTimespanUint::microsec},
+           {"micros", KQLTimespanUint::microsec},
+           {"microsec", KQLTimespanUint::microsec},
+           {"microsecond", KQLTimespanUint::microsec},
+           {"microseconds", KQLTimespanUint::microsec},
+           {"nano", KQLTimespanUint::nanosec},
+           {"nanos", KQLTimespanUint::nanosec},
+           {"nanosec", KQLTimespanUint::nanosec},
+           {"nanosecond", KQLTimespanUint::nanosec},
+           {"nanoseconds", KQLTimespanUint::nanosec},
+           {"tick", KQLTimespanUint::tick},
+           {"ticks", KQLTimespanUint::tick}};
 
     int days = 0, hours = 0, minutes = 0, seconds = 0, sec_scale_len = 0;
     double nanoseconds = 00.00;
@@ -96,7 +94,7 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
     const char * ptr = text.c_str();
     bool sign = false;
 
-    auto scanDigit = [&](const char *start) -> int
+    auto scanDigit = [&](const char * start) -> int
     {
         auto index = start;
         while (isdigit(*index))
@@ -110,7 +108,7 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
     }
     auto number_len = scanDigit(ptr);
     if (number_len <= 0)
-      return false;
+        return false;
 
     days = std::stoi(String(ptr, ptr + number_len));
 
@@ -126,7 +124,7 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
     else if (*(ptr + number_len) == '\0')
     {
         if (sign)
-            time_span = -(std::stoi(String(ptr, ptr + number_len))) * 86400 ;
+            time_span = -(std::stoi(String(ptr, ptr + number_len))) * 86400;
         else
             time_span = std::stoi(String(ptr, ptr + number_len)) * 86400;
 
@@ -138,7 +136,7 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
         hours = days;
         days = 0;
     }
-    
+
     if (*(ptr + number_len) != ':')
     {
         String timespan_suffix(ptr + number_len, ptr + text.size());
@@ -148,14 +146,14 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
             return false;
 
         time_span = std::stod(String(ptr, ptr + number_len));
-        time_span_unit = TimespanSuffixes[timespan_suffix] ;
+        time_span_unit = TimespanSuffixes[timespan_suffix];
 
         return true;
     }
-    
+
     if (hours > 23)
         return false;
-    
+
     auto min_len = scanDigit(ptr + number_len + 1);
     if (min_len < 0)
         return false;
@@ -188,14 +186,14 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
             }
         }
     }
-    auto exponent = 9 - sec_scale_len; // max supported length of fraction of seconds is 9 
-    nanoseconds = nanoseconds * pow(10, exponent );
+    auto exponent = 9 - sec_scale_len; // max supported length of fraction of seconds is 9
+    nanoseconds = nanoseconds * pow(10, exponent);
 
     if (sign)
-        time_span = -(days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds /1000000000 ));
+        time_span = -(days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds / 1000000000));
     else
-        time_span = days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds /1000000000 );
-    
+        time_span = days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds / 1000000000);
+
     time_span_unit = KQLTimespanUint::second;
 
     return true;

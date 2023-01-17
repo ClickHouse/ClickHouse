@@ -188,7 +188,7 @@ Please note that functions returning arrays with set semantics may return them i
 
  - [set_has_element](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/sethaselementfunction)  
    `print set_has_element(dynamic(["this", "is", "an", "example"]), "example") == true`  
-   `print set_has_element(dynamic(["this", "is", "an", "example"]), "examplee") == false`  
+   `print set_has_element(dynamic(["this", "is", "an", "example"]), "test") == false`  
    `print set_has_element(dynamic([1, 2, 3]), 2) == true`  
    `print set_has_element(dynamic([1, 2, 3, 4.2]), 4) == false`  
 
@@ -709,7 +709,7 @@ https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoper
 # August 1, 2022
 
 **The config setting to allow modify dialect setting**.
-   - Set dialect setting in  server configuration XML at user level(` users.xml `). This sets the ` dialect ` at server startup and CH will do query parsing for all users with ` default ` profile acording to dialect value.
+   - Set dialect setting in  server configuration XML at user level(` users.xml `). This sets the ` dialect ` at server startup and CH will do query parsing for all users with ` default ` profile according to dialect value.
 
    For example:
    ` <profiles>
@@ -795,7 +795,7 @@ Please note that the functions listed below only take constant parameters for no
 
 ## string functions
 - **support subquery for `in` orerator** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/in-cs-operator)  
- (subquery need to be wraped with bracket inside bracket)
+ (subquery need to be wrapped with bracket inside bracket)
 
     `Customers | where Age in ((Customers|project Age|where Age < 30))`
  Note: case-insensitive not supported yet

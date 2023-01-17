@@ -14,7 +14,6 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 
 #include <format>
 

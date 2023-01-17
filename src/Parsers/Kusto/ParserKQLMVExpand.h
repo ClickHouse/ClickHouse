@@ -8,20 +8,23 @@ namespace DB
 
 class ParserKQLMVExpand : public ParserKQLBase
 {
-
 protected:
-    static std::unordered_map<String,String> type_cast;
+    static std::unordered_map<String, String> type_cast;
 
-    struct ColumnArrayExpr {
+    struct ColumnArrayExpr
+    {
         String alias;
         String column_array_expr;
         String to_type;
         ColumnArrayExpr(String alias_, String column_array_expr_, String to_type_)
-        :alias(alias_), column_array_expr(column_array_expr_), to_type(to_type_){}
+            : alias(alias_), column_array_expr(column_array_expr_), to_type(to_type_)
+        {
+        }
     };
     using ColumnArrayExprs = std::vector<ColumnArrayExpr>;
 
-    struct KQLMVExpand {
+    struct KQLMVExpand
+    {
         ColumnArrayExprs column_array_exprs;
         String bagexpansion;
         String with_itemindex;

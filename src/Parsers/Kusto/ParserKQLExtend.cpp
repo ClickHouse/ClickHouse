@@ -1,18 +1,18 @@
+#include <format>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
+#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/ParserKQLExtend.h>
 #include <Parsers/Kusto/ParserKQLMakeSeries.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
-#include <Parsers/Kusto/ParserKQLExtend.h>
 #include <Parsers/Kusto/ParserKQLProject.h>
+#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/ParserSelectQuery.h>
-#include <format>
+#include <Parsers/ParserTablesInSelectQuery.h>
 
 namespace DB
 {
-bool ParserKQLExtend :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr select_query;
     int32_t new_column_index = 1;
@@ -26,7 +26,7 @@ bool ParserKQLExtend :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     String alias;
 
-    auto apply_alias =[&]
+    auto apply_alias = [&]
     {
         if (alias.empty())
         {
