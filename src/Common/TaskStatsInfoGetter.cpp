@@ -212,7 +212,7 @@ bool checkPermissionsImpl()
         {
             /// This error happens all the time when running inside Docker - consider it ok,
             /// don't create noise with this error.
-            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "{}", getCurrentExceptionMessage(false));
+            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
         }
         else
         {

@@ -463,8 +463,7 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     catch (const Exception & e)
     {
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
-            throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
-                            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table {} doesn't exist", backQuote(table_name));
         else if (!is_system_storage && throw_on_error)
             throw;
     }
