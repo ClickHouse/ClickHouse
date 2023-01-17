@@ -140,6 +140,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event MainConfigLoads;
+    extern const Event ServerStartupMilliseconds;
 }
 
 namespace fs = std::filesystem;
@@ -652,6 +653,8 @@ static void sanityChecks(Server & server)
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
+    Stopwatch startup_watch;
+
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;
@@ -1830,6 +1833,9 @@ try
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
+
+        startup_watch.stop();
+        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
 
         try
         {
