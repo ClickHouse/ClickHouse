@@ -170,6 +170,7 @@ public:
 
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
+        request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
 
         outcome_future = listObjectsAsync();
 
@@ -199,6 +200,9 @@ private:
 
     KeyWithInfo nextAssumeLocked()
     {
+        if (current_exception)
+            std::rethrow_exception(current_exception);
+
         if (buffer_iter != buffer.end())
         {
             auto answer = *buffer_iter;
@@ -209,7 +213,20 @@ private:
         if (is_finished)
             return {};
 
-        fillInternalBufferAssumeLocked();
+        try
+        {
+            /// Iterator is used by several processors from several threads.
+            /// In case of exception it may take some time for threads
+            /// to stop processors and they may still use this iterator.
+            /// To avoid UB save and rethrow exception.
+            fillInternalBufferAssumeLocked();
+        }
+        catch (...)
+        {
+            current_exception = std::current_exception();
+            throw;
+        }
+
         return nextAssumeLocked();
     }
 
@@ -221,9 +238,11 @@ private:
         auto outcome = outcome_future.get();
 
         if (!outcome.IsSuccess())
+        {
             throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
                             quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
                             backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+        }
 
         const auto & result_batch = outcome.GetResult().GetContents();
 
@@ -358,6 +377,7 @@ private:
     ThreadPoolCallbackRunner<ListObjectsOutcome> list_objects_scheduler;
     std::future<ListObjectsOutcome> outcome_future;
     std::atomic<size_t> total_size = 0;
+    std::exception_ptr current_exception;
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
