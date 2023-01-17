@@ -171,8 +171,9 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     if (!hasPendingDataToRead())
         return false;
 
-    size_t size, offset;
+    chassert(file_offset_of_buffer_end <= impl->getFileSize());
 
+    size_t size, offset;
     if (prefetch_future.valid())
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
@@ -210,8 +211,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     /// In case of multiple files for the same file in clickhouse (i.e. log family)
     /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
     /// so we use [impl->getImplementationBufferOffset(), impl->getFileSize()]
-    assert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
-    assert(file_offset_of_buffer_end <= impl->getFileSize());
+    chassert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
+    chassert(file_offset_of_buffer_end <= impl->getFileSize());
 
     return bytes_read;
 }
@@ -276,6 +277,15 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset, int whence)
 
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();
+
+    if (read_until_position && new_pos > *read_until_position)
+    {
+        ProfileEvents::increment(ProfileEvents::RemoteFSSeeksWithReset);
+        impl->reset();
+
+        file_offset_of_buffer_end = new_pos = *read_until_position; /// read_until_position is a non-included boundary.
+        return new_pos;
+    }
 
     /**
     * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
