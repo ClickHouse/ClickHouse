@@ -7892,20 +7892,7 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 
     /// Can happen if table was partially initialized before drop by DatabaseCatalog
     if (table_shared_id == UUIDHelpers::Nil)
-    {
-        if (has_metadata_in_zookeeper.has_value())
-        {
-            if (*has_metadata_in_zookeeper)
-                createTableSharedID();
-            else
-                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped", getStorageID().getNameForLogs());
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NO_ZOOKEEPER, "No connection to ZooKeeper, cannot get shared table ID for table {}. "
-                            "It will be resolve automatically when connection will be established", getStorageID().getNameForLogs());
-        }
-    }
+        createTableSharedID();
 
     return toString(table_shared_id);
 }
@@ -7950,6 +7937,10 @@ void StorageReplicatedMergeTree::createTableSharedID() const
         { /// Other replica create node early
             id = zookeeper->get(zookeeper_table_id_path);
             LOG_DEBUG(log, "Shared ID on path {} concurrently created, will set ID {}", zookeeper_table_id_path, id);
+        }
+        else if (code == Coordination::Error::ZNONODE) /// table completely dropped, we can choose any id we want
+        {
+            LOG_DEBUG(log, "Table was completely drop, we can use anything as ID (will use {})", id);
         }
         else if (code != Coordination::Error::ZOK)
         {
