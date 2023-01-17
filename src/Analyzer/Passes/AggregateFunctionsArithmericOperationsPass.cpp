@@ -103,7 +103,7 @@ public:
           * Result: SELECT -1 * max(id);
           */
         std::string aggregate_function_name_if_constant_is_negative;
-        if (lower_aggregate_function_name == "multiply" || lower_aggregate_function_name == "divide")
+        if (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide")
         {
             if (lower_aggregate_function_name == "min")
                 aggregate_function_name_if_constant_is_negative = "max";
@@ -116,7 +116,7 @@ public:
         if (left_argument_constant_node && !right_argument_constant_node)
         {
             /// Do not rewrite `sum(1/n)` with `sum(1) * div(1/n)` because of lose accuracy
-            if (lower_aggregate_function_name == "divide")
+            if (arithmetic_function_name == "divide")
                 return;
 
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
@@ -164,7 +164,7 @@ private:
 
         auto aggregate_function_clone = aggregate_function->clone();
         auto & aggregate_function_clone_typed = aggregate_function_clone->as<FunctionNode &>();
-        aggregate_function_clone_typed.getArguments().getNodes() = {arithmetic_function_clone_argument};
+        aggregate_function_clone_typed.getArguments().getNodes() = { arithmetic_function_clone_argument };
         resolveAggregateFunctionNode(aggregate_function_clone_typed, arithmetic_function_clone_argument, result_aggregate_function_name);
 
         arithmetic_function_clone_arguments_nodes[arithmetic_function_argument_index] = std::move(aggregate_function_clone);
