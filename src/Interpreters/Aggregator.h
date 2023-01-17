@@ -209,7 +209,8 @@ struct AggregationMethodOneNumber
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
     {
-        const auto * key_holder = reinterpret_cast<const char *>(&key);
+        FieldType casted_key = static_cast<FieldType>(key);
+        const auto * key_holder = reinterpret_cast<const char *>(&casted_key);
         auto * column = static_cast<ColumnVectorHelper *>(key_columns[0]);
         column->insertRawData<sizeof(FieldType)>(key_holder);
     }
