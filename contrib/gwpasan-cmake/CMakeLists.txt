@@ -1,5 +1,3 @@
-option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ${ENABLE_LIBRARIES})
-
 if (NOT ENABLE_GWP_ASAN)
   message (STATUS "Not using gwp-asan")
   return ()
