@@ -1,5 +1,18 @@
 #include <Analyzer/QueryTreePassManager.h>
 
+#include <Common/Exception.h>
+
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
+#include <DataTypes/IDataType.h>
+
+#include <Interpreters/Context.h>
+
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
@@ -16,15 +29,6 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
-
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-
-#include <Interpreters/Context.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -45,24 +49,6 @@ namespace
   */
 class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
 {
-    String pass_name;
-
-    void visitColumn(ColumnNode * column) const
-    {
-        if (column->getColumnSourceOrNull() == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column {} {} query tree node does not have valid source node after running {} pass",
-                column->getColumnName(), column->getColumnType(), pass_name);
-    }
-
-    void visitFunction(FunctionNode * function) const
-    {
-        if (!function->isResolved())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Function {} is not resolved after running {} pass",
-            function->toAST()->formatForErrorMessage(), pass_name);
-    }
-
 public:
     explicit ValidationChecker(String pass_name_)
         : pass_name(std::move(pass_name_))
@@ -75,6 +61,57 @@ public:
         else if (auto * function = node->as<FunctionNode>())
             return visitFunction(function);
     }
+private:
+    void visitColumn(ColumnNode * column) const
+    {
+        if (column->getColumnSourceOrNull() == nullptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} {} query tree node does not have valid source node after running {} pass",
+                column->getColumnName(), column->getColumnType(), pass_name);
+    }
+
+    void visitFunction(FunctionNode * function) const
+    {
+        if (!function->isResolved())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function {} is not resolved after running {} pass",
+                function->toAST()->formatForErrorMessage(), pass_name);
+
+        if (isNameOfInFunction(function->getFunctionName()))
+            return;
+
+        const auto & expected_argument_types = function->getArgumentTypes();
+        size_t expected_argument_types_size = expected_argument_types.size();
+        auto actual_argument_columns = function->getArgumentColumns();
+
+        if (expected_argument_types_size != actual_argument_columns.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function {} expects {} arguments but has {} after running {} pass",
+                function->toAST()->formatForErrorMessage(),
+                expected_argument_types_size,
+                actual_argument_columns.size(),
+                pass_name);
+
+        for (size_t i = 0; i < expected_argument_types_size; ++i)
+        {
+            // Skip lambdas
+            if (WhichDataType(expected_argument_types[i]).isFunction())
+                continue;
+
+            if (!expected_argument_types[i]->equals(*actual_argument_columns[i].type))
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function {} expects {} argument to have {} type but receives {} after running {} pass",
+                    function->toAST()->formatForErrorMessage(),
+                    i + 1,
+                    expected_argument_types[i]->getName(),
+                    actual_argument_columns[i].type->getName(),
+                    pass_name);
+            }
+        }
+    }
+
+    String pass_name;
 };
 #endif
 
