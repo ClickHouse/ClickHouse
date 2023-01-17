@@ -10,10 +10,10 @@ Used for tests.
 **Example**
 
 ```sql
-:) SELECT * FROM system.numbers_mt LIMIT 10;
+SELECT * FROM system.numbers_mt LIMIT 10;
 ```
 
-```text
+```response
 ┌─number─┐
 │      0 │
 │      1 │
