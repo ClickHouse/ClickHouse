@@ -125,7 +125,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (ASTPtr explain_node; explain.parse(pos, explain_node, expected))
         {
-        const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
+            const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
 
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
