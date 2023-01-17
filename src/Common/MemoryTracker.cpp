@@ -106,8 +106,6 @@ AllocationTrace getAllocationTrace(std::optional<double> & sample_probability)
 
 }
 
-AllocationTrace::AllocationTrace(double sample_probability_) : sample_probability(sample_probability_) {}
-
 void AllocationTrace::onAllocImpl(void * ptr, size_t size) const
 {
     if (sample_probability < 1 && !shouldTrackAllocation(sample_probability, ptr))
