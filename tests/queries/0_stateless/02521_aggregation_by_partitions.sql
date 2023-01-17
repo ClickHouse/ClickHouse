@@ -150,3 +150,23 @@ select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
 ) where explain like '%Skip merging: %';
 
 drop table t12;
+
+create table t13(a UInt32, b UInt32) engine=MergeTree order by a partition by (intDiv(a, 2), intDiv(b, 3));
+
+insert into t13 select number, number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select s from t13 group by intDiv(a, 2) + intDiv(b, 3) as s, pi()
+) where explain like '%Skip merging: %';
+
+drop table t13;
+
+create table t14(a UInt32, b UInt32) engine=MergeTree order by a partition by intDiv(a, 2) + intDiv(b, 3);
+
+insert into t14 select number, number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select intDiv(a, 2) as a1, intDiv(b, 3) as b1 from t14 group by a1, b1, pi()
+) where explain like '%Skip merging: %';
+
+drop table t14;
