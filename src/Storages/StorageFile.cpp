@@ -80,6 +80,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -105,6 +106,9 @@ void listFilesWithRegexpMatchingImpl(
     auto regexp = makeRegexpPatternFromGlobs(current_glob);
 
     re2::RE2 matcher(regexp);
+    if (!matcher.ok())
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
 
     bool skip_regex = current_glob == "/*" ? true : false;
     if (!recursive)
