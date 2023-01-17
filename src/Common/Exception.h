@@ -26,6 +26,11 @@ struct FormatStringHelperImpl
     consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str)) {}
     template<typename T>
     FormatStringHelperImpl(fmt::basic_runtime<T> && str) : message_format_string(), fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {}
+
+    PreformattedMessage format(Args && ...args) const
+    {
+        return PreformattedMessage{fmt::format(fmt_str, std::forward<Args...>(args)...), message_format_string};
+    }
 };
 
 template <typename... Args>
@@ -57,6 +62,10 @@ public:
     // delegating constructor to mask sensitive information from the message
     Exception(const std::string & msg, int code, bool remote_ = false): Exception(MessageMasked(msg), code, remote_) {}
     Exception(std::string && msg, int code, bool remote_ = false): Exception(MessageMasked(std::move(msg)), code, remote_) {}
+    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.message), code)
+    {
+        message_format_string = msg.format_string;
+    }
 
     template<typename T, typename = std::enable_if_t<std::is_convertible_v<T, String>>>
     Exception(int code, T && message)
