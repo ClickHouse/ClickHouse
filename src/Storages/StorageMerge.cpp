@@ -301,7 +301,10 @@ void StorageMerge::read(
     modified_context->setSetting("optimize_move_to_prewhere", false);
 
     if (query_info.prewhere_info && !tableSupportsPrewhere())
-        throw DB::Exception(DB::ErrorCodes::ILLEGAL_PREWHERE, "Cannot use PREWHERE with table {}, probably some columns don't have same type", getStorageID().getTableName());
+        throw DB::Exception(
+            DB::ErrorCodes::ILLEGAL_PREWHERE,
+            "Cannot use PREWHERE with table {}, probably some columns don't have same type or an underlying table doesn't support PREWHERE",
+            getStorageID().getTableName());
 
     bool has_database_virtual_column = false;
     bool has_table_virtual_column = false;
