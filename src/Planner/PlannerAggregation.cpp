@@ -191,7 +191,7 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, const PlannerContex
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
 
-    std::unordered_set<std::string_view> used_aggregation_keys;
+    std::unordered_set<std::string> used_aggregation_keys;
     Names aggregation_keys;
     GroupingSetsParamsList grouping_sets_parameters_list;
 
