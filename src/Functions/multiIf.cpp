@@ -378,7 +378,7 @@ private:
         {
             auto & instruction = instructions[inserts[row_i]];
             auto ref = instruction.source->getDataAt(row_i);
-            memcpy(&res_data[row_i], ref.data, ref.size);
+            res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
         }
     }
 
