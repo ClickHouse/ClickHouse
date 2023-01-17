@@ -1342,15 +1342,15 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     }
 
     /// todo: check how big is the difference in the number of rows between parts and disable optimization if it is > 2.
-    /* if (!settings.force_aggregate_partitions_independently) */
-    /* { */
-    /* LOG_TRACE( */
-    /* log, */
-    /* "Independent aggregation by partitions won't be used because there are too big skew in the number of rows between partitions: " */
-    /* "{} {} ." */
-    /* "You can set force_aggregate_partitions_independently to suppress this check"); */
-    /* return false; */
-    /* } */
+    /*if (!settings.force_aggregate_partitions_independently)
+    {
+        LOG_TRACE(
+            log,
+            "Independent aggregation by partitions won't be used because there are too big skew in the number of rows between partitions: "
+            "{} {} ."
+            "You can set force_aggregate_partitions_independently to suppress this check");
+        return false;
+    }*/
 
     return output_each_partition_through_separate_port = true;
 }

@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Functions/IFunction.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
