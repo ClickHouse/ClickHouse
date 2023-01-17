@@ -12,11 +12,16 @@ struct NameHasToken
 };
 
 using FunctionHasToken = DB::FunctionsStringSearch<DB::HasTokenImpl<NameHasToken, DB::VolnitskyCaseSensitiveToken, false>>;
-using FunctionHasTokenOrNull = DB::FunctionsStringSearch<DB::HasTokenImpl<NameHasToken, DB::VolnitskyCaseSensitiveToken, false>, DB::ExecutionErrorPolicy::Null>;
+using FunctionHasTokenOrNull
+    = DB::FunctionsStringSearch<DB::HasTokenImpl<NameHasToken, DB::VolnitskyCaseSensitiveToken, false>, DB::ExecutionErrorPolicy::Null>;
 }
 
 REGISTER_FUNCTION(HasToken)
 {
-    factory.registerFunction<FunctionHasToken>();
-    factory.registerFunction<FunctionHasTokenOrNull>();
+    factory.registerFunction<FunctionHasToken>(
+        {"Performs lookup of needle in haystack using tokenbf_v1 index."}, DB::FunctionFactory::CaseSensitive);
+
+    factory.registerFunction<FunctionHasTokenOrNull>(
+        {"Performs lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed."},
+        DB::FunctionFactory::CaseSensitive);
 }
