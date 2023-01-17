@@ -1416,21 +1416,6 @@ toUnixTimestamp64Nano(value)
 
 Query:
 
-```sql
-WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
-SELECT toUnixTimestamp64Milli(dt64);
-```
-
-Result:
-
-```response
-┌─toUnixTimestamp64Milli(dt64)─┐
-│                1568650812345 │
-└──────────────────────────────┘
-```
-
-Query:
-
 ``` sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
 SELECT toUnixTimestamp64Nano(dt64);
