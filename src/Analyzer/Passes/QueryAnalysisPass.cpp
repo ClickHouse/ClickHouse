@@ -1695,7 +1695,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     subquery_context->setSettings(subquery_settings);
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
-    auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, options, subquery_context);
+    auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, subquery_context, options);
 
     auto io = interpreter->execute();
 
@@ -2027,7 +2027,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
     auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
 
-    return std::make_shared<TableNode>(std::move(storage), storage_lock, storage_snapshot);
+    return std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
 }
 
 /// Resolve identifier from compound expression
