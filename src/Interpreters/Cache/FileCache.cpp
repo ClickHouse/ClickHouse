@@ -92,12 +92,16 @@ void FileCache::initialize()
 {
     std::lock_guard lock(init_mutex);
 
+    if (is_initialized)
+        return;
+
     try
     {
         loadMetadata();
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         init_exception = std::current_exception();
         throw;
     }
@@ -1246,12 +1250,13 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
 {
     assertInitialized();
 
-    std::lock_guard lock(files_mutex);
+    auto key_transaction = createKeyTransaction(key, KeyNotFoundPolicy::RETURN_NULL);
+    if (!key_transaction)
+        return {};
 
-    const auto & cells_by_offset = *files[key];
     std::vector<String> cache_paths;
 
-    for (const auto & [offset, cell] : cells_by_offset)
+    for (const auto & [offset, cell] : key_transaction->getOffsets())
     {
         if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
             cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->getKind()));
