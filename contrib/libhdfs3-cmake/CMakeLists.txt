@@ -100,6 +100,8 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/common/Hash.cpp"
     "${HDFS3_SOURCE_DIR}/common/SWCrc32c.cpp"
     "${HDFS3_SOURCE_DIR}/common/Thread.cpp"
+    "${HDFS3_SOURCE_DIR}/common/IntelAsmCrc32c.cpp"
+    "${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp"
     ${PROTO_SOURCES}
 )
 
