@@ -1,0 +1,209 @@
+-- Disable query_plan_remove_redundant_sorting
+-- ORDER BY clauses in subqueries are untouched
+Expression (Project names)
+Header: number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: number_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Header: number_0 UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number_1 UInt64
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+        Header: number_1 UInt64
+          Sorting (Sorting for ORDER BY)
+          Header: number_2 UInt64
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            Header: number_2 UInt64
+              ReadFromStorage (SystemNumbers)
+              Header: number UInt64
+-- Enable query_plan_remove_redundant_sorting
+-- ORDER BY removes ORDER BY clauses in subqueries
+Expression (Project names)
+Header: number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: number_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))))
+    Header: number_0 UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64
+0
+1
+2
+-- ORDER BY cannot remove ORDER BY in subquery WITH FILL
+Expression (Project names)
+Header: number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: number_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Header: number_0 UInt64
+      Filling
+      Header: number_1 UInt64
+        Sorting (Sorting for ORDER BY)
+        Header: number_1 UInt64
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+          Header: number_1 UInt64
+            ReadFromStorage (SystemNumbers)
+            Header: number UInt64
+-- ORDER BY cannot remove ORDER BY in subquery with LIMIT BY
+Expression (Project names)
+Header: number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: number_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Header: number_0 UInt64
+      LimitBy
+      Header: number_1 UInt64
+        Expression (Before LIMIT BY)
+        Header: number_1 UInt64
+          Sorting (Sorting for ORDER BY)
+          Header: number_1 UInt64
+            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+            Header: number_1 UInt64
+              ReadFromStorage (SystemNumbers)
+              Header: number UInt64
+-- CROSS JOIN with subqueries, nor ORDER BY nor GROUP BY in main query -> only ORDER BY clauses in most inner subqueries will be removed
+Expression ((Project names + (Projection + DROP unused columns after JOIN)))
+Header: t1.number UInt64
+        t2.number UInt64
+  Join (JOIN FillRightFirst)
+  Header: t1.number_0 UInt64
+          t2.number_1 UInt64
+    Expression ((Change column names to column identifiers + Project names))
+    Header: t1.number_0 UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number_2 UInt64
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+        Header: number_2 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+    Expression ((Change column names to column identifiers + Project names))
+    Header: t2.number_1 UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number_4 UInt64
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+        Header: number_4 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries
+Expression (Project names)
+Header: t1.number UInt64
+        t2.number UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: t1.number_0 UInt64
+          t2.number_1 UInt64
+    Expression ((Before ORDER BY + (Projection + DROP unused columns after JOIN)))
+    Header: t1.number_0 UInt64
+            t2.number_1 UInt64
+      Join (JOIN FillRightFirst)
+      Header: t1.number_0 UInt64
+              t2.number_1 UInt64
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+        Header: t1.number_0 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+        Header: t2.number_1 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+-- GROUP BY with aggregation function which does NOT depend on order -> eliminate ORDER BY(s) in _all_ subqueries
+Expression ((Project names + Projection))
+Header: sum(number) UInt64
+  Aggregating
+  Header: number_0 UInt64
+          sum(number_0) UInt64
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))))))
+    Header: number_0 UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64
+-- GROUP BY with aggregation function which depends on order -> keep ORDER BY in first subquery, and eliminate in second subquery
+Expression ((Project names + Projection))
+Header: any(number) UInt64
+  Aggregating
+  Header: number_0 UInt64
+          any(number_0) UInt64
+    Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+    Header: number_0 UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number_1 UInt64
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+        Header: number_1 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+-- query with aggregation function but w/o GROUP BY -> remove sorting
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))
+      ReadFromStorage (SystemNumbers)
+-- check that optimization is applied recursively to subqueries as well
+-- GROUP BY with aggregation function which does NOT depend on order -> eliminate ORDER BY in most inner subquery here
+Expression (Project names)
+Header: a UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: a_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Header: a_0 UInt64
+      Aggregating
+      Header: number_1 UInt64
+              sum(number_1) UInt64
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))
+        Header: number_1 UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+-- GROUP BY with aggregation function which depends on order -> ORDER BY in subquery is kept due to the aggregation function
+Expression (Project names)
+Header: a UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: a_0 UInt64
+    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Header: a_0 UInt64
+      Aggregating
+      Header: number_1 UInt64
+              any(number_1) UInt64
+        Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+        Header: number_1 UInt64
+          Sorting (Sorting for ORDER BY)
+          Header: number_2 UInt64
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            Header: number_2 UInt64
+              ReadFromStorage (SystemNumbers)
+              Header: number UInt64
+-- Check that optimization works for subqueries as well, - main query have neither ORDER BY nor GROUP BY
+Expression ((Project names + Projection))
+Header: a UInt64
+  Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
+  Header: a_0 UInt64
+    Aggregating
+    Header: number_1 UInt64
+            any(number_1) UInt64
+      Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+      Header: number_1 UInt64
+        Sorting (Sorting for ORDER BY)
+        Header: number_2 UInt64
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+          Header: number_2 UInt64
+            ReadFromStorage (SystemNumbers)
+            Header: number UInt64
+-- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function
+-- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      Expression (Projection)
+        Expression (Change column names to column identifiers)
+          Expression (Project names)
+            Sorting (Sorting for ORDER BY)
+              Expression (Before ORDER BY)
+                Expression (Projection)
+                  Expression (Change column names to column identifiers)
+                    ReadFromStorage (SystemNumbers)
+-- non-stateful function does _not_ prevent removing inner ORDER BY
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      Expression (Projection)
+        Expression (Change column names to column identifiers)
+          Expression (Project names)
+            Expression (Before ORDER BY)
+              Expression (Projection)
+                Expression (Change column names to column identifiers)
+                  ReadFromStorage (SystemNumbers)
