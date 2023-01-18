@@ -405,8 +405,8 @@ void TCPHandler::runImpl()
                             std::lock_guard task_callback_lock(task_callback_mutex);
                             std::lock_guard lock(fatal_error_mutex);
 
-                                if (isQueryCancelled())
-                                    return true;
+                            if (isQueryCancelled())
+                                return true;
 
                             sendProgress();
                             sendSelectProfileEvents();
