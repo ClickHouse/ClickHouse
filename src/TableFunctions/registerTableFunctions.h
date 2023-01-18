@@ -26,6 +26,7 @@ void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
 void registerTableFunctionCOS(TableFunctionFactory & factory);
 void registerTableFunctionHudi(TableFunctionFactory & factory);
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory);
+void registerTableFunctionIceberg(TableFunctionFactory & factory);
 void registerTableFunctionOSS(TableFunctionFactory & factory);
 #endif
 

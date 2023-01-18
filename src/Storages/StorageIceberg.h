@@ -32,12 +32,13 @@ namespace DB
 class IcebergMetaParser
 {
 public:
-    IcebergMetaParser(const StorageS3Configuration & configuration_, const String & table_path_, ContextPtr context_);
+    IcebergMetaParser(const StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context_);
 
     std::vector<String> getFiles() const;
 
 private:
-    StorageS3Configuration base_configuration;
+    static constexpr auto metadata_directory = "metadata";
+    StorageS3::S3Configuration base_configuration;
     String table_path;
     ContextPtr context;
 
@@ -45,9 +46,9 @@ private:
     String getNewestMetaFile() const;
     String getManiFestList(const String & metadata_name) const;
     std::vector<String> getManifestFiles(const String & manifest_list) const;
-    std::vector<String> getFilesForRead(const std::vector<String> & manifest_files);
+    std::vector<String> getFilesForRead(const std::vector<String> & manifest_files) const;
 
-    std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key, ContextPtr context);
+    std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key) const;
 };
 
 class StorageIceberg : public IStorage
