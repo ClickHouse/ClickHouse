@@ -42,7 +42,6 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int INCORRECT_DATA;
     extern const int FILE_DOESNT_EXIST;
     extern const int ILLEGAL_COLUMN;
 }
@@ -230,7 +229,7 @@ std::vector<String> IcebergMetaParser::getFilesForRead(const std::vector<String>
                 for (size_t i = 0; i < col_size; ++i)
                 {
                     auto file_path = str_col->getDataAt(i).toView();
-                    /// We just obtain the parition/file name
+                    /// We just obtain the partition/file name
                     std::filesystem::path path(file_path);
                     keys.emplace_back(path.parent_path().filename() / path.filename());
                 }
