@@ -3899,7 +3899,9 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
         if (error)
         {
-            LOG_ERROR(log, "The set of parts restored in place of {} looks incomplete. There might or might not be a data loss.{}", part->name, (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
+            LOG_WARNING(log, "The set of parts restored in place of {} looks incomplete. "
+                             "SELECT queries may observe gaps in data until this replica is synchronized with other replicas.{}",
+                        part->name, (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
         }
     }
 
