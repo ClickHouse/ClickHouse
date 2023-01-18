@@ -54,7 +54,6 @@ $CLICKHOUSE_CLIENT -nm -q "
     LAYOUT(SPARSE_HASHED(PREALLOCATE 1))
     LIFETIME(0);
     SHOW CREATE DICTIONARY dict_01509_preallocate;
-    SYSTEM RELOAD DICTIONARY dict_01509_preallocate;
 "
 (
     # start new shell to avoid overriding variables for other client invocation
