@@ -80,7 +80,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 
             if (current_context->getSettingsRef().allow_experimental_analyzer)
             {
-                InterpreterSelectQueryAnalyzer interpreter_select(query.select, select_query_options, current_context);
+                InterpreterSelectQueryAnalyzer interpreter_select(query.select, current_context, select_query_options);
                 header_block = interpreter_select.getSampleBlock();
             }
             else
@@ -404,7 +404,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 if (settings.allow_experimental_analyzer)
                 {
-                    InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_query_options, new_context);
+                    InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, new_context, select_query_options);
                     pipeline = std::move(interpreter_select_analyzer).extractQueryPipelineBuilder();
                 }
                 else
@@ -420,7 +420,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 if (settings.allow_experimental_analyzer)
                 {
-                    InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_query_options, getContext());
+                    InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, getContext(), select_query_options);
                     pipeline = std::move(interpreter_select_analyzer).extractQueryPipelineBuilder();
                 }
                 else
