@@ -164,7 +164,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     if (num_active_backups && !allow_concurrent_backups)
     {
         /// If its an internal backup and we currently have 1 active backup, it could be the original query, validate using backup_uuid
-        if(!(num_active_backups == 1 && backup_settings.internal && getAllActiveBackupInfos().at(0).id == toString(*backup_settings.backup_uuid)))
+        if (!(num_active_backups == 1 && backup_settings.internal && getAllActiveBackupInfos().at(0).id == toString(*backup_settings.backup_uuid)))
         {
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
         }
@@ -399,7 +399,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     if (num_active_restores && !allow_concurrent_restores)
     {
         /// If its an internal restore and we currently have 1 active restore, it could be the original query, validate using iz
-        if(!(num_active_restores == 1 && restore_settings.internal && getAllActiveRestoreInfos().at(0).id == toString(*restore_settings.backup_uuid)))
+        if (!(num_active_restores == 1 && restore_settings.internal && getAllActiveRestoreInfos().at(0).id == toString(*restore_settings.backup_uuid)))
         {
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
         }
