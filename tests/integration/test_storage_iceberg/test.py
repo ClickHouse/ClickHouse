@@ -150,7 +150,7 @@ def test_describe_query(started_cluster):
     assert result == TSV(
         [
             ["vendor_id", "Nullable(Int64)"],
-            ["trip_id", "Int64"],
+            ["trip_id", "Nullable(Int64)"],
             ["trip_distance", "Nullable(Float32)"],
             ["fare_amount", "Nullable(Float64)"],
             ["store_and_fwd_flag", "Nullable(String)"],
