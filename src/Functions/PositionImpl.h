@@ -215,7 +215,7 @@ struct PositionImpl
                         reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
                     UInt64 start = start_pos->getUInt(i);
                     start = std::max(UInt64(1), start);
-                    res[i] = start <= haystack_size + 1 ? 1 : 0;
+                    res[i] = start <= haystack_size + 1 ? start : 0;
 
                     pos = begin + haystack_offsets[i];
                     prev_offset = haystack_offsets[i];
