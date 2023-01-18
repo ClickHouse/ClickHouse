@@ -1,13 +1,8 @@
 #pragma once
 
-#include <optional>
-#include <utility>
-#include <Common/SettingsChanges.h>
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/QueryNode.h>
 
 
 namespace DB

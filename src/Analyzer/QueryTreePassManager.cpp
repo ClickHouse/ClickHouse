@@ -1,4 +1,3 @@
-#include <memory>
 #include <Analyzer/QueryTreePassManager.h>
 
 #include <Common/Exception.h>
@@ -30,7 +29,6 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
-#include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 
 namespace DB
@@ -256,8 +254,6 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     if (settings.optimize_if_transform_strings_to_enum)
         manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
-
-    manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 }
 
 }
