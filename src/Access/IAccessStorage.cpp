@@ -715,7 +715,7 @@ void IAccessStorage::throwAuthenticationTypeNotAllowed(AuthenticationType auth_t
 
 void IAccessStorage::throwInvalidCredentials()
 {
-    throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);
+    throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
 }
 
 void IAccessStorage::throwBackupNotAllowed() const

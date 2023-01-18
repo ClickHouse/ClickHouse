@@ -217,8 +217,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
     {
         auto range = getNameRange(columns, after_column);
         if (range.first == range.second)
-            throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Wrong column name. Cannot find column {} to insert after", after_column);
 
         insert_it = range.second;
     }
@@ -287,8 +286,7 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
         /// Checked first
         auto range = getNameRange(columns, after_column);
         if (range.first == range.second)
-            throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Wrong column name. Cannot find column {} to insert after", after_column);
 
         reorder_column([&]() { return getNameRange(columns, after_column).second; });
     }

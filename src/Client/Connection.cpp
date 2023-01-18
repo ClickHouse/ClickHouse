@@ -184,7 +184,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription());
     }
     catch (Poco::TimeoutException & e)
     {
@@ -1126,10 +1126,9 @@ PartitionReadRequest Connection::receivePartitionReadRequest() const
 
 void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
 {
-    throw NetException(
-            "Unexpected packet from server " + getDescription() + " (expected " + expected
-            + ", got " + String(Protocol::Server::toString(packet_type)) + ")",
-            ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+            "Unexpected packet from server {} (expected {}, got {})",
+                       getDescription(), expected, String(Protocol::Server::toString(packet_type)));
 }
 
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)

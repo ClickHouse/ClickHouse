@@ -1170,10 +1170,9 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
             default:
-                throw NetException(
-                    "Unexpected packet from server (expected Data, Exception or Log, got "
-                        + String(Protocol::Server::toString(packet.type)) + ")",
-                    ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Unexpected packet from server (expected Data, Exception or Log, got {})",
+                    String(Protocol::Server::toString(packet.type)));
         }
     }
 }
@@ -1514,10 +1513,9 @@ bool ClientBase::receiveEndOfQuery()
                 break;
 
             default:
-                throw NetException(
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got "
-                        + String(Protocol::Server::toString(packet.type)) + ")",
-                    ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
+                    String(Protocol::Server::toString(packet.type)));
         }
     }
 }

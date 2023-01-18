@@ -701,8 +701,8 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         if (second_is_date_or_datetime && is_minus)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of type Interval cannot be first",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
+                                                                  "argument of type Interval cannot be first", name);
 
         std::string function_name;
         if (interval_data_type)
@@ -741,8 +741,8 @@ class FunctionBinaryArithmetic : public IFunction
             return {};
 
         if (isTuple(type0) && second_is_date_or_datetime && is_minus)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of Tuple type cannot be first",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
+                                                                  "argument of Tuple type cannot be first", name);
 
         std::string function_name;
         if (is_plus)
@@ -840,8 +840,8 @@ class FunctionBinaryArithmetic : public IFunction
             return {};
 
         if (isNumber(type0) && is_division)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of numeric type cannot be first",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
+                                                                  "argument of numeric type cannot be first", name);
 
         std::string function_name;
         if (is_multiply)

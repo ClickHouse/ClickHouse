@@ -110,14 +110,12 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
 
             /// Determine the reason of not enough replicas.
             if (!fallback_to_stale_replicas && up_to_date_count < min_entries)
-                throw Exception(
-                    "Could not find enough connections to up-to-date replicas. Got: " + std::to_string(connections.size())
-                    + ", needed: " + std::to_string(min_entries),
-                    DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
+                throw Exception(DB::ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                    "Could not find enough connections to up-to-date replicas. Got: {}, needed: {}",
+                    connections.size(), min_entries);
             if (usable_count < min_entries)
-                throw NetException(
-                    "All connection tries failed. Log: \n\n" + fail_messages + "\n",
-                    DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
+                throw NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                    "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
             throw Exception("Unknown reason of not enough replicas.", ErrorCodes::LOGICAL_ERROR);
         }
