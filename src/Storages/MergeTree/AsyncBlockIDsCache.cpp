@@ -34,9 +34,10 @@ std::vector<String> AsyncBlockIDsCache::getChildren()
     auto watch_callback = [&](const Coordination::WatchResponse &)
     {
         auto now = std::chrono::steady_clock::now();
-        if (now - last_updatetime < update_min_interval)
+        auto last_time = last_updatetime.load();
+        if (now - last_time < update_min_interval)
         {
-            std::chrono::milliseconds sleep_time = std::chrono::duration_cast<std::chrono::milliseconds>(update_min_interval - (now - last_updatetime));
+            std::chrono::milliseconds sleep_time = std::chrono::duration_cast<std::chrono::milliseconds>(update_min_interval - (now - last_time));
             task->scheduleAfter(sleep_time.count());
         }
         else
@@ -94,7 +95,14 @@ Strings AsyncBlockIDsCache::detectConflicts(const Strings & paths, UInt64 & last
         return {};
 
     std::unique_lock lk(mu);
-    cv.wait_for(lk, update_min_interval, [&]{return version != last_version;});
+    /// For first time access of this cache, the `last_version` is zero, so it will not block here.
+    /// For retrying request, We compare the request version and cache version, because zk only returns
+    /// incomplete information of duplication, we need to update the cache to find out more duplication.
+    /// The timeout here is to prevent deadlock, just in case.
+    cv.wait_for(lk, update_min_interval * 2, [&]{return version != last_version;});
+
+    if (version == last_version)
+        LOG_INFO(log, "Read cache with a old version {}", last_version);
 
     CachePtr cur_cache;
     cur_cache = cache_ptr;
@@ -114,7 +122,7 @@ Strings AsyncBlockIDsCache::detectConflicts(const Strings & paths, UInt64 & last
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheHits);
+    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheHits, !conflicts.empty());
 
     return conflicts;
 }

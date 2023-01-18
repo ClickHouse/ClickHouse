@@ -33,7 +33,7 @@ private:
 
     StorageReplicatedMergeTree & storage;
 
-    std::chrono::steady_clock::time_point last_updatetime;
+    std::atomic<std::chrono::steady_clock::time_point> last_updatetime;
     const std::chrono::milliseconds update_min_interval;
 
     std::mutex mu;
