@@ -48,7 +48,7 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
     if (getSourceExpression())
     {
-        buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION " << '\n';
+        buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
         getSourceExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 }

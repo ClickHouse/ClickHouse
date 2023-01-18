@@ -345,9 +345,11 @@ namespace
                             // to check if Range header is supported, we need to send a request with it set
                             const bool supports_ranges = (res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes")
                                 || (res.has("Content-Range") && res.get("Content-Range").starts_with("bytes"));
-                            LOG_TRACE(
-                                &Poco::Logger::get("StorageURLSource"),
-                                fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
+
+                            if (supports_ranges)
+                                LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "HTTP Range is supported");
+                            else
+                                LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "HTTP Range is not supported");
 
 
                             if (supports_ranges && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT

@@ -1303,10 +1303,10 @@ bool StorageMergeTree::optimize(
                     &disable_reason,
                     local_context->getSettingsRef().optimize_skip_merged_partitions))
             {
-                constexpr const char * message = "Cannot OPTIMIZE table: {}";
+                constexpr auto message = "Cannot OPTIMIZE table: {}";
                 if (disable_reason.empty())
                     disable_reason = "unknown reason";
-                LOG_INFO(log, fmt::runtime(message), disable_reason);
+                LOG_INFO(log, message, disable_reason);
 
                 if (local_context->getSettingsRef().optimize_throw_if_noop)
                     throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
@@ -1330,10 +1330,10 @@ bool StorageMergeTree::optimize(
                 &disable_reason,
                 local_context->getSettingsRef().optimize_skip_merged_partitions))
         {
-            constexpr const char * message = "Cannot OPTIMIZE table: {}";
+            constexpr auto message = "Cannot OPTIMIZE table: {}";
             if (disable_reason.empty())
                 disable_reason = "unknown reason";
-            LOG_INFO(log, fmt::runtime(message), disable_reason);
+            LOG_INFO(log, message, disable_reason);
 
             if (local_context->getSettingsRef().optimize_throw_if_noop)
                 throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
