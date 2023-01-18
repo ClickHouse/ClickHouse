@@ -1,26 +1,33 @@
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
+
+#include <algorithm>
+#include <queue>
+
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 
-#include <algorithm>
-#include <queue>
-
 namespace DB
 {
 
-class OptimizeGroupByFunctionKeysVisitor : public InDepthQueryTreeVisitor<OptimizeGroupByFunctionKeysVisitor>
+class OptimizeGroupByFunctionKeysVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeGroupByFunctionKeysVisitor>
 {
 public:
+    using Base = InDepthQueryTreeVisitorWithContext<OptimizeGroupByFunctionKeysVisitor>;
+    using Base::Base;
+
     static bool needChildVisit(QueryTreeNodePtr & /*parent*/, QueryTreeNodePtr & child)
     {
         return !child->as<FunctionNode>();
     }
 
-    static void visitImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_group_by_function_keys)
+            return;
+
         auto * query = node->as<QueryNode>();
         if (!query)
             return;
@@ -41,11 +48,10 @@ public:
             optimizeGroupingSet(group_by);
     }
 private:
-
     struct NodeWithInfo
     {
         QueryTreeNodePtr node;
-        bool parents_are_only_deterministic;
+        bool parents_are_only_deterministic = false;
     };
 
     static bool canBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
@@ -117,9 +123,10 @@ private:
     }
 };
 
-void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr /*context*/)
+void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    OptimizeGroupByFunctionKeysVisitor().visit(query_tree_node);
+    OptimizeGroupByFunctionKeysVisitor visitor(std::move(context));
+    visitor.visit(query_tree_node);
 }
 
 }

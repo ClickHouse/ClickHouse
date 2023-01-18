@@ -45,12 +45,11 @@ Field zeroField(const Field & value)
   * TODO: Support `groupBitAnd`, `groupBitOr`, `groupBitXor` functions.
   * TODO: Support rewrite `f((2 * n) * n)` into '2 * f(n * n)'.
   */
-class AggregateFunctionsArithmericOperationsVisitor : public InDepthQueryTreeVisitor<AggregateFunctionsArithmericOperationsVisitor>
+class AggregateFunctionsArithmericOperationsVisitor : public InDepthQueryTreeVisitorWithContext<AggregateFunctionsArithmericOperationsVisitor>
 {
 public:
-    explicit AggregateFunctionsArithmericOperationsVisitor(ContextPtr context_)
-        : context(std::move(context_))
-    {}
+    using Base = InDepthQueryTreeVisitorWithContext<AggregateFunctionsArithmericOperationsVisitor>;
+    using Base::Base;
 
     /// Traverse tree bottom to top
     static bool shouldTraverseTopToBottom()
@@ -60,6 +59,9 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
+            return;
+
         auto * aggregate_function_node = node->as<FunctionNode>();
         if (!aggregate_function_node || !aggregate_function_node->isAggregateFunction())
             return;
@@ -175,7 +177,7 @@ private:
 
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
-        auto function = FunctionFactory::instance().get(function_name, context);
+        auto function = FunctionFactory::instance().get(function_name, getContext());
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
 
@@ -191,8 +193,6 @@ private:
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
-
-    ContextPtr context;
 };
 
 }

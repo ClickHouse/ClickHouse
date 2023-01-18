@@ -44,6 +44,7 @@ QUERY id: 0
           COLUMN id: 5, column_name: value.a, result_type: UInt64, source_id: 6
       JOIN TREE
         TABLE id: 6, table_name: default.test_table
+  SETTINGS optimize_functions_to_subcolumns=1
 SELECT '--';
 --
 EXPLAIN QUERY TREE SELECT value FROM (
@@ -68,6 +69,8 @@ QUERY id: 0
                 CONSTANT id: 9, constant_value: \'a\', constant_value_type: String
       JOIN TREE
         TABLE id: 8, table_name: default.test_table
+      SETTINGS optimize_functions_to_subcolumns=0
+  SETTINGS optimize_functions_to_subcolumns=1
 SELECT '--';
 --
 EXPLAIN QUERY TREE SELECT value FROM (
@@ -92,6 +95,7 @@ QUERY id: 0
                 CONSTANT id: 9, constant_value: \'a\', constant_value_type: String
       JOIN TREE
         TABLE id: 8, table_name: default.test_table
+  SETTINGS optimize_functions_to_subcolumns=0
 SELECT '--';
 --
 EXPLAIN QUERY TREE SELECT value FROM (
@@ -112,3 +116,5 @@ QUERY id: 0
           COLUMN id: 5, column_name: value.a, result_type: UInt64, source_id: 6
       JOIN TREE
         TABLE id: 6, table_name: default.test_table
+      SETTINGS optimize_functions_to_subcolumns=1
+  SETTINGS optimize_functions_to_subcolumns=0

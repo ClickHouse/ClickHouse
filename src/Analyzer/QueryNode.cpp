@@ -1,5 +1,7 @@
 #include <Analyzer/QueryNode.h>
 
+#include <fmt/core.h>
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -17,7 +19,6 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <Analyzer/Utils.h>
-#include <fmt/core.h>
 
 namespace DB
 {
@@ -185,10 +186,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
-        {
             buffer << fmt::format(" {}={}", change.name, toString(change.value));
-        }
-        buffer << '\n';
     }
 }
 
