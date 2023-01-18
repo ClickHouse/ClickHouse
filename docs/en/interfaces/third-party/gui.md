@@ -318,5 +318,3 @@ Features:
 - Connect with a random http port
 
 ClickhouseLight is [available for free](https://marketplace.visualstudio.com/items?itemName=fanruten.clickhouse-light) on the Visual Studio Marketplace.
-
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->

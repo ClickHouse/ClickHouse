@@ -116,4 +116,3 @@ The quota is assigned to users in the ‘users’ section of the config. See the
 For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will “start over”.
 
 When the server is restarted, quotas are reset.
-

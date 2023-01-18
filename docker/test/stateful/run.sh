@@ -154,19 +154,19 @@ fi
 
 rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 
-pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
+zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst ||:
 # FIXME: remove once only github actions will be left
 rm /var/log/clickhouse-server/clickhouse-server.log
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
 
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
-    tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
+    tar --zstd -c -h -f /test_output/clickhouse_coverage.tar.zst /profraw ||:
 fi
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
     rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
-    pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
-    pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
+    zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
+    zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.zst ||:
     # FIXME: remove once only github actions will be left
     rm /var/log/clickhouse-server/clickhouse-server1.log
     rm /var/log/clickhouse-server/clickhouse-server2.log

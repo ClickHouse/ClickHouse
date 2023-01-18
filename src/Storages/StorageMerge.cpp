@@ -138,15 +138,55 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
-bool StorageMerge::canMoveConditionsToPrewhere() const
+bool StorageMerge::tableSupportsPrewhere() const
 {
     /// NOTE: This check is used during query analysis as condition for applying
     /// "move to PREWHERE" optimization. However, it contains a logical race:
     /// If new table that matches regexp for current storage and doesn't support PREWHERE
     /// will appear after this check and before calling "read" method, the optimized query may fail.
     /// Since it's quite rare case, we just ignore this possibility.
+    const auto & table_doesnt_support_prewhere = getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); });
+    bool supports_prewhere = (table_doesnt_support_prewhere == nullptr);
 
-    return getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); }) == nullptr;
+    if (!supports_prewhere)
+        return false;
+
+    if (!getInMemoryMetadataPtr())
+        return false;
+
+    std::unordered_map<std::string, const IDataType *> column_types;
+    for (const auto & name_type : getInMemoryMetadataPtr()->getColumns().getAll())
+    {
+        column_types.emplace(name_type.name, name_type.type.get());
+    }
+
+    /// Check that all tables have the same column types, otherwise prewhere will fail
+    forEachTable([&](const StoragePtr & table)
+    {
+        const auto & metadata_ptr = table->getInMemoryMetadataPtr();
+        if (!metadata_ptr)
+            supports_prewhere = false;
+
+        if (!supports_prewhere)
+            return;
+
+        for (const auto & column : metadata_ptr->getColumns().getAll())
+        {
+            const auto * src_type = column_types[column.name];
+            if (src_type && !src_type->equals(*column.type))
+            {
+                supports_prewhere = false;
+                return;
+            }
+        }
+    });
+
+    return supports_prewhere;
+}
+
+bool StorageMerge::canMoveConditionsToPrewhere() const
+{
+    return tableSupportsPrewhere();
 }
 
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
@@ -259,6 +299,12 @@ void StorageMerge::read(
       */
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("optimize_move_to_prewhere", false);
+
+    if (query_info.prewhere_info && !tableSupportsPrewhere())
+        throw DB::Exception(
+            DB::ErrorCodes::ILLEGAL_PREWHERE,
+            "Cannot use PREWHERE with table {}, probably some columns don't have same type or an underlying table doesn't support PREWHERE",
+            getStorageID().getTableName());
 
     bool has_database_virtual_column = false;
     bool has_table_virtual_column = false;
@@ -453,7 +499,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
             column_names_as_aliases = alias_actions->getRequiredColumns().getNames();
             if (column_names_as_aliases.empty())
-                column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()));
+                column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
         }
 
         auto source_pipeline = createSources(
@@ -539,7 +585,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
-            real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
 
         QueryPlan plan;
         if (StorageView * view = dynamic_cast<StorageView *>(storage.get()))

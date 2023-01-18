@@ -138,7 +138,7 @@ static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataType
     if (value->getType()->isIntegerTy())
         return b.CreateICmpNE(value, zero);
     if (value->getType()->isFloatingPointTy())
-        return b.CreateFCmpONE(value, zero); /// QNaN is false
+        return b.CreateFCmpUNE(value, zero);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from_type->getName());
 }

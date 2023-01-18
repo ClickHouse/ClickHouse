@@ -104,7 +104,7 @@ void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, con
             throw Exception("Table engine Join supports only DELETE mutations", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
+void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context, bool /*force_wait*/)
 {
     /// Firstly acquire lock for mutation, that locks changes of data.
     /// We cannot acquire rwlock here, because read lock is needed
@@ -229,11 +229,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     return join_clone;
 }
 
-
 void StorageJoin::insertBlock(const Block & block, ContextPtr context)
 {
+    Block block_to_insert = block;
+    convertRightBlock(block_to_insert);
+
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
-    join->addJoinedBlock(block, true);
+    join->addJoinedBlock(block_to_insert, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -263,6 +265,16 @@ ColumnWithTypeAndName StorageJoin::joinGet(const Block & block, const Block & bl
 {
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return join->joinGet(block, block_with_columns_to_add);
+}
+
+void StorageJoin::convertRightBlock(Block & block) const
+{
+    bool need_covert = use_nulls && isLeftOrFull(kind);
+    if (!need_covert)
+        return;
+
+    for (auto & col : block)
+        JoinCommon::convertColumnToNullable(col);
 }
 
 void registerStorageJoin(StorageFactory & factory)
