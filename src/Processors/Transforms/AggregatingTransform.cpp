@@ -136,6 +136,7 @@ private:
     Arena * arena;
 };
 
+/// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
 class ConvertingAggregatedToChunksSource : public ISource
 {
 public:
@@ -171,7 +172,7 @@ private:
     BlocksList blocks;
 };
 
-/// Reads chunks from GroupingAggregatedTransform and outputs them.
+/// Reads chunks from GroupingAggregatedTransform (stored in ChunksToMerge structure) and outputs them.
 class FlattenChunksToMergeTransform : public IProcessor
 {
 public:
@@ -187,7 +188,7 @@ private:
     {
     }
 
-    void process(Chunk chunk)
+    void process(Chunk && chunk)
     {
         if (!chunk.hasChunkInfo())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected chunk with chunk info in {}", getName());
@@ -245,7 +246,6 @@ private:
         Chunk chunk = input.pull(true /* set_not_needed */);
         process(std::move(chunk));
 
-        /// Now transform.
         return Status::Ready;
     }
 
@@ -711,9 +711,9 @@ void AggregatingTransform::initGenerate()
         else
         {
             auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
-            /// Converts hash tables to blocks with data (finalized or not).
             Pipes pipes;
             for (auto & variant : prepared_data)
+                /// Converts hash tables to blocks with data (finalized or not).
                 pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant));
             Pipe pipe = Pipe::unitePipes(std::move(pipes));
             if (should_produce_results_in_order_of_bucket_number)
