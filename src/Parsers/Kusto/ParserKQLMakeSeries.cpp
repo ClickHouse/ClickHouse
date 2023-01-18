@@ -232,7 +232,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     if (!start_str.empty()) // has from
     {
         bin_str = std::format(
-            " toFloat64({0}) + (toInt64((({1} - toFloat64({0})) / {2}) ) * {2}) AS {3}_ali ",
+            "toFloat64({0}) + (toInt64((({1} - toFloat64({0})) / {2})) * {2}) AS {3}_ali",
             start_str,
             axis_column_format,
             step,
@@ -308,7 +308,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     for (auto agg_column : aggregation_columns)
     {
         String agg_group_column = std::format(
-            "arrayConcat(groupArray ({}_ali) as ga, arrayMap(x -> ({}),range(0,toUInt32 ({} - length(ga) < 0 ? 0 : {} - length(ga)),1) )) "
+            "arrayConcat(groupArray({}_ali) as ga, arrayMap(x -> ({}),range(0, toUInt32({} - length(ga) < 0 ? 0 : {} - length(ga)),1)))"
             "as {}",
             agg_column.alias,
             agg_column.default_value,
@@ -323,14 +323,14 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     if (from_to_step.is_timespan)
         axis_str = std::format(
-            "arrayDistinct(arrayConcat(groupArray(toDateTime64({0}_ali - {1},9,'UTC')), arrayMap( x->(toDateTime64(x - {1} ,9,'UTC')), "
-            "{2}) )) as {0}",
+            "arrayDistinct(arrayConcat(groupArray(toDateTime64({0}_ali - {1},9,'UTC')), arrayMap(x->(toDateTime64(x - {1} ,9,'UTC')),"
+            "{2}))) as {0}",
             axis_column,
             diff,
             range);
     else
         axis_str
-            = std::format("arrayDistinct(arrayConcat(groupArray({0}_ali), arrayMap( x->(toFloat64(x)), {1}) )) as {0}", axis_column, range);
+            = std::format("arrayDistinct(arrayConcat(groupArray({0}_ali), arrayMap(x->(toFloat64(x)), {1}))) as {0}", axis_column, range);
 
     main_query += ", " + axis_str;
     auto sub_group_by = group_expression.empty() ? "" : std::format("GROUP BY {}", group_expression_alias);

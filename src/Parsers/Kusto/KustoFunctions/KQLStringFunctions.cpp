@@ -320,7 +320,7 @@ bool HasAnyIndex::convertImpl(String & out, IParser::Pos & pos)
     const String lookup = getConvertedArgument(fn_name, pos);
     String src_array = std::format("splitByChar(' ',{})", source);
     out = std::format(
-        "if (empty({1}), -1, indexOf(arrayMap ( x -> (x in {0}), if (empty({1}),[''], arrayMap(x->(toString(x)),{1}))),1) - 1)",
+        "if(empty({1}), -1, indexOf(arrayMap(x->(x in {0}), if(empty({1}),[''], arrayMap(x->(toString(x)),{1}))),1) - 1)",
         src_array,
         lookup);
     return true;

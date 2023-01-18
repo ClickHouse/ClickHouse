@@ -335,16 +335,16 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
     {
         out = std::format(
             "concat("
-            "substring(toString(formatDateTime( {0} , '{1}')),1, position(toString(formatDateTime({0},'{1}')),'.')) ,"
+            "substring(toString(formatDateTime({0} , '{1}')),1, position(toString(formatDateTime({0},'{1}')),'.')) ,"
             "substring(substring(toString({0}), position(toString({0}),'.')+1),1,{2}),"
-            "substring(toString(formatDateTime( {0},'{1}')), position(toString(formatDateTime({0},'{1}')),'.')+1 ,length "
+            "substring(toString(formatDateTime({0},'{1}')), position(toString(formatDateTime({0},'{1}')), '.')+1, length "
             "(toString(formatDateTime({0},'{1}'))))) ",
             datetime,
             formatspecifier,
             decimal);
     }
     else
-        out = std::format("formatDateTime( {0},'{1}')", datetime, formatspecifier);
+        out = std::format("formatDateTime({0},'{1}')", datetime, formatspecifier);
 
     return true;
 }
@@ -427,8 +427,8 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         {
             if (format.substr(format.length() - decimal - 1, 1) == last_delim)
                 out = std::format(
-                    "concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime( "
-                    "toDateTime64({0},9,'UTC'),'{1}'))) - position( "
+                    "concat(substring(toString(formatDateTime(toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime("
+                    "toDateTime64({0},9,'UTC'),'{1}'))) - position("
                     "reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{3}')+1),substring(SUBSTRING(toString("
                     "toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}))",
                     datetime,
@@ -437,8 +437,8 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
                     last_delim);
             else
                 out = std::format(
-                    "concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime( "
-                    "toDateTime64({0},9,'UTC'),'{1}'))) - position( "
+                    "concat(substring(toString(formatDateTime(toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime("
+                    "toDateTime64({0},9,'UTC'),'{1}'))) - position("
                     "reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{3}')),substring(SUBSTRING(toString(toDateTime64({"
                     "0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}))",
                     datetime,
@@ -455,8 +455,8 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         {
             if (format.substr(format.length() - decimal - 1, 1) == last_delim)
                 out = std::format(
-                    "concat( leftPad('{5}' , {3} ,'0'),substring(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),1, "
-                    "length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( "
+                    "concat(leftPad('{5}', {3},'0'),substring(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),1,"
+                    "length(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))) - position("
                     "reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{4}') "
                     "+1),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}"
                     "))",
@@ -468,12 +468,12 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
                     day_val);
             else
                 out = std::format(
-                    "concat( leftPad('{5}' , {3} ,'0') ,substring(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),1, "
-                    "length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( "
+                    "concat(leftPad('{5}', {3}, '0'),substring(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),1,"
+                    "length(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))) - position("
                     "reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{4}')),substring(SUBSTRING(toString(toDateTime64({"
                     "0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}),substring(toString(formatDateTime("
-                    "toDateTime64({0},9,'UTC'),'{1}')),position( toString(formatDateTime( "
-                    "toDateTime64({0},9,'UTC'),'{1}')),'{4}'),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))))",
+                    "toDateTime64({0},9,'UTC'),'{1}')),position(toString(formatDateTime("
+                    "toDateTime64({0},9,'UTC'),'{1}')),'{4}'),length(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')))))",
                     datetime,
                     formatspecifier,
                     decimal,
@@ -483,7 +483,7 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         }
         else if (decimal == 0)
             out = std::format(
-                "concat( leftPad('{3}' , {2} ,'0'),toString(formatDateTime(toDateTime64({0},9,'UTC') ,'{1}')))",
+                "concat(leftPad('{3}',{2},'0'),toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')))",
                 datetime,
                 formatspecifier,
                 pad,
