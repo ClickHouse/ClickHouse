@@ -43,12 +43,13 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     , prev_positions(header_.columns())
     , yield_strings(yield_strings_)
 {
-    name_map = getPort().getHeader().getNamesToIndexesMap();
+    const auto & header = getPort().getHeader();
+    name_map = header.getNamesToIndexesMap();
     if (format_settings_.import_nested_json)
     {
-        for (size_t i = 0; i != header_.columns(); ++i)
+        for (size_t i = 0; i != header.columns(); ++i)
         {
-            const StringRef column_name = header_.getByPosition(i).name;
+            const StringRef column_name = header.getByPosition(i).name;
             const auto split = Nested::splitName(column_name.toView());
             if (!split.second.empty())
             {
