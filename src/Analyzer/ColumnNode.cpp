@@ -48,12 +48,11 @@ QueryTreeNodePtr ColumnNode::getColumnSourceOrNull() const
 
 void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "COLUMN id: " << state.getNodeId(this);
+    buffer << std::string(indent, ' ');
+    buffer << "COLUMN(" << column.name << ", " << column.type->getName() << ") id: " << state.getNodeId(this);
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
-
-    buffer << ", column_name: " << column.name << ", result_type: " << column.type->getName();
 
     auto column_source_ptr = getSourceWeakPointer().lock();
     if (column_source_ptr)

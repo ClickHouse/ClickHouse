@@ -34,11 +34,7 @@ void LambdaNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
         buffer << ", alias: " << getAlias();
 
     const auto & arguments = getArguments();
-    if (!arguments.getNodes().empty())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS " << '\n';
-        getArguments().dumpTreeImpl(buffer, format_state, indent + 4);
-    }
+    arguments.dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "ARGUMENTS");
 
     buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION " << '\n';
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);

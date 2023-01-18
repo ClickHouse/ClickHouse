@@ -38,6 +38,23 @@ void ListNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     }
 }
 
+void ListNode::dumpTreeWithPrefix(WriteBuffer &buffer, FormatState &format_state, size_t indent, std::string_view kind) const
+{
+    buffer << "\n" << std::string(indent, ' ')  << kind << " LIST id: " << format_state.getNodeId(this);
+
+    size_t children_size = children.size();
+    buffer << ", nodes: " << children_size << '\n';
+
+    for (size_t i = 0; i < children_size; ++i)
+    {
+        const auto & node = children[i];
+        node->dumpTreeImpl(buffer, format_state, indent + 2);
+
+        if (i + 1 != children_size)
+            buffer << '\n';
+    }
+}
+
 bool ListNode::isEqualImpl(const IQueryTreeNode &) const
 {
     /// No state

@@ -12,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <Interpreters/convertFieldToType.h>
+#include <fmt/core.h>
 
 namespace DB
 {
@@ -38,17 +39,18 @@ ConstantNode::ConstantNode(Field value_)
 
 void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "CONSTANT id: " << format_state.getNodeId(this);
+    buffer << std::string(indent, ' ');
+    buffer << fmt::format("CONSTANT({}, {}) id: {}",
+                          constant_value->getValue().dump(),
+                          constant_value->getType()->getName(),
+                          format_state.getNodeId(this));
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
 
-    buffer << ", constant_value: " << constant_value->getValue().dump();
-    buffer << ", constant_value_type: " << constant_value->getType()->getName();
-
     if (getSourceExpression())
     {
-        buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION " << '\n';
+        buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
         getSourceExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 }

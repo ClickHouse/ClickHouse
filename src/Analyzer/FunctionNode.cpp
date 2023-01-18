@@ -83,37 +83,48 @@ void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_
 
 void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "FUNCTION id: " << format_state.getNodeId(this);
+    buffer << std::string(indent, ' ');
+
+    std::string function_type;
+    switch (kind)
+    {
+        case FunctionKind::UNKNOWN:
+            break;
+        case FunctionKind::ORDINARY:
+            function_type = "ORDINARY ";
+            break;
+        case FunctionKind::AGGREGATE:
+            function_type = "AGGREGATE ";
+            break;
+        case FunctionKind::WINDOW:
+            function_type = "WINDOW ";
+            break;
+    }
+
+    buffer << function_type << "FUNCTION(" << function_name;
+    if (function)
+    {
+        buffer << ", (";
+        const auto & args = function->getArgumentTypes();
+        for (size_t i = 0; i < args.size(); ++i)
+        {
+            if (i != 0)
+                buffer << ", ";
+            buffer << args[i]->getName();
+        }
+        buffer << ") -> ";
+        buffer << function->getResultType()->getName();
+    }
+    buffer << ") id: " << format_state.getNodeId(this);
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
 
-    buffer << ", function_name: " << function_name;
-
-    std::string function_type = "ordinary";
-    if (isAggregateFunction())
-        function_type = "aggregate";
-    else if (isWindowFunction())
-        function_type = "window";
-
-    buffer << ", function_type: " << function_type;
-
-    if (function)
-        buffer << ", result_type: " + function->getResultType()->getName();
-
     const auto & parameters = getParameters();
-    if (!parameters.getNodes().empty())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "PARAMETERS\n";
-        parameters.dumpTreeImpl(buffer, format_state, indent + 4);
-    }
+    parameters.dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "PARAMETERS");
 
     const auto & arguments = getArguments();
-    if (!arguments.getNodes().empty())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS\n";
-        arguments.dumpTreeImpl(buffer, format_state, indent + 4);
-    }
+    arguments.dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "ARGUMENTS");
 
     if (hasWindow())
     {
