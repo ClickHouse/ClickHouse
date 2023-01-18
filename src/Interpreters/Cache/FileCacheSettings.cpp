@@ -33,7 +33,7 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
 
     cache_on_write_operations = config.getUInt64(config_prefix + ".cache_on_write_operations", false);
     enable_filesystem_query_cache_limit = config.getUInt64(config_prefix + ".enable_filesystem_query_cache_limit", false);
-    enable_cache_hits_threshold = config.getUInt64(config_prefix + ".enable_cache_hits_threshold", REMOTE_FS_OBJECTS_CACHE_ENABLE_HITS_THRESHOLD);
+    cache_hits_threshold = config.getUInt64(config_prefix + ".cache_hits_threshold", REMOTE_FS_OBJECTS_CACHE_DEFAULT_HITS_THRESHOLD);
 
     enable_bypass_cache_with_threashold = config.getUInt64(config_prefix + ".enable_bypass_cache_with_threashold", false);
 

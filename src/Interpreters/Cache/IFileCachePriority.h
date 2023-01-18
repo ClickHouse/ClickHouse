@@ -20,13 +20,13 @@ using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
 /// IFileCachePriority is used to maintain the priority of cached data.
 class IFileCachePriority
 {
+friend class LockedCachePriority;
 public:
     class IIterator;
     using Key = FileCacheKey;
     using KeyAndOffset = FileCacheKeyAndOffset;
     using Iterator = std::shared_ptr<IIterator>;
     using ConstIterator = std::shared_ptr<const IIterator>;
-    using Lock = CachePriorityQueueGuard::Lock;
 
     struct Entry
     {
@@ -48,43 +48,28 @@ public:
     /// can only traverse the records in the low priority queue.
     class IIterator
     {
+    friend class LockedCachePriorityIterator;
     public:
         virtual ~IIterator() = default;
 
+    protected:
         virtual Entry & operator *() = 0;
         virtual const Entry & operator *() const = 0;
 
-        /// Mark a cache record as recently used, it will update the priority
-        /// of the cache record according to different cache algorithms.
-        /// Return result hits count.
-        virtual size_t use(const CachePriorityQueueGuard::Lock &) = 0;
+        virtual size_t use() = 0;
 
-        virtual void incrementSize(ssize_t, const CachePriorityQueueGuard::Lock &) = 0;
+        virtual void incrementSize(ssize_t) = 0;
 
-        /// Remove current cached record. Return iterator to the next value.
-        virtual Iterator remove(const CachePriorityQueueGuard::Lock &) = 0;
+        virtual Iterator remove() = 0;
     };
+
+    IFileCachePriority(size_t max_size_, size_t max_elements_) : max_size(max_size_), max_elements(max_elements_) {}
 
     virtual ~IFileCachePriority() = default;
 
-    size_t getCacheSize(const CachePriorityQueueGuard::Lock &) const { return cache_size; }
+    size_t getElementsLimit() const { return max_elements; }
 
-    virtual size_t getElementsNum(const CachePriorityQueueGuard::Lock &) const = 0;
-
-    /// Lock current priority queue. All methods must be called under this lock.
-    CachePriorityQueueGuard::Lock lock() { return guard.lock(); }
-
-    /// Add a cache record that did not exist before, and throw a
-    /// logical exception if the cache block already exists.
-    virtual Iterator add(
-        const Key & key,
-        size_t offset,
-        size_t size,
-        KeyTransactionCreatorPtr key_transaction_creator,
-        const CachePriorityQueueGuard::Lock &) = 0;
-
-    virtual void removeAll(const CachePriorityQueueGuard::Lock &) = 0;
-
+    size_t getSizeLimit() const { return max_size; }
 
     enum class IterationResult
     {
@@ -92,15 +77,71 @@ public:
         CONTINUE,
         REMOVE_AND_CONTINUE,
     };
-    using IterateFunc = std::function<IterationResult(const Entry &)>;
-    virtual void iterate(IterateFunc && func, const CachePriorityQueueGuard::Lock &) = 0;
-
 
 protected:
-    CachePriorityQueueGuard guard;
+    const size_t max_size = 0;
+    const size_t max_elements = 0;
 
-    size_t max_cache_size = 0;
-    size_t cache_size = 0;
+    virtual size_t getSize() const = 0;
+
+    virtual size_t getElementsCount() const = 0;
+
+    virtual Iterator add(
+        const Key & key, size_t offset, size_t size, KeyTransactionCreatorPtr key_transaction_creator) = 0;
+
+    virtual void pop() = 0;
+
+    virtual void removeAll() = 0;
+
+    using IterateFunc = std::function<IterationResult(const Entry &)>;
+    virtual void iterate(IterateFunc && func) = 0;
+};
+
+class LockedCachePriority
+{
+public:
+    LockedCachePriority(CachePriorityQueueGuard::LockPtr lock_, IFileCachePriority & priority_queue_)
+        : lock(lock_), queue(priority_queue_) {}
+
+    size_t getElementsLimit() const { return queue.max_elements; }
+
+    size_t getSizeLimit() const { return queue.max_size; }
+
+    size_t getSize() const { return queue.getSize(); }
+
+    size_t getElementsCount() const { return queue.getElementsCount(); }
+
+    IFileCachePriority::Iterator add(const FileCacheKey & key, size_t offset, size_t size, KeyTransactionCreatorPtr key_transaction_creator) { return queue.add(key, offset, size, std::move(key_transaction_creator)); }
+
+    void pop() { queue.pop(); }
+
+    void removeAll() { queue.removeAll(); }
+
+    void iterate(IFileCachePriority::IterateFunc && func) { queue.iterate(std::move(func)); }
+
+private:
+    CachePriorityQueueGuard::LockPtr lock;
+    IFileCachePriority & queue;
+};
+
+class LockedCachePriorityIterator
+{
+public:
+    LockedCachePriorityIterator(CachePriorityQueueGuard::LockPtr lock_, IFileCachePriority::Iterator & iterator_)
+        : lock(lock_), iterator(iterator_) {}
+
+    IFileCachePriority::Entry & operator *() { return **iterator; }
+    const IFileCachePriority::Entry & operator *() const { return **iterator; }
+
+    size_t use() { return iterator->use(); }
+
+    void incrementSize(ssize_t size) { return iterator->incrementSize(size); }
+
+    IFileCachePriority::Iterator remove() { return iterator->remove(); }
+
+private:
+    CachePriorityQueueGuard::LockPtr lock;
+    IFileCachePriority::Iterator & iterator;
 };
 
 using FileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

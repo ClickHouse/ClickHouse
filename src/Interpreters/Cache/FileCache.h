@@ -16,6 +16,7 @@
 #include <Common/ThreadPool.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -116,13 +117,9 @@ private:
 
     String cache_base_path;
 
-    const size_t max_size;
-    const size_t max_element_size;
     const size_t max_file_segment_size;
-
     const bool allow_persistent_files;
-    const bool enable_bypass_cache_with_threshold;
-    const size_t bypass_cache_threshold;
+    const size_t bypass_cache_threshold = 0;
 
     Poco::Logger * log;
 
@@ -143,8 +140,7 @@ private:
         FileSegmentCell(
             FileSegmentPtr file_segment_,
             KeyTransaction & key_transaction,
-            IFileCachePriority & priority_queue,
-            CachePriorityQueueGuard::Lock * queue_lock);
+            LockedCachePriority * locked_queue);
 
         FileSegmentCell(FileSegmentCell && other) noexcept
             : file_segment(std::move(other.file_segment)), queue_iterator(std::move(other.queue_iterator)) {}
@@ -214,72 +210,88 @@ private:
     mutable PendingRemoveFilesMetadata remove_files_metadata;
 
     FileCachePriorityPtr main_priority;
+    mutable CachePriorityQueueGuard priority_queue_guard;
 
     struct HitsCountStash
     {
-        HitsCountStash(size_t max_stash_queue_size_, size_t cache_hits_threshold_, FileCachePriorityPtr queue_)
-            : max_stash_queue_size(max_stash_queue_size_)
-            , cache_hits_threshold(cache_hits_threshold_)
-            , queue(std::move(queue_)) {}
+        HitsCountStash(size_t hits_threashold_, size_t queue_size_)
+            : hits_threshold(hits_threashold_), queue(std::make_unique<LRUFileCachePriority>(0, queue_size_))
+        {
+            if (!queue_size_)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Queue size for hits queue must be non-zero");
+        }
 
-        const size_t max_stash_queue_size;
-        const size_t cache_hits_threshold;
-
-        auto lock() const { return queue->lock(); }
-
+        const size_t hits_threshold;
         FileCachePriorityPtr queue;
-
         using Records = std::unordered_map<KeyAndOffset, IFileCachePriority::Iterator, FileCacheKeyAndOffsetHash>;
         Records records;
     };
 
     mutable std::unique_ptr<HitsCountStash> stash;
 
-    struct QueryLimit
+    class QueryLimit
     {
-        /// Used to track and control the cache access of each query.
-        /// Through it, we can realize the processing of different queries by the cache layer.
-        struct QueryContext
-        {
-            std::mutex mutex;
-            HitsCountStash::Records records;
-            FileCachePriorityPtr priority;
-
-            size_t cache_size = 0;
-            size_t max_cache_size;
-
-            bool skip_download_if_exceeds_query_cache;
-
-            QueryContext(size_t max_cache_size_, bool skip_download_if_exceeds_query_cache_);
-
-            size_t getMaxCacheSize() const { return max_cache_size; }
-
-            size_t getCacheSize() const { return cache_size; }
-
-            IFileCachePriority & getPriority() const { return *priority; }
-
-            bool isSkipDownloadIfExceed() const { return skip_download_if_exceeds_query_cache; }
-
-            void remove(const Key & key, size_t offset, size_t size, const CachePriorityQueueGuard::Lock &);
-
-            void reserve(const Key & key, size_t offset, size_t size, const KeyTransaction & key_transaction, const CachePriorityQueueGuard::Lock &);
-
-            void use(const Key & key, size_t offset, const CachePriorityQueueGuard::Lock &);
-        };
-
+    friend class FileCache;
+    public:
+        class QueryContext;
         using QueryContextPtr = std::shared_ptr<QueryContext>;
-        using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
+        class LockedQueryContext;
+        using LockedQueryContextPtr = std::unique_ptr<LockedQueryContext>;
 
-        QueryContextMap query_map;
-
-        QueryContextPtr tryGetQueryContext(const CachePriorityQueueGuard::Lock & lock);
-
-        void removeQueryContext(const std::string & query_id, const CachePriorityQueueGuard::Lock & lock);
+        LockedQueryContextPtr tryGetQueryContext(CachePriorityQueueGuard::LockPtr lock);
 
         QueryContextPtr getOrSetQueryContext(
-            const std::string & query_id,
-            const ReadSettings & settings,
-            const CachePriorityQueueGuard::Lock & lock);
+            const std::string & query_id, const ReadSettings & settings, CachePriorityQueueGuard::LockPtr);
+
+        void removeQueryContext(const std::string & query_id, CachePriorityQueueGuard::LockPtr);
+
+    private:
+        using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
+        QueryContextMap query_map;
+
+    public:
+        class QueryContext
+        {
+        public:
+            QueryContext(size_t query_cache_size, bool recache_on_query_limit_exceeded_)
+                : priority(std::make_unique<LRUFileCachePriority>(query_cache_size, 0))
+                , recache_on_query_limit_exceeded(recache_on_query_limit_exceeded_) {}
+
+        private:
+            friend class QueryLimit::LockedQueryContext;
+
+            using Records = std::unordered_map<KeyAndOffset, IFileCachePriority::Iterator, FileCacheKeyAndOffsetHash>;
+            Records records;
+            FileCachePriorityPtr priority;
+            const bool recache_on_query_limit_exceeded;
+        };
+
+        class LockedQueryContext
+        {
+        public:
+            LockedQueryContext(QueryContextPtr context_, CachePriorityQueueGuard::LockPtr lock_)
+                : context(context_), lock(lock_), priority(lock_, *context->priority) {}
+
+            IFileCachePriority & getPriority() { return *context->priority; }
+            const IFileCachePriority & getPriority() const { return *context->priority; }
+
+            size_t getSize() const { return priority.getSize(); }
+
+            size_t getSizeLimit() const { return priority.getSizeLimit(); }
+
+            bool recacheOnQueryLimitExceeded() const { return context->recache_on_query_limit_exceeded; }
+
+            IFileCachePriority::Iterator tryGet(const Key & key, size_t offset);
+
+            void add(const Key & key, size_t offset, IFileCachePriority::Iterator iterator);
+
+            void remove(const Key & key, size_t offset);
+
+        private:
+            QueryContextPtr context;
+            CachePriorityQueueGuard::LockPtr lock;
+            LockedCachePriority priority;
+        };
     };
 
     using QueryLimitPtr = std::unique_ptr<QueryLimit>;
@@ -334,30 +346,23 @@ private:
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         KeyTransaction & key_transaction,
-        CachePriorityQueueGuard::Lock * queue_lock);
+        CachePriorityQueueGuard::LockPtr * queue_lock);
 
     bool tryReserveUnlocked(
         const Key & key,
         size_t offset,
         size_t size,
         KeyTransactionPtr key_transaction,
-        const CachePriorityQueueGuard::Lock &);
+        CachePriorityQueueGuard::LockPtr);
 
-    bool tryReserveInCache(
+    bool tryReserveImpl(
+        IFileCachePriority & priority_queue,
         const Key & key,
         size_t offset,
         size_t size,
-        QueryLimit::QueryContextPtr query_context,
         KeyTransactionPtr key_transaction,
-        const CachePriorityQueueGuard::Lock &);
-
-    bool tryReserveInQueryCache(
-        const Key & key,
-        size_t offset,
-        size_t size,
-        QueryLimit::QueryContextPtr query_context,
-        KeyTransactionPtr key_transaction,
-        const CachePriorityQueueGuard::Lock &);
+        QueryLimit::LockedQueryContext * query_context,
+        CachePriorityQueueGuard::LockPtr priority_lock);
 
     struct IterateAndLockResult
     {
@@ -366,10 +371,9 @@ private:
     };
     using IterateAndCollectLocksFunc = std::function<IterateAndLockResult(const IFileCachePriority::Entry &, KeyTransaction &)>;
     static void iterateAndCollectKeyLocks(
-        IFileCachePriority & priority,
+        LockedCachePriority & priority,
         IterateAndCollectLocksFunc && func,
-        KeyTransactionsMap & locked_map,
-        const CachePriorityQueueGuard::Lock & queue_lock);
+        KeyTransactionsMap & locked_map);
 };
 
 struct KeyTransactionCreator
@@ -396,11 +400,11 @@ struct KeyTransaction : private boost::noncopyable
 
     KeyTransactionCreatorPtr getCreator() const { return std::make_unique<KeyTransactionCreator>(key, offsets, cache); }
 
-    void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, const CachePriorityQueueGuard::Lock &);
+    void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, CachePriorityQueueGuard::LockPtr);
 
-    void remove(FileSegmentPtr file_segment, const CachePriorityQueueGuard::Lock &);
+    void remove(FileSegmentPtr file_segment, CachePriorityQueueGuard::LockPtr);
 
-    void remove(size_t offset, const FileSegmentGuard::Lock &, const CachePriorityQueueGuard::Lock &);
+    void remove(size_t offset, const FileSegmentGuard::Lock &, CachePriorityQueueGuard::LockPtr);
 
     bool isLastHolder(size_t offset);
 
