@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS Customers;
 CREATE TABLE Customers
 (    
