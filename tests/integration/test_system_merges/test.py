@@ -27,6 +27,7 @@ settings = {
     "optimize_throw_if_noop": 1,
 }
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -67,13 +68,18 @@ def test_merge_simple(started_cluster, replicated):
 
     try:
         for node in nodes:
-            node.query(f"create table {name} (a Int64) engine={engine} order by tuple()")
+            node.query(
+                f"create table {name} (a Int64) engine={engine} order by tuple()"
+            )
 
         node1.query(f"INSERT INTO {name} VALUES (1)")
         node1.query(f"INSERT INTO {name} VALUES (2)")
         node1.query(f"INSERT INTO {name} VALUES (3)")
 
-        node1.query(f"alter table {name} add column b int materialized sleepEachRow(3)", settings=settings)
+        node1.query(
+            f"alter table {name} add column b int materialized sleepEachRow(3)",
+            settings=settings,
+        )
 
         parts = [
             "all_{}_{}_0".format(x, x)
@@ -89,7 +95,13 @@ def test_merge_simple(started_cluster, replicated):
         t.start()
 
         # Wait for OPTIMIZE to actually start
-        assert_eq_with_retry(node1, f"select count() from system.merges where table='{table_name}'", "1\n", retry_count=30, sleep_time=0.1)
+        assert_eq_with_retry(
+            node1,
+            f"select count() from system.merges where table='{table_name}'",
+            "1\n",
+            retry_count=30,
+            sleep_time=0.1,
+        )
 
         assert (
             split_tsv(
@@ -132,7 +144,11 @@ def test_merge_simple(started_cluster, replicated):
         )
 
         # It will eventually disappear
-        assert_eq_with_retry(node_check, f"SELECT * FROM system.merges WHERE table = '{table_name}' and progress < 1", "\n")
+        assert_eq_with_retry(
+            node_check,
+            f"SELECT * FROM system.merges WHERE table = '{table_name}' and progress < 1",
+            "\n",
+        )
     finally:
         for node in nodes:
             node.query("DROP TABLE {name}".format(name=name))
@@ -157,7 +173,9 @@ def test_mutation_simple(started_cluster, replicated):
     try:
 
         for node in nodes:
-            node.query(f"create table {name} (a Int64) engine={engine} order by tuple()")
+            node.query(
+                f"create table {name} (a Int64) engine={engine} order by tuple()"
+            )
 
         node1.query(f"INSERT INTO {name} VALUES (1), (2), (3)")
 
@@ -170,14 +188,20 @@ def test_mutation_simple(started_cluster, replicated):
         def alter():
             node1.query(
                 f"ALTER TABLE {name} UPDATE a = 42 WHERE sleep(3) OR 1",
-                settings=settings
+                settings=settings,
             )
 
         t = threading.Thread(target=alter)
         t.start()
 
         # Wait for the mutation to actually start
-        assert_eq_with_retry(node1, f"select count() from system.merges where table='{table_name}'", "1\n", retry_count=30, sleep_time=0.1)
+        assert_eq_with_retry(
+            node1,
+            f"select count() from system.merges where table='{table_name}'",
+            "1\n",
+            retry_count=30,
+            sleep_time=0.1,
+        )
 
         assert (
             split_tsv(
@@ -219,7 +243,11 @@ def test_mutation_simple(started_cluster, replicated):
         )
 
         # It will eventually disappear
-        assert_eq_with_retry(node_check, f"SELECT * FROM system.merges WHERE table = '{table_name}' and progress < 1", "\n")
+        assert_eq_with_retry(
+            node_check,
+            f"SELECT * FROM system.merges WHERE table = '{table_name}' and progress < 1",
+            "\n",
+        )
 
     finally:
         for node in nodes:
