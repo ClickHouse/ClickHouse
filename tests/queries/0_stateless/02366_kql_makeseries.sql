@@ -36,7 +36,7 @@ CREATE TABLE make_series_test_table3
     timestamp datetime,
     metric Float64,
 ) ENGINE = Memory;
-INSERT INTO make_series_test_table3 VALUES (parseDateTimeBestEffort('2016-12-31T06:00'), 50), (parseDateTimeBestEffort('2017-01-01'), 4), (parseDateTimeBestEffort('2017-01-02'), 3), (parseDateTimeBestEffort('2017-01-03'), 4), (parseDateTimeBestEffort('2017-01-03T03:00'), 6), (parseDateTimeBestEffort('2017-01-05'), 8), (parseDateTimeBestEffort('2017-01-05T13:40'), 13), (parseDateTimeBestEffort('2017-01-06'), 4), (parseDateTimeBestEffort('2017-01-07'), 3), (parseDateTimeBestEffort('2017-01-08'), 8), (parseDateTimeBestEffort('2017-01-08T21:00'), 8), (parseDateTimeBestEffort('2017-01-09'), 2), (parseDateTimeBestEffort('2017-01-09T12:00'), 11), (parseDateTimeBestEffort('2017-01-10T05:00'), 5);
+INSERT INTO make_series_test_table3 VALUES (parseDateTimeBestEffort('2016-12-31T06:00', 'UTC'), 50), (parseDateTimeBestEffort('2017-01-01', 'UTC'), 4), (parseDateTimeBestEffort('2017-01-02', 'UTC'), 3), (parseDateTimeBestEffort('2017-01-03', 'UTC'), 4), (parseDateTimeBestEffort('2017-01-03T03:00', 'UTC'), 6), (parseDateTimeBestEffort('2017-01-05', 'UTC'), 8), (parseDateTimeBestEffort('2017-01-05T13:40', 'UTC'), 13), (parseDateTimeBestEffort('2017-01-06', 'UTC'), 4), (parseDateTimeBestEffort('2017-01-07', 'UTC'), 3), (parseDateTimeBestEffort('2017-01-08', 'UTC'), 8), (parseDateTimeBestEffort('2017-01-08T21:00', 'UTC'), 8), (parseDateTimeBestEffort('2017-01-09', 'UTC'), 2), (parseDateTimeBestEffort('2017-01-09T12:00', 'UTC'), 11), (parseDateTimeBestEffort('2017-01-10T05:00', 'UTC'), 5);
 
 set dialect = 'kusto';
 print '-- from to';
