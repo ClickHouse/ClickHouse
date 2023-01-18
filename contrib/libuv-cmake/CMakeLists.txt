@@ -79,7 +79,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
        src/unix/async.c
        src/unix/core.c
        src/unix/dl.c
-       #src/unix/fs.c
+       src/unix/fs.c
        src/unix/getaddrinfo.c
        src/unix/getnameinfo.c
        src/unix/loop-watcher.c
@@ -92,8 +92,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
        src/unix/stream.c
        src/unix/tcp.c
        src/unix/thread.c
-       #src/unix/udp.c
-       src/unix/tty.c)
+       src/unix/tty.c
+       src/unix/udp.c)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
