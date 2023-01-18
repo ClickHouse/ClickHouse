@@ -67,7 +67,7 @@ private:
     double fault_probability = 0;
 
     /// To randomly sample allocations and deallocations in trace_log.
-    std::optional<double> sample_probability;
+    double sample_probability = -1;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
@@ -92,8 +92,8 @@ private:
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
-    [[nodiscard]] AllocationTrace free(Int64 size);
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
+    [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
