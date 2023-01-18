@@ -4,6 +4,10 @@
 #    include <Storages/StorageIceberg.h>
 #    include <Common/logger_useful.h>
 
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
+#    include <Columns/IColumn.h>
+
 #    include <IO/ReadBufferFromS3.h>
 #    include <IO/ReadHelpers.h>
 #    include <IO/ReadSettings.h>
@@ -40,9 +44,10 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_DATA;
     extern const int FILE_DOESNT_EXIST;
+    extern const int ILLEGAL_COLUMN;
 }
 
-IcebergMetaParser::IcebergMetaParser(const StorageS3Configuration & configuration_, const String & table_path_, ContextPtr context_)
+IcebergMetaParser::IcebergMetaParser(const StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context_)
     : base_configuration(configuration_), table_path(table_path_), context(context_)
 {
 }
@@ -79,7 +84,6 @@ String IcebergMetaParser::getNewestMetaFile() const
 
     request.SetBucket(bucket);
 
-    static constexpr auto metadata_directory = "metadata";
     request.SetPrefix(std::filesystem::path(table_path) / metadata_directory);
 
     while (!is_finished)
@@ -115,11 +119,11 @@ String IcebergMetaParser::getNewestMetaFile() const
     return *it;
 }
 
-String IcebergMetaParser::getManiFestList(String metadata_name) const
+String IcebergMetaParser::getManiFestList(const String & metadata_name) const
 {
-    auto buffer = createS3ReadBuffer(metadata_name, context);
+    auto buffer = createS3ReadBuffer(metadata_name);
     String json_str;
-    readJSONObjectPossiblyInvalid(json_str, file);
+    readJSONObjectPossiblyInvalid(json_str, *buffer);
 
     /// Looks like base/base/JSON.h can not parse this json file
     Poco::JSON::Parser parser;
@@ -134,14 +138,17 @@ String IcebergMetaParser::getManiFestList(String metadata_name) const
     {
         auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
-            return object->getValue<String>("manifest-list");
+        {
+            auto path = snapshot->getValue<String>("manifest-list");
+            return std::filesystem::path(table_path) / metadata_directory / std::filesystem::path(path).filename();
+        }
     }
 
     return {};
 }
 
-static ColumnPtr
-parseAvro(const std::uniq_ptr<avro::DataFileReaderBase> & file_reader, const DataTypePtr & data_type, const String & field_name)
+static MutableColumns
+parseAvro(const std::unique_ptr<avro::DataFileReaderBase> & file_reader, const DataTypePtr & data_type, const String & field_name)
 {
     auto deserializer = std::make_unique<AvroDeserializer>(
         Block{{data_type->createColumn(), data_type, field_name}}, file_reader->dataSchema(), true, true);
@@ -153,24 +160,25 @@ parseAvro(const std::uniq_ptr<avro::DataFileReaderBase> & file_reader, const Dat
     while (file_reader->hasMore())
     {
         file_reader->decr();
-        deserializer->deserializeRow(columns, file_reader->decoder, ext);
+        deserializer->deserializeRow(columns, file_reader->decoder(), ext);
     }
-    return columns.at(0);
+    return columns;
 }
 
 std::vector<String> IcebergMetaParser::getManifestFiles(const String & manifest_list) const
 {
-    auto buffer = createS3ReadBuffer(manifest_list, context);
+    auto buffer = createS3ReadBuffer(manifest_list);
 
-    auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(in));
+    auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
-    static constexpr manifest_path = "manifest_path";
+    static constexpr auto manifest_path = "manifest_path";
 
     /// The manifest_path is the first field in manifest list file,
     /// And its have String data type
     /// {'manifest_path': 'xxx', ...}
     auto data_type = AvroSchemaReader::avroNodeToDataType(file_reader->dataSchema().root()->leafAt(0));
-    auto col = parseAvro(file_reader, data_type, manifest_path);
+    auto columns = parseAvro(file_reader, data_type, manifest_path);
+    auto & col = columns.at(0);
 
     std::vector<String> res;
     if (col->getDataType() == TypeIndex::String)
@@ -179,15 +187,15 @@ std::vector<String> IcebergMetaParser::getManifestFiles(const String & manifest_
         size_t col_size = col_str->size();
         for (size_t i = 0; i < col_size; ++i)
         {
-            auto file_path = col_str[i].safeGet<String>();
+            auto file_path = col_str->getDataAt(i).toView();
             /// We just need obtain the file name
             std::filesystem::path path(file_path);
-            res.emplace_back(path.filename());
+            res.emplace_back(std::filesystem::path(table_path) / metadata_directory / path.filename());
         }
 
         return res;
     }
-    Throw Exception(
+    throw Exception(
         ErrorCodes::ILLEGAL_COLUMN,
         "The parsed column from Avro file for manifest_path should have data type String, but get {}",
         col->getFamilyName());
@@ -198,38 +206,38 @@ std::vector<String> IcebergMetaParser::getFilesForRead(const std::vector<String>
     std::vector<String> keys;
     for (const auto & manifest_file : manifest_files)
     {
-        auto buffer = createS3ReadBuffer(manifest_file, context);
+        auto buffer = createS3ReadBuffer(manifest_file);
 
-        auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(in));
+        auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
-        static constexpr manifest_path = "data_file";
+        static constexpr auto manifest_path = "data_file";
 
         /// The data_file filed at the 3rd position of the manifest file:
         /// {'status': xx, 'snapshot_id': xx, 'data_file': {'file_path': 'xxx', ...}, ...}
         /// and it's also a nested record, so its result type is a nested Tuple
         auto data_type = AvroSchemaReader::avroNodeToDataType(file_reader->dataSchema().root()->leafAt(2));
-        auto col = parseAvro(file_reader, data_type, manifest_path);
+        auto columns = parseAvro(file_reader, data_type, manifest_path);
+        auto & col = columns.at(0);
 
-        std::vector<String> res;
         if (col->getDataType() == TypeIndex::Tuple)
         {
             auto * col_tuple = typeid_cast<ColumnTuple *>(col.get());
-            auto * col_str = col_tuple->getColumnPtr(0);
+            auto & col_str = col_tuple->getColumnPtr(0);
             if (col_str->getDataType() == TypeIndex::String)
             {
-                const auto * str_col = typeid_cast<ColumnString *>(col_str.get());
+                const auto * str_col = typeid_cast<const ColumnString *>(col_str.get());
                 size_t col_size = str_col->size();
                 for (size_t i = 0; i < col_size; ++i)
                 {
-                    auto file_path = std_col[i].safeGet<String>();
+                    auto file_path = str_col->getDataAt(i).toView();
                     /// We just obtain the parition/file name
                     std::filesystem::path path(file_path);
-                    res.emplace_back(path.parent_path().filename() + '/' + path.filename());
+                    keys.emplace_back(path.parent_path().filename() / path.filename());
                 }
             }
             else
             {
-                Throw Exception(
+                throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "The parsed column from Avro file for file_path should have data type String, got {}",
                     col_str->getFamilyName());
@@ -237,17 +245,17 @@ std::vector<String> IcebergMetaParser::getFilesForRead(const std::vector<String>
         }
         else
         {
-            Throw Exception(
+            throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "The parsed column from Avro file for data_file field should have data type Tuple, got {}",
                 col->getFamilyName());
         }
     }
 
-    return res;
+    return keys;
 }
 
-std::shared_ptr<ReadBuffer> IcebergMetaParser::createS3ReadBuffer(const String & key, ContextPtr context)
+std::shared_ptr<ReadBuffer> IcebergMetaParser::createS3ReadBuffer(const String & key) const
 {
     S3Settings::RequestSettings request_settings;
     request_settings.max_single_read_retries = 10;
@@ -287,10 +295,10 @@ StorageS3Configuration getAdjustedS3Configuration(
     IcebergMetaParser parser{base_configuration, table_path, context};
 
     auto keys = parser.getFiles();
-    static constexpr iceberg_data_directory = "data";
+    static constexpr auto iceberg_data_directory = "data";
     auto new_uri = std::filesystem::path(base_configuration.uri.uri.toString()) / iceberg_data_directory / generateQueryFromKeys(keys);
 
-    LOG_DEBUG(log, "New uri: {}", new_uri);
+    LOG_DEBUG(log, "New uri: {}", new_uri.c_str());
     LOG_DEBUG(log, "Table path: {}", table_path);
 
     // set new url in configuration
