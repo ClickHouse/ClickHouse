@@ -912,9 +912,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.temporary)
     {
-        if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables can only be created with ENGINE = Memory, not {}",
-                create.storage->engine->name);
+        // if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
+        //     throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables can only be created with ENGINE = Memory, not {}",
+        //         create.storage->engine->name);
 
         /// It's possible if some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not.
         /// It makes sense when default_table_engine setting is used, but not for temporary tables.
@@ -924,7 +924,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table: must be either ENGINE = Memory or empty");
 
         auto engine_ast = std::make_shared<ASTFunction>();
-        engine_ast->name = "Memory";
+        // engine_ast->name = "Memory";
+        engine_ast->name = create.storage->engine->name;
         engine_ast->no_empty_args = true;
         auto storage_ast = std::make_shared<ASTStorage>();
         storage_ast->set(storage_ast->engine, engine_ast);
@@ -1240,6 +1241,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard)
 {
+    /*
     if (create.temporary)
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
@@ -1249,6 +1251,21 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto temporary_table = TemporaryTableHolder(getContext(), properties.columns, properties.constraints, query_ptr);
         getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
         return true;
+    }
+    */
+
+    if (create.temporary)
+    {
+        // to-do: set correct name
+        /*
+        UUID id;
+        if (create.uuid == UUIDHelpers::Nil)
+            create.uuid = UUIDHelpers::generateV4();
+        id = create.uuid;
+        create.setTable("_tmp_" + toString(id));
+        */
+        create.setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+
     }
 
     if (!ddl_guard)
@@ -1381,6 +1398,22 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
+
+    if (create.temporary)
+    {
+        // if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
+        //     return false;
+
+        String temporary_table_name = create.getTable();
+        auto creator = [&](const StorageID &)
+        {
+            return std::move(res);
+        };
+        auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
+        // auto temporary_table = TemporaryTableHolder(getContext(), properties.columns, properties.constraints, query_ptr);
+        getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
+        return true;
+    }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
