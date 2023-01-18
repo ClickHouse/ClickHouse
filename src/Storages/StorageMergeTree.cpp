@@ -852,7 +852,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         if (maxPossibleLevel > std::max(left->info.level, right->info.level))
         {
             if (disable_reason)
-                *disable_reason = fmt::format("There is a part in a gap between two active parts ({}, {}) with merge level {} higher than this active parts have", left->name, right->name, maxPossibleLevel);
+                *disable_reason = fmt::format("There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have", left->name, right->name, maxPossibleLevel);
             return false;
         }
 
