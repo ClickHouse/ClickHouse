@@ -1235,15 +1235,25 @@ DataTypePtr QueryAnalyzer::getExpressionNodeResultTypeOrNull(const QueryTreeNode
 {
     auto node_type = query_tree_node->getNodeType();
 
-    if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT)
+    switch (node_type)
     {
-        return query_tree_node->getResultType();
-    }
-    else if (node_type == QueryTreeNodeType::FUNCTION)
-    {
-        auto & function_node = query_tree_node->as<FunctionNode &>();
-        if (function_node.isResolved())
-            return function_node.getResultType();
+        case QueryTreeNodeType::CONSTANT:
+            [[fallthrough]];
+        case QueryTreeNodeType::COLUMN:
+        {
+            return query_tree_node->getResultType();
+        }
+        case QueryTreeNodeType::FUNCTION:
+        {
+            auto & function_node = query_tree_node->as<FunctionNode &>();
+            if (function_node.isResolved())
+                return function_node.getResultType();
+            break;
+        }
+        default:
+        {
+            break;
+        }
     }
 
     return nullptr;
