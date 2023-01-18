@@ -34,43 +34,20 @@ class IcebergMetaParser
 public:
     IcebergMetaParser(const StorageS3Configuration & configuration_, const String & table_path_, ContextPtr context_);
 
-    void parseMeta();
-
-    String getNewestMetaFile();
-    String getManiFestList(String metadata);
-    std::vector<String> getManifestFiles(String manifest_list);
-    void getFilesForRead(const std::vector<String> manifest_files);
-
-    auto getFiles() const {return keys};
+    std::vector<String> getFiles() const;
 
 private:
-    std::vector<String> keys;
-
     StorageS3Configuration base_configuration;
     String table_path;
     ContextPtr context;
-};
 
-// class to get deltalake log json files and read json from them
-class JsonMetadataGetter
-{
-public:
-    JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context);
-
-    std::vector<String> getFiles() { return std::move(metadata).listCurrentFiles(); }
-
-private:
-    void init(ContextPtr context);
-
-    std::vector<String> getJsonLogFiles();
+    /// Just get file name
+    String getNewestMetaFile() const;
+    String getManiFestList(const String & metadata_name) const;
+    std::vector<String> getManifestFiles(const String & manifest_list) const;
+    std::vector<String> getFilesForRead(const std::vector<String> & manifest_files);
 
     std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key, ContextPtr context);
-
-    void handleJSON(const JSON & json);
-
-    StorageS3::S3Configuration base_configuration;
-    String table_path;
-    DeltaLakeMetadata metadata;
 };
 
 class StorageIceberg : public IStorage
