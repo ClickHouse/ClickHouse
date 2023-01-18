@@ -37,9 +37,9 @@ public:
 
     void backup(size_t len) override;
 
-    void skip(size_t len) override; 
+    void skip(size_t len) override;
 
-    size_t byteCount() const override; 
+    size_t byteCount() const override;
 
 private:
     ReadBuffer & in;
