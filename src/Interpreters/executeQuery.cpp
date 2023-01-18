@@ -181,14 +181,18 @@ static void logException(ContextPtr context, QueryLogElement & elem)
     if (!elem.log_comment.empty())
         comment = fmt::format(" (comment: {})", elem.log_comment);
 
-    String message;
+    /// Message patterns like "{} (from {}){} (in query: {})" are not really informative,
+    /// so we pass elem.exception_format_string as format string instead.
+    PreformattedMessage message;
+    message.format_string = elem.exception_format_string;
+
     if (elem.stack_trace.empty())
-        message = fmt::format("{} (from {}){} (in query: {})", elem.exception,
+        message.message = fmt::format("{} (from {}){} (in query: {})", elem.exception,
                         context->getClientInfo().current_address.toString(),
                         comment,
                         toOneLineQuery(elem.query));
     else
-        message = fmt::format(
+        message.message = fmt::format(
             "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
             context->getClientInfo().current_address.toString(),
@@ -196,9 +200,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             toOneLineQuery(elem.query),
             elem.stack_trace);
 
-    /// Message patterns like "{} (from {}){} (in query: {})" are not really informative,
-    /// so we pass elem.exception_format_string as format string instead.
-    LOG_ERROR(&Poco::Logger::get("executeQuery"), (PreformattedMessage{std::move(message), elem.exception_format_string}));
+    LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
 }
 
 static void onExceptionBeforeStart(
