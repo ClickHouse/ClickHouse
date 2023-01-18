@@ -392,12 +392,12 @@ String IParserKQLFunction::ArraySortHelper(String & out, IParser::Pos & pos, boo
     int nullCount = getNullCounts(first_arg);
     if (pos->type == TokenType::Comma)
         ++pos;
-    out = "array( ";
+    out = "array(";
     if (pos->type != TokenType::ClosingRoundBracket && String(pos->begin, pos->end) != "dynamic")
     {
         second_arg = getConvertedArgument(fn_name, pos);
-        out += "if (" + second_arg + ", array" + reverse + "Sort(" + first_arg + "), concat( arraySlice(array" + reverse + "Sort("
-            + first_arg + ") as as1, indexOf(as1, NULL) as len1 ), arraySlice( as1, 1, len1-1)))";
+        out += "if (" + second_arg + ", array" + reverse + "Sort(" + first_arg + "), concat(arraySlice(array" + reverse + "Sort("
+            + first_arg + ") as as1, indexOf(as1, NULL) as len1), arraySlice(as1, 1, len1-1)))";
         out += " )";
         return out;
     }
@@ -431,7 +431,7 @@ String IParserKQLFunction::ArraySortHelper(String & out, IParser::Pos & pos, boo
         if (nullCount > 0 && expr.empty())
             expr = "true";
         if (nullCount > 0)
-            first_arg = "if (" + expr + ", array" + reverse + "Sort(" + first_arg + "), concat( arraySlice(array" + reverse + "Sort("
+            first_arg = "if (" + expr + ", array" + reverse + "Sort(" + first_arg + "), concat(arraySlice(array" + reverse + "Sort("
                 + first_arg + ") as as1, indexOf(as1, NULL) as len1 ), arraySlice( as1, 1, len1-1) ) )";
         else
             first_arg = "array" + reverse + "Sort(" + first_arg + ")";
@@ -444,10 +444,10 @@ String IParserKQLFunction::ArraySortHelper(String & out, IParser::Pos & pos, boo
             if (first_arg_length != getArrayLength(argument_list[i]))
                 out += "array(NULL)";
             else if (nullCount > 0)
-                out += "If ( " + expr + "," + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg
-                    + "), arrayConcat( arraySlice( " + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg
-                    + ") , length(" + temp_first_arg + ") - " + std::to_string(nullCount) + " + 1) , arraySlice( " + "array" + reverse
-                    + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , 1, length( " + temp_first_arg + ") - "
+                out += "If (" + expr + "," + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg
+                    + "), arrayConcat(arraySlice(" + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg
+                    + ") , length(" + temp_first_arg + ") - " + std::to_string(nullCount) + " + 1) , arraySlice(" + "array" + reverse
+                    + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , 1, length(" + temp_first_arg + ") - "
                     + std::to_string(nullCount) + ") ) )";
             else
                 out += "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ")";
