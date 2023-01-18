@@ -170,3 +170,39 @@ select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
 ) where explain like '%Skip merging: %';
 
 drop table t14;
+
+-- to few partitions --
+create table t15(a UInt32, b UInt32) engine=MergeTree order by a partition by a < 90;
+
+insert into t15 select number, number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select a from t15 group by a
+) where explain like '%Skip merging: %'
+settings force_aggregate_partitions_independently = 0;
+
+drop table t15;
+
+-- to many partitions --
+create table t16(a UInt32, b UInt32) engine=MergeTree order by a partition by a % 16;
+
+insert into t16 select number, number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select a from t16 group by a
+) where explain like '%Skip merging: %'
+settings force_aggregate_partitions_independently = 0, max_number_of_partitions_for_independent_aggregation = 4;
+
+drop table t16;
+
+-- to big skew --
+create table t17(a UInt32, b UInt32) engine=MergeTree order by a partition by a < 90;
+
+insert into t17 select number, number from numbers_mt(100);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select a from t17 group by a
+) where explain like '%Skip merging: %'
+settings force_aggregate_partitions_independently = 0, max_threads = 4;
+
+drop table t17;
