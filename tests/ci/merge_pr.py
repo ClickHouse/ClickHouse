@@ -38,13 +38,18 @@ class Reviews:
         self.approved_at = datetime.fromtimestamp(0)
         for r in self.reviews:
             user = r.user
-            if self._review_per_user.get(user):
-                if r.state in self.STATES:
-                    self._review_per_user[user] = r
-                    if r.state == "APPROVED":
-                        self.approved_at = max(r.submitted_at, self.approved_at)
+            if r.state not in self.STATES:
                 continue
-            self._review_per_user[user] = r
+
+            if r.state == "APPROVED":
+                self.approved_at = max(r.submitted_at, self.approved_at)
+
+            if not self._review_per_user.get(user):
+                self._review_per_user[user] = r
+                continue
+
+            if r.submitted_at < self._review_per_user[user].submitted_at:
+                self._review_per_user[user] = r
 
     def is_approved(self, team: List[NamedUser]) -> bool:
         """Checks if the PR is approved, and no changes made after the last approval"""
