@@ -41,10 +41,11 @@ struct CachePriorityQueueGuard
         explicit Lock(CachePriorityQueueGuard & guard) : lock(guard.mutex) {}
         std::unique_lock<std::mutex> lock;
     };
+    using LockPtr = std::shared_ptr<Lock>;
 
     std::mutex mutex;
 
-    Lock lock() { return Lock(*this); }
+    LockPtr lock() { return std::make_shared<Lock>(*this); }
     std::shared_ptr<Lock> lockShared() { return std::make_shared<Lock>(*this); }
 
     CachePriorityQueueGuard() = default;

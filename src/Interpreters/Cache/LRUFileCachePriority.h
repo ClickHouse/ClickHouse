@@ -18,24 +18,25 @@ private:
     using LRUQueueIterator = typename LRUQueue::iterator;
 
 public:
-    LRUFileCachePriority() = default;
+    LRUFileCachePriority(size_t max_size_, size_t max_elements_) : IFileCachePriority(max_size_, max_elements_) {}
 
-    Iterator add(
-        const Key & key,
-        size_t offset,
-        size_t size,
-        KeyTransactionCreatorPtr key_transaction_creator,
-        const CachePriorityQueueGuard::Lock &) override;
+    size_t getSize() const override { return current_size; }
 
-    void removeAll(const CachePriorityQueueGuard::Lock &) override;
+    size_t getElementsCount() const override { return queue.size(); }
 
-    void iterate(IterateFunc && func, const CachePriorityQueueGuard::Lock &) override;
+    Iterator add(const Key & key, size_t offset, size_t size, KeyTransactionCreatorPtr key_transaction_creator) override;
 
-    size_t getElementsNum(const CachePriorityQueueGuard::Lock &) const override { return queue.size(); }
+    void pop() override;
+
+    void removeAll() override;
+
+    void iterate(IterateFunc && func) override;
 
 private:
     LRUQueue queue;
     Poco::Logger * log = &Poco::Logger::get("LRUFileCachePriority");
+
+    size_t current_size = 0;
 
     LRUQueueIterator remove(LRUQueueIterator it);
 };
@@ -50,11 +51,11 @@ public:
     Entry & operator *() override { return *queue_iter; }
     const Entry & operator *() const override { return *queue_iter; }
 
-    size_t use(const CachePriorityQueueGuard::Lock &) override;
+    size_t use() override;
 
-    Iterator remove(const CachePriorityQueueGuard::Lock &) override;
+    Iterator remove() override;
 
-    void incrementSize(ssize_t size, const CachePriorityQueueGuard::Lock &) override;
+    void incrementSize(ssize_t size) override;
 
 private:
     LRUFileCachePriority * cache_priority;

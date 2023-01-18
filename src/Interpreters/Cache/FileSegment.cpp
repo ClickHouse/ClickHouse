@@ -536,12 +536,12 @@ void FileSegment::setBroken()
 
 void FileSegment::complete()
 {
-    auto queue_lock = cache->main_priority->lock();
+    auto queue_lock = cache->priority_queue_guard.lock();
     auto key_transaction = createKeyTransaction();
     return completeUnlocked(*key_transaction, queue_lock);
 }
 
-void FileSegment::completeUnlocked(KeyTransaction & key_transaction, const CachePriorityQueueGuard::Lock & queue_lock)
+void FileSegment::completeUnlocked(KeyTransaction & key_transaction, CachePriorityQueueGuard::LockPtr queue_lock)
 {
     auto segment_lock = segment_guard.lock();
 
@@ -817,7 +817,8 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
         return file_segments.erase(file_segments.begin());
     }
 
-    auto queue_lock = file_segment.cache->main_priority->lock();
+    auto queue_lock = file_segment.cache->priority_queue_guard.lock();
+
     /// File segment pointer must be reset right after calling complete() and
     /// under the same mutex, because complete() checks for segment pointers.
     auto key_transaction = file_segment.createKeyTransaction(/* assert_exists */false);
@@ -825,7 +826,7 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
     {
         auto queue_iter = key_transaction->getOffsets().tryGet(file_segment.offset())->queue_iterator;
         if (queue_iter)
-            queue_iter->use(queue_lock);
+            LockedCachePriorityIterator(queue_lock, queue_iter).use();
 
         if (!file_segment.isCompleted())
         {

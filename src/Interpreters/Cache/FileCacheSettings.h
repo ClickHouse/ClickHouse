@@ -15,7 +15,7 @@ struct FileCacheSettings
 
     bool cache_on_write_operations = false;
 
-    size_t enable_cache_hits_threshold = REMOTE_FS_OBJECTS_CACHE_ENABLE_HITS_THRESHOLD;
+    size_t cache_hits_threshold = REMOTE_FS_OBJECTS_CACHE_DEFAULT_HITS_THRESHOLD;
     bool enable_filesystem_query_cache_limit = false;
 
     bool do_not_evict_index_and_mark_files = true;
