@@ -85,8 +85,6 @@ namespace
             last_exception = std::current_exception();
         return {};
     }
-
-
 }
 
 NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
