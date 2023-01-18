@@ -1,3 +1,5 @@
+-- Tags: long
+
 set max_threads = 16;
 set allow_aggregate_partitions_independently = 1;
 set force_aggregate_partitions_independently = 1;
