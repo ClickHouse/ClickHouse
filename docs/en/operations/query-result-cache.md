@@ -45,7 +45,7 @@ FROM table
 SETTINGS enable_experimental_query_result_cache = true;
 ```
 
-stores the query result into the query result cache. Subsequent executions of the same query (also with paramter
+stores the query result into the query result cache. Subsequent executions of the same query (also with parameter
 `enable_experimental_query_result_cache = true`) will read the computed result directly from the cache.
 
 Sometimes, it is desirable to use the query result cache only passively, i.e. to allow reading from it but not writing into it (if the cache
@@ -72,7 +72,7 @@ To make the matching more natural, all query-level settings related to the query
 
 If the query was aborted due to an exception or user cancellation, no entry is written into the query result cache.
 
-The size of the query result cache, the maximum number of cache entries and the maximum size of cache entres (in bytes and in records) can
+The size of the query result cache, the maximum number of cache entries and the maximum size of cache entries (in bytes and in records) can
 be configured using different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-result-cache).
 
 To define how long a query must run at least such that its result can be cached, you can use setting
