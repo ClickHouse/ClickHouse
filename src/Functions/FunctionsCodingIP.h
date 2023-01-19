@@ -191,7 +191,7 @@ namespace detail
             if (!parse_result)
             {
                 if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
-                    throw Exception("Invalid IPv6 value", ErrorCodes::CANNOT_PARSE_IPV6);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Invalid IPv6 value");
                 else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
                     vec_res[i] = 0;
                 else if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
@@ -272,7 +272,7 @@ ColumnPtr convertToIPv4(ColumnPtr column, const PaddedPODArray<UInt8> * null_map
         {
             if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
             {
-                throw Exception("Invalid IPv4 value", ErrorCodes::CANNOT_PARSE_IPV4);
+                throw Exception(ErrorCodes::CANNOT_PARSE_IPV4, "Invalid IPv4 value");
             }
             else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
             {

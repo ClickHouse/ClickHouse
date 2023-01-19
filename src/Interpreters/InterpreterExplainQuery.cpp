@@ -252,7 +252,7 @@ struct ExplainSettings : public Settings
     {
         auto it = boolean_settings.find(name_);
         if (it == boolean_settings.end())
-            throw Exception("Unknown setting for ExplainSettings: " + name_, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting for ExplainSettings: {}", name_);
 
         it->second.get() = value;
     }
@@ -261,7 +261,7 @@ struct ExplainSettings : public Settings
     {
         auto it = integer_settings.find(name_);
         if (it == integer_settings.end())
-            throw Exception("Unknown setting for ExplainSettings: " + name_, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting for ExplainSettings: {}", name_);
 
         it->second.get() = value;
     }
@@ -427,7 +427,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::QueryPlan:
         {
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
-                throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN query");
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
@@ -521,13 +521,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 printPipeline(io.pipeline.getProcessors(), buf);
             }
             else
-                throw Exception("Only SELECT and INSERT is supported for EXPLAIN PIPELINE query", ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT and INSERT is supported for EXPLAIN PIPELINE query");
             break;
         }
         case ASTExplainQuery::QueryEstimates:
         {
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
-                throw Exception("Only SELECT is supported for EXPLAIN ESTIMATE query", ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN ESTIMATE query");
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
@@ -564,7 +564,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::CurrentTransaction:
         {
             if (ast.getSettings())
-                throw Exception("Settings are not supported for EXPLAIN CURRENT TRANSACTION query.", ErrorCodes::UNKNOWN_SETTING);
+                throw Exception(ErrorCodes::UNKNOWN_SETTING, "Settings are not supported for EXPLAIN CURRENT TRANSACTION query.");
 
             if (auto txn = getContext()->getCurrentTransaction())
             {

@@ -44,13 +44,13 @@ public:
         auto check_first_argument = [&] {
             const ColumnConst * datepart_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
             if (!datepart_column)
-                throw Exception("First argument for function " + getName() + " must be constant string: name of datepart",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
+                    "name of datepart", getName());
 
             datepart_param = datepart_column->getValue<String>();
             if (datepart_param.empty())
-                throw Exception("First argument (name of datepart) for function " + getName() + " cannot be empty",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument (name of datepart) for function {} cannot be empty",
+                    getName());
 
             if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
                 throw Exception(datepart_param + " doesn't look like datepart name in " + getName(),
@@ -73,7 +73,7 @@ public:
 
             if (second_argument_is_date && ((datepart_kind == IntervalKind::Hour)
                 || (datepart_kind == IntervalKind::Minute) || (datepart_kind == IntervalKind::Second)))
-                throw Exception("Illegal type Date of argument for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date of argument for function {}", getName());
         };
 
         auto check_timezone_argument = [&] {

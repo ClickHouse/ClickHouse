@@ -241,7 +241,7 @@ void Connection::sendHello()
     if (has_control_character(default_database)
         || has_control_character(user)
         || has_control_character(password))
-        throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
 
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
@@ -699,7 +699,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
 
     if (input.eof())
-        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Buffer is empty (some kind of corruption)");
 
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
@@ -972,9 +972,8 @@ Packet Connection::receivePacket()
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
-                throw Exception("Unknown packet "
-                    + toString(res.type)
-                    + " from server " + getDescription(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                    toString(res.type), getDescription());
         }
     }
     catch (Exception & e)

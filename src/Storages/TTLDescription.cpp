@@ -206,7 +206,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             const auto & pk_columns = primary_key.column_names;
 
             if (ttl_element->group_by_key.size() > pk_columns.size())
-                throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
+                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
             NameSet aggregation_columns_set;
             NameSet used_primary_key_columns_set;
@@ -350,7 +350,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
             if (!ttl.where_expression)
             {
                 if (have_unconditional_delete_ttl)
-                    throw Exception("More than one DELETE TTL expression without WHERE expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "More than one DELETE TTL expression without WHERE expression is not allowed");
 
                 have_unconditional_delete_ttl = true;
                 result.rows_ttl = ttl;

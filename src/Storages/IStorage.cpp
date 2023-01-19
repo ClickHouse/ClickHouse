@@ -85,7 +85,7 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds
                         getStorageID().getFullTableName(), std::to_string(acquire_timeout.count()));
 
     if (is_dropped)
-        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
 
     return lock;
 }
@@ -97,7 +97,7 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     if (is_dropped)
-        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
 
     return result;
 }
@@ -110,7 +110,7 @@ Pipe IStorage::watch(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method watch is not supported by storage {}", getName());
 }
 
 Pipe IStorage::read(
@@ -122,7 +122,7 @@ Pipe IStorage::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method read is not supported by storage {}", getName());
 }
 
 void IStorage::read(
@@ -170,7 +170,7 @@ std::optional<QueryPipeline> IStorage::distributedWrite(
 Pipe IStorage::alterPartition(
     const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, ContextPtr /* context */)
 {
-    throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operations are not supported by storage {}", getName());
 }
 
 void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
@@ -194,13 +194,13 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /
 
 void IStorage::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
 {
-    throw Exception("Table engine " + getName() + " doesn't support mutations", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getName());
 }
 
 void IStorage::checkAlterPartitionIsPossible(
     const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
 {
-    throw Exception("Table engine " + getName() + " doesn't support partitioning", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", getName());
 }
 
 StorageID IStorage::getStorageID() const

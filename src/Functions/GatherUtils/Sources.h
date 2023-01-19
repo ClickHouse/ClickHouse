@@ -532,7 +532,7 @@ inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & 
         return std::make_unique<DynamicStringSource<ConstSource<StringSource>>>(col);
     if (checkColumnConst<ColumnFixedString>(&col))
         return std::make_unique<DynamicStringSource<ConstSource<FixedStringSource>>>(col);
-    throw Exception("Unexpected type of string column: " + col.getName(), ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of string column: {}", col.getName());
 }
 
 using StringSources = std::vector<std::unique_ptr<IStringSource>>;

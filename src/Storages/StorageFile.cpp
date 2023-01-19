@@ -182,7 +182,7 @@ void checkCreationIsAllowed(
     {
         auto table_path_stat = fs::status(table_path);
         if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
-            throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File must not be a directory");
     }
 }
 
@@ -414,9 +414,9 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     total_bytes_to_read = buf.st_size;
 
     if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
     if (args.format_name == "Distributed")
-        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
     is_db_table = false;
     use_table_fd = true;
@@ -442,9 +442,9 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     : StorageFile(args)
 {
     if (relative_table_dir_path.empty())
-        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
     if (args.format_name == "Distributed")
-        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
     String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
@@ -482,7 +482,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         {
             columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext());
             if (!args.columns.empty() && args.columns != columns)
-                throw Exception("Table structure and file structure are different", ErrorCodes::INCOMPATIBLE_COLUMNS);
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Table structure and file structure are different");
         }
         storage_metadata.setColumns(columns);
     }
@@ -567,7 +567,7 @@ public:
         {
             shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
             if (!shared_lock)
-                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
         }
     }
 
@@ -711,7 +711,7 @@ Pipe StorageFile::read(
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
                 return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
             else
-                throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", paths[0]);
         }
     }
 
@@ -850,7 +850,7 @@ public:
         , lock(std::move(lock_))
     {
         if (!lock)
-            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
         initialize();
     }
 
@@ -1020,7 +1020,7 @@ SinkToStoragePtr StorageFile::write(
     ContextPtr context)
 {
     if (format_name == "Distributed")
-        throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for Distributed format");
 
     int flags = 0;
 
@@ -1057,7 +1057,7 @@ SinkToStoragePtr StorageFile::write(
         if (!paths.empty())
         {
             if (is_path_with_globs)
-                throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode because of globs in filepath", getStorageID().getNameForLogs());
 
             path = paths.back();
             fs::create_directories(fs::path(path).parent_path());
@@ -1115,17 +1115,17 @@ bool StorageFile::storesDataOnDisk() const
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
-        throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode", getStorageID().getNameForLogs());
     return paths;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)
-        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " bounded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't rename table {} bounded to user-defined file (or FD)", getStorageID().getNameForLogs());
 
     if (paths.size() != 1)
-        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't rename table {} in readonly mode", getStorageID().getNameForLogs());
 
     std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     if (path_new == paths[0])
@@ -1145,7 +1145,7 @@ void StorageFile::truncate(
     TableExclusiveLockHolder &)
 {
     if (is_path_with_globs)
-        throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't truncate table '{}' in readonly mode", getStorageID().getNameForLogs());
 
     if (use_table_fd)
     {
@@ -1260,7 +1260,7 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::String)
                     source_path = literal->value.get<String>();
                 else
-                    throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
 
             if (engine_args_ast.size() == 3)

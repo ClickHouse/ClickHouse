@@ -1104,7 +1104,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
             auto header_str = config.getString(config_elem + "." + subkey);
             auto delimiter = header_str.find(':');
             if (delimiter == std::string::npos)
-                throw Exception("Malformed s3 header value", ErrorCodes::INVALID_CONFIG_PARAMETER);
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed s3 header value");
             headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
         }
     }

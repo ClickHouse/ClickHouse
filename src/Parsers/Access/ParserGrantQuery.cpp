@@ -281,9 +281,9 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         parseOnCluster(pos, expected, cluster);
 
     if (grant_option && roles)
-        throw Exception("GRANT OPTION should be specified for access types", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "GRANT OPTION should be specified for access types");
     if (admin_option && !elements.empty())
-        throw Exception("ADMIN OPTION should be specified for roles", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "ADMIN OPTION should be specified for roles");
 
     if (grant_option)
     {

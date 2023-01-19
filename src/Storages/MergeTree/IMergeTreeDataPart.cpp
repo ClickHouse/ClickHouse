@@ -579,15 +579,15 @@ void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPa
         if (!states_str.empty())
             states_str.pop_back();
 
-        throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+        throw Exception(ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART, "Unexpected state of part {}. Expected: {}", getNameWithState(), states_str);
     }
 }
 
 void IMergeTreeDataPart::assertOnDisk() const
 {
     if (!isStoredOnDisk())
-        throw Exception("Data part '" + name + "' with type '"
-            + getType().toString() + "' is not stored on disk", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data part '{}' with type '{}' is not stored on disk",
+            name, getType().toString());
 }
 
 
@@ -626,7 +626,7 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subc
     }
 
     if (!minimum_size_column)
-        throw Exception("Could not find a column of minimum size in MergeTree, part " + getDataPartStorage().getFullPath(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find a column of minimum size in MergeTree, part {}", getDataPartStorage().getFullPath());
 
     return *minimum_size_column;
 }
@@ -716,7 +716,7 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
 
 void IMergeTreeDataPart::loadIndexGranularity()
 {
-    throw Exception("Method 'loadIndexGranularity' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'loadIndexGranularity' is not implemented for part with type {}", getType().toString());
 }
 
 /// Currently we don't cache mark files of part, because cache other meta files is enough to speed up loading.
@@ -728,7 +728,7 @@ void IMergeTreeDataPart::loadIndex()
 {
     /// It can be empty in case of mutations
     if (!index_granularity.isInitialized())
-        throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granularity is not loaded before index loading");
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
@@ -764,13 +764,12 @@ void IMergeTreeDataPart::loadIndex()
         {
             loaded_index[i]->protect();
             if (loaded_index[i]->size() != marks_count)
-                throw Exception("Cannot read all data from index file " + index_path
-                    + "(expected size: " + toString(marks_count) + ", read: " + toString(loaded_index[i]->size()) + ")",
-                    ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from index file {}(expected size: "
+                    "{}, read: {})", index_path, toString(marks_count), toString(loaded_index[i]->size()));
         }
 
         if (!index_file->eof())
-            throw Exception("Index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+            throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
@@ -1125,7 +1124,7 @@ void IMergeTreeDataPart::loadRowsCount()
     {
         bool exists = metadata_manager->exists("count.txt");
         if (!exists)
-            throw Exception("No count.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
 
         read_rows_count();
 
@@ -1218,7 +1217,7 @@ void IMergeTreeDataPart::loadRowsCount()
             return;
         }
 
-        throw Exception("Data part doesn't contain fixed size column (even Date column)", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data part doesn't contain fixed size column (even Date column)");
     }
 }
 
@@ -1246,11 +1245,11 @@ void IMergeTreeDataPart::loadTTLInfos()
             }
             catch (const JSONException &)
             {
-                throw Exception("Error while parsing file ttl.txt in part: " + name, ErrorCodes::BAD_TTL_FILE);
+                throw Exception(ErrorCodes::BAD_TTL_FILE, "Error while parsing file ttl.txt in part: {}", name);
             }
         }
         else
-            throw Exception("Unknown ttl format version: " + toString(format_version), ErrorCodes::BAD_TTL_FILE);
+            throw Exception(ErrorCodes::BAD_TTL_FILE, "Unknown ttl format version: {}", toString(format_version));
     }
 }
 
@@ -1268,7 +1267,7 @@ void IMergeTreeDataPart::loadUUID()
         auto in = metadata_manager->read(UUID_FILE_NAME);
         readText(uuid, *in);
         if (uuid == UUIDHelpers::Nil)
-            throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty {} in part: {}", String(UUID_FILE_NAME), name);
     }
 }
 
@@ -1290,8 +1289,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact)
-            throw Exception("No columns.txt in part " + name + ", expected path " + path + " on drive " + getDataPartStorage().getDiskName(),
-                ErrorCodes::NO_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on drive {}",
+                name, path, getDataPartStorage().getDiskName());
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
@@ -1299,7 +1298,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
                 loaded_columns.push_back(column);
 
         if (columns.empty())
-            throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
         writeColumns(loaded_columns, {});
     }
@@ -1751,9 +1750,9 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & di
     assertOnDisk();
 
     if (disk->getName() == getDataPartStorage().getDiskName())
-        throw Exception("Can not clone data part " + name + " to same disk " + getDataPartStorage().getDiskName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to same disk {}", name, getDataPartStorage().getDiskName());
     if (directory_name.empty())
-        throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to empty directory.", name);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
     return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, storage.log);
@@ -1776,23 +1775,23 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         if (!pk.column_names.empty()
             && (!checksums.files.contains("primary" + getIndexExtension(false))
                 && !checksums.files.contains("primary" + getIndexExtension(true))))
-            throw Exception("No checksum for " + toString("primary" + getIndexExtension(false)) + " or " + toString("primary" + getIndexExtension(true)),
-                            ErrorCodes::NO_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksum for {} or {}",
+                            toString("primary" + getIndexExtension(false)), toString("primary" + getIndexExtension(true)));
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
             if (!checksums.files.contains("count.txt"))
-                throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
+                throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksum for count.txt");
 
             if (metadata_snapshot->hasPartitionKey() && !checksums.files.contains("partition.dat"))
-                throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
+                throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksum for partition.dat");
 
             if (!isEmpty() && !parent_part)
             {
                 for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
                 {
                     if (!checksums.files.contains("minmax_" + escapeForFileName(col_name) + ".idx"))
-                        throw Exception("No minmax idx file checksum for column " + col_name, ErrorCodes::NO_FILE_IN_DATA_PART);
+                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No minmax idx file checksum for column {}", col_name);
                 }
             }
         }
@@ -1838,7 +1837,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
 void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) const
 {
-    throw Exception("Method 'checkConsistency' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", getType().toString());
 }
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
@@ -1850,7 +1849,7 @@ void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
 void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
 {
     if (getColumns().empty() || checksums.empty())
-        throw Exception("Cannot calculate columns sizes when columns or checksums are not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
     calculateEachColumnSizes(columns_sizes, total_columns_size);
 }
@@ -1858,7 +1857,7 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
 {
     if (checksums.empty())
-        throw Exception("Cannot calculate secondary indexes sizes when columns or checksums are not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate secondary indexes sizes when columns or checksums are not initialized");
 
     auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr()->secondary_indices;
 

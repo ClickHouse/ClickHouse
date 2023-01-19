@@ -627,7 +627,7 @@ namespace detail
         off_t seek(off_t offset_, int whence) override
         {
             if (whence != SEEK_SET)
-                throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
 
             if (offset_ < 0)
                 throw Exception(

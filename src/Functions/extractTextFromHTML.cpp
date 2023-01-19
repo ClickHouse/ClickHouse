@@ -314,7 +314,7 @@ public:
     {
         const ColumnString * src = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!src)
-             throw Exception("First argument for function " + getName() + " must be string.", ErrorCodes::ILLEGAL_COLUMN);
+             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be string.", getName());
 
         const ColumnString::Chars & src_chars = src->getChars();
         const ColumnString::Offsets & src_offsets = src->getOffsets();

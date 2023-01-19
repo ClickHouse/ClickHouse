@@ -128,8 +128,8 @@ private:
             }
             else if (!typeid_cast<const ColumnVector<Float64> *> (column))
             {
-                throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                    column->getName(), getName());
             }
         }
 

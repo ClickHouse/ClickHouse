@@ -55,7 +55,7 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
     if (!func_args.arguments)
-        throw Exception("Table function 'mongodb' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'mongodb' must have arguments.");
 
     ASTs & args = func_args.arguments->children;
 

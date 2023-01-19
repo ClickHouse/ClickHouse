@@ -21,7 +21,7 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
 {
     const ASTs & parameters = expression_list->children;
     if (parameters.empty())
-        throw Exception("Parameters list to aggregate functions cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameters list to aggregate functions cannot be empty");
 
     Array params_row(parameters.size());
 
@@ -84,8 +84,8 @@ void getAggregateFunctionNameAndParametersArray(
         "parameters of aggregate function in " + error_context, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     if (args_ast->children.empty())
-        throw Exception("Incorrect list of parameters to aggregate function "
-            + aggregate_function_name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect list of parameters to aggregate function {}",
+            aggregate_function_name);
 
     aggregate_function_parameters = getAggregateFunctionParametersArray(args_ast, error_context, context);
 }

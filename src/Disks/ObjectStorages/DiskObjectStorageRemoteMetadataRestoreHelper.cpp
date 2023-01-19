@@ -202,7 +202,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::Abs
             /// In this case we need to additionally cleanup S3 from objects with later revision.
             /// Will be simply just restore to different path.
             if (information.source_path == disk->object_storage_root_path && information.revision != LATEST_REVISION)
-                throw Exception("Restoring to the same bucket and path is allowed if revision is latest (0)", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Restoring to the same bucket and path is allowed if revision is latest (0)");
 
             /// This case complicates S3 cleanup in case of unsuccessful restore.
             if (information.source_path != disk->object_storage_root_path && disk->object_storage_root_path.starts_with(information.source_path))
@@ -220,7 +220,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::Abs
                  disk->name, information.revision, information.source_path);
 
         if (readSchemaVersion(source_object_storage, information.source_path) < RESTORABLE_SCHEMA_VERSION)
-            throw Exception("Source bucket doesn't have restorable schema.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Source bucket doesn't have restorable schema.");
 
         LOG_INFO(disk->log, "Removing old metadata...");
 
@@ -304,7 +304,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::readRestoreInformation(Restor
 static String shrinkKey(const String & path, const String & key)
 {
     if (!key.starts_with(path))
-        throw Exception("The key " + key + " prefix mismatch with given " + path, ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} prefix mismatch with given {}", key, path);
 
     return key.substr(path.length());
 }

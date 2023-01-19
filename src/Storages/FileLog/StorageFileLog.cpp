@@ -314,7 +314,7 @@ Pipe StorageFileLog::read(
     std::lock_guard<std::mutex> lock(file_infos_mutex);
     if (running_streams)
     {
-        throw Exception("Another select query is running on this table, need to wait it finish.", ErrorCodes::CANNOT_SELECT);
+        throw Exception(ErrorCodes::CANNOT_SELECT, "Another select query is running on this table, need to wait it finish.");
     }
 
     updateFileInfos();
@@ -670,7 +670,7 @@ bool StorageFileLog::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist", table_id.getNameForLogs());
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
@@ -766,17 +766,17 @@ void registerStorageFileLog(StorageFactory & factory)
         }
         else if (num_threads < 1)
         {
-            throw Exception("Number of threads to parse files can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be lower than 1");
         }
 
         if (filelog_settings->max_block_size.changed && filelog_settings->max_block_size.value < 1)
         {
-            throw Exception("filelog_max_block_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "filelog_max_block_size can not be lower than 1");
         }
 
         if (filelog_settings->poll_max_batch_size.changed && filelog_settings->poll_max_batch_size.value < 1)
         {
-            throw Exception("filelog_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "filelog_poll_max_batch_size can not be lower than 1");
         }
 
         size_t init_sleep_time = filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
@@ -790,7 +790,7 @@ void registerStorageFileLog(StorageFactory & factory)
 
         if (filelog_settings->poll_directory_watch_events_backoff_factor.changed
             && !filelog_settings->poll_directory_watch_events_backoff_factor.value)
-            throw Exception("poll_directory_watch_events_backoff_factor can not be 0", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "poll_directory_watch_events_backoff_factor can not be 0");
 
         if (args_count != 2)
             throw Exception(

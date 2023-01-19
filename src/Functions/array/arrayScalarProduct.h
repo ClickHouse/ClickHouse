@@ -65,7 +65,7 @@ private:
             return nullptr;
 
         if (!col_array1->hasEqualOffsets(*col_array2))
-            throw Exception("Array arguments for function " + getName() + " must have equal sizes", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
 
         const ColumnVector<T> * col_nested1 = checkAndGetColumn<ColumnVector<T>>(col_array1->getData());
         const ColumnVector<U> * col_nested2 = checkAndGetColumn<ColumnVector<U>>(col_array2->getData());
@@ -117,7 +117,7 @@ public:
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
             if (!array_type)
-                throw Exception("All arguments for function " + getName() + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for function {} must be an array.", getName());
 
             const auto & nested_type = array_type->getNestedType();
             if (!isNativeNumber(nested_type) && !isEnum(nested_type))

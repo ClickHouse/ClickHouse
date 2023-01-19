@@ -263,7 +263,7 @@ namespace
         if (!interval_unit
             || (interval_unit->value.getType() != Field::Types::String
                 && interval_unit->value.getType() != Field::Types::UInt64))
-            throw Exception("Interval argument must be integer", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interval argument must be integer");
 
         if (interval_unit->value.getType() == Field::Types::String)
             num_units = parse<Int64>(interval_unit->value.safeGet<String>());
@@ -271,7 +271,7 @@ namespace
             num_units = interval_unit->value.safeGet<UInt64>();
 
         if (num_units <= 0)
-            throw Exception("Value for Interval argument must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for Interval argument must be positive.");
     }
 
     UInt32 addTime(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
@@ -281,7 +281,7 @@ namespace
             case IntervalKind::Nanosecond:
             case IntervalKind::Microsecond:
             case IntervalKind::Millisecond:
-                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: { \
         return AddTime<IntervalKind::KIND>::execute(time_sec, num_units, time_zone); \
@@ -367,7 +367,7 @@ static void extractDependentTable(ContextPtr context, ASTPtr & query, String & s
     else if (auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
     {
         if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for WINDOW VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "UNION is not supported for WINDOW VIEW");
 
         auto & inner_select_query = ast_select->list_of_selects->children.at(0);
 
@@ -872,7 +872,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         case IntervalKind::Nanosecond:
         case IntervalKind::Microsecond:
         case IntervalKind::Millisecond:
-            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \
@@ -905,7 +905,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
         case IntervalKind::Nanosecond:
         case IntervalKind::Microsecond:
         case IntervalKind::Millisecond:
-            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by window view yet");
 
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
@@ -1254,7 +1254,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     ReplaceFunctionNowVisitor(func_now_data).visit(mergeable_query);
     is_time_column_func_now = func_now_data.is_time_column_func_now;
     if (!is_proctime && is_time_column_func_now)
-        throw Exception("now() is not supported for Event time processing.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "now() is not supported for Event time processing.");
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 

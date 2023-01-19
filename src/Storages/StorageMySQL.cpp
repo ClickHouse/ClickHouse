@@ -305,7 +305,7 @@ void registerStorageMySQL(StorageFactory & factory)
             mysql_settings.loadFromQuery(*args.storage_def);
 
         if (!mysql_settings.connection_pool_size)
-            throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "connection_pool_size cannot be zero.");
 
         mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 

@@ -100,7 +100,7 @@ public:
             else if (in == "REMOVE_UUID_PIN") return REMOVE_UUID_PIN;
             else if (in == "DONE") return DONE;
             else if (in == "CANCELLED") return CANCELLED;
-            else throw Exception("Unknown state: " + in, ErrorCodes::LOGICAL_ERROR);
+            else throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown state: {}", in);
         }
     };
 

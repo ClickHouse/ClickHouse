@@ -641,7 +641,7 @@ private:
             }
 
             if (from_end - from_start != to_end - to_start)
-                throw Exception("From array size and to array size mismatch", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "From array size and to array size mismatch");
 
             col_to->insertDefault();
             AggregateFunctionGroupBitmapData<T> & bitmap_data_2

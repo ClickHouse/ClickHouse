@@ -44,8 +44,7 @@ void IBridgeHelper::startBridgeSync()
         }
 
         if (!started)
-            throw Exception("BridgeHelper: " + serviceAlias() + " is not responding",
-                ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
+            throw Exception(ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING, "BridgeHelper: {} is not responding", serviceAlias());
     }
 }
 

@@ -55,7 +55,7 @@ void ICompressionCodec::setCodecDescription(const String & codec_name, const AST
 ASTPtr ICompressionCodec::getFullCodecDesc() const
 {
     if (full_codec_desc == nullptr)
-        throw Exception("Codec description is not prepared", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Codec description is not prepared");
 
     return full_codec_desc;
 }

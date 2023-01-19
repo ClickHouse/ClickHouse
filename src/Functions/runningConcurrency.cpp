@@ -37,8 +37,7 @@ namespace DB
             const ColVecArg * col_begin = checkAndGetColumn<ColVecArg>(arguments[0].column.get());
             const ColVecArg * col_end   = checkAndGetColumn<ColVecArg>(arguments[1].column.get());
             if (!col_begin || !col_end)
-                throw Exception("Constant columns are not supported at the moment",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Constant columns are not supported at the moment");
             const typename ColVecArg::Container & vec_begin = col_begin->getData();
             const typename ColVecArg::Container & vec_end   = col_end->getData();
 

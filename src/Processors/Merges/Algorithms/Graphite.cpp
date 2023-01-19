@@ -431,7 +431,7 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
     const auto & config = context->getConfigRef();
 
     if (!config.has(config_element))
-        throw Exception("No '" + config_element + "' element in configuration file", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No '{}' element in configuration file", config_element);
 
     params.config_name = config_element;
     params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
@@ -460,7 +460,7 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
             /// See above.
         }
         else
-            throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
     }
 
     if (config.has(config_element + ".default"))
@@ -486,7 +486,7 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
         }
         else
         {
-            throw Exception("Unhandled rule_type in config: " + ruleTypeStr(pattern.rule_type), ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unhandled rule_type in config: {}", ruleTypeStr(pattern.rule_type));
         }
     }
 }

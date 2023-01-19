@@ -303,7 +303,7 @@ void TCPHandler::runImpl()
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {
                 if (context != query_context)
-                    throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in external tables initializer");
 
                 /// Get blocks of temporary tables
                 readData();
@@ -318,7 +318,7 @@ void TCPHandler::runImpl()
             query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
             {
                 if (context != query_context)
-                    throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
                 auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
                 state.need_receive_data_for_input = true;
@@ -338,7 +338,7 @@ void TCPHandler::runImpl()
             query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
             {
                 if (context != query_context)
-                    throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
                 if (!readDataNext())
                 {
@@ -1137,7 +1137,7 @@ void TCPHandler::receiveHello()
         if (packet_type == 'G' || packet_type == 'P')
         {
             writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
-            throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
+            throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         else
             throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client");
@@ -1341,7 +1341,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
     UInt64 version;
     readVarUInt(version, *in);
     if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
-        throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::UNKNOWN_PROTOCOL);
+        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol version for distributed processing mismatched");
     String response;
     readStringBinary(response, *in);
     return response;

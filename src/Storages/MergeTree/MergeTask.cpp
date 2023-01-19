@@ -149,7 +149,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     }
 
     if (data_part_storage->exists())
-        throw Exception("Directory " + data_part_storage->getFullPath() + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
@@ -263,7 +263,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             break;
         }
         default :
-            throw Exception("Merge algorithm must be chosen", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge algorithm must be chosen");
     }
 
     assert(global_ctx->gathering_columns.size() == global_ctx->gathering_column_names.size());
@@ -551,8 +551,8 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 
     if (global_ctx->rows_written != ctx->column_elems_written)
     {
-        throw Exception("Written " + toString(ctx->column_elems_written) + " elements of column " + column_name +
-                        ", but " + toString(global_ctx->rows_written) + " rows of PK columns", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Written {} elements of column {}, but {} rows of PK columns",
+                        toString(ctx->column_elems_written), column_name, toString(global_ctx->rows_written));
     }
 
     UInt64 rows = 0;

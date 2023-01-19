@@ -32,7 +32,7 @@ ExternalDictionaryLibraryHandler::ExternalDictionaryLibraryHandler(
     if (lib_new)
         lib_data = lib_new(&settings_holder->strings, ExternalDictionaryLibraryAPI::log);
     else
-        throw Exception("Method extDict_libNew failed", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Method extDict_libNew failed");
 }
 
 
@@ -173,7 +173,7 @@ Block ExternalDictionaryLibraryHandler::loadKeys(const Columns & key_columns)
 Block ExternalDictionaryLibraryHandler::dataToBlock(ExternalDictionaryLibraryAPI::RawClickHouseLibraryTable data)
 {
     if (!data)
-        throw Exception("LibraryDictionarySource: No data returned", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "LibraryDictionarySource: No data returned");
 
     const auto * columns_received = static_cast<const ExternalDictionaryLibraryAPI::Table *>(data);
     if (columns_received->error_code)

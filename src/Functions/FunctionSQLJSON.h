@@ -69,7 +69,7 @@ public:
             }
             if (!isColumnConst(*json_path_column.column))
             {
-                throw Exception("Second argument (JSONPath) must be constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (JSONPath) must be constant string");
             }
 
             const ColumnPtr & arg_jsonpath = json_path_column.column;

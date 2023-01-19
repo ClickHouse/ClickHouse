@@ -58,7 +58,7 @@ void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
     readVarUInt(size, in);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception("Too large collection size.", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
 
     for (size_t i = 0; i < size; ++i)
     {
@@ -99,7 +99,7 @@ void TablesStatusResponse::read(ReadBuffer & in, UInt64 server_protocol_revision
     readVarUInt(size, in);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception("Too large collection size.", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
 
     for (size_t i = 0; i < size; ++i)
     {

@@ -82,7 +82,7 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
             throw Exception("LIVE VIEWs are only supported for queries from tables, but there is no table name in select query.",
                             DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
         if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "UNION is not supported for LIVE VIEW");
 
         inner_subquery = ast_select->list_of_selects->children.at(0)->clone();
 
@@ -293,11 +293,11 @@ StorageLiveView::StorageLiveView(
     setInMemoryMetadata(storage_metadata);
 
     if (!query.select)
-        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
     /// Default value, if only table name exist in the query
     if (query.select->list_of_selects->children.size() != 1)
-        throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
+        throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "UNION is not supported for LIVE VIEW");
 
     inner_query = query.select->list_of_selects->children.at(0);
 

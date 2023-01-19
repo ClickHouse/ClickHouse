@@ -133,7 +133,7 @@ public:
                     bitSliceFromRightConstantOffsetUnbounded(
                         source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value));
                 else
-                    throw Exception("Indices in strings are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
+                    throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
             else
                 bitSliceDynamicOffsetUnbounded(source, StringSink(*col_res, input_rows_count), *column_start);
@@ -151,7 +151,7 @@ public:
                     bitSliceFromRightConstantOffsetBounded(
                         source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value), length_value);
                 else
-                    throw Exception("Indices in strings are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
+                    throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
             else
                 bitSliceDynamicOffsetBounded(source, StringSink(*col_res, input_rows_count), *column_start, *column_length);

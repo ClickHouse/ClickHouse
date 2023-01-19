@@ -52,9 +52,8 @@ namespace DB
             }
             else
             {
-                 throw Exception("Illegal column " + col_from->getName()
-                                 + " of first argument of function " + Name::name,
-                                 ErrorCodes::ILLEGAL_COLUMN);
+                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                                 col_from->getName(), Name::name);
             }
 
             using ColVecTo = typename ToDataType::ColumnType;

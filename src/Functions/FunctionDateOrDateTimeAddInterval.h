@@ -68,12 +68,12 @@ struct AddNanosecondsImpl
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(UInt16, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addNanoSeconds() cannot be used with Date", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addNanoSeconds() cannot be used with Date");
     }
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(Int32, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addNanoSeconds() cannot be used with Date32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addNanoSeconds() cannot be used with Date32");
     }
 };
 
@@ -112,12 +112,12 @@ struct AddMicrosecondsImpl
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(UInt16, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMicroSeconds() cannot be used with Date", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addMicroSeconds() cannot be used with Date");
     }
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(Int32, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMicroSeconds() cannot be used with Date32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addMicroSeconds() cannot be used with Date32");
     }
 };
 
@@ -156,12 +156,12 @@ struct AddMillisecondsImpl
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(UInt16, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMilliSeconds() cannot be used with Date", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addMilliSeconds() cannot be used with Date");
     }
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(Int32, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMilliSeconds() cannot be used with Date32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addMilliSeconds() cannot be used with Date32");
     }
 };
 
@@ -607,13 +607,13 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2 or 3",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                getName(), toString(arguments.size()));
 
         if (!isNativeNumber(arguments[1].type))
-            throw Exception("Second argument for function " + getName() + " (delta) must be a number",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} (delta) must be a number",
+                getName());
 
         if (arguments.size() == 2)
         {
@@ -648,9 +648,8 @@ public:
                 return resolveReturnType<DataTypeDateTime64>(arguments);
             default:
             {
-                throw Exception("Invalid type of 1st argument of function " + getName() + ": "
-                    + arguments[0].type->getName() + ", expected: Date, DateTime or DateTime64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid type of 1st argument of function {}: "
+                    "{}, expected: Date, DateTime or DateTime64.", getName(), arguments[0].type->getName());
             }
         }
     }
@@ -741,8 +740,8 @@ public:
                 Transform{}, arguments, result_type, from_scale);
         }
         else
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
+                arguments[0].type->getName(), getName());
     }
 };
 

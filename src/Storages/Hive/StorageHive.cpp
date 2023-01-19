@@ -451,9 +451,9 @@ void StorageHive::lazyInitialize()
             format_name = "HiveText";
             break;
         case FileFormat::RC_FILE:
-            throw Exception("Unsopported hive format rc_file", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsopported hive format rc_file");
         case FileFormat::SEQUENCE_FILE:
-            throw Exception("Unsopported hive format sequence_file", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsopported hive format sequence_file");
         case FileFormat::AVRO:
             format_name = "Avro";
             break;
@@ -556,7 +556,7 @@ static HiveFilePtr createHiveFile(
     }
     else
     {
-        throw Exception("IHiveFile not implemented for format " + format_name, ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IHiveFile not implemented for format {}", format_name);
     }
     return hive_file;
 }
@@ -608,7 +608,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;
     if (!reader->pull(block) || !block.rows())
-        throw Exception("Could not parse partition value: " + wb.str(), ErrorCodes::INVALID_PARTITION_VALUE);
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Could not parse partition value: {}", wb.str());
 
     /// Get partition values
     FieldVector fields(partition_names.size());
@@ -891,7 +891,7 @@ HiveFiles StorageHive::collectHiveFiles(
 
 SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/)
 {
-    throw Exception("Method write is not implemented for StorageHive", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for StorageHive");
 }
 
 NamesAndTypesList StorageHive::getVirtuals() const
@@ -974,7 +974,7 @@ void registerStorageHive(StorageFactory & factory)
 
             auto * partition_by = args.storage_def->partition_by;
             if (!partition_by)
-                throw Exception("Storage Hive requires partition by clause", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage Hive requires partition by clause");
 
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());

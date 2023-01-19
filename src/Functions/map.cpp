@@ -201,9 +201,9 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Number of arguments for function {} doesn't match: passed {}, should be 1",
+                getName(), toString(arguments.size()));
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
@@ -250,9 +250,9 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Number of arguments for function {} doesn't match: passed {}, should be 1",
+                getName(), toString(arguments.size()));
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
@@ -359,9 +359,9 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(arguments.size()) + ", should be 2",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                            Number of arguments for function {} doesn't match: passed {}, should be 2",
+                            getName(), toString(arguments.size()));
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
         const DataTypeString * pattern_type = checkAndGetDataType<DataTypeString>(arguments[1].type.get());
@@ -403,9 +403,9 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Number of arguments for function {} doesn't match: passed {}, should be 2",
+                getName(), toString(arguments.size()));
 
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
@@ -539,9 +539,9 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Number of arguments for function {} doesn't match: passed {}, should be 2",
+                getName(), toString(arguments.size()));
 
         const DataTypeMap * left = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
         const DataTypeMap * right = checkAndGetDataType<DataTypeMap>(arguments[1].type.get());

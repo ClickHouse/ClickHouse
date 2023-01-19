@@ -86,8 +86,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     expr_for_constant_folding->execute(block_with_constants);
 
     if (!block_with_constants || block_with_constants.rows() == 0)
-        throw Exception("Logical error: empty block after evaluation of constant expression for IN, VALUES or LIMIT or aggregate function parameter",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty block after evaluation of constant expression for IN, VALUES or LIMIT or aggregate function parameter");
 
     if (!block_with_constants.has(name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

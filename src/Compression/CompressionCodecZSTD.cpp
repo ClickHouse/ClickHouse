@@ -82,7 +82,7 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
     ZSTD_freeCCtx(cctx);
 
     if (ZSTD_isError(compressed_size))
-        throw Exception("Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(compressed_size)), ErrorCodes::CANNOT_COMPRESS);
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress block with ZSTD: {}", std::string(ZSTD_getErrorName(compressed_size)));
 
     return static_cast<UInt32>(compressed_size);
 }
@@ -93,7 +93,7 @@ void CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_s
     size_t res = ZSTD_decompress(dest, uncompressed_size, source, source_size);
 
     if (ZSTD_isError(res))
-        throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot ZSTD_decompress: {}", std::string(ZSTD_getErrorName(res)));
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_) : level(level_), enable_long_range(true), window_log(window_log_)
@@ -122,7 +122,7 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
             if (!literal)
-                throw Exception("ZSTD codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD codec argument must be integer");
 
             level = static_cast<int>(literal->value.safeGet<UInt64>());
             if (level > ZSTD_maxCLevel())
@@ -135,7 +135,7 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
             {
                 const auto * window_literal = children[1]->as<ASTLiteral>();
                 if (!window_literal)
-                    throw Exception("ZSTD codec second argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD codec second argument must be integer");
 
                 const int window_log = static_cast<int>(window_literal->value.safeGet<UInt64>());
 

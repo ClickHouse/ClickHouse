@@ -42,7 +42,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
     ASTs & args = args_func.at(0)->children;
 

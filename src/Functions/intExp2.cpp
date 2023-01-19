@@ -35,7 +35,7 @@ struct IntExp2Impl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
     {
         if (!arg->getType()->isIntegerTy())
-            throw Exception("IntExp2Impl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IntExp2Impl expected an integral type");
         return b.CreateShl(llvm::ConstantInt::get(arg->getType(), 1), arg);
     }
 #endif

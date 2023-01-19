@@ -660,7 +660,7 @@ namespace
                 if (row_num < old_size)
                 {
                     if (row_num != old_size - 1)
-                        throw Exception("Cannot replace a string in the middle of ColumnString", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace a string in the middle of ColumnString");
                     column_string.popBack(1);
                 }
                 try
@@ -1870,7 +1870,7 @@ namespace
             {
                 size_t new_size = nested_column.size();
                 if (new_size != old_size + 1)
-                    throw Exception("Size of ColumnNullable is unexpected", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of ColumnNullable is unexpected");
                 try
                 {
                     null_map.push_back(false);
@@ -2009,7 +2009,7 @@ namespace
             if (row_num < column_lc.size())
             {
                 if (row_num != column_lc.size() - 1)
-                    throw Exception("Cannot replace an element in the middle of ColumnLowCardinality", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace an element in the middle of ColumnLowCardinality");
                 column_lc.popBack(1);
             }
 
@@ -2090,7 +2090,7 @@ namespace
             auto & offsets = column_array.getOffsets();
             size_t old_size = offsets.size();
             if (row_num + 1 < old_size)
-                throw Exception("Cannot replace an element in the middle of ColumnArray", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace an element in the middle of ColumnArray");
             auto data_column = column_array.getDataPtr();
             size_t old_data_size = data_column->size();
 
@@ -2099,7 +2099,7 @@ namespace
                 element_serializer->readRow(old_data_size);
                 size_t data_size = data_column->size();
                 if (data_size != old_data_size + 1)
-                    throw Exception("Size of ColumnArray is unexpected", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of ColumnArray is unexpected");
 
                 if (row_num < old_size)
                     offsets.back() = data_size;
@@ -2750,7 +2750,7 @@ namespace
         {
             size_t old_size = offset_columns[0]->size();
             if (row_num + 1 < old_size)
-                throw Exception("Cannot replace an element in the middle of ColumnArray", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace an element in the middle of ColumnArray");
 
             size_t old_data_size = data_columns[0]->size();
 
@@ -2759,7 +2759,7 @@ namespace
                 message_serializer->readRow(old_data_size);
                 size_t data_size = data_columns[0]->size();
                 if (data_size != old_data_size + 1)
-                    throw Exception("Unexpected number of elements of ColumnArray has been read", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of elements of ColumnArray has been read");
 
                 if (row_num < old_size)
                 {
@@ -3478,7 +3478,7 @@ namespace
                 }
 
                 default:
-                    throw Exception("Unknown data type: " + data_type->getName(), ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data type: {}", data_type->getName());
             }
         }
 
@@ -3565,7 +3565,7 @@ namespace
                 {
                     if (skip_unsupported_fields)
                         return std::nullopt;
-                    throw Exception("Empty enum field", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty enum field");
                 }
                 int max_abs = std::abs(enum_descriptor->value(0)->number());
                 for (int i = 1; i != enum_descriptor->value_count(); ++i)
@@ -3581,7 +3581,7 @@ namespace
                 {
                     if (skip_unsupported_fields)
                         return std::nullopt;
-                    throw Exception("ClickHouse supports only 8-bit and 16-bit enums", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse supports only 8-bit and 16-bit enums");
                 }
             }
             case FieldTypeId::TYPE_GROUP:
@@ -3592,7 +3592,7 @@ namespace
                 {
                     if (skip_unsupported_fields)
                         return std::nullopt;
-                    throw Exception("Empty messages are not supported", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty messages are not supported");
                 }
                 else if (message_descriptor->field_count() == 1)
                 {

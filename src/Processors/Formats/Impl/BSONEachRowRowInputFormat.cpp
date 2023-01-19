@@ -216,7 +216,7 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
         auto & fixed_string_column = assert_cast<ColumnFixedString &>(column);
         size_t n = fixed_string_column.getN();
         if (size > n)
-            throw Exception("Too large string for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
 
         auto & data = fixed_string_column.getChars();
 

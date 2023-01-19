@@ -293,7 +293,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     }
 
     if (candidate_lost_replicas.size() == replicas_count)
-        throw Exception("All replicas are stale: we won't mark any replica as lost", ErrorCodes::ALL_REPLICAS_LOST);
+        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are stale: we won't mark any replica as lost");
 
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)

@@ -355,7 +355,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     LOG_TRACE(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
 
     if (tags.empty())
-        throw Exception("Failed to complete multipart upload. No parts have uploaded", ErrorCodes::S3_ERROR);
+        throw Exception(ErrorCodes::S3_ERROR, "Failed to complete multipart upload. No parts have uploaded");
 
     Aws::S3::Model::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);

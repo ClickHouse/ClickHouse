@@ -19,10 +19,10 @@ DataTypePtr FunctionArrayStringConcat::getReturnTypeImpl(const DataTypes & argum
 
     const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
-        throw Exception("First argument for function " + getName() + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", getName());
 
     if (arguments.size() == 2 && !isString(arguments[1]))
-        throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be constant string.", getName());
 
     return std::make_shared<DataTypeString>();
 }

@@ -44,7 +44,7 @@ void ColumnMapping::addColumns(
         const auto column_index = column_it->getMapped();
 
         if (read_columns[column_index])
-            throw Exception("Duplicate field found while parsing format header: " + name, ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing format header: {}", name);
 
         read_columns[column_index] = true;
         column_indexes_for_input_fields.emplace_back(column_index);

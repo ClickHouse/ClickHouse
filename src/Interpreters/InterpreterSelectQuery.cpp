@@ -380,8 +380,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Settings & settings = context->getSettingsRef();
 
     if (settings.max_subquery_depth && options.subquery_depth > settings.max_subquery_depth)
-        throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
-            ErrorCodes::TOO_DEEP_SUBQUERIES);
+        throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}",
+            settings.max_subquery_depth.toString());
 
     bool has_input = input_pipe != std::nullopt;
     if (input_pipe)
@@ -604,7 +604,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!options.only_analyze)
         {
             if (query.sampleSize() && (input_pipe || !storage || !storage->supportsSampling()))
-                throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))
                 throw Exception(
@@ -934,7 +934,7 @@ static std::pair<Field, DataTypePtr> getWithFillFieldValue(const ASTPtr & node, 
     auto field_type = evaluateConstantExpression(node, context);
 
     if (!isColumnedAsNumber(field_type.second))
-        throw Exception("Illegal type " + field_type.second->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Illegal type {} of WITH FILL expression, must be numeric type", field_type.second->getName());
 
     return field_type;
 }
@@ -949,7 +949,7 @@ static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPt
     if (isColumnedAsNumber(type))
         return std::make_pair(std::move(field), std::nullopt);
 
-    throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Illegal type {} of WITH FILL expression, must be numeric type", type->getName());
 }
 
 static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const ContextPtr & context)
@@ -967,32 +967,28 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         descr.fill_step = order_by_elem.direction;
 
     if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
-        throw Exception("WITH FILL STEP value cannot be zero", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be zero");
 
     if (order_by_elem.direction == 1)
     {
         if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
-            throw Exception("WITH FILL STEP value cannot be negative for sorting in ascending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be negative for sorting in ascending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
         {
-            throw Exception("WITH FILL TO value cannot be less than FROM value for sorting in ascending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
         }
     }
     else
     {
         if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
-            throw Exception("WITH FILL STEP value cannot be positive for sorting in descending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be positive for sorting in descending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
         {
-            throw Exception("WITH FILL FROM value cannot be less than TO value for sorting in descending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
         }
     }
 
@@ -1337,7 +1333,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     }
 
     if (query_info.projection && query_info.projection->input_order_info && query_info.input_order_info)
-       throw Exception("InputOrderInfo is set for projection and for query", ErrorCodes::LOGICAL_ERROR);
+       throw Exception(ErrorCodes::LOGICAL_ERROR, "InputOrderInfo is set for projection and for query");
     InputOrderInfoPtr input_order_info_for_order;
     if (!expressions.need_aggregate)
         input_order_info_for_order = query_info.projection ? query_info.projection->input_order_info : query_info.input_order_info;
@@ -1380,7 +1376,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         if (intermediate_stage)
         {
             if (expressions.first_stage || expressions.second_stage)
-                throw Exception("Query with intermediate stage cannot have any other stages", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Query with intermediate stage cannot have any other stages");
 
             preliminary_sort();
             if (expressions.need_aggregate)
@@ -1390,7 +1386,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         if (from_aggregation_stage)
         {
             if (intermediate_stage || expressions.first_stage || expressions.second_stage)
-                throw Exception("Query with after aggregation stage cannot have any other stages", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Query with after aggregation stage cannot have any other stages");
         }
 
         if (expressions.first_stage)
@@ -1626,7 +1622,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeHaving(query_plan, expressions.before_having, expressions.remove_having_filter);
             }
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube || query.group_by_with_grouping_sets)
-                throw Exception("WITH TOTALS, ROLLUP, CUBE or GROUPING SETS are not supported without aggregation", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS, ROLLUP, CUBE or GROUPING SETS are not supported without aggregation");
 
             // Now we must execute:
             // 1) expressions before window functions,
@@ -2237,7 +2233,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 
     if (!max_block_size)
-        throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Setting 'max_block_size' cannot be zero");
 
     storage_limits.emplace_back(local_limits);
 
@@ -2251,7 +2247,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// Subquery.
         ASTPtr subquery = extractTableExpression(query, 0);
         if (!subquery)
-            throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Subquery expected");
 
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
             subquery, getSubqueryContext(context),
@@ -2362,7 +2358,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         }
     }
     else
-        throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in InterpreterSelectQuery: nowhere to read");
 
     /// Specify the number of threads only if it wasn't specified in storage.
     ///
@@ -2940,7 +2936,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         if (query.limit_with_ties)
         {
             if (!query.orderBy())
-                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
             order_descr = getSortDescription(query, context);
         }
 

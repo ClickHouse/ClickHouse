@@ -67,7 +67,7 @@ public:
 
         const ColumnConst * col_needle = typeid_cast<const ColumnConst *>(&*column_needle);
         if (!col_needle)
-            throw Exception("Second argument of function " + getName() + " must be constant string", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be constant string", getName());
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {

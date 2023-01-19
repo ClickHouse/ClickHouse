@@ -154,8 +154,7 @@ namespace DB
             const DataTypePtr & prefix_type = arguments[1];
 
             if (!isString(addr_type) || !isString(prefix_type))
-                throw Exception("The arguments of function " + getName() + " must be String",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The arguments of function {} must be String", getName());
 
             return std::make_shared<DataTypeUInt8>();
         }

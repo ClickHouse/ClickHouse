@@ -76,7 +76,7 @@ struct DataTypeDecimalTrait
     T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
     {
         if (scale < x.scale)
-            throw Exception("Decimal result's scale is less than argument's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal result's scale is less than argument's one");
         const UInt32 scale_delta = scale - x.scale; /// scale_delta >= 0
         return DecimalUtils::scaleMultiplier<typename T::NativeType>(scale_delta);
     }
@@ -105,7 +105,7 @@ inline bool decimalFromComponentsWithMultiplierImpl(
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
     {
         if constexpr (throw_on_error)
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return false;
     }
 
@@ -113,7 +113,7 @@ inline bool decimalFromComponentsWithMultiplierImpl(
     if (common::addOverflow(whole_scaled, fractional_sign * (fractional % scale_multiplier), value))
     {
         if constexpr (throw_on_error)
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return false;
     }
 
@@ -301,7 +301,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
             if (whole < 0)
             {
                 if constexpr (throw_exception)
-                    throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
                 else
                     return ReturnType(true);
             }
@@ -321,7 +321,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
         if (whole < min_to || whole > max_to)
         {
             if constexpr (throw_exception)
-                throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
             else
                 return ReturnType(true);
         }

@@ -307,7 +307,7 @@ private:
             case LOG:
                 return 'N';
         }
-        throw Exception("Unknown severity type " + std::to_string(severity), ErrorCodes::UNKNOWN_TYPE);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown severity type {}", std::to_string(severity));
     }
 
 public:

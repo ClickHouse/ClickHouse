@@ -367,7 +367,7 @@ namespace
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     if (name == "view")
-        throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
+        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Table function view cannot be used as an expression");
 
     /// If function can be converted to literal it will be parsed as literal after formatting.
     /// In distributed query it may lead to mismathed column names.

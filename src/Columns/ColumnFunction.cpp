@@ -52,8 +52,8 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
 ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
 {
     if (elements_size != offsets.size())
-        throw Exception("Size of offsets (" + toString(offsets.size()) + ") doesn't match size of column ("
-                        + toString(elements_size) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets ({}) doesn't match size of column ({})",
+                        toString(offsets.size()), toString(elements_size));
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
@@ -109,8 +109,8 @@ void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t l
 ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (elements_size != filt.size())
-        throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column ("
-                        + toString(elements_size) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+                        toString(filt.size()), toString(elements_size));
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
@@ -180,8 +180,8 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
                                                       const IColumn::Selector & selector) const
 {
     if (elements_size != selector.size())
-        throw Exception("Size of selector (" + toString(selector.size()) + ") doesn't match size of column ("
-                        + toString(elements_size) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
+                        toString(selector.size()), toString(elements_size));
 
     std::vector<size_t> counts;
     if (captured_columns.empty())
@@ -263,9 +263,8 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
 
     auto index = captured_columns.size();
     if (!is_short_circuit_argument && !column.type->equals(*argumnet_types[index]))
-        throw Exception("Cannot capture column " + std::to_string(argumnet_types.size()) +
-                        " because it has incompatible type: got " + column.type->getName() +
-                        ", but " + argumnet_types[index]->getName() + " is expected.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture column {} because it has incompatible type: "
+                        "got {}, but {} is expected.", std::to_string(argumnet_types.size()), column.type->getName(), argumnet_types[index]->getName());
 
     captured_columns.push_back(column);
 }
@@ -284,8 +283,9 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     auto captured = captured_columns.size();
 
     if (args != captured)
-        throw Exception("Cannot call function " + function->getName() + " because is has " + toString(args) +
-                        "arguments but " + toString(captured) + " columns were captured.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot call function {} because is has {} "
+                        "arguments but {} columns were captured.",
+                        function->getName(), toString(args), toString(captured));
 
     ColumnsWithTypeAndName columns = captured_columns;
     IFunction::ShortCircuitSettings settings;

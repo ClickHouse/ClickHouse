@@ -160,7 +160,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     if (columns.empty())
-        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), getFileNameForColumn(columns.front()));
 }

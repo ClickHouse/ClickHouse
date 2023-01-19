@@ -17,7 +17,7 @@ DiskFactory & DiskFactory::instance()
 void DiskFactory::registerDiskType(const String & disk_type, DB::DiskFactory::Creator creator)
 {
     if (!registry.emplace(disk_type, creator).second)
-        throw Exception("DiskFactory: the disk type '" + disk_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskFactory: the disk type '{}' is not unique", disk_type);
 }
 
 DiskPtr DiskFactory::create(

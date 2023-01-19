@@ -78,7 +78,7 @@ public:
         ALWAYS_INLINE void decreaseDepth()
         {
             if (unlikely(depth == 0))
-                throw Exception("Logical error in parser: incorrect calculation of parse depth", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in parser: incorrect calculation of parse depth");
             --depth;
         }
     };

@@ -91,7 +91,7 @@ void convertAnyColumnToBool(const IColumn * column, UInt8Container & res)
         !tryConvertColumnToBool<UInt64>(column, res) &&
         !tryConvertColumnToBool<Float32>(column, res) &&
         !tryConvertColumnToBool<Float64>(column, res))
-        throw Exception("Unexpected type of column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of column: {}", column->getName());
 }
 
 
@@ -539,10 +539,8 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
 
         if (!(isNativeNumber(arg_type)
             || (Impl::specialImplementationForNulls() && (arg_type->onlyNull() || isNativeNumber(removeNullable(arg_type))))))
-            throw Exception("Illegal type ("
-                + arg_type->getName()
-                + ") of " + toString(i + 1) + " argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type ({}) of {} argument of function {}",
+                arg_type->getName(), toString(i + 1), getName());
     }
 
     auto result_type = has_bool_arguments ? DataTypeFactory::instance().get("Bool") : std::make_shared<DataTypeUInt8>();
@@ -578,7 +576,7 @@ template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
-        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
 
     executeColumnIfNeeded(arguments[0]);
 

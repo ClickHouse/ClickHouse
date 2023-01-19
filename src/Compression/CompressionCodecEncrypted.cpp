@@ -59,7 +59,7 @@ uint8_t getMethodCode(EncryptionMethod Method)
     }
     else
     {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -100,7 +100,7 @@ auto getMethod(EncryptionMethod Method)
     }
     else
     {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -117,7 +117,7 @@ UInt64 methodKeySize(EncryptionMethod Method)
     }
     else
     {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -196,9 +196,8 @@ void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod
         if (arguments)
         {
             if (!arguments->children.empty())
-                throw Exception("Codec " + getMethodName(Method) + " must not have parameters, given " +
-                                std::to_string(arguments->children.size()),
-                                ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "Codec {} must not have parameters, given {}",
+                                getMethodName(Method), std::to_string(arguments->children.size()));
         }
         return std::make_shared<CompressionCodecEncrypted>(Method);
     });
@@ -273,7 +272,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
 {
     // if method is not smaller than MAX_ENCRYPTION_METHOD it is incorrect
     if (method >= MAX_ENCRYPTION_METHOD)
-        throw Exception("Wrong argument for loading configurations.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong argument for loading configurations.");
 
     /// Scan all keys in config and add them into storage. If key is in hex, transform it.
     /// Remember key ID for each key, because it will be used in encryption/decryption
@@ -382,7 +381,7 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
 {
     /// It parameters were not set, throw exception
     if (!params.get())
-        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty params in CompressionCodecEncrypted configuration");
 
     /// Save parameters in variable, because they can always change.
     /// As this function not atomic, we should be certain that we get information from one particular version for correct work.
@@ -409,7 +408,7 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
     String key;
     /// See description of previous finction, logic is the same.
     if (!params.get())
-        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty params in CompressionCodecEncrypted configuration");
 
     const auto current_params = params.get();
 

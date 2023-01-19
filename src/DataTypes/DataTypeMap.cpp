@@ -130,7 +130,7 @@ bool DataTypeMap::checkKeyType(DataTypePtr key_type)
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
-        throw Exception("Map data type family must have two arguments: key and value types", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Map data type family must have two arguments: key and value types");
 
     DataTypes nested_types;
     nested_types.reserve(arguments->children.size());

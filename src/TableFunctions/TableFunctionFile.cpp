@@ -46,7 +46,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         fd = static_cast<int>(
             (type == Field::Types::Int64) ? literal->value.get<Int64>() : literal->value.get<UInt64>());
         if (fd < 0)
-            throw Exception("File descriptor must be non-negative", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
     }
     else
         throw Exception(

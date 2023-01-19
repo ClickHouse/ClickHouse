@@ -267,10 +267,10 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
             /// @note ASOF JOIN is not INNER. It's better avoid use of 'INNER ASOF' combination in messages.
             /// In fact INNER means 'LEFT SEMI ASOF' while LEFT means 'LEFT OUTER ASOF'.
             if (!isLeft(kind) && !isInner(kind))
-                throw Exception("Wrong ASOF JOIN type. Only ASOF and LEFT ASOF joins are supported", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Wrong ASOF JOIN type. Only ASOF and LEFT ASOF joins are supported");
 
             if (key_columns.size() <= 1)
-                throw Exception("ASOF join needs at least one equi-join column", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "ASOF join needs at least one equi-join column");
 
             size_t asof_size;
             asof_type = SortedLookupVectorBase::getTypeSize(*key_columns.back(), asof_size);
@@ -340,7 +340,7 @@ HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_c
             return Type::keys128;
         if (size_of_field == 32)
             return Type::keys256;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
@@ -675,7 +675,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
     if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
-        throw Exception("Too many rows in right table block for HashJoin: " + toString(source_block.rows()), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", toString(source_block.rows()));
 
     /// There's no optimization for right side const columns. Remove constness if any.
     Block block = materializeBlock(source_block);
@@ -1629,7 +1629,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     }
 
     if (!sample_block_with_columns_to_add.has(column_name))
-        throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "StorageJoin doesn't contain column {}", column_name);
 
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null && JoinCommon::canBecomeNullable(elem.type))
@@ -1644,7 +1644,7 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
     bool is_valid = (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny)
         && kind == JoinKind::Left;
     if (!is_valid)
-        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "joinGet only supports StorageJoin of type Left Any");
     const auto & key_names_right = table_join->getOnlyClause().key_names_right;
 
     /// Assemble the key block with correct names.
@@ -1979,7 +1979,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
     bool multiple_disjuncts = !table_join->oneDisjunct();
     if (multiple_disjuncts)
-        throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin with ORs is not supported");
 
     for (auto & map : data->maps)
     {

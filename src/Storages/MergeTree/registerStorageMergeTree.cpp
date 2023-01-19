@@ -437,7 +437,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             arg_cnt += 2;
         }
         else
-            throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
     }
 
     /// This merging param maybe used as part of sorting key
@@ -683,7 +683,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
 
         if (args.storage_def->ttl_table && !args.attach)
-            throw Exception("Table TTL is not allowed for MergeTree in old syntax", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
@@ -696,7 +696,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     if (arg_num != arg_cnt)
-        throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");
 
     if (replicated)
     {

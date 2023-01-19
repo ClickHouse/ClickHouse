@@ -179,7 +179,7 @@ namespace DB
                 if (need_rescale)
                 {
                     if (common::mulOverflow(value, rescale_multiplier, value))
-                        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                 }
                 status = builder.Append(value);
             }

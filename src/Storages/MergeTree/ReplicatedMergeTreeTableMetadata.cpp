@@ -186,9 +186,8 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
     if (data_format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         if (date_column != from_zk.date_column)
-            throw Exception("Existing table metadata in ZooKeeper differs in date index column."
-                " Stored in ZooKeeper: " + from_zk.date_column + ", local: " + date_column,
-                ErrorCodes::METADATA_MISMATCH);
+            throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in date index column. "
+                "Stored in ZooKeeper: {}, local: {}", from_zk.date_column, date_column);
     }
     else if (!from_zk.date_column.empty())
     {
@@ -210,19 +209,16 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
             ErrorCodes::METADATA_MISMATCH);
 
     if (sign_column != from_zk.sign_column)
-        throw Exception("Existing table metadata in ZooKeeper differs in sign column."
-            " Stored in ZooKeeper: " + from_zk.sign_column + ", local: " + sign_column,
-            ErrorCodes::METADATA_MISMATCH);
+        throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in sign column. "
+            "Stored in ZooKeeper: {}, local: {}", from_zk.sign_column, sign_column);
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
     ///    in formatAST code.
     String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, context).expression_list_ast);
     if (primary_key != parsed_zk_primary_key)
-        throw Exception("Existing table metadata in ZooKeeper differs in primary key."
-            " Stored in ZooKeeper: " + from_zk.primary_key +
-            ", parsed from ZooKeeper: " +  parsed_zk_primary_key +
-            ", local: " + primary_key,
-            ErrorCodes::METADATA_MISMATCH);
+        throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in primary key. "
+            "Stored in ZooKeeper: {}, parsed from ZooKeeper: {}, local: {}",
+            from_zk.primary_key, parsed_zk_primary_key, primary_key);
 
     if (data_format_version != from_zk.data_format_version)
         throw Exception("Existing table metadata in ZooKeeper differs in data format version."

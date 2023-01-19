@@ -78,7 +78,7 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
     if (path.is_absolute())
     {
         if (is_server)
-            throw Exception("Absolute path in the 'format_schema' setting is prohibited: " + path.string(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Absolute path in the 'format_schema' setting is prohibited: {}", path.string());
         schema_path = path.filename();
         schema_directory = path.parent_path() / "";
     }

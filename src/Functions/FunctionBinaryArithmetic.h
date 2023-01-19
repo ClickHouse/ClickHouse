@@ -556,7 +556,7 @@ private:
         {
             NativeResultType res;
             if (Op::template apply<NativeResultType>(a, b, res))
-                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
             return res;
         }
         else
@@ -584,7 +584,7 @@ private:
                 res = Op::template apply<NativeResultType>(a, b);
 
             if (overflow)
-                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         }
         else
         {
@@ -610,7 +610,7 @@ private:
                     overflow |= common::mulOverflow(scale, scale, scale);
                 overflow |= common::mulOverflow(a, scale, a);
                 if (overflow)
-                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
             }
             else
             {
@@ -1203,8 +1203,9 @@ public:
         if (isAggregateAddition(arguments[0], arguments[1]))
         {
             if (!arguments[0]->equals(*arguments[1]))
-                throw Exception("Cannot add aggregate states of different functions: "
-                    + arguments[0]->getName() + " and " + arguments[1]->getName(), ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES);
+                throw Exception(ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES,
+"                    Cannot add aggregate states of different functions: {} and {}",
+                    arguments[0]->getName(), arguments[1]->getName());
 
             return arguments[0];
         }
@@ -1354,7 +1355,7 @@ public:
                                 /// So, we can check upfront possible overflow just by checking max scale used for left operand
                                 /// Note: it doesn't detect all possible overflow during big decimal division
                                 if (left.getScale() + right.getScale() > ResultDataType::maxPrecision())
-                                    throw Exception("Overflow during decimal division", ErrorCodes::DECIMAL_OVERFLOW);
+                                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Overflow during decimal division");
                             }
                         }
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);

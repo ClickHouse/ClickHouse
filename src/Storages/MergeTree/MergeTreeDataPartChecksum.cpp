@@ -30,17 +30,17 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
     if (is_compressed && have_uncompressed)
     {
         if (!rhs.is_compressed)
-            throw Exception("No uncompressed checksum for file " + name, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "No uncompressed checksum for file {}", name);
         if (rhs.uncompressed_size != uncompressed_size)
-            throw Exception("Unexpected uncompressed size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected uncompressed size of file {} in data part", name);
         if (rhs.uncompressed_hash != uncompressed_hash)
-            throw Exception("Checksum mismatch for uncompressed file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for uncompressed file {} in data part", name);
         return;
     }
     if (rhs.file_size != file_size)
-        throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {} in data part", name);
     if (rhs.file_hash != file_hash)
-        throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for file {} in data part", name);
 }
 
 void MergeTreeDataPartChecksum::checkSize(const DiskPtr & disk, const String & path) const
@@ -64,7 +64,7 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
         const String & name = it.first;
 
         if (!files.contains(name))
-            throw Exception("Unexpected file " + name + " in data part", ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "Unexpected file {} in data part", name);
     }
 
     for (const auto & it : files)
@@ -73,7 +73,7 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
 
         auto jt = rhs.files.find(name);
         if (jt == rhs.files.end())
-            throw Exception("No file " + name + " in data part", ErrorCodes::NO_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No file {} in data part", name);
 
         it.second.checkEqual(jt->second, have_uncompressed, name);
     }
@@ -271,7 +271,7 @@ MergeTreeDataPartChecksums MergeTreeDataPartChecksums::deserializeFrom(const Str
     ReadBufferFromString in(s);
     MergeTreeDataPartChecksums res;
     if (!res.read(in))
-        throw Exception("Checksums format is too old", ErrorCodes::FORMAT_VERSION_TOO_OLD);
+        throw Exception(ErrorCodes::FORMAT_VERSION_TOO_OLD, "Checksums format is too old");
     assertEOF(in);
     return res;
 }

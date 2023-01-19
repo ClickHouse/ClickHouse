@@ -596,7 +596,7 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
 {
     std::lock_guard lock{mutex};
     if (open_mode != OpenMode::READ)
-        throw Exception("Backup is not opened for reading", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
 
     if (!size_and_checksum.first)
     {
@@ -735,10 +735,10 @@ ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(BackupEntryPtr entry, si
 void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 {
     if (open_mode != OpenMode::WRITE)
-        throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
 
     if (writing_finalized)
-        throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
 
     std::string from_file_name = "memory buffer";
     if (auto fname = entry->getFilePath(); !fname.empty())
@@ -937,13 +937,13 @@ void BackupImpl::finalizeWriting()
 {
     std::lock_guard lock{mutex};
     if (open_mode != OpenMode::WRITE)
-        throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
 
     if (writing_finalized)
-        throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
 
     if (!coordination->hasFiles(""))
-        throw Exception("Backup must not be empty", ErrorCodes::BACKUP_IS_EMPTY);
+        throw Exception(ErrorCodes::BACKUP_IS_EMPTY, "Backup must not be empty");
 
     if (!is_internal_backup)
     {

@@ -346,8 +346,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             const auto & identifier = identifier_ast->as<ASTIdentifier &>();
             auto insertion = command.settings_resets.emplace(identifier.name());
             if (!insertion.second)
-                throw Exception("Duplicate setting name " + backQuote(identifier.name()),
-                                ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(identifier.name()));
         }
         return command;
     }
@@ -568,8 +567,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (if_not_exists)
                 return;
-            throw Exception("Cannot add constraint " + constraint_name + ": constraint with this name already exists",
-                        ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add constraint {}: constraint with this name already exists",
+                        constraint_name);
         }
 
         auto * insert_it = constraints.end();
@@ -588,8 +587,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (if_exists)
                 return;
-            throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop",
-                    ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong constraint name. Cannot find constraint `{}` to drop",
+                    constraint_name);
         }
         constraints.erase(erase_it);
         metadata.constraints = ConstraintsDescription(constraints);
@@ -683,7 +682,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             rename_visitor.visit(index.definition_ast);
     }
     else
-        throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 }
 
 namespace
@@ -1037,7 +1036,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         const auto & command = (*this)[i];
 
         if (command.ttl && !table->supportsTTL())
-            throw Exception("Engine " + table->getName() + " doesn't support TTL clause", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
@@ -1173,9 +1172,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             const auto required_columns = actions->getRequiredColumns();
 
                             if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
-                                throw Exception("Cannot drop column " + backQuote(command.column_name)
-                                        + ", because column " + backQuote(column.name) + " depends on it",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it",
+                                        backQuote(command.column_name), backQuote(column.name));
                         }
                     }
                 }

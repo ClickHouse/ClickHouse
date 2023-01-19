@@ -253,11 +253,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " does not match: 2 or 3 expected",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                            Number of arguments for function {} does not match: 2 or 3 expected", getName());
 
         if (!isDecimal(arguments[0].type) || !isDecimal(arguments[1].type))
-            throw Exception("Arguments for " + getName() + " function must be Decimal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for {} function must be Decimal", getName());
 
         UInt8 scale = std::max(getDecimalScale(*arguments[0].type->getPtr()), getDecimalScale(*arguments[1].type->getPtr()));
 
@@ -288,8 +288,8 @@ public:
         It guarantees that result will have given scale and it can also be MANUALLY converted to other decimal types later.
         **/
         if (scale > DecimalUtils::max_precision<Decimal256>)
-            throw Exception("Illegal value of third argument of function " + this->getName() + ": must be integer in range [0, 76]",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal value of third argument of function {}: "
+                            "must be integer in range [0, 76]", this->getName());
 
         return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
     }

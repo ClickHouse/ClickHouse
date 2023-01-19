@@ -59,13 +59,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         if (!isNativeNumber(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName()
-                    + " of second argument of function "
-                    + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
+                    arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }

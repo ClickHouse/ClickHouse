@@ -1098,7 +1098,7 @@ private:
             case Field::Types::Decimal32:   return x.get<DecimalField<Decimal32>>().getValue();
             case Field::Types::Decimal64:   return x.get<DecimalField<Decimal64>>().getValue();
             default:
-                throw Exception("Unexpected type in function 'transform'", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type in function 'transform'");
         }
     }
 

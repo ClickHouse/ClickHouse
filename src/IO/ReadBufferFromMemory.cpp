@@ -42,7 +42,7 @@ off_t ReadBufferFromMemory::seek(off_t offset, int whence)
                 ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
     }
     else
-        throw Exception("Only SEEK_SET and SEEK_CUR seek modes allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET and SEEK_CUR seek modes allowed.");
 }
 
 off_t ReadBufferFromMemory::getPosition()

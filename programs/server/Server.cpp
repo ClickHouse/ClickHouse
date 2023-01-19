@@ -257,7 +257,7 @@ static std::string getCanonicalPath(std::string && path)
 {
     Poco::trimInPlace(path);
     if (path.empty())
-        throw Exception("path configuration parameter is empty", ErrorCodes::INVALID_CONFIG_PARAMETER);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "path configuration parameter is empty");
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -1116,7 +1116,7 @@ try
 #endif
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
-        throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both http and https interserver ports are specified");
 
     static const auto interserver_tags =
     {
@@ -1141,7 +1141,7 @@ try
             int port = parse<int>(port_str);
 
             if (port < 0 || port > 0xFFFF)
-                throw Exception("Out of range '" + String(port_tag) + "': " + toString(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
 
             global_context->setInterserverIOAddress(this_host, port);
             global_context->setInterserverScheme(scheme);
@@ -1746,8 +1746,7 @@ try
         }
 
         if (servers.empty())
-             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
-                ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
 
 #if USE_SSL
         CertificateReloader::instance().tryLoad(config());
@@ -1807,7 +1806,7 @@ try
             String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
             int pool_size = config().getInt("distributed_ddl.pool_size", 1);
             if (pool_size < 1)
-                throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker",
                                                                      &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));

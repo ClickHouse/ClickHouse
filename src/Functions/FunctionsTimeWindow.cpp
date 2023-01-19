@@ -193,7 +193,7 @@ struct TimeWindowImpl<TUMBLE>
             case IntervalKind::Year:
                 return executeTumble<UInt16, IntervalKind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
             default:
-                throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
         UNREACHABLE();
     }
@@ -396,7 +396,7 @@ struct TimeWindowImpl<HOP>
                 return executeHop<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             default:
-                throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
         UNREACHABLE();
     }
@@ -545,7 +545,7 @@ struct TimeWindowImpl<WINDOW_ID>
                 return executeHopSlice<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             default:
-                throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
         UNREACHABLE();
     }

@@ -21,13 +21,13 @@ namespace ErrorCodes
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
 {
     if (!creators.emplace(index_type, std::move(creator)).second)
-        throw Exception("MergeTreeIndexFactory: the Index creator name '" + index_type + "' is not unique",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index creator name '{}' is not unique",
+                        index_type);
 }
 void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Validator validator)
 {
     if (!validators.emplace(index_type, std::move(validator)).second)
-        throw Exception("MergeTreeIndexFactory: the Index validator name '" + index_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
 }
 
 

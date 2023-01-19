@@ -1173,7 +1173,7 @@ private:
         ctx->projections_to_build = MutationHelpers::getProjectionsForNewDataPart(ctx->metadata_snapshot->getProjections(), ctx->for_file_renames);
 
         if (!ctx->mutating_pipeline_builder.initialized())
-            throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot mutate part columns with uninitialized mutations stream. It's a bug");
 
         QueryPipelineBuilder builder(std::move(ctx->mutating_pipeline_builder));
 

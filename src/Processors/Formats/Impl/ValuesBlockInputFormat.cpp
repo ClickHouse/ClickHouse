@@ -497,7 +497,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             {
                 buf->rollbackToCheckpoint();
                 size_t len = const_cast<char *>((*token_iterator)->begin) - buf->position();
-                throw Exception("Cannot deduce template of expression: " + std::string(buf->position(), len), ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot deduce template of expression: {}", std::string(buf->position(), len));
             }
         }
         /// Continue parsing without template
@@ -505,7 +505,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     }
 
     if (!format_settings.values.interpret_expressions)
-        throw Exception("Interpreting expressions is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Interpreting expressions is disabled");
 
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
@@ -593,12 +593,12 @@ void ValuesBlockInputFormat::readSuffix()
         ++buf->position();
         skipWhitespaceIfAny(*buf);
         if (buf->hasUnreadData())
-            throw Exception("Cannot read data after semicolon", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
         return;
     }
 
     if (buf->hasUnreadData())
-        throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.");
 }
 
 void ValuesBlockInputFormat::resetParser()

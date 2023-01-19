@@ -128,7 +128,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 params.deduplicate_files);
         }
 #else
-        throw Exception("S3 support is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");
 #endif
     };
 

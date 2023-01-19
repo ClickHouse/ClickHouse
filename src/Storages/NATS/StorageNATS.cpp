@@ -291,7 +291,7 @@ void StorageNATS::read(
         size_t /* num_streams */)
 {
     if (!consumers_ready)
-        throw Exception("NATS consumers setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_NATS);
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be lost");
 
     if (num_created_consumers == 0)
         return;
@@ -616,7 +616,7 @@ bool StorageNATS::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -721,10 +721,10 @@ void registerStorageNATS(StorageFactory & factory)
                 "You must specify either `nats_url` or `nats_server_list` settings", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!nats_settings->nats_format.changed)
-            throw Exception("You must specify `nats_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_format` setting");
 
         if (!nats_settings->nats_subjects.changed)
-            throw Exception("You must specify `nats_subjects` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
         return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, std::move(nats_settings), args.attach);
     };

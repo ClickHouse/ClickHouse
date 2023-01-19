@@ -55,7 +55,7 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     auto table = DatabaseCatalog::instance().getTable({qualified_name.database, qualified_name.table}, std::const_pointer_cast<Context>(context));
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
-        throw Exception("Table " + join_name + " should have engine StorageJoin", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
 
     String attr_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))

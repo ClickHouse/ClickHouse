@@ -45,8 +45,8 @@ DataTypePtr FunctionValidateNestedArraySizes::getReturnTypeImpl(const DataTypes 
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!WhichDataType(arguments[0]).isUInt8())
-        throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + " Must be UInt.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {} Must be UInt.",
+                arguments[0]->getName(), getName());
 
     for (size_t i = 1; i < num_args; ++i)
         if (!WhichDataType(arguments[i]).isArray())

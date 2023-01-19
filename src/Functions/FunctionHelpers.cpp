@@ -81,7 +81,7 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
             return ColumnWithTypeAndName{ nullable_res, nested_type, col.name };
         }
         else
-            throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for DataTypeNullable");
     }
     return col;
 }
@@ -100,16 +100,13 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
                           const char * expected_type_description)
 {
     if (arguments.size() <= argument_index)
-        throw Exception("Incorrect number of arguments of function " + func.getName(),
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments of function {}",
+                        func.getName());
 
     const auto & argument = arguments[argument_index];
     if (!validator_func(*argument))
-        throw Exception("Illegal type " + argument->getName() +
-                        " of " + std::to_string(argument_index) +
-                        " argument of function " + func.getName() +
-                        " expected " + expected_type_description,
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {} expected {}",
+                        argument->getName(), std::to_string(argument_index), func.getName(), expected_type_description);
 }
 
 namespace
@@ -211,11 +208,11 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
             offsets_i = &arr->getOffsets();
         }
         else
-            throw Exception("Illegal column " + columns[i]->getName() + " as argument of function", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} as argument of function", columns[i]->getName());
         if (i == 0)
             offsets = offsets_i;
         else if (*offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passed to aggregate function must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Lengths of all arrays passed to aggregate function must be equal.");
     }
     return {nested_columns, offsets->data()};
 }

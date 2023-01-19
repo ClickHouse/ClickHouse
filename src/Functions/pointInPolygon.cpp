@@ -87,7 +87,7 @@ public:
     {
         if (arguments.size() < 2)
         {
-            throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Too few arguments");
         }
 
         /** We allow function invocation in one of the following forms:
@@ -162,8 +162,8 @@ public:
 
         const auto * tuple_col = checkAndGetColumn<ColumnTuple>(point_col);
         if (!tuple_col)
-            throw Exception("First argument for function " + getName() + " must be constant array of tuples.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be constant array of tuples.",
+                            getName());
 
         const auto & tuple_columns = tuple_col->getColumns();
 
@@ -216,8 +216,8 @@ public:
         else
         {
             if (arguments.size() != 2)
-                throw Exception("Multi-argument version of function " + getName() + " works only with const polygon",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const polygon",
+                    getName());
 
             auto res_column = ColumnVector<UInt8>::create(input_rows_count);
             auto & data = res_column->getData();
@@ -485,8 +485,8 @@ private:
         {
             const auto * const_col = checkAndGetColumn<ColumnConst>(arguments[i].column.get());
             if (!const_col)
-                throw Exception("Multi-argument version of function " + getName() + " works only with const polygon",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const polygon",
+                    getName());
 
             const auto * array_col = checkAndGetColumn<ColumnArray>(&const_col->getDataColumn());
             const auto * tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
@@ -566,7 +566,7 @@ private:
             std::string failure_message;
             auto is_valid = boost::geometry::is_valid(out_polygon, failure_message);
             if (!is_valid)
-                throw Exception("Polygon is not valid: " + failure_message, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: {}", failure_message);
         }
 #endif
     }

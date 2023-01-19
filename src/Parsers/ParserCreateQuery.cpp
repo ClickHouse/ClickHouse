@@ -684,7 +684,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!query->storage)
             query->set(query->storage, std::make_shared<ASTStorage>());
         else if (query->storage->primary_key)
-            throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->primary_key = query->columns_list->primary_key;
     }

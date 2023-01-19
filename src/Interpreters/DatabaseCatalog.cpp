@@ -136,7 +136,7 @@ StoragePtr TemporaryTableHolder::getTable() const
 {
     auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), getContext());
     if (!table)
-        throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary table {} not found", getGlobalTableID().getNameForLogs());
     return table;
 }
 
@@ -390,7 +390,7 @@ void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_
 {
     assert(!database_name.empty());
     if (databases.end() != databases.find(database_name))
-        throw Exception("Database " + backQuoteIfNeed(database_name) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", backQuoteIfNeed(database_name));
 }
 
 void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database)
@@ -409,7 +409,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
     if (database_name == TEMPORARY_DATABASE)
-        throw Exception("Cannot detach database with temporary tables.", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot detach database with temporary tables.");
 
     DatabasePtr db;
     {
@@ -427,8 +427,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         try
         {
             if (!db->empty())
-                throw Exception("New table appeared in database being dropped or detached. Try again.",
-                                ErrorCodes::DATABASE_NOT_EMPTY);
+                throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "New table appeared in database being dropped or detached. Try again.");
             if (!drop)
                 db->assertCanBeDetached(false);
         }
@@ -655,8 +654,7 @@ DatabaseCatalog & DatabaseCatalog::init(ContextMutablePtr global_context_)
 {
     if (database_catalog)
     {
-        throw Exception("Database catalog is initialized twice. This is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database catalog is initialized twice. This is a bug.");
     }
 
     database_catalog.reset(new DatabaseCatalog(global_context_));
@@ -668,8 +666,7 @@ DatabaseCatalog & DatabaseCatalog::instance()
 {
     if (!database_catalog)
     {
-        throw Exception("Database catalog is not initialized. This is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database catalog is not initialized. This is a bug.");
     }
 
     return *database_catalog;

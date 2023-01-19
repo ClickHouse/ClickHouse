@@ -702,7 +702,7 @@ void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const Stri
 
 void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
 {
-    throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+    throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", address.toString());
 }
 
 void IAccessStorage::throwAuthenticationTypeNotAllowed(AuthenticationType auth_type)

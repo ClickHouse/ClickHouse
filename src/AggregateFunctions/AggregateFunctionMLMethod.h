@@ -344,7 +344,7 @@ public:
         else if (weights_updater_name == "Adam")
             new_weights_updater = std::make_shared<Adam>();
         else
-            throw Exception("Illegal name of weights updater (should have been checked earlier)", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal name of weights updater (should have been checked earlier)");
 
         new (place) Data(learning_rate, l2_reg_coef, param_num, batch_size, gradient_computer, new_weights_updater);
     }
@@ -377,8 +377,8 @@ public:
         /// This cast might be correct because column type is based on getReturnTypeToPredict.
         auto * column = typeid_cast<ColumnFloat64 *>(&to);
         if (!column)
-            throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cast of column of predictions is incorrect. "
+                            "getReturnTypeToPredict must return same value as it is casted to");
 
         this->data(place).predict(column->getData(), arguments, offset, limit, context);
     }

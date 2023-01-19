@@ -106,7 +106,7 @@ struct MultiMatchAnyImpl
         hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
         if (err != HS_SUCCESS)
-            throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for vectorscan");
 
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -130,7 +130,7 @@ struct MultiMatchAnyImpl
             UInt64 length = haystack_offsets[i] - offset - 1;
             /// vectorscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
-                throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
+                throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
             /// zero the result, scan, check, update the offset.
             res[i] = 0;
             err = hs_scan(
@@ -142,7 +142,7 @@ struct MultiMatchAnyImpl
                 on_match,
                 &res[i]);
             if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
-                throw Exception("Failed to scan with vectorscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
+                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
             offset = haystack_offsets[i];
         }
 #else
@@ -231,7 +231,7 @@ struct MultiMatchAnyImpl
             hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
             if (err != HS_SUCCESS)
-                throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for vectorscan");
 
             MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -253,7 +253,7 @@ struct MultiMatchAnyImpl
 
             /// vectorscan restriction.
             if (cur_haystack_length > std::numeric_limits<UInt32>::max())
-                throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
+                throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
 
             /// zero the result, scan, check, update the offset.
             res[i] = 0;
@@ -266,7 +266,7 @@ struct MultiMatchAnyImpl
                 on_match,
                 &res[i]);
             if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
-                throw Exception("Failed to scan with vectorscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
+                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
 
             prev_haystack_offset = haystack_offsets[i];
             prev_needles_offset = needles_offsets[i];

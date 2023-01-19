@@ -394,7 +394,7 @@ StorageDistributed::StorageDistributed(
 
         size_t num_local_shards = getCluster()->getLocalShardCount();
         if (num_local_shards && (remote_database.empty() || remote_database == id_.database_name) && remote_table == id_.table_name)
-            throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
+            throw Exception(ErrorCodes::INFINITE_LOOP, "Distributed table {} looks at itself", id_.table_name);
     }
 }
 
@@ -480,7 +480,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
             /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
             /// (since in this case queries processed separately and the initiator is just a proxy in this case).
             if (to_stage != QueryProcessingStage::Complete)
-                throw Exception("Queries with distributed_group_by_no_merge=1 should be processed to Complete stage", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Queries with distributed_group_by_no_merge=1 should be processed to Complete stage");
             return QueryProcessingStage::Complete;
         }
     }
@@ -766,7 +766,7 @@ void StorageDistributed::read(
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
-        throw Exception("Pipeline is not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
@@ -794,8 +794,8 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
     if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync && !settings.insert_shard_id)
     {
-        throw Exception("Storage " + getName() + " must have own data directory to enable asynchronous inserts",
-                        ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage {} must have own data directory to enable asynchronous inserts",
+                        getName());
     }
 
     auto shard_num = cluster->getLocalShardCount() + cluster->getRemoteShardCount();
@@ -810,7 +810,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 
     if (settings.insert_shard_id && settings.insert_shard_id > shard_num)
     {
-        throw Exception("Shard id should be range from 1 to shard number", ErrorCodes::INVALID_SHARD_ID);
+        throw Exception(ErrorCodes::INVALID_SHARD_ID, "Shard id should be range from 1 to shard number");
     }
 
     /// Force sync insertion if it is remote() table function
@@ -1006,7 +1006,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 {
     const Settings & settings = local_context->getSettingsRef();
     if (settings.max_distributed_depth && local_context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
-        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
 
@@ -1413,7 +1413,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     for (const auto & block : *blocks)
     {
         if (!block.has(sharding_key_column_name))
-            throw Exception("sharding_key_expr should evaluate as a single row", ErrorCodes::TOO_MANY_ROWS);
+            throw Exception(ErrorCodes::TOO_MANY_ROWS, "sharding_key_expr should evaluate as a single row");
 
         const ColumnWithTypeAndName & result = block.getByName(sharding_key_column_name);
         const auto selector = createSelector(cluster, result);
@@ -1622,13 +1622,13 @@ void registerStorageDistributed(StorageFactory & factory)
             const Block & block = sharding_expr->getSampleBlock();
 
             if (block.columns() != 1)
-                throw Exception("Sharding expression must return exactly one column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+                throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Sharding expression must return exactly one column");
 
             auto type = block.getByPosition(0).type;
 
             if (!type->isValueRepresentedByInteger())
-                throw Exception("Sharding expression has type " + type->getName() +
-                    ", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding expression has type {}, but should be one of integer type",
+                    type->getName());
         }
 
         /// TODO: move some arguments from the arguments to the SETTINGS.

@@ -156,7 +156,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
 std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 {
     if (absolute_path.is_relative())
-        throw Exception("Path is relative. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is relative. It's a bug.");
 
     absolute_path = std::filesystem::canonical(absolute_path);
 

@@ -254,7 +254,7 @@ namespace DB
         assertEOF(in);
 
         if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > gd::monthLength(gd::is_leap_year(year_), month_))
-            throw Exception("Invalid date: " + toString(), ErrorCodes::CANNOT_PARSE_DATE);
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date: {}", toString());
     }
 
     template <typename YearT>

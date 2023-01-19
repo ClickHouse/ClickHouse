@@ -107,7 +107,7 @@ StorageMergeTree::StorageMergeTree(
     loadDataParts(has_force_restore_data_flag);
 
     if (!attach && !getDataPartsForInternalUsage().empty())
-        throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.");
 
     increment.set(getMaxBlockNumber());
 
@@ -321,7 +321,7 @@ void StorageMergeTree::alter(
             /// We cannot place this check into settings sanityCheck because it depends on format_version.
             /// sanityCheck must work event without storage.
             if (new_storage_settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-                throw Exception("Deduplication for non-replicated MergeTree in old syntax is not supported", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
             deduplication_log->setDeduplicationWindowSize(new_storage_settings->non_replicated_deduplication_window);
         }
@@ -375,9 +375,9 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     if (!reserved_space)
     {
         if (is_mutation)
-            throw Exception("Not enough space for mutating part '" + future_part->parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for mutating part '{}'", future_part->parts[0]->name);
         else
-            throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for merging parts");
     }
 
     future_part->updatePath(storage, reserved_space.get());
@@ -385,7 +385,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     for (const auto & part : future_part->parts)
     {
         if (storage.currently_merging_mutating_parts.contains(part))
-            throw Exception("Tagging already tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged part {}. This is a bug.", part->name);
     }
     storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
 }
@@ -714,7 +714,7 @@ void StorageMergeTree::loadDeduplicationLog()
 {
     auto settings = getSettings();
     if (settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        throw Exception("Deduplication for non-replicated MergeTree in old syntax is not supported", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
     auto disk = getDisks()[0];
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
@@ -1361,7 +1361,7 @@ ActionLock StorageMergeTree::stopMergesAndWait()
         if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
             lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
         {
-            throw Exception("Timeout while waiting for already running merges", ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for already running merges");
         }
     }
 
@@ -1797,13 +1797,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
-        throw Exception("Table " + getStorageID().getNameForLogs() + " supports movePartitionToTable only for MergeTree family of table engines."
-                        " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}", getStorageID().getNameForLogs(), dest_table->getName());
     if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
-        throw Exception("Destination table " + dest_table_storage->getStorageID().getNameForLogs() +
-                       " should have the same storage policy of source table " + getStorageID().getNameForLogs() + ". " +
-                       getStorageID().getNameForLogs() + ": " + this->getStoragePolicy()->getName() + ", " +
-                       dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_POLICY);
+        throw Exception(ErrorCodes::UNKNOWN_POLICY, "Destination table {} should have the same storage policy of source table {}. {}: {}, {}: {}", dest_table_storage->getStorageID().getNameForLogs(), getStorageID().getNameForLogs(), getStorageID().getNameForLogs(), this->getStoragePolicy()->getName(), dest_table_storage->getStorageID().getNameForLogs(), dest_table_storage->getStoragePolicy()->getName());
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();

@@ -195,7 +195,7 @@ namespace
                 break;
             }
             default:
-                throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Value of unsupported type:{}", column.getName());
         }
     }
 

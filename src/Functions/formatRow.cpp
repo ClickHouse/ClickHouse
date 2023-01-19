@@ -38,7 +38,7 @@ public:
     FunctionFormatRow(const String & format_name_, ContextPtr context_) : format_name(format_name_), context(context_)
     {
         if (!FormatFactory::instance().getAllFormats().contains(format_name))
-            throw Exception("Unknown format " + format_name, ErrorCodes::UNKNOWN_FORMAT);
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", format_name);
     }
 
     String getName() const override { return name; }
@@ -120,7 +120,7 @@ public:
                 collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         else
-            throw Exception("First argument to " + getName() + " must be a format name", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }

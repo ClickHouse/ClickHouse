@@ -139,8 +139,7 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
         if (!array_type)
-            throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
-                            + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} for function {} must be an array but it has type {}.", std::to_string(i), getName(), arguments[i]->getName());
 
         const auto & nested_type = array_type->getNestedType();
 
@@ -370,7 +369,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             if (arrays.base_rows == 0 && rows > 0)
                 arrays.base_rows = rows;
             else if (arrays.base_rows != rows)
-                throw Exception("Non-const array columns in function " + getName() + "should have same rows", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-const array columns in function {}should have same rows", getName());
         }
     }
 
@@ -483,7 +482,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             columns.push_back(checkAndGetColumn<ColumnType>(arg.nested_column));
 
         if (!columns.back())
-            throw Exception("Unexpected array type for function arrayIntersect", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected array type for function arrayIntersect");
 
         if (!arg.null_map)
             all_nullable = false;

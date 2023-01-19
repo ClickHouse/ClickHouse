@@ -100,7 +100,7 @@ inline UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
         || checkAndGetDataType<DataTypeUInt16>(arg_type)
         || checkAndGetDataType<DataTypeUInt8>(arg_type);
     if (!ok)
-        throw Exception("Illegal type of toDecimal() scale " + named_column.type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of toDecimal() scale {}", named_column.type->getName());
 
     Field field;
     named_column.column->get(0, field);
@@ -147,8 +147,8 @@ struct ConvertImpl
         if (std::is_same_v<Name, NameToUnixTimestamp>)
         {
             if (isDateOrDate32(named_from.type))
-                throw Exception("Illegal type " + named_from.type->getName() + " of first argument of function " + Name::name,
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type {} of first argument of function {}",
+                    named_from.type->getName(), Name::name);
         }
 
         if constexpr ((IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
@@ -156,8 +156,8 @@ struct ConvertImpl
         {
             if constexpr (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>)
             {
-                throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    named_from.column->getName(), Name::name);
             }
         }
 
@@ -210,7 +210,7 @@ struct ConvertImpl
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
-                    throw Exception("Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted", ErrorCodes::NOT_IMPLEMENTED);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted");
                 }
                 else if constexpr (
                     (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
@@ -221,7 +221,7 @@ struct ConvertImpl
                 }
                 else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6>)
                 {
-                    throw Exception("Conversion between numeric types and IPv6 is not supported. Probably the passed IPv6 is unquoted", ErrorCodes::NOT_IMPLEMENTED);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion between numeric types and IPv6 is not supported. Probably the passed IPv6 is unquoted");
                 }
                 else
                 {
@@ -256,7 +256,7 @@ struct ConvertImpl
                             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
                                 vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale());
                             else
-                                throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
+                                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unsupported data type in conversion function");
                         }
                     }
                     else
@@ -273,7 +273,7 @@ struct ConvertImpl
                                     continue;
                                 }
                                 else
-                                    throw Exception("Unexpected inf or nan to integer conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
+                                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
                             }
                         }
 
@@ -312,8 +312,8 @@ struct ConvertImpl
                 return col_to;
         }
         else
-            throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                named_from.column->getName(), Name::name);
     }
 };
 
@@ -881,9 +881,8 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
             return col_to;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                    + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), Name::name);
     }
 };
 
@@ -1206,14 +1205,12 @@ struct ConvertThroughParsing
         const ColumnFixedString * col_from_fixed_string = checkAndGetColumn<ColumnFixedString>(col_from);
 
         if (std::is_same_v<FromDataType, DataTypeString> && !col_from_string)
-            throw Exception("Illegal column " + col_from->getName()
-                + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                col_from->getName(), Name::name);
 
         if (std::is_same_v<FromDataType, DataTypeFixedString> && !col_from_fixed_string)
-            throw Exception("Illegal column " + col_from->getName()
-                + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                col_from->getName(), Name::name);
 
         size_t size = input_rows_count;
         typename ColVecTo::MutablePtr col_to = nullptr;
@@ -1605,9 +1602,8 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name, ConvertDefaultBeha
             return col_to;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                    + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), Name::name);
     }
 };
 
@@ -1782,7 +1778,7 @@ public:
             else if constexpr (std::is_same_v<Name, NameToDecimal256>)
                 return createDecimalMaxPrecision<Decimal256>(scale);
 
-            throw Exception("Unexpected branch in code of conversion function: it is a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
         }
         else
         {
@@ -1806,7 +1802,7 @@ public:
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception("Unexpected branch in code of conversion function: it is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
             else
                 return std::make_shared<ToDataType>();
         }
@@ -1939,7 +1935,7 @@ private:
                 if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeUUID>) ||
                               (bad_right && std::is_same_v<LeftDataType, DataTypeUUID>))
                 {
-                    throw Exception("Wrong UUID conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Wrong UUID conversion");
                 }
                 else
                 {
@@ -1964,8 +1960,8 @@ private:
             if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
             {
                 if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{}))
-                    throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                                    arguments[0].type->getName(), getName());
 
                 return result_column;
             }
@@ -2008,8 +2004,8 @@ private:
                 return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count);
             }
             else
-                throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                    arguments[0].type->getName(), getName());
         }
 
         return result_column;
@@ -2079,20 +2075,21 @@ public:
         else
         {
             if ((arguments.size() != 1 && arguments.size() != 2) || (to_decimal && arguments.size() != 2))
-                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) +
-                    ", should be 1 or 2. Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                    Number of arguments for function {} doesn't match: passed {}, should be 1 or 2. "
+                    "Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
+                    getName(), toString(arguments.size()));
 
             if (!isStringOrFixedString(arguments[0].type))
             {
                 if (this->getName().find("OrZero") != std::string::npos ||
                     this->getName().find("OrNull") != std::string::npos)
-                    throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
-                            ". Conversion functions with postfix 'OrZero' or 'OrNull'  should take String argument",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                            "Conversion functions with postfix 'OrZero' or 'OrNull' should take String argument",
+                            arguments[0].type->getName(), getName());
                 else
-                    throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
+                            arguments[0].type->getName(), getName());
             }
 
             if (arguments.size() == 2)
@@ -2100,35 +2097,36 @@ public:
                 if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 {
                     if (!isString(arguments[1].type))
-                        throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 2nd argument of function {}",
+                            arguments[1].type->getName(), getName());
                 }
                 else if constexpr (to_decimal)
                 {
                     if (!isInteger(arguments[1].type))
-                        throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 2nd argument of function {}",
+                            arguments[1].type->getName(), getName());
                     if (!arguments[1].column)
-                        throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be constant", getName());
                 }
                 else
                 {
-                    throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(arguments.size()) + ", should be 1. Second argument makes sense only for DateTime and Decimal.",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                        Number of arguments for function {} doesn't match: passed {}, should be 1. "
+                        "Second argument makes sense only for DateTime and Decimal.",
+                        getName(), toString(arguments.size()));
                 }
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: It is a bug.");
             else if constexpr (to_decimal)
             {
                 UInt64 scale = extractToDecimalScale(arguments[1]);
                 res = createDecimalMaxPrecision<typename ToDataType::FieldType>(scale);
                 if (!res)
-                    throw Exception("Something wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Something wrong with toDecimalNNOrZero() or toDecimalNNOrNull()");
             }
             else
                 res = std::make_shared<ToDataType>();
@@ -2188,10 +2186,9 @@ public:
         }
 
         if (!result_column)
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
-                + ". Only String or FixedString argument is accepted for try-conversion function."
-                + " For other arguments, use function without 'orZero' or 'orNull'.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                "Only String or FixedString argument is accepted for try-conversion function. For other arguments, "
+                "use function without 'orZero' or 'orNull'.", arguments[0].type->getName(), getName());
 
         return result_column;
     }
@@ -3606,7 +3603,7 @@ private:
             const ColumnStringType * col = typeid_cast<const ColumnStringType *>(first_col);
 
             if (col && nullable_col && nullable_col->size() != col->size())
-                throw Exception("ColumnNullable is not compatible with original", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
 
             if (col)
             {
@@ -3792,7 +3789,7 @@ private:
                 if (source_is_nullable)
                 {
                     if (arguments.size() != 1)
-                        throw Exception("Invalid number of arguments", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of arguments");
                     nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
                 }
 
@@ -3801,8 +3798,8 @@ private:
 
                 /// May happen in fuzzy tests. For debug purpose.
                 if (!tmp_res)
-                    throw Exception("Couldn't convert " + arguments[0].type->getName() + " to "
-                                    + nested_type->getName() + " in " + " prepareRemoveNullable wrapper.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Couldn't convert {} to {} in prepareRemoveNullable wrapper.",
+                                    arguments[0].type->getName(), nested_type->getName());
 
                 return wrapInNullable(tmp_res, arguments, nested_type, input_rows_count);
             };

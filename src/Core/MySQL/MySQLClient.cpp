@@ -98,7 +98,7 @@ void MySQLClient::handshake()
     if (packet_response.getType() == PACKET_ERR)
         throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     else if (packet_response.getType() == PACKET_AUTH_SWITCH)
-        throw Exception("Access denied for user " + user, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Access denied for user {}", user);
 }
 
 void MySQLClient::writeCommand(char command, String query)

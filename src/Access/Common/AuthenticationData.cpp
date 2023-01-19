@@ -67,7 +67,7 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
         case AuthenticationType::MAX:
             break;
     }
-    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type_)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown authentication type: {}", static_cast<int>(type_));
 }
 
 
@@ -119,19 +119,19 @@ void AuthenticationData::setPassword(const String & password_)
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
-            throw Exception("Cannot specify password for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
             break;
     }
-    throw Exception("setPassword(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
 }
 
 
 String AuthenticationData::getPassword() const
 {
     if (type != AuthenticationType::PLAINTEXT_PASSWORD)
-        throw Exception("Cannot decode the password", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
     return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
 
@@ -157,7 +157,7 @@ void AuthenticationData::setPasswordHashHex(const String & hash)
 String AuthenticationData::getPasswordHashHex() const
 {
     if (type == AuthenticationType::LDAP || type == AuthenticationType::KERBEROS || type == AuthenticationType::SSL_CERTIFICATE)
-        throw Exception("Cannot get password hex hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get password hex hash for authentication type {}", toString(type));
 
     String hex;
     hex.resize(password_hash.size() * 2);
@@ -202,18 +202,18 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
-            throw Exception("Cannot specify password binary hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password binary hash for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
             break;
     }
-    throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPasswordHashBinary(): authentication type {} not supported", toString(type));
 }
 
 void AuthenticationData::setSalt(String salt_)
 {
     if (type != AuthenticationType::SHA256_PASSWORD)
-        throw Exception("setSalt(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setSalt(): authentication type {} not supported", toString(type));
     salt = std::move(salt_);
 }
 
@@ -225,7 +225,7 @@ String AuthenticationData::getSalt() const
 void AuthenticationData::setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_)
 {
     if (common_names_.empty())
-        throw Exception("The 'SSL CERTIFICATE' authentication type requires a non-empty list of common names.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of common names.");
     ssl_certificate_common_names = std::move(common_names_);
 }
 

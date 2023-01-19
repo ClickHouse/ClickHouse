@@ -40,7 +40,7 @@ VolumeJBOD::VolumeJBOD(
     {
         auto ratio = config.getDouble(config_prefix + ".max_data_part_size_ratio");
         if (ratio < 0)
-            throw Exception("'max_data_part_size_ratio' have to be not less then 0.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "'max_data_part_size_ratio' have to be not less then 0.");
         UInt64 sum_size = 0;
         std::vector<UInt64> sizes;
         for (const auto & disk : disks)

@@ -187,11 +187,11 @@ private:
         const auto mode = arguments[0].column->getDataAt(0);
 
         if (mode.size == 0 || !mode.toView().starts_with("aes-"))
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto * evp_cipher = getCipherByName(mode);
         if (evp_cipher == nullptr)
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
 
@@ -216,7 +216,7 @@ private:
             else
             {
                 if (cipher_mode != EVP_CIPH_GCM_MODE)
-                    throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "AAD can be only set for GCM-mode");
 
                 const auto aad_column = arguments[4].column;
                 result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
@@ -462,11 +462,11 @@ private:
 
         const auto mode = arguments[0].column->getDataAt(0);
         if (mode.size == 0 || !mode.toView().starts_with("aes-"))
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto * evp_cipher = getCipherByName(mode);
         if (evp_cipher == nullptr)
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
@@ -491,7 +491,7 @@ private:
             else
             {
                 if (EVP_CIPHER_mode(evp_cipher) != EVP_CIPH_GCM_MODE)
-                    throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "AAD can be only set for GCM-mode");
 
                 const auto aad_column = arguments[4].column;
                 result_column = doDecrypt<use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
@@ -565,8 +565,7 @@ private:
                     if (string_size > 0)
                     {
                         if (string_size < tag_size)
-                            throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
-                                ErrorCodes::BAD_ARGUMENTS);
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.");
 
                         resulting_size -= tag_size;
                     }

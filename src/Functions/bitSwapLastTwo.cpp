@@ -39,7 +39,7 @@ static constexpr bool compilable = true;
 static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
 {
     if (!arg->getType()->isIntegerTy())
-        throw Exception("__bitSwapLastTwo expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "__bitSwapLastTwo expected an integral type");
     return b.CreateOr(
             b.CreateShl(b.CreateAnd(arg, 1), 1),
             b.CreateAnd(b.CreateLShr(arg, 1), 1)

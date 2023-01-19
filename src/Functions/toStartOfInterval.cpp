@@ -483,7 +483,7 @@ private:
                 "Illegal column for second argument of function " + getName() + ", must be a const interval of time.", ErrorCodes::ILLEGAL_COLUMN);
         Int64 num_units = interval_column_const_int64->getValue<Int64>();
         if (num_units <= 0)
-            throw Exception("Value for second argument of function " + getName() + " must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for second argument of function {} must be positive.", getName());
 
         switch (interval_type->getKind())
         {

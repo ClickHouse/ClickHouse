@@ -121,7 +121,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 {
     if (!format_settings.skip_unknown_fields)
-        throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
     skipJSONField(*in, name_ref);
 }
@@ -129,7 +129,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
     if (seen_columns[index])
-        throw Exception("Duplicate field found while parsing JSONEachRow format: " + columnName(index), ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing JSONEachRow format: {}", columnName(index));
 
     seen_columns[index] = true;
     const auto & type = getPort().getHeader().getByPosition(index).type;
@@ -179,7 +179,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             else if (column_index == NESTED_FIELD)
                 readNestedData(name_ref.toString(), columns);
             else
-                throw Exception("Logical error: illegal value of column_index", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: illegal value of column_index");
         }
         else
         {

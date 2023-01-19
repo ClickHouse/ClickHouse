@@ -93,8 +93,8 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                     else
                     {
                         if constexpr (_throw_on_error)
-                            throw Exception("Too many digits (" + std::to_string(digits + places) + " > " + std::to_string(max_digits)
-                                + ") in decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too many digits ({} > {}) in decimal value",
+                                std::to_string(digits + places), std::to_string(max_digits));
 
                         return false;
                     }

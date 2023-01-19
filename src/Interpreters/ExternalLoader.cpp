@@ -1000,7 +1000,7 @@ private:
             /// Loading.
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
-                throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No object created and no exception raised for {}", type_name);
 
             /// Saving the result of the loading.
             {

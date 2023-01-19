@@ -65,14 +65,14 @@ public:
         const IDataType & type = *arguments[0];
 
         if (!isNativeNumber(type))
-            throw Exception("Cannot format " + type.getName() + " as time delta", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
 
         if (arguments.size() == 2)
         {
             const auto * maximum_unit_arg = arguments[1].get();
             if (!isStringOrFixedString(maximum_unit_arg))
-                throw Exception("Illegal type " + maximum_unit_arg->getName() + " of argument maximum_unit of function "
-                                + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument maximum_unit of function {}",
+                                maximum_unit_arg->getName(), getName());
         }
 
         return std::make_shared<DataTypeString>();

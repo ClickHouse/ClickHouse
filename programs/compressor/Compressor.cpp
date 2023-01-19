@@ -113,10 +113,10 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             codecs = options["codec"].as<std::vector<std::string>>();
 
         if ((use_lz4hc || use_zstd || use_deflate_qpl || use_none) && !codecs.empty())
-            throw Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, codec flags like --zstd and --codec options are mutually exclusive");
 
         if (!codecs.empty() && options.count("level"))
-            throw Exception("Wrong options, --level is not compatible with --codec list", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, --level is not compatible with --codec list");
 
         std::string method_family = "LZ4";
 

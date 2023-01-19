@@ -226,7 +226,7 @@ protected:
             else if (character[0] == '"')
                 quote_style = IdentifierQuotingStyle::DoubleQuotes;
             else
-                throw Exception("Can not map quote identifier '" + character + "' to enum value", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Can not map quote identifier '{}' to enum value", character);
         }
 
         return *quote_style;

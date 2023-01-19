@@ -101,7 +101,7 @@ void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, con
 {
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE)
-            throw Exception("Table engine Join supports only DELETE mutations", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine Join supports only DELETE mutations");
 }
 
 void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context, bool /*force_wait*/)
@@ -319,7 +319,7 @@ void registerStorageJoin(StorageFactory & factory)
                     persistent = setting.value.get<bool>();
                 }
                 else
-                    throw Exception("Unknown setting " + setting.name + " for storage " + args.engine_name, ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting {} for storage {}", setting.name, args.engine_name);
             }
         }
 
@@ -353,8 +353,7 @@ void registerStorageJoin(StorageFactory & factory)
         }
 
         if (strictness == JoinStrictness::Unspecified)
-            throw Exception("First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).",
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).");
 
         if (auto opt_kind_id = tryGetIdentifierName(engine_args[1]))
         {
@@ -375,8 +374,7 @@ void registerStorageJoin(StorageFactory & factory)
         }
 
         if (kind == JoinKind::Comma)
-            throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).",
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).");
 
         Names key_names;
         key_names.reserve(engine_args.size() - 2);
@@ -384,7 +382,7 @@ void registerStorageJoin(StorageFactory & factory)
         {
             auto opt_key = tryGetIdentifierName(engine_args[i]);
             if (!opt_key)
-                throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter №{} of storage Join don't look like column name.", toString(i + 1));
 
             key_names.push_back(*opt_key);
         }
@@ -477,7 +475,7 @@ protected:
         Chunk chunk;
         if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
-            throw Exception("Logical error: unknown JOIN strictness", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown JOIN strictness");
         return chunk;
     }
 
@@ -512,8 +510,8 @@ private:
 #undef M
 
             default:
-                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(join->data->type)),
-                                ErrorCodes::UNSUPPORTED_JOIN_KEYS);
+                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys in StorageJoin. Type: {}",
+                                toString(static_cast<UInt32>(join->data->type)));
         }
 
         if (!rows_added)
@@ -587,7 +585,7 @@ private:
                     fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
             }
             else
-                throw Exception("This JOIN is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
 
             if (rows_added >= max_block_size)
             {

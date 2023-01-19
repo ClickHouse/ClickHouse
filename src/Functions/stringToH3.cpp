@@ -68,7 +68,7 @@ public:
         else if (const ColumnConst * h3index_const_fixed = checkAndGetColumnConst<ColumnFixedString>(col_hindex))
             execute<ConstSource<FixedStringSource>>(ConstSource<FixedStringSource>(*h3index_const_fixed), dst_data);
         else
-            throw Exception("Illegal column as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column as argument of function {}", getName());
 
         return dst;
     }
@@ -89,7 +89,7 @@ private:
 
             if (res_data[row_num] == 0)
             {
-                throw Exception("Invalid H3 index: " + h3index_str, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid H3 index: {}", h3index_str);
             }
 
             h3index_source.next();

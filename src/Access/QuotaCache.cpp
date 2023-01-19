@@ -73,7 +73,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
         }
         case QuotaKeyType::MAX: break;
     }
-    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(quota->key_type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota key type: {}", static_cast<int>(quota->key_type));
 }
 
 

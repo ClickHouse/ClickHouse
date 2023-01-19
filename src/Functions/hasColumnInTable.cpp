@@ -111,7 +111,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     String column_name = get_string_from_columns(arguments[arg++]);
 
     if (table_name.empty())
-        throw Exception("Table name is empty", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty");
 
     bool has_column;
     if (host_name.empty())

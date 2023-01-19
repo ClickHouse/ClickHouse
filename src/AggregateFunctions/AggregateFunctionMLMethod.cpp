@@ -79,8 +79,8 @@ namespace
         {
             weights_updater_name = parameters[3].safeGet<String>();
             if (weights_updater_name != "SGD" && weights_updater_name != "Momentum" && weights_updater_name != "Nesterov" && weights_updater_name != "Adam")
-                throw Exception("Invalid parameter for weights updater. The only supported are 'SGD', 'Momentum' and 'Nesterov'",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid parameter for weights updater. "
+                                "The only supported are 'SGD', 'Momentum' and 'Nesterov'");
         }
 
         if constexpr (std::is_same_v<Method, FuncLinearRegression>)
@@ -255,7 +255,7 @@ void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
     {
         if (!average_squared_gradient.empty() ||
                 adam_rhs.average_gradient.size() != adam_rhs.average_squared_gradient.size())
-            throw Exception("Average_gradient and average_squared_gradient must have same size", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Average_gradient and average_squared_gradient must have same size");
 
         average_gradient.resize(adam_rhs.average_gradient.size(), Float64{0.0});
         average_squared_gradient.resize(adam_rhs.average_squared_gradient.size(), Float64{0.0});
@@ -275,7 +275,7 @@ void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & b
     if (average_gradient.empty())
     {
         if (!average_squared_gradient.empty())
-            throw Exception("Average_gradient and average_squared_gradient must have same size", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Average_gradient and average_squared_gradient must have same size");
 
         average_gradient.resize(batch_gradient.size(), Float64{0.0});
         average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
@@ -460,9 +460,9 @@ void LogisticRegression::predict(
     size_t rows_num = arguments.front().column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
-        throw Exception("Invalid offset and limit for LogisticRegression::predict. "
-                        "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
-                        " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid offset and limit for LogisticRegression::predict. "
+                        "Block has {} rows, but offset is {} and limit is {}",
+                        toString(rows_num), toString(offset), toString(limit));
 
     std::vector<Float64> results(limit, bias);
 
@@ -471,7 +471,7 @@ void LogisticRegression::predict(
         const ColumnWithTypeAndName & cur_col = arguments[i];
 
         if (!isNativeNumber(cur_col.type))
-            throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prediction arguments must have numeric type");
 
         const auto & features_column = cur_col.column;
 
@@ -527,15 +527,15 @@ void LinearRegression::predict(
 {
     if (weights.size() + 1 != arguments.size())
     {
-        throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "In predict function number of arguments differs from the size of weights vector");
     }
 
     size_t rows_num = arguments.front().column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
-        throw Exception("Invalid offset and limit for LogisticRegression::predict. "
-                        "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
-                        " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid offset and limit for LogisticRegression::predict. "
+                        "Block has {} rows, but offset is {} and limit is {}",
+                        toString(rows_num), toString(offset), toString(limit));
 
     std::vector<Float64> results(limit, bias);
 
@@ -544,12 +544,12 @@ void LinearRegression::predict(
         const ColumnWithTypeAndName & cur_col = arguments[i];
 
         if (!isNativeNumber(cur_col.type))
-            throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prediction arguments must have numeric type");
 
         auto features_column = cur_col.column;
 
         if (!features_column)
-            throw Exception("Unexpectedly cannot dynamically cast features column " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpectedly cannot dynamically cast features column {}", std::to_string(i));
 
         for (size_t row_num = 0; row_num < limit; ++row_num)
             results[row_num] += weights[i - 1] * features_column->getFloat64(row_num + offset);

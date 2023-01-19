@@ -48,12 +48,11 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     }
 
     if (parameters.size() < 2)
-        throw Exception("Aggregate function '" + name + "' requires 2 parameters (direction, head)",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                        Aggregate function '{}' requires 2 parameters (direction, head)", name);
     auto expected_param_type = Field::Types::Which::String;
     if (parameters.at(0).getType() != expected_param_type || parameters.at(1).getType() != expected_param_type)
-        throw Exception("Aggregate function '" + name + "' requires 'String' parameters",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function '{}' requires 'String' parameters", name);
 
     String param_dir = parameters.at(0).safeGet<String>();
     std::unordered_map<std::string, SequenceDirection> seq_dir_mapping{
@@ -81,7 +80,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
             "Invalid argument combination of '{}' with '{}'", param_base, param_dir), ErrorCodes::BAD_ARGUMENTS);
 
     if (argument_types.size() < min_required_args)
-        throw Exception("Aggregate function " + name + " requires at least " + toString(min_required_args) + " arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least {} arguments.", name, toString(min_required_args));
 
     bool is_base_match_type = base == SequenceBase::FirstMatch || base == SequenceBase::LastMatch;
     if (is_base_match_type && argument_types.size() < min_required_args + 1)
@@ -95,8 +94,8 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
                 name, max_events_size + min_required_args, max_events_size), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (const auto * cond_arg = argument_types[2].get(); cond_arg && !isUInt8(cond_arg))
-        throw Exception("Illegal type " + cond_arg->getName() + " of third argument of aggregate function "
-                + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of aggregate function {}, "
+                        "must be UInt8", cond_arg->getName(), name);
 
     for (const auto i : collections::range(min_required_args, argument_types.size()))
     {

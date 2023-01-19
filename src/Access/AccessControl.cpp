@@ -450,7 +450,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
             addReplicatedStorage(name, zookeeper_path, get_zookeeper_function, allow_backup);
         }
         else
-            throw Exception("Unknown storage type '" + type + "' at " + prefix + " in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown storage type '{}' at {} in config", type, prefix);
     }
 }
 

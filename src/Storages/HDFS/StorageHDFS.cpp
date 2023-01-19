@@ -128,7 +128,7 @@ namespace
                 return {uri.substr(pos), uri.substr(0, pos)};
         }
 
-        throw Exception("Storage HDFS requires valid URL to be set", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage HDFS requires valid URL to be set");
     }
 
     std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context, std::unordered_map<String, time_t> * last_mod_times = nullptr)

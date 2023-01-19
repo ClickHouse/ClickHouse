@@ -52,12 +52,12 @@ off_t LimitSeekableReadBuffer::seek(off_t off, int whence)
     else if (whence == SEEK_CUR)
         new_position = current_position + off;
     else
-        throw Exception("LimitSeekableReadBuffer::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "LimitSeekableReadBuffer::seek expects SEEK_SET or SEEK_CUR as whence");
 
     if (new_position < 0)
-        throw Exception("SEEK_SET underflow: off = " + std::to_string(off), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", std::to_string(off));
     if (static_cast<UInt64>(new_position) > limit)
-        throw Exception("SEEK_CUR shift out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_CUR shift out of bounds");
 
     off_t change_position = new_position - current_position;
     if ((working_buffer.begin() <= pos + change_position) && (pos + change_position <= working_buffer.end()))
@@ -94,7 +94,7 @@ LimitSeekableReadBuffer::LimitSeekableReadBuffer(SeekableReadBuffer * in_, bool 
 
     off_t current_position = in->getPosition();
     if (current_position > static_cast<off_t>(limit))
-        throw Exception("Limit for LimitSeekableReadBuffer exceeded", ErrorCodes::LIMIT_EXCEEDED);
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Limit for LimitSeekableReadBuffer exceeded");
 
     working_buffer = in->buffer();
     pos = in->position();

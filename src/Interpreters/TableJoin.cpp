@@ -141,7 +141,7 @@ void TableJoin::addDisjunct()
     clauses.emplace_back();
 
     if (getStorageJoin() && clauses.size() > 1)
-        throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin with ORs is not supported");
 }
 
 void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)

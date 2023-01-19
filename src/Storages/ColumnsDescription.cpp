@@ -136,7 +136,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 ttl = col_ast->ttl;
         }
         else
-            throw Exception("Cannot parse column description", ErrorCodes::CANNOT_PARSE_TEXT);
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
     }
 }
 
@@ -267,7 +267,7 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
         auto column_range = getNameRange(columns, column_name);
 
         if (column_range.first == column_range.second)
-            throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table.", column_name);
 
         std::vector<ColumnDescription> moving_columns;
         for (auto list_it = column_range.first; list_it != column_range.second;)
@@ -470,8 +470,7 @@ const ColumnDescription & ColumnsDescription::get(const String & column_name) co
 {
     auto it = columns.get<1>().find(column_name);
     if (it == columns.get<1>().end())
-        throw Exception("There is no column " + column_name + " in table.",
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table.", column_name);
 
     return *it;
 }
@@ -805,7 +804,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
 {
     for (const auto & child : default_expr_list->children)
         if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
-            throw Exception("Select query is not allowed in columns DEFAULT expression", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+            throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");
 
     try
     {
@@ -813,7 +812,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+                throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
 
         return actions->getSampleBlock();
     }

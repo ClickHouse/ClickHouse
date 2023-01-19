@@ -129,7 +129,7 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 
 
     if (relative_path_.empty())
-        throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
 
     path = relative_path_;
 }

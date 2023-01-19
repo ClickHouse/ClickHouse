@@ -198,11 +198,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (allow_settings_after_format_in_insert && s_settings.ignore(pos, expected))
     {
         if (settings_ast)
-            throw Exception("You have SETTINGS before and after FORMAT, "
-                            "this is not allowed. "
-                            "Consider switching to SETTINGS before FORMAT "
-                            "and disable allow_settings_after_format_in_insert.",
-                            ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "You have SETTINGS before and after FORMAT, this is not allowed. Consider switching to SETTINGS before FORMAT and disable allow_settings_after_format_in_insert.");
 
         /// Settings are written like SET query, so parse them with ParserSetQuery
         ParserSetQuery parser_settings(true);

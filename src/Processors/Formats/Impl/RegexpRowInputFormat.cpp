@@ -109,7 +109,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
 void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext)
 {
     if (field_extractor.getMatchedFieldsSize() != columns.size())
-        throw Exception("The number of matched fields in line doesn't match the number of columns.", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The number of matched fields in line doesn't match the number of columns.");
 
     ext.read_columns.assign(columns.size(), false);
     for (size_t columns_index = 0; columns_index < columns.size(); ++columns_index)

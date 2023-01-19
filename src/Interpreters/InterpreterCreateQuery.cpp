@@ -122,7 +122,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (create.if_not_exists)
             return {};
         else
-            throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
     /// Will write file with database metadata, if needed.
@@ -134,7 +134,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     if (!create.storage && create.attach)
     {
         if (!fs::exists(metadata_file_path))
-            throw Exception("Database engine must be specified for ATTACH DATABASE query", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         /// Short syntax: try read database definition from file
         auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), metadata_file_path);
         create = ast->as<ASTCreateQuery &>();
@@ -149,7 +149,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// For new-style databases engine is explicitly specified in .sql
         /// When attaching old-style database during server startup, we must always use Ordinary engine
         if (create.attach)
-            throw Exception("Database engine must be specified for ATTACH DATABASE query", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
         engine->name = "Atomic";
@@ -202,8 +202,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         {
             /// Ambiguity is possible: should we attach nested database as Ordinary
             /// or throw "UUID must be specified" for Atomic? So we suggest short syntax for Ordinary.
-            throw Exception("Use short attach syntax ('ATTACH DATABASE name;' without engine) to attach existing database "
-                            "or specify UUID to attach new database with Atomic engine", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Use short attach syntax ('ATTACH DATABASE name;' without engine) to attach existing database or specify UUID to attach new database with Atomic engine");
         }
 
         /// Set metadata path according to nested engine
@@ -216,7 +215,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
-            throw Exception("Ordinary database engine does not support UUID", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Ordinary database engine does not support UUID");
 
         /// Ignore UUID if it's ON CLUSTER query
         create.uuid = UUIDHelpers::Nil;
@@ -227,24 +226,21 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_mysql
         && !internal && !create.attach)
     {
-        throw Exception("MaterializedMySQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialized_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "MaterializedMySQL is an experimental database engine. Enable allow_experimental_database_materialized_mysql to use it.");
     }
 
     if (create.storage->engine->name == "Replicated"
         && !getContext()->getSettingsRef().allow_experimental_database_replicated
         && !internal && !create.attach)
     {
-        throw Exception("Replicated is an experimental database engine. "
-                        "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Replicated is an experimental database engine. Enable allow_experimental_database_replicated to use it.");
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql
         && !internal && !create.attach)
     {
-        throw Exception("MaterializedPostgreSQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialized_postgresql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "MaterializedPostgreSQL is an experimental database engine. Enable allow_experimental_database_materialized_postgresql to use it.");
     }
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
@@ -476,7 +472,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.collation && !context_->getSettingsRef().compatibility_ignore_collation_in_create_table)
         {
-            throw Exception("Cannot support collation, please set compatibility_ignore_collation_in_create_table=true", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot support collation, please set compatibility_ignore_collation_in_create_table=true");
         }
 
         DataTypePtr column_type = nullptr;
@@ -490,7 +486,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.null_modifier)
             {
                 if (column_type->isNullable())
-                    throw Exception("Can't use [NOT] NULL modifier with Nullable type", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
+                    throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
                 if (*col_decl.null_modifier)
                     column_type = makeNullable(column_type);
             }
@@ -664,7 +660,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.columns_list)
     {
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
-            throw Exception("Indexes and constraints are not supported for table functions", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Indexes and constraints are not supported for table functions");
 
         /// Dictionaries have dictionary_attributes_list instead of columns_list
         assert(!create.is_dictionary);
@@ -680,7 +676,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 properties.indices.push_back(
                     IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
                     if (properties.indices.back().type == "annoy" && !getContext()->getSettingsRef().allow_experimental_annoy_index)
-                        throw Exception("Annoy index is disabled. Turn on allow_experimental_annoy_index", ErrorCodes::INCORRECT_QUERY);
+                        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
             }
 
         if (create.columns_list->projections)
@@ -746,7 +742,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// We can have queries like "CREATE TABLE <table> ENGINE=<engine>" if <engine>
     /// supports schema inference (will determine table structure in it's constructor).
     else if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(create.storage->engine->name))
-        throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect CREATE query: required list of column descriptions or AS section or SELECT.");
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
@@ -779,7 +775,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     for (const auto & column : properties.columns)
     {
         if (!all_columns.emplace(column.name).second)
-            throw Exception("Column " + backQuoteIfNeed(column.name) + " already exists", ErrorCodes::DUPLICATE_COLUMN);
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column.name));
     }
 
     /// Check if _row_exists for lightweight delete column in column_lists for merge tree family.
@@ -787,9 +783,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     {
         auto search = all_columns.find(LightweightDeleteDescription::FILTER_COLUMN.name);
         if (search != all_columns.end())
-            throw Exception("Cannot create table with column '" + LightweightDeleteDescription::FILTER_COLUMN.name + "' "
-                            "for *MergeTree engines because it is reserved for lightweight delete feature",
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create table with column '{}' for *MergeTree engines because it is reserved for lightweight delete feature", LightweightDeleteDescription::FILTER_COLUMN.name);
     }
 
     const auto & settings = getContext()->getSettingsRef();
@@ -883,7 +877,7 @@ String InterpreterCreateQuery::getTableEngineName(DefaultTableEngine default_tab
             return "Memory";
 
         default:
-            throw Exception("default_table_engine is set to unknown value", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "default_table_engine is set to unknown value");
     }
 }
 
@@ -1000,7 +994,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
         && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
-            throw Exception("Table UUID is not specified in DDL log", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table UUID is not specified in DDL log");
     }
 
     bool from_path = create.attach_from_path.has_value();
@@ -1044,8 +1038,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     /// Temporary tables are created out of databases.
     if (create.temporary && create.database)
-        throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
-            ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
+        throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE, "Temporary tables cannot be inside a database. You should not specify a database for a temporary table.");
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
@@ -1595,10 +1588,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
                 return;
         }
 
-        throw Exception("Seems like cluster is configured for cross-replication, "
-                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
-                        "It's not supported for cross replication, because tables must have different UUIDs. "
-                        "Please specify unique zookeeper_path explicitly.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Seems like cluster is configured for cross-replication, but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. It's not supported for cross replication, because tables must have different UUIDs. Please specify unique zookeeper_path explicitly.");
     }
 }
 

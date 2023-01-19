@@ -60,7 +60,7 @@ void GTIDSets::parse(String gtid_format)
                     break;
                 }
                 default:
-                    throw Exception("GTIDParse: Invalid GTID interval: " + server_ids[k], ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "GTIDParse: Invalid GTID interval: {}", server_ids[k]);
             }
             set.intervals.emplace_back(val);
         }

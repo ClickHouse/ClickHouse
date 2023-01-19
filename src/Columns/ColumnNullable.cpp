@@ -62,8 +62,8 @@ void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
     auto s = size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     WeakHash32 old_hash = hash;
     nested_column->updateWeakHash32(hash);
@@ -754,8 +754,7 @@ void ColumnNullable::applyNullMap(const ColumnNullable & other)
 void ColumnNullable::checkConsistency() const
 {
     if (null_map->size() != getNestedColumn().size())
-        throw Exception("Logical error: Sizes of nested column and null map of Nullable column are not equal",
-            ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
+        throw Exception(ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT, "Logical error: Sizes of nested column and null map of Nullable column are not equal");
 }
 
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const

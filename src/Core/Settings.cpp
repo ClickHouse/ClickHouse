@@ -28,7 +28,7 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
     String elem = "profiles." + profile_name;
 
     if (!config.has(elem))
-        throw Exception("There is no profile '" + profile_name + "' in configuration file.", ErrorCodes::THERE_IS_NO_PROFILE);
+        throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "There is no profile '{}' in configuration file.", profile_name);
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(elem, config_keys);
@@ -47,7 +47,7 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
 void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config)
 {
     if (!config.has(path))
-        throw Exception("There is no path '" + path + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}' in configuration file.", path);
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(path, config_keys);

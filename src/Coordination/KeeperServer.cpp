@@ -50,10 +50,10 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     String root_ca_file_property = "openSSL.server.caConfig";
 
     if (!config.has(certificate_file_property))
-        throw Exception("Server certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server certificate file is not set.");
 
     if (!config.has(private_key_file_property))
-        throw Exception("Server private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
 
     asio_opts.enable_ssl_ = true;
     asio_opts.server_cert_file_ = config.getString(certificate_file_property);
