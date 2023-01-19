@@ -29,9 +29,9 @@ namespace
         constexpr std::string_view bad_delimiters = " \t\"'.UL";
         if (bad_delimiters.find(delimiter) != std::string_view::npos)
             throw Exception(
-                String("CSV format may not work correctly with delimiter '") + delimiter
-                    + "'. Try use CustomSeparated format instead.",
-                ErrorCodes::BAD_ARGUMENTS);
+                ErrorCodes::BAD_ARGUMENTS,
+                "CSV format may not work correctly with delimiter '{}'. Try use CustomSeparated format instead",
+                delimiter);
     }
 }
 
@@ -436,7 +436,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     auto register_func = [&](const String & format_name, bool, bool)
     {
         static constexpr size_t min_rows = 3; /// Make it 3 for header auto detection (first 3 rows must be always in the same segment).
-        factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        factory.registerFileSegmentationEngine(format_name, [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
         {
             return fileSegmentationEngineCSVImpl(in, memory, min_bytes, min_rows, max_rows);
         });

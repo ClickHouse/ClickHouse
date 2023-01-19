@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 namespace
 {
-    bool checkIfValuesAreTypeNames(const std::vector<String> & names)
+    bool checkIfAllValuesAreTypeNames(const std::vector<String> & names)
     {
         for (const auto & name : names)
         {
@@ -141,7 +141,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     /// To understand if the first row is a header with column names, we check
     /// that all values from this row is a subset of column names from provided header.
     auto column_names = getPort().getHeader().getNames();
-    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
+    std::unordered_set<std::string_view> column_names_set(column_names.begin(), column_names.end());
     bool first_row_is_a_header = true;
     for (const auto & possible_name : first_row_values)
     {
@@ -179,7 +179,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     auto second_row_values = format_reader->readRowForHeaderDetection();
 
     /// The second row can be a header with type names if it contains only valid type names.
-    if (!checkIfValuesAreTypeNames(second_row_values))
+    if (!checkIfAllValuesAreTypeNames(second_row_values))
     {
         /// Rollback to the beginning of the second row to parse it as data later.
         peekable_buf->rollbackToCheckpoint(true);
@@ -417,7 +417,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
     }
 
     DataTypes data_types;
-    bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfValuesAreTypeNames(readNamesFromFields(second_row_values));
+    bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfAllValuesAreTypeNames(readNamesFromFields(second_row_values));
     size_t row = 2;
     if (!second_row_can_be_type_names)
     {
