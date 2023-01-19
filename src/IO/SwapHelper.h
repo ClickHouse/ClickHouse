@@ -1,5 +1,4 @@
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBuffer.h>
+#include <IO/BufferBase.h>
 
 namespace DB
 {
