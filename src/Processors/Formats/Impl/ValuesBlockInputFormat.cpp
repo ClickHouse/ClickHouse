@@ -454,8 +454,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (shouldDeduceNewTemplate(column_idx))
     {
         if (templates[column_idx])
-            throw DB::Exception("Template for column " + std::to_string(column_idx) + " already exists and it was not evaluated yet",
-                                ErrorCodes::LOGICAL_ERROR);
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Template for column {} already exists and it was not evaluated yet",
+                                std::to_string(column_idx));
         std::exception_ptr exception;
         try
         {

@@ -56,7 +56,7 @@ struct DecimalOpHelpers
             for (Int32 j = len2 - 1; j >= 0; --j)
             {
                 if (unlikely(i_n1 + i_n2 >= len1 + len2))
-                    throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");
                 UInt16 sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
                 carry = sum / 10;
                 result[i_n1 + i_n2] = sum % 10;
@@ -66,7 +66,7 @@ struct DecimalOpHelpers
             if (carry > 0)
             {
                 if (unlikely(i_n1 + i_n2 >= len1 + len2))
-                    throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");
                 result[i_n1 + i_n2] += carry;
             }
 

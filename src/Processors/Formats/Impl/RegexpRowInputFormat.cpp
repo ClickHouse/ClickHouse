@@ -59,11 +59,12 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
         static_cast<int>(re2_arguments_ptrs.size()));
 
     if (!match && !skip_unmatched)
-        throw Exception("Line \"" + std::string(buf.position(), line_to_match) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Line \"{}\" doesn't match the regexp.",
+                        std::string(buf.position(), line_to_match));
 
     buf.position() += line_size;
     if (!buf.eof() && !checkChar('\n', buf))
-        throw Exception("No \\n at the end of line.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No \\n at the end of line.");
 
     return match;
 }

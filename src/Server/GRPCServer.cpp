@@ -1869,7 +1869,7 @@ void GRPCServer::start()
     grpc_server = builder.BuildAndStart();
     if (nullptr == grpc_server)
     {
-        throw DB::Exception("Can't start grpc server, there is a port conflict", DB::ErrorCodes::NETWORK_ERROR);
+        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Can't start grpc server, there is a port conflict");
     }
 
     runner->start();

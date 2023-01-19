@@ -3213,7 +3213,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
         {
             const auto & [old_name, new_name, disk] = old_and_new_names[i];
             if (old_name.empty() || new_name.empty())
-                throw DB::Exception("Empty part name. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty part name. Most likely it's a bug.");
             const auto full_path = fs::path(storage.relative_data_path) / source_dir;
             disk->moveFile(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
         }
@@ -4415,8 +4415,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
     {
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION
             && !settings.allow_drop_detached)
-            throw DB::Exception("Cannot execute query: DROP DETACHED PART is disabled "
-                                "(see allow_drop_detached setting)", ErrorCodes::SUPPORT_IS_DISABLED);
+            throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot execute query: DROP DETACHED PART is disabled (see allow_drop_detached setting)");
 
         if (command.partition && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
         {
@@ -4433,7 +4432,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                 if (partition_ast && partition_ast->all)
                 {
                     if (command.type != PartitionCommand::DROP_PARTITION)
-                        throw DB::Exception("Only support DETACH PARTITION ALL currently", ErrorCodes::SUPPORT_IS_DISABLED);
+                        throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DETACH PARTITION ALL currently");
                 }
                 else
                     getPartitionIDFromQuery(command.partition, getContext());
@@ -5317,12 +5316,11 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
 void MergeTreeData::validateDetachedPartName(const String & name)
 {
     if (name.find('/') != std::string::npos || name == "." || name == "..")
-        throw DB::Exception("Invalid part name '" + name + "'", ErrorCodes::INCORRECT_FILE_NAME);
+        throw DB::Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid part name '{}'", name);
 
     if (startsWith(name, "attaching_") || startsWith(name, "deleting_"))
-        throw DB::Exception("Cannot drop part " + name + ": "
-                            "most likely it is used by another DROP or ATTACH query.",
-                            ErrorCodes::BAD_DATA_PART_NAME);
+        throw DB::Exception(ErrorCodes::BAD_DATA_PART_NAME, "Cannot drop part {}: "
+                            "most likely it is used by another DROP or ATTACH query.", name);
 }
 
 void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context)

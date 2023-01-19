@@ -291,7 +291,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
 
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
-        throw DB::Exception("OptimizedRegularExpression: Unsupported option.", DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: Unsupported option.");
 
     is_case_insensitive = options & RE_CASELESS;
     bool is_no_capture = options & RE_NO_CAPTURE;
@@ -329,7 +329,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
         {
             number_of_subpatterns = re2->NumberOfCapturingGroups();
             if (number_of_subpatterns > MAX_SUBPATTERNS)
-                throw DB::Exception("OptimizedRegularExpression: too many subpatterns in regexp: " + regexp_, DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+                throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: too many subpatterns in regexp: {}", regexp_);
         }
     }
 

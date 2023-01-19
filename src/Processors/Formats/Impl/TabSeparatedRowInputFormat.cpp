@@ -25,11 +25,10 @@ namespace ErrorCodes
 static void checkForCarriageReturn(ReadBuffer & in)
 {
     if (!in.eof() && (in.position()[0] == '\r' || (in.position() != in.buffer().begin() && in.position()[-1] == '\r')))
-        throw Exception("\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
+        throw Exception(ErrorCodes::INCORRECT_DATA, "\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
-            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
-            ErrorCodes::INCORRECT_DATA);
+            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.");
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(

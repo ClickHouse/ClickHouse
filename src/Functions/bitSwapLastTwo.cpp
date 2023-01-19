@@ -27,7 +27,7 @@ struct BitSwapLastTwoImpl
         if constexpr (!std::is_same_v<A, ResultType>)
             // Should be a logical error, but this function is callable from SQL.
             // Need to investigate this.
-            throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.");
 
         auto little_bits = littleBits<A>(a);
         return static_cast<ResultType>(((little_bits & 1) << 1) | ((little_bits >> 1) & 1));

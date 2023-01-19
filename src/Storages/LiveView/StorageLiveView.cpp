@@ -79,8 +79,7 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
     {
         auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
         if (!ast_select)
-            throw Exception("LIVE VIEWs are only supported for queries from tables, but there is no table name in select query.",
-                            DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
+            throw Exception(DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "LIVE VIEWs are only supported for queries from tables, but there is no table name in select query.");
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "UNION is not supported for LIVE VIEW");
 

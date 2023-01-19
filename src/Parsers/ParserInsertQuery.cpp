@@ -226,14 +226,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// If format name is followed by ';' (end of query symbol) there is no data to insert.
         if (data < end && *data == ';')
-            throw Exception("You have excessive ';' symbol before data for INSERT.\n"
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "You have excessive ';' symbol before data for INSERT.\n"
                                     "Example:\n\n"
                                     "INSERT INTO t (x, y) FORMAT TabSeparated\n"
                                     ";\tHello\n"
                                     "2\tWorld\n"
                                     "\n"
                                     "Note that there is no ';' just after format name, "
-                                    "you need to put at least one whitespace symbol before the data.", ErrorCodes::SYNTAX_ERROR);
+                                    "you need to put at least one whitespace symbol before the data.");
 
         while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
             ++data;

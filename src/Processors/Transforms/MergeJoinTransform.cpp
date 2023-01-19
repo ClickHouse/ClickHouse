@@ -332,7 +332,7 @@ void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "skip_last_row is not supported");
 
     if (input.permutation)
-        throw DB::Exception("permutation is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "permutation is not supported");
 
     if (input.chunk)
     {

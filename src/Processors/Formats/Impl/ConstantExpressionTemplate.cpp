@@ -159,9 +159,9 @@ public:
         else if (ast->as<ASTQueryParameter>())
             return;
         else if (ast->as<ASTIdentifier>())
-            throw DB::Exception("Identifier in constant expression", ErrorCodes::SYNTAX_ERROR);
+            throw DB::Exception(ErrorCodes::SYNTAX_ERROR, "Identifier in constant expression");
         else
-            throw DB::Exception("Syntax error in constant expression", ErrorCodes::SYNTAX_ERROR);
+            throw DB::Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error in constant expression");
     }
 
 private:
@@ -620,8 +620,8 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
                         "got {} rows for {} expressions", std::to_string(evaluated.rows()), std::to_string(rows_count));
 
     if (!evaluated.has(structure->result_column_name))
-        throw Exception("Cannot evaluate template " + structure->result_column_name + ", block structure:\n" + evaluated.dumpStructure(),
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot evaluate template {}, block structure:\n{}",
+                        structure->result_column_name, evaluated.dumpStructure());
 
     rows_count = 0;
     auto res = evaluated.getByName(structure->result_column_name);

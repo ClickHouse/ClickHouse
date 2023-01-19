@@ -1362,7 +1362,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         {
             auto path_prefix = request.path;
             if (path_prefix.empty())
-                throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: path cannot be empty");
 
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
@@ -1813,7 +1813,7 @@ struct KeeperStorageCloseRequestProcessor final : public KeeperStorageRequestPro
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     Coordination::ZooKeeperResponsePtr process(KeeperStorage &, int64_t) const override
     {
-        throw DB::Exception("Called process on close request", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Called process on close request");
     }
 };
 
@@ -1861,7 +1861,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
 void KeeperStorage::finalize()
 {
     if (finalized)
-        throw DB::Exception("KeeperStorage already finalized", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage already finalized");
 
     finalized = true;
 
@@ -1895,7 +1895,7 @@ public:
     {
         auto request_it = op_num_to_request.find(zk_request->getOpNum());
         if (request_it == op_num_to_request.end())
-            throw DB::Exception("Unknown operation type " + toString(zk_request->getOpNum()), ErrorCodes::LOGICAL_ERROR);
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown operation type {}", toString(zk_request->getOpNum()));
 
         return request_it->second(zk_request);
     }

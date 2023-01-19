@@ -637,7 +637,7 @@ void IAccessStorage::throwNotFound(const UUID & id) const
 void IAccessStorage::throwNotFound(AccessEntityType type, const String & name) const
 {
     int error_code = AccessEntityTypeInfo::get(type).not_found_error_code;
-    throw Exception("There is no " + formatEntityTypeWithName(type, name) + " in " + getStorageName(), error_code);
+    throw Exception(error_code, "There is no {} in {}", formatEntityTypeWithName(type, name), getStorageName());
 }
 
 

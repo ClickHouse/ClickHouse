@@ -78,7 +78,7 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
 void checkAllowedQueries(const ASTSelectQuery & query)
 {
     if (query.prewhere() || query.final() || query.sampleSize())
-        throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+        throw Exception(DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.");
 
     ASTPtr subquery = extractTableExpression(query, 0);
     if (!subquery)

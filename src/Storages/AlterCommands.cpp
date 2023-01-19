@@ -907,7 +907,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
-        throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
 
     auto metadata_copy = metadata;
 

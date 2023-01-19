@@ -40,7 +40,7 @@ FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
     else if (escaping_rule == "Raw")
         return FormatSettings::EscapingRule::Raw;
     else
-        throw Exception("Unknown escaping rule \"" + escaping_rule + "\"", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
 }
 
 String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)

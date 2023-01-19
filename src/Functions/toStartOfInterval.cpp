@@ -222,7 +222,7 @@ namespace
             {
                 Int64 t_milliseconds = 0;
                 if (common::mulOverflow(t, static_cast<Int64>(1000) / scale_multiplier, t_milliseconds))
-                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
                 if (likely(t >= 0))
                     return t_milliseconds / milliseconds * milliseconds;
                 else
@@ -259,7 +259,7 @@ namespace
             {
                 Int64 t_microseconds = 0;
                 if (common::mulOverflow(t, static_cast<Int64>(1000000) / scale_multiplier, t_microseconds))
-                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
                 if (likely(t >= 0))
                     return t_microseconds / microseconds * microseconds;
                 else
@@ -296,7 +296,7 @@ namespace
             {
                 Int64 t_nanoseconds = 0;
                 if (common::mulOverflow(t, (static_cast<Int64>(1000000000) / scale_multiplier), t_nanoseconds))
-                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
                 if (likely(t >= 0))
                     return t_nanoseconds / nanoseconds * nanoseconds;
                 else

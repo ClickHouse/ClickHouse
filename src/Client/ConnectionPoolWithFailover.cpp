@@ -189,7 +189,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     else if (pool_mode == PoolMode::GET_MANY)
         max_entries = settings ? size_t(settings->max_parallel_replicas) : 1;
     else
-        throw DB::Exception("Unknown pool allocation mode", DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown pool allocation mode");
 
     GetPriorityFunc get_priority = makeGetPriorityFunc(settings);
 

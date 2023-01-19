@@ -43,7 +43,7 @@ const String & ruleTypeStr(RuleType rule_type)
     }
     catch (...)
     {
-        throw Exception("invalid rule type: " + std::to_string(rule_type), DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", std::to_string(rule_type));
     }
 }
 
@@ -58,7 +58,7 @@ RuleType ruleType(const String & s)
     else if (s == "tag_list")
         return RuleTypeTagList;
     else
-        throw Exception("invalid rule type: " + s, DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
 }
 
 static const Graphite::Pattern undef_pattern =
@@ -374,7 +374,7 @@ static const Pattern & appendGraphitePattern(
                 .precision = config.getUInt(config_element + "." + key + ".precision")});
         }
         else
-            throw Exception("Unknown element in config: " + key, DB::ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(DB::ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
     }
 
     if (!pattern.regexp_str.empty())

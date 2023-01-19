@@ -120,7 +120,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
         }
     }
 
-    throw DB::Exception("Unsupported cipher mode", DB::ErrorCodes::BAD_ARGUMENTS);
+    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unsupported cipher mode");
 }
 
 template <CipherMode mode>
@@ -316,14 +316,12 @@ private:
                 // in GCM mode IV can be of arbitrary size (>0), IV is optional for other modes.
                 if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
                 {
-                    throw Exception("Invalid IV size " + std::to_string(iv_value.size) + " != expected size " + std::to_string(iv_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid IV size {} != expected size {}", iv_value.size, iv_size);
                 }
 
                 if (mode != CipherMode::RFC5116_AEAD_AES_GCM && key_value.size != key_size)
                 {
-                    throw Exception("Invalid key size " + std::to_string(key_value.size) + " != expected size " + std::to_string(key_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid key size {} != expected size {}", key_value.size, key_size);
                 }
             }
 
@@ -613,14 +611,12 @@ private:
                 // in GCM mode IV can be of arbitrary size (>0), for other modes IV is optional.
                 if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
                 {
-                    throw Exception("Invalid IV size " + std::to_string(iv_value.size) + " != expected size " + std::to_string(iv_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid IV size {} != expected size {}", iv_value.size, iv_size);
                 }
 
                 if (key_value.size != key_size)
                 {
-                    throw Exception("Invalid key size " + std::to_string(key_value.size) + " != expected size " + std::to_string(key_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid key size {} != expected size {}", key_value.size, key_size);
                 }
             }
 

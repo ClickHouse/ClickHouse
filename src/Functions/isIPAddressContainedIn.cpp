@@ -75,9 +75,9 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
     size_t pos_slash = cidr_str.find('/');
 
     if (pos_slash == 0)
-        throw DB::Exception("Error parsing IP address with prefix: " + std::string(cidr_str), DB::ErrorCodes::CANNOT_PARSE_TEXT);
+        throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Error parsing IP address with prefix: {}", std::string(cidr_str));
     if (pos_slash == std::string_view::npos)
-        throw DB::Exception("The text does not contain '/': " + std::string(cidr_str), DB::ErrorCodes::CANNOT_PARSE_TEXT);
+        throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "The text does not contain '/': {}", std::string(cidr_str));
 
     std::string_view addr_str = cidr_str.substr(0, pos_slash);
     IPAddressVariant addr(addr_str);
@@ -90,7 +90,7 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
     uint8_t max_prefix = (addr.asV6() ? IPV6_BINARY_LENGTH : IPV4_BINARY_LENGTH) * 8;
     bool has_error = parse_error != std::errc() || parse_end != prefix_str_end || prefix > max_prefix;
     if (has_error)
-        throw DB::Exception("The CIDR has a malformed prefix bits: " + std::string(cidr_str), DB::ErrorCodes::CANNOT_PARSE_TEXT);
+        throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "The CIDR has a malformed prefix bits: {}", std::string(cidr_str));
 
     return {addr, static_cast<UInt8>(prefix)};
 }

@@ -549,10 +549,10 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
          * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
          * declared queues via any of the various cli tools.
          */
-        throw Exception("Failed to declare queue. Probably queue settings are conflicting: max_block_size, deadletter_exchange. Attempt \
-                specifying differently those settings or use a different queue_base or manually delete previously declared queues, \
-                which  were declared with the same names. ERROR reason: "
-                + std::string(message), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to declare queue. Probably queue settings are conflicting: "
+                        "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
+                        "or use a different queue_base or manually delete previously declared queues, "
+                        "which  were declared with the same names. ERROR reason: {}", std::string(message));
     });
 
     AMQP::Table queue_settings;

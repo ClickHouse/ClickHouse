@@ -616,7 +616,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
     if (result.array_join_result_to_source.empty())
     {
         if (select_query->arrayJoinExpressionList().first->children.empty())
-            throw DB::Exception("ARRAY JOIN requires an argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw DB::Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "ARRAY JOIN requires an argument");
 
         ASTPtr expr = select_query->arrayJoinExpressionList().first->children.at(0);
         String source_name = expr->getColumnName();
@@ -662,8 +662,7 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
         else if (join_default_strictness == JoinStrictness::All)
             table_join.strictness = JoinStrictness::All;
         else
-            throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty",
-                            DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
+            throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_ANY, "Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty");
     }
 
     if (old_any)

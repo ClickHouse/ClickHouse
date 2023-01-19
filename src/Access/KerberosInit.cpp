@@ -145,7 +145,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
     // Resolve keytab
     ret = krb5_kt_resolve(k5.ctx, keytab_file.c_str(), &keytab);
     if (ret)
-        throw Exception("Error in resolving keytab "+keytab_file + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
+        throw Exception(ErrorCodes::KERBEROS_ERROR, "Error in resolving keytab {}{}", keytab_file, fmtError(ret));
     LOG_TRACE(log,"Using keytab: {}", keytab_file);
 
     // Set an output credential cache in initial credential options.

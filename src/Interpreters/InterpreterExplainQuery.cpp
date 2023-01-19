@@ -314,8 +314,8 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
     for (const auto & change : set_query.changes)
     {
         if (!settings.has(change.name))
-            throw Exception("Unknown setting \"" + change.name + "\" for EXPLAIN " + Settings::name + " query. "
-                            "Supported settings: " + settings.getSettingsList(), ErrorCodes::UNKNOWN_SETTING);
+            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting \"{}\" for EXPLAIN {} query. "
+                            "Supported settings: {}", change.name, Settings::name, settings.getSettingsList());
 
         if (change.value.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
@@ -326,8 +326,8 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
         {
             auto value = change.value.get<UInt64>();
             if (value > 1)
-                throw Exception("Invalid value " + std::to_string(value) + " for setting \"" + change.name +
-                                "\". Expected boolean type", ErrorCodes::INVALID_SETTING_VALUE);
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for setting \"{}\". "
+                                "Expected boolean type", value, change.name);
 
             settings.setBooleanSetting(change.name, value);
         }

@@ -796,10 +796,11 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
             {
                 if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
-                    throw Exception("Creating columns of type " + current_type_ptr->getName() + " is prohibited by default "
+                    throw Exception(ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
+                                    "Creating columns of type {} is prohibited by default "
                                     "due to expected negative impact on performance. "
                                     "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
-                                    ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
+                                    current_type_ptr->getName());
             }
         }
     }

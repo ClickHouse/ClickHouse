@@ -431,8 +431,9 @@ private:
         {
             Int64 result = 0;
             if (common::mulOverflow(static_cast<Int64>(x_data[i]), static_cast<Int64>(y_data[i]), result))
-                throw Exception("The coordinates of the point are such that subsequent calculations cannot be performed correctly. " \
-                                "Most likely they are very large in modulus.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The coordinates of the point are such that "
+                                "subsequent calculations cannot be performed correctly. "
+                                "Most likely they are very large in modulus.");
 
             out_container.emplace_back(x_data[i], y_data[i]);
         }

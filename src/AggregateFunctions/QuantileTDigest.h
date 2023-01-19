@@ -483,7 +483,7 @@ private:
         ResultType result;
         if (accurate::convertNumeric(val, result))
             return result;
-        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
     }
 };
 

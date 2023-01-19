@@ -516,9 +516,9 @@ template <typename Impl, typename Name>
 DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments.size() < 2)
-        throw Exception("Number of arguments for function \"" + getName() + "\" should be at least 2: passed "
-            + toString(arguments.size()),
-            ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                    "Number of arguments for function \"{}\" should be at least 2: passed {}",
+                    getName(), toString(arguments.size()));
 
     bool has_nullable_arguments = false;
     bool has_bool_arguments = false;
@@ -533,8 +533,8 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
         {
             has_nullable_arguments = arg_type->isNullable();
             if (has_nullable_arguments && !Impl::specialImplementationForNulls())
-                throw Exception("Logical error: Unexpected type of argument for function \"" + getName() + "\": "
-                    " argument " + toString(i + 1) + " is of type " + arg_type->getName(), ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Unexpected type of argument for function \"{}\": "
+                    " argument {} is of type {}", getName(), i + 1, arg_type->getName());
         }
 
         if (!(isNativeNumber(arg_type)
