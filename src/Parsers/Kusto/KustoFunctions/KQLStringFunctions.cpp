@@ -462,19 +462,19 @@ bool ParseURL::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     const String url = getConvertedArgument(fn_name, pos);
 
-    const String scheme = std::format("concat('\"Scheme\":\"', protocol({0}),'\"')", url);
-    const String host = std::format("concat('\"Host\":\"', domain({0}),'\"')", url);
-    const String port = std::format("concat('\"Port\":\"', toString(port({0})),'\"')", url);
-    const String path = std::format("concat('\"Path\":\"', path({0}),'\"')", url);
+    const String scheme = std::format(R"(concat('"Scheme":"', protocol({0}),'"'))", url);
+    const String host = std::format(R"(concat('"Host":"', domain({0}),'"'))", url);
+    const String port = std::format(R"(concat('"Port":"', toString(port({0})),'"'))", url);
+    const String path = std::format(R"(concat('"Path":"', path({0}),'"'))", url);
     const String username_pwd = std::format("netloc({0})", url);
     const String query_string = std::format("queryString({0})", url);
-    const String fragment = std::format("concat('\"Fragment\":\"',fragment({0}),'\"')", url);
+    const String fragment = std::format(R"(concat('"Fragment":"',fragment({0}),'"'))", url);
     const String username = std::format(
-        "concat('\"Username\":\"', arrayElement(splitByChar(':',arrayElement(splitByChar('@',{0}) ,1)),1),'\"')", username_pwd);
+        R"(concat('"Username":"', arrayElement(splitByChar(':',arrayElement(splitByChar('@',{0}) ,1)),1),'"'))", username_pwd);
     const String password = std::format(
-        "concat('\"Password\":\"', arrayElement(splitByChar(':',arrayElement(splitByChar('@',{0}) ,1)),2),'\"')", username_pwd);
+        R"(concat('"Password":"', arrayElement(splitByChar(':',arrayElement(splitByChar('@',{0}) ,1)),2),'"'))", username_pwd);
     const String query_parameters = std::format(
-        "concat('\"Query Parameters\":', concat('{{\"', replace(replace({}, '=', '\":\"'),'&','\",\"') ,'\"}}'))", query_string);
+        R"(concat('"Query Parameters":', concat('{{"', replace(replace({}, '=', '":"'),'&','","') ,'"}}')))", query_string);
 
     out = std::format(
         "concat('{{',{},',',{},',',{},',',{},',',{},',',{},',',{},',',{},'}}')",
@@ -499,7 +499,7 @@ bool ParseURLQuery::convertImpl(String & out, IParser::Pos & pos)
 
     const String query_string = std::format("if (position({},'?') > 0, queryString({}), {})", query, query, query);
     const String query_parameters = std::format(
-        "concat('\"Query Parameters\":', concat('{{\"', replace(replace({}, '=', '\":\"'),'&','\",\"') ,'\"}}'))", query_string);
+        R"(concat('"Query Parameters":', concat('{{"', replace(replace({}, '=', '":"'),'&','","') ,'"}}')))", query_string);
     out = std::format("concat('{{',{},'}}')", query_parameters);
     return true;
 }
@@ -666,21 +666,21 @@ bool SubString::convertImpl(String & out, IParser::Pos & pos)
     String source = getConvertedArgument(fn_name, pos);
 
     ++pos;
-    String startingIndex = getConvertedArgument(fn_name, pos);
+    String starting_index = getConvertedArgument(fn_name, pos);
 
     if (pos->type == TokenType::Comma)
     {
         ++pos;
         auto length = getConvertedArgument(fn_name, pos);
 
-        if (startingIndex.empty())
+        if (starting_index.empty())
             throw Exception("number of arguments do not match in function: " + fn_name, ErrorCodes::SYNTAX_ERROR);
         else
-            out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + ", " + "((" + startingIndex + "% toInt64(length("
+            out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + ", " + "((" + starting_index + "% toInt64(length("
                 + source + "))  + toInt64(length(" + source + "))) % toInt64(length(" + source + ")))  + 1, " + length + ") )";
     }
     else
-        out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + "," + "((" + startingIndex + "% toInt64(length(" + source
+        out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + "," + "((" + starting_index + "% toInt64(length(" + source
             + ")) + toInt64(length(" + source + "))) % toInt64(length(" + source + "))) + 1))";
 
     return true;

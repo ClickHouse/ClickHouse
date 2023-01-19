@@ -142,7 +142,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
         out = "NULL";
     else if (std::regex_match(res, expr))
     {
-        auto exponential_pos = res.find("e");
+        auto exponential_pos = res.find('e');
         if (res[exponential_pos + 1] == '+' || res[exponential_pos + 1] == '-')
             scale = std::stoi(res.substr(exponential_pos + 2, res.length()));
         else
@@ -152,7 +152,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
     }
     else
     {
-        if (const auto dot_pos = res.find("."); dot_pos != String::npos)
+        if (const auto dot_pos = res.find('.'); dot_pos != String::npos)
         {
             const auto tmp = res.substr(0, dot_pos - 1);
             const auto tmp_length = static_cast<int>(std::ssize(tmp));

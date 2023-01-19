@@ -57,17 +57,17 @@ Customers | summarize job_count = count() by Occupation | where job_count > 0;
 Customers | summarize 'Edu Count'=count() by Education | sort by 'Edu Count' desc; -- { clientError 62 }
 
 print '-- make_list() --';
-Customers | summarize f_list = make_list(Education) by Occupation;
-Customers | summarize f_list = make_list(Education, 2) by Occupation;
+Customers | summarize f_list = make_list(Education) by Occupation | sort by Occupation;
+Customers | summarize f_list = make_list(Education, 2) by Occupation | sort by Occupation;
 print '-- make_list_if() --';
-Customers | summarize f_list = make_list_if(FirstName, Age>30) by Occupation;
-Customers | summarize f_list = make_list_if(FirstName, Age>30, 1) by Occupation;
+Customers | summarize f_list = make_list_if(FirstName, Age>30) by Occupation | sort by Occupation;
+Customers | summarize f_list = make_list_if(FirstName, Age>30, 1) by Occupation | sort by Occupation;
 print '-- make_set() --';
-Customers | summarize f_list = make_set(Education) by Occupation;
-Customers | summarize f_list = make_set(Education, 2) by Occupation;
+Customers | summarize f_list = make_set(Education) by Occupation | sort by Occupation;
+Customers | summarize f_list = make_set(Education, 2) by Occupation | sort by Occupation;
 print '-- make_set_if() --';
-Customers | summarize f_list = make_set_if(Education, Age>30) by Occupation;
-Customers | summarize f_list = make_set_if(Education, Age>30, 1) by Occupation;
+Customers | summarize f_list = make_set_if(Education, Age>30) by Occupation | sort by Occupation;
+Customers | summarize f_list = make_set_if(Education, Age>30, 1) by Occupation | sort by Occupation;
 print '-- stdev() --';
 Customers | project Age | summarize stdev(Age);
 print '-- stdevif() --';

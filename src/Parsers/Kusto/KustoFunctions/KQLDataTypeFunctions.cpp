@@ -232,7 +232,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
 
     if (std::regex_match(arg, expr))
     {
-        auto exponential_pos = arg.find("e");
+        auto exponential_pos = arg.find('e');
         if (arg[exponential_pos + 1] == '+' || arg[exponential_pos + 1] == '-')
             scale = std::stoi(arg.substr(exponential_pos + 2, arg.length()));
         else
@@ -242,7 +242,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
         return true;
     }
 
-    if (const auto dot_pos = arg.find("."); dot_pos != String::npos)
+    if (const auto dot_pos = arg.find('.'); dot_pos != String::npos)
     {
         const auto length = static_cast<int>(std::ssize(arg.substr(0, dot_pos - 1)));
         scale = std::max(precision - length, 0);
