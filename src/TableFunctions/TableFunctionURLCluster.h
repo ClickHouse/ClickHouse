@@ -43,7 +43,7 @@ protected:
     void parseArguments(const ASTPtr &, ContextPtr) override;
 
     String cluster_name;
-    
+
 };
 
 }

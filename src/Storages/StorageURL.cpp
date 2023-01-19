@@ -449,7 +449,7 @@ void StorageURLSource::onCancel()
         reader->cancel();
 }
 
-Chunk StorageURLSource::generate() 
+Chunk StorageURLSource::generate()
 {
     while (true)
     {

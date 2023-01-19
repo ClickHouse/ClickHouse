@@ -304,7 +304,7 @@ public:
         bool glob_url,
         bool delay_initialization,
         size_t download_threads);
-        
+
 private:
     using InitializeFunc = std::function<void(const URIInfo::FailoverOptions &)>;
     InitializeFunc initialize;
