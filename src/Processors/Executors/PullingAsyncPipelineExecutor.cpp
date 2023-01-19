@@ -179,8 +179,21 @@ void PullingAsyncPipelineExecutor::cancel()
         return;
 
     /// Cancel execution if it wasn't finished.
-    if (!data->is_finished && data->executor)
-        data->executor->cancel();
+    try
+    {
+        if (!data->is_finished && data->executor)
+            data->executor->cancel();
+    }
+    catch (...)
+    {
+        /// Store exception only of during query execution there was no
+        /// exception, since only one exception can be re-thrown.
+        if (!data->has_exception)
+        {
+            data->exception = std::current_exception();
+            data->has_exception = true;
+        }
+    }
 
     /// The following code is needed to rethrow exception from PipelineExecutor.
     /// It could have been thrown from pull(), but we will not likely call it again.
