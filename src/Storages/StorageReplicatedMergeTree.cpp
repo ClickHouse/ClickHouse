@@ -8903,16 +8903,20 @@ void StorageReplicatedMergeTree::backupData(
 
     /// Send a list of mutations to the coordination too (we need to find the mutations which are not finished for added part names).
     {
-        std::vector<IBackupCoordination::MutationInfo> mutation_infos;
         auto zookeeper = getZooKeeper();
-        Strings mutation_ids = zookeeper->getChildren(fs::path(zookeeper_path) / "mutations");
-        mutation_infos.reserve(mutation_ids.size());
-        for (const auto & mutation_id : mutation_ids)
+        Strings mutation_ids;
+        if (zookeeper->tryGetChildren(fs::path(zookeeper_path) / "mutations", mutation_ids) == Coordination::Error::ZOK)
         {
-            mutation_infos.emplace_back(
-                IBackupCoordination::MutationInfo{mutation_id, zookeeper->get(fs::path(zookeeper_path) / "mutations" / mutation_id)});
+            std::vector<IBackupCoordination::MutationInfo> mutation_infos;
+            mutation_infos.reserve(mutation_ids.size());
+            for (const auto & mutation_id : mutation_ids)
+            {
+                String mutation;
+                if (zookeeper->tryGet(fs::path(zookeeper_path) / "mutations" / mutation_id, mutation))
+                    mutation_infos.emplace_back(IBackupCoordination::MutationInfo{mutation_id, mutation});
+            }
+            coordination->addReplicatedMutations(shared_id, getStorageID().getFullTableName(), getReplicaName(), mutation_infos);
         }
-        coordination->addReplicatedMutations(shared_id, getStorageID().getFullTableName(), getReplicaName(), mutation_infos);
     }
 
     /// This task will be executed after all replicas have collected their parts and the coordination is ready to

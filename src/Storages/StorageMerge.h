@@ -109,6 +109,8 @@ private:
 
     ColumnsDescription getColumnsDescriptionFromSourceTables() const;
 
+    bool tableSupportsPrewhere() const;
+
     friend class ReadFromMerge;
 };
 
