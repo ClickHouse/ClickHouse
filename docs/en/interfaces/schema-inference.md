@@ -558,7 +558,7 @@ and if the value is not a number, ClickHouse treats it as a string.
 If you don't want ClickHouse to try to determine complex types using some parsers and heuristics, you can disable setting `input_format_csv_use_best_effort_in_schema_inference`
 and ClickHouse will treat all columns as Strings.
 
-If setting `input_format_csv_detect_header` is enabled, ClickHouse will try to detect a header with column names (and maybe types) while schema inference. This setting is enabled by default.
+If setting `input_format_csv_detect_header` is enabled, ClickHouse will try to detect the header with column names (and maybe types) while inferring schema. This setting is enabled by default.
 
 **Examples:**
 
@@ -708,7 +708,7 @@ $$)
 └────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Not that header can be detected only if there is at least one column with non-String type. If all columns have String type, header is not detected:
+Note that the header can be detected only if there is at least one column with a non-String type. If all columns have String type, the header is not detected:
 
 ```sql
 SELECT * FROM format(CSV,
@@ -734,7 +734,7 @@ the recursive parser to determine the most appropriate type. If the type cannot 
 If you don't want ClickHouse to try to determine complex types using some parsers and heuristics, you can disable setting `input_format_tsv_use_best_effort_in_schema_inference`
 and ClickHouse will treat all columns as Strings.
 
-If setting `input_format_tsv_detect_header` is enabled, ClickHouse will try to detect a header with column names (and maybe types) while schema inference. This setting is enabled by default.
+If setting `input_format_tsv_detect_header` is enabled, ClickHouse will try to detect the header with column names (and maybe types) while inferring schema. This setting is enabled by default.
 
 **Examples:**
 
@@ -894,7 +894,7 @@ $$)
 └────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Not that header can be detected only if there is at least one column with non-String type. If all columns have String type, header is not detected:
+Note that the header can be detected only if there is at least one column with a non-String type. If all columns have String type, the header is not detected:
 
 ```sql
 SELECT * FROM format(TSV,
@@ -1024,7 +1024,7 @@ DESC format(TSV, '[1,2,3]	42.42	Hello World!')
 In CustomSeparated format ClickHouse first extracts all column values from the row according to specified delimiters and then tries to infer
 the data type for each value according to escaping rule.
 
-If setting `input_format_custom_detect_header` is enabled, ClickHouse will try to detect a header with column names (and maybe types) while schema inference. This setting is enabled by default.
+If setting `input_format_custom_detect_header` is enabled, ClickHouse will try to detect the header with column names (and maybe types) while inferring schema. This setting is enabled by default.
 
 **Example**
 

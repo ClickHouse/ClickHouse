@@ -160,7 +160,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     }
 
     /// First row is a header with column names.
-    column_names_out = first_row_values;
+    column_names_out = std::move(first_row_values);
     peekable_buf->dropCheckpoint();
     is_header_detected = true;
 
@@ -187,7 +187,7 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     }
 
     /// The second row is a header with type names.
-    type_names_out = second_row_values;
+    type_names_out = std::move(second_row_values);
     peekable_buf->dropCheckpoint();
 }
 
@@ -461,7 +461,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         /// with all String elements can be real data and we cannot use them as a header.
         if (checkIfAllTypesAreString(data_types))
         {
-            buffered_types = data_types;
+            buffered_types = std::move(data_types);
             return;
         }
 

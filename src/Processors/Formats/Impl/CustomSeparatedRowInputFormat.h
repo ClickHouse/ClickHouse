@@ -83,7 +83,7 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
 
 private:
-    enum class ReadFieldMode
+    enum class ReadFieldMode : uint8_t
     {
         AS_STRING,
         AS_FIELD,
