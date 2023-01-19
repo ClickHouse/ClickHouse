@@ -1256,7 +1256,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (create.temporary)
     {
-        // to-do: set correct name
         /*
         UUID id;
         if (create.uuid == UUIDHelpers::Nil)
@@ -1264,8 +1263,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         id = create.uuid;
         create.setTable("_tmp_" + toString(id));
         */
-        create.setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
-
+        // create.setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
     }
 
     if (!ddl_guard)

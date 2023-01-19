@@ -53,6 +53,11 @@ namespace ErrorCodes
     extern const int HAVE_DEPENDENT_OBJECTS;
 }
 
+TemporaryTableHolder::TemporaryTableHolder(ContextPtr context, const String& table_name, const ASTPtr & query = {})
+{
+
+}
+
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
     : WithContext(context_->getGlobalContext())
     , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())

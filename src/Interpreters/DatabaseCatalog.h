@@ -88,6 +88,8 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 {
     using Creator = std::function<StoragePtr (const StorageID &)>;
 
+    TemporaryTableHolder(ContextPtr context, const String & table_name, const ASTPtr & query = {});
+
     TemporaryTableHolder(ContextPtr context, const Creator & creator, const ASTPtr & query = {});
 
     /// Creates temporary table with Engine=Memory
