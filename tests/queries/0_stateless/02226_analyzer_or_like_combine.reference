@@ -56,7 +56,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 5, table_name: system.one
   WHERE
-    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: Bool
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 7, nodes: 2
           FUNCTION id: 8, function_name: multiMatchAny, function_type: ordinary, result_type: UInt8
