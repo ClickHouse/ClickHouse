@@ -14,76 +14,65 @@ namespace OpenTelemetry
 
 thread_local TracingContextOnThread current_thread_trace_context;
 
-void Span::addAttribute(std::string_view name, UInt64 value)
+bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
     if (!this->isTraceEnabled() || name.empty())
-        return;
+        return false;
 
-    this->attributes.push_back(Tuple{name, toString(value)});
+    return addAttribute(name, toString(value));
 }
 
-void Span::addAttributeIfNotZero(std::string_view name, UInt64 value)
+bool Span::addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept
 {
-    if (value != 0)
-        addAttribute(name, value);
+    if (!this->isTraceEnabled() || name.empty() || value == 0)
+        return false;
+
+    return addAttribute(name, toString(value));
 }
 
-void Span::addAttribute(std::string_view name, std::string_view value)
+bool Span::addAttribute(std::string_view name, std::string_view value) noexcept
 {
     if (!this->isTraceEnabled() || name.empty())
-        return;
+        return false;
 
-    this->attributes.push_back(Tuple{name, value});
+    try
+    {
+        this->attributes.push_back(Tuple{name, value});
+    }
+    catch (...)
+    {
+        return false;
+    }
+    return true;
 }
 
-void Span::addAttributeIfNotEmpty(std::string_view name, std::string_view value)
+bool Span::addAttributeIfNotEmpty(std::string_view name, std::string_view value) noexcept
 {
-    if (!this->isTraceEnabled() || name.empty() || value.empty())
-        return;
-
-    this->attributes.push_back(Tuple{name, value});
+    return value.empty() ? false : addAttribute(name, value);
 }
 
-void Span::addAttribute(std::string_view name, std::function<String()> value_supplier)
+bool Span::addAttribute(std::string_view name, std::function<String()> value_supplier) noexcept
 {
     if (!this->isTraceEnabled() || !value_supplier)
-        return;
+        return false;
 
-    String value = value_supplier();
-    if (value.empty())
-        return;
-
-    this->attributes.push_back(Tuple{name, value});
+    return addAttributeIfNotEmpty(name, value_supplier());
 }
 
-void Span::addAttribute(const Exception & e) noexcept
+bool Span::addAttribute(const Exception & e) noexcept
 {
     if (!this->isTraceEnabled())
-        return;
+        return false;
 
-    try
-    {
-        this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
-    }
-    catch (...)
-    {
-        /// Ignore exceptions
-    }
+    return addAttribute("clickhouse.exception", getExceptionMessage(e, false));
 }
 
-void Span::addAttribute(std::exception_ptr e) noexcept
+bool Span::addAttribute(std::exception_ptr e) noexcept
 {
     if (!this->isTraceEnabled() || e == nullptr)
-        return;
+        return false;
 
-    try
-    {
-        this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
-    }
-    catch (...)
-    {
-        /// Ignore exceptions
-    }
+    return addAttribute("clickhouse.exception", getExceptionMessage(e, false));
 }
 
 SpanHolder::SpanHolder(std::string_view _operation_name)
