@@ -41,7 +41,8 @@ public:
     static Block getSampleBlock(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
-        bool is_subquery = false);
+        bool is_subquery = false,
+        bool is_create_parameterized_view = false);
 
     void ignoreWithTotals() override;
 
