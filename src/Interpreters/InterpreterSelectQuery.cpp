@@ -95,9 +95,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Common/typeid_cast.h>
-#include "Core/SettingsEnums.h"
-
-#include <boost/rational.hpp>
 
 namespace DB
 {
@@ -117,7 +114,6 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -328,18 +324,6 @@ ASTPtr parseAdditionalFilterConditionForTable(
     return nullptr;
 }
 
-ASTPtr parseParallelReplicaCustomKey(const String & setting, const Context & context)
-{
-    if (setting.empty())
-        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but 'parallel_replicas_custom_key' has no value");
-
-    ParserExpression parser;
-    const auto & settings = context.getSettingsRef();
-    return parseQuery(
-        parser, setting.data(), setting.data() + setting.size(),
-        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
-}
-
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
 bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 {
@@ -531,7 +515,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!storage)
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
 
-        auto custom_key_ast = parseParallelReplicaCustomKey(settings.parallel_replicas_custom_key, *context);
+        auto custom_key_ast = parseParallelReplicaCustomKey(settings.parallel_replicas_custom_key.value, *context);
         parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
             settings.parallel_replicas_count,
             settings.parallel_replica_offset,

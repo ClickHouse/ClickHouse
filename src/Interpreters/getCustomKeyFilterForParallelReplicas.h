@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
-#include "Core/SettingsEnums.h"
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {
@@ -17,5 +17,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     ParallelReplicasCustomKeyFilterType filter_type,
     const IStorage & storage,
     const ContextPtr & context);
+
+ASTPtr parseParallelReplicaCustomKey(std::string_view custom_key, const Context & context);
 
 }

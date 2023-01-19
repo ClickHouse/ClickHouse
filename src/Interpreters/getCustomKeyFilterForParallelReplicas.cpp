@@ -2,6 +2,10 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+
+#include <Interpreters/Context.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -10,6 +14,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
 
 ASTPtr getCustomKeyFilterForParallelReplica(
     size_t replicas_count,
@@ -56,7 +66,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     if (size_of_universum == RelativeSize(0))
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Invalid custom key column type: {}. Must be one unsigned integer type",
             custom_key_column_type->getName());
 
@@ -106,4 +116,15 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     return makeASTFunction("and", std::move(lower_function), std::move(upper_function));
 }
 
+ASTPtr parseParallelReplicaCustomKey(std::string_view custom_key, const Context & context)
+{
+    if (custom_key.empty())
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but 'parallel_replicas_custom_key' has no value");
+
+    ParserExpression parser;
+    const auto & settings = context.getSettingsRef();
+    return parseQuery(
+        parser, custom_key.data(), custom_key.data() + custom_key.size(),
+        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
+}
 }

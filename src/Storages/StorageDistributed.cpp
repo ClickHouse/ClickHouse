@@ -135,7 +135,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int UNSUPPORTED_METHOD;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 namespace ActionLocks
@@ -447,29 +446,40 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     ClusterPtr cluster = getCluster();
 
-    query_info.cluster = cluster;
-
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    /// Always calculate optimized cluster here, to avoid conditions during read()
-    /// (Anyway it will be calculated in the read())
-    if (nodes > 1 && settings.optimize_skip_unused_shards)
+    if (settings.max_parallel_replicas > 1
+        && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY
+        && cluster->getShardCount() == 1)
     {
-        ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info.query);
-        if (optimized_cluster)
-        {
-            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
-                    makeFormattedListOfShards(optimized_cluster));
+        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
 
-            cluster = optimized_cluster;
-            query_info.optimized_cluster = cluster;
+        query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+    }
+    else
+    {
+        query_info.cluster = cluster;
 
-            nodes = getClusterQueriedNodes(settings, cluster);
-        }
-        else
+        if (nodes > 1 && settings.optimize_skip_unused_shards)
         {
-            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
-                    has_sharding_key ? "" : " (no sharding key)");
+            /// Always calculate optimized cluster here, to avoid conditions during read()
+            /// (Anyway it will be calculated in the read())
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info.query);
+            if (optimized_cluster)
+            {
+                LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
+                        makeFormattedListOfShards(optimized_cluster));
+
+                cluster = optimized_cluster;
+                query_info.optimized_cluster = cluster;
+
+                nodes = getClusterQueriedNodes(settings, cluster);
+            }
+            else
+            {
+                LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
+                        has_sharding_key ? "" : " (no sharding key)");
+            }
         }
     }
 
@@ -751,33 +761,21 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-
     auto settings = local_context->getSettingsRef();
-    bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas
-        && !settings.use_hedged_requests && settings.parallel_replicas_mode == ParallelReplicasMode::READ_TASKS;
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
     if (settings.max_parallel_replicas > 1
         && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY
         && getCluster()->getShardCount() == 1)
     {
-        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into shards");
+        if (query_info.getCluster()->getShardCount() == 1)
+        {
+            // we are reading from single shard replica but didn't transform replicas
+            // into virtual shards with custom_key set
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas weren't transformed into virtual shards");
+        }
 
-        query_info.cluster = getCluster()->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
-        query_info.optimized_cluster = nullptr; // it's a single shard cluster so nothing could've been optimized
-
-        const std::string_view custom_key = settings.parallel_replicas_custom_key.value;
-        if (custom_key.empty())
-            throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but 'parallel_replicas_custom_key' has no value");
-
-        ParserExpression parser;
-        auto custom_key_ast = parseQuery(
-            parser,
-            custom_key.data(),
-            custom_key.data() + custom_key.size(),
-            "parallel replicas custom key",
-            settings.max_query_size,
-            settings.max_parser_depth);
+        auto custom_key_ast = parseParallelReplicaCustomKey(settings.parallel_replicas_custom_key.value, *local_context);
 
         additional_shard_filter_generator =
             [&, custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
@@ -786,6 +784,9 @@ void StorageDistributed::read(
                 shard_count, shard_num - 1, custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
         };
     }
+
+    bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas
+        && !settings.use_hedged_requests && settings.parallel_replicas_mode == ParallelReplicasMode::READ_TASKS;
 
     if (parallel_replicas)
         ClusterProxy::executeQueryWithParallelReplicas(
