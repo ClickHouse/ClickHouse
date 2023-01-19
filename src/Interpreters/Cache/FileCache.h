@@ -30,6 +30,10 @@ struct KeyTransaction;
 using KeyTransactionPtr = std::shared_ptr<KeyTransaction>;
 using KeyTransactionsMap = std::unordered_map<FileCacheKey, KeyTransactionPtr>;
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
 /// Different caching algorithms are implemented using IFileCachePriority.
