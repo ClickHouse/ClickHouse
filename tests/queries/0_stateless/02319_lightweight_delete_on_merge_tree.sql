@@ -4,7 +4,7 @@ CREATE TABLE merge_table_standard_delete(id Int32, name String) ENGINE = MergeTr
 
 INSERT INTO merge_table_standard_delete select number, toString(number) from numbers(100);
 
-SET mutations_sync = 1;
+SET mutations_sync = 0;
 SET allow_experimental_lightweight_delete = 1;
 
 DELETE FROM merge_table_standard_delete WHERE id = 10;
@@ -51,9 +51,9 @@ DETACH TABLE t_light;
 ATTACH TABLE t_light;
 CHECK TABLE t_light;
 
-alter table t_light MATERIALIZE INDEX i_c;
-alter table t_light update b=-1 where a<3;
-alter table t_light drop index i_c;
+alter table t_light MATERIALIZE INDEX i_c SETTINGS mutations_sync=2;
+alter table t_light update b=-1 where a<3 SETTINGS mutations_sync=2;
+alter table t_light drop index i_c SETTINGS mutations_sync=2;
 
 DETACH TABLE t_light;
 ATTACH TABLE t_light;
@@ -67,7 +67,7 @@ select * from t_light order by a;
 
 select table, partition, name, rows from system.parts where database = currentDatabase() AND active and table ='t_light' order by name;
 
-optimize table t_light final;
+optimize table t_light final SETTINGS mutations_sync=2;
 select count(*) from t_light;
 
 select table, partition, name, rows from system.parts where database = currentDatabase() AND active and table ='t_light' and rows > 0 order by name;
@@ -84,8 +84,8 @@ DETACH TABLE t_large;
 ATTACH TABLE t_large;
 CHECK TABLE t_large;
 
-ALTER TABLE t_large UPDATE b = -2 WHERE a between 1000 and 1005;
-ALTER TABLE t_large DELETE WHERE a=1;
+ALTER TABLE t_large UPDATE b = -2 WHERE a between 1000 and 1005 SETTINGS mutations_sync=2;
+ALTER TABLE t_large DELETE WHERE a=1 SETTINGS mutations_sync=2;
 
 DETACH TABLE t_large;
 ATTACH TABLE t_large;
@@ -99,7 +99,7 @@ SELECT '----Test lighweight delete is disabled if table has projections-----';
 
 CREATE TABLE t_proj(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0;
 
-ALTER TABLE t_proj ADD PROJECTION p_1 (SELECT avg(a), avg(b), count());
+ALTER TABLE t_proj ADD PROJECTION p_1 (SELECT avg(a), avg(b), count()) SETTINGS mutations_sync=2;
 
 INSERT INTO t_proj SELECT number + 1, number + 1  FROM numbers(1000);
 

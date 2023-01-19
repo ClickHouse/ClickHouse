@@ -27,7 +27,7 @@ namespace
   * Takes state of aggregate function (example runningAccumulate(uniqState(UserID))),
   *  and for each row of columns, return result of aggregate function on merge of states of all previous rows and current row.
   *
-  * So, result of function depends on partition of data to columnss and on order of data in columns.
+  * So, result of function depends on partition of data to columns and on order of data in columns.
   */
 class FunctionRunningAccumulate : public IFunction
 {
