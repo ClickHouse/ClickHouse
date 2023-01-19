@@ -297,8 +297,92 @@ std::unique_ptr<ReadBuffer> StorageURLSource::getFirstAvailableURLReadBuffer(
                     {
                         try
                         {
-                            buffer.callWithRedirects(res, Poco::Net::HTTPRequest::HTTP_HEAD, true);
-                            break;
+                            ReadWriteBufferFromHTTP buffer(
+                                request_uri,
+                                Poco::Net::HTTPRequest::HTTP_HEAD,
+                                callback,
+                                timeouts,
+                                credentials,
+                                settings.max_http_get_redirects,
+                                settings.max_read_buffer_size,
+                                read_settings,
+                                headers,
+                                ReadWriteBufferFromHTTP::Range{0, std::nullopt},
+                                &context->getRemoteHostFilter(),
+                                true,
+                                /* use_external_buffer */ false,
+                                /* skip_url_not_found_error */ skip_url_not_found_error);
+
+                            Poco::Net::HTTPResponse res;
+
+                            for (size_t i = 0; i < settings.http_max_tries; ++i)
+                            {
+                                try
+                                {
+                                    buffer.callWithRedirects(res, Poco::Net::HTTPRequest::HTTP_HEAD, true);
+                                    break;
+                                }
+                                catch (const Poco::Exception & e)
+                                {
+                                    LOG_TRACE(
+                                        &Poco::Logger::get("StorageURLSource"),
+                                        "HTTP HEAD request to `{}` failed at try {}/{}. "
+                                        "Error: {}.",
+                                        request_uri.toString(),
+                                        i + 1,
+                                        settings.http_max_tries,
+                                        e.displayText());
+                                    if (!ReadWriteBufferFromHTTP::isRetriableError(res.getStatus()))
+                                    {
+                                        throw;
+                                    }
+                                }
+                            }
+
+                            // to check if Range header is supported, we need to send a request with it set
+                            const bool supports_ranges = (res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes")
+                                || (res.has("Content-Range") && res.get("Content-Range").starts_with("bytes"));
+
+                            if (supports_ranges)
+                                LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "HTTP Range is supported");
+                            else
+                                LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "HTTP Range is not supported");
+
+
+                            if (supports_ranges && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT
+                                && res.hasContentLength())
+                            {
+                                LOG_TRACE(
+                                    &Poco::Logger::get("StorageURLSource"),
+                                    "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
+                                    download_threads,
+                                    settings.max_download_buffer_size);
+
+                                auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
+                                    res.getContentLength(),
+                                    settings.max_download_buffer_size,
+                                    request_uri,
+                                    http_method,
+                                    callback,
+                                    timeouts,
+                                    credentials,
+                                    settings.max_http_get_redirects,
+                                    settings.max_read_buffer_size,
+                                    read_settings,
+                                    headers,
+                                    &context->getRemoteHostFilter(),
+                                    delay_initialization,
+                                    /* use_external_buffer */ false,
+                                    /* skip_url_not_found_error */ skip_url_not_found_error);
+
+                                return wrapReadBufferWithCompressionMethod(
+                                    std::make_unique<ParallelReadBuffer>(
+                                        std::move(read_buffer_factory),
+                                        threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
+                                        download_threads),
+                                    compression_method,
+                                    zstd_window_log_max);
+                            }
                         }
                         catch (const Poco::Exception & e)
                         {

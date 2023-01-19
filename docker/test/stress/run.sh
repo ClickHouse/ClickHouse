@@ -128,18 +128,12 @@ EOL
 
 function stop()
 {
+    local max_tries="${1:-90}"
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    clickhouse stop $max_tries --do-not-kill && return
-
-    if [ -n "$1" ]
-    then
-        # temporarily disable it in BC check
-        clickhouse stop --force
-        return
-    fi
+    clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
@@ -303,7 +297,7 @@ start
 
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
-                       && rg -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
+                       && rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
 
 stop
 
@@ -334,7 +328,7 @@ rg -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/c
 [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
 # No such key errors
-rg -Ea "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
+rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
     && echo -e 'S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No lost s3 keys\tOK' >> /test_output/test_results.tsv
 
@@ -465,7 +459,8 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
             clickhouse stop --force
         )
 
-        stop 1
+        # Use bigger timeout for previous version
+        stop 300
         mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
 
         # Start new server
@@ -477,7 +472,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         start 500
         clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
             || (echo -e 'Backward compatibility check: Server failed to start\tFAIL' >> /test_output/test_results.tsv \
-            && rg -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
+            && rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
 
         clickhouse-client --query="SELECT 'Server version: ', version()"
 
@@ -598,7 +593,7 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps
-find . -type f -name 'core.*' | while read core; do
+find . -type f -maxdepth 1 -name 'core.*' | while read core; do
     zstd --threads=0 $core
     mv $core.zst /test_output/
 done

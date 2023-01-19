@@ -5,6 +5,7 @@ set -x
 
 # core.COMM.PID-TID
 sysctl kernel.core_pattern='core.%e.%p-%P'
+dmesg --clear ||:
 
 set -e
 set -u
@@ -278,14 +279,14 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! rg -E --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' server.log > description.txt
+        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
 
         IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 
-        if [ "${IS_SANITIZED}" -eq "1" ] && rg -E --text 'Sanitizer: (out-of-memory|out of memory|failed to allocate|Child process was terminated by signal 9)' description.txt
+        if [ "${IS_SANITIZED}" -eq "1" ] && rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' description.txt
         then
             # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
             # Why? Because sanitizers have the memory overhead, that is not controllable from inside clickhouse-server.
@@ -368,6 +369,7 @@ if [ -f core.zst ]; then
 fi
 
 rg --text -F '<Fatal>' server.log > fatal.log ||:
+dmesg -T > dmesg.log ||:
 
 zstd --threads=0 server.log
 
@@ -396,6 +398,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="fuzzer.log">fuzzer.log</a>
   <a href="server.log.zst">server.log.zst</a>
   <a href="main.log">main.log</a>
+  <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
 </p>
 <table>

@@ -463,8 +463,6 @@ private:
     /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
     const RenamingRestrictions renaming_restrictions;
 
-    const size_t replicated_fetches_pool_size;
-
     /// Throttlers used in DataPartsExchange to lower maximum fetch/sends
     /// speed.
     ThrottlerPtr replicated_fetches_throttler;
@@ -536,7 +534,7 @@ private:
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
-    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
+    void getRemovePartFromZooKeeperOps(const String & part_name, Coordination::Requests & ops, bool has_children);
 
     /// Just removes part from ZooKeeper using previous method
     void removePartFromZooKeeper(const String & part_name);
@@ -550,7 +548,7 @@ private:
     void removePartsFromZooKeeperWithRetries(PartsToRemoveFromZooKeeper & parts, size_t max_retries = 5);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
-    void removePartAndEnqueueFetch(const String & part_name);
+    void removePartAndEnqueueFetch(const String & part_name, bool storage_init);
 
     /// Running jobs from the queue.
 
