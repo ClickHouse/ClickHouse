@@ -1,5 +1,6 @@
-#include <memory>
 #include <Analyzer/QueryTreePassManager.h>
+
+#include <memory>
 
 #include <Common/Exception.h>
 
