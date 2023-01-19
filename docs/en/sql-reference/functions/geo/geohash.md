@@ -110,5 +110,3 @@ Result:
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/geohash) <!--hide-->

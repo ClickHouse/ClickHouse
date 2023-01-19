@@ -432,7 +432,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.json.read_bools_as_numbers,
                 settings.json.read_objects_as_strings,
                 settings.json.read_numbers_as_strings,
-                settings.json.try_infer_objects);
+                settings.json.allow_object_type);
             break;
         default:
             break;

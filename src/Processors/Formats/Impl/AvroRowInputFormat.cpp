@@ -304,7 +304,9 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     };
                 }
 
-                if (null_as_default)
+                /// If the Union is ['Null', Nested-Type], since the Nested-Type can not be inside
+                /// Nullable, so we will get Nested-Type, instead of Nullable type.
+                if (null_as_default || !target.isNullable())
                 {
                     auto nested_deserialize = this->createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
@@ -906,11 +908,15 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
-    , input_stream(std::make_unique<InputStreamReadBufferAdapter>(*in))
-    , decoder(avro::binaryDecoder())
     , format_settings(format_settings_)
 
 {
+}
+
+void AvroConfluentRowInputFormat::readPrefix()
+{
+    input_stream = std::make_unique<InputStreamReadBufferAdapter>(*in);
+    decoder = avro::binaryDecoder();
     decoder->init(*input_stream);
 }
 
@@ -997,7 +1003,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_STRING:
             return std::make_shared<DataTypeString>();
         case avro::Type::AVRO_BYTES:
-            return std::make_shared<DataTypeFloat32>();
+            return std::make_shared<DataTypeString>();
         case avro::Type::AVRO_ENUM:
         {
             if (node->names() < 128)
