@@ -134,6 +134,7 @@ void MultiplexedConnections::sendQuery(
         }
 
         bool parallel_reading_from_replicas = settings.max_parallel_replicas > 1
+            && settings.parallel_replicas_mode == ParallelReplicasMode::READ_TASKS
             && settings.allow_experimental_parallel_reading_from_replicas
             /// To avoid trying to coordinate with clickhouse-benchmark,
             /// since it uses the same code.
@@ -146,7 +147,9 @@ void MultiplexedConnections::sendQuery(
         }
     }
 
-    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.allow_experimental_parallel_reading_from_replicas;
+    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1
+        && (settings.parallel_replicas_mode != ParallelReplicasMode::READ_TASKS
+            || !settings.allow_experimental_parallel_reading_from_replicas);
 
     size_t num_replicas = replica_states.size();
     if (num_replicas > 1)
