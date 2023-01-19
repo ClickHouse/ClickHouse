@@ -34,6 +34,7 @@ def test_partition_by():
     )
     assert result.strip() == "1\t2\t3"
 
+
 def test_urlCluster():
     result = node1.query(
         f"select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
@@ -47,6 +48,7 @@ def test_urlCluster():
         f"select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_3', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
     assert result.strip() == "1\t2\t3"
+
 
 def test_table_function_url_access_rights():
     node1.query("CREATE USER OR REPLACE u1")
