@@ -669,6 +669,33 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
     return std::unique_ptr<Cluster>{ new Cluster(SubclusterTag{}, *this, indices) };
 }
 
+namespace
+{
+
+void shuffleReplicas(auto & replicas, const Settings & settings)
+{
+    std::random_device rd;
+    std::mt19937 gen{rd()};
+
+    if (settings.prefer_localhost_replica)
+    {
+        // force for local replica to always be included
+        auto local_replica = std::find_if(replicas.begin(), replicas.end(), [](const auto & replica) { return replica.is_local; });
+        if (local_replica != replicas.end())
+        {
+            if (local_replica != replicas.begin())
+                std::swap(*replicas.begin(), *local_replica);
+
+            std::shuffle(replicas.begin() + 1, replicas.end(), gen);
+            return;
+        }
+    }
+
+    std::shuffle(replicas.begin(), replicas.end(), gen);
+}
+
+}
+
 Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard)
 {
     if (from.addresses_with_failover.empty())
@@ -723,32 +750,9 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
         }
         else
         {
-            // shuffle replicas so we don't always pick the same subset
-            std::random_device rd;
-            std::mt19937 gen{rd()};
             auto shuffled_replicas = replicas;
-
-            if (settings.prefer_localhost_replica)
-            {
-                // force for local replica to always be included
-                auto local_replica = std::find_if(shuffled_replicas.begin(), shuffled_replicas.end(), [](const auto & replica) { return replica.is_local; });
-                if (local_replica != shuffled_replicas.end())
-                {
-                    if (local_replica != shuffled_replicas.begin())
-                        std::swap(*shuffled_replicas.begin(), *local_replica);
-
-                    std::shuffle(shuffled_replicas.begin() + 1, shuffled_replicas.end(), gen);
-                }
-                else
-                {
-                    std::shuffle(shuffled_replicas.begin(), shuffled_replicas.end(), gen);
-                }
-            }
-            else
-            {
-                std::shuffle(shuffled_replicas.begin(), shuffled_replicas.end(), gen);
-            }
-
+            // shuffle replicas so we don't always pick the same subset
+            shuffleReplicas(shuffled_replicas, settings);
             create_shards_from_replicas(std::span{shuffled_replicas.begin(), shuffled_replicas.begin() + max_replicas_from_shard});
         }
     }
