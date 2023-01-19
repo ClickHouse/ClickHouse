@@ -94,9 +94,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Common/typeid_cast.h>
-#include "Core/SettingsEnums.h"
-
-#include <boost/rational.hpp>
 
 namespace DB
 {
@@ -230,13 +227,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
-namespace
-{
-
 /** There are no limits on the maximum size of the result for the subquery.
   *  Since the result of the query is not the result of the entire query.
   */
-ContextPtr getSubqueryContext(const ContextPtr & context)
+static ContextPtr getSubqueryContext(const ContextPtr & context)
 {
     auto subquery_context = Context::createCopy(context);
     Settings subquery_settings = context->getSettings();
@@ -248,7 +242,7 @@ ContextPtr getSubqueryContext(const ContextPtr & context)
     return subquery_context;
 }
 
-void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -268,7 +262,7 @@ void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, cons
 }
 
 /// Checks that the current user has the SELECT privilege.
-void checkAccessRightsForSelect(
+static void checkAccessRightsForSelect(
     const ContextPtr & context,
     const StorageID & table_id,
     const StorageMetadataPtr & table_metadata,
@@ -298,7 +292,7 @@ void checkAccessRightsForSelect(
     context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
-ASTPtr parseAdditionalFilterConditionForTable(
+static ASTPtr parseAdditionalFilterConditionForTable(
     const Map & setting,
     const DatabaseAndTableWithAlias & target,
     const Context & context)
@@ -326,7 +320,7 @@ ASTPtr parseAdditionalFilterConditionForTable(
 }
 
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
-bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 {
     if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
     {
@@ -335,8 +329,6 @@ bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
             return true;
     }
     return false;
-}
-
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -1417,23 +1409,17 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
-            const auto add_filter_step = [&](const auto & new_filter_info, const std::string & description)
-            {
-                auto filter_step = std::make_unique<FilterStep>(
-                    query_plan.getCurrentDataStream(),
-                    new_filter_info->actions,
-                    new_filter_info->column_name,
-                    new_filter_info->do_remove_column);
-
-                filter_step->setStepDescription(description);
-                query_plan.addStep(std::move(filter_step));
-            };
-
             if (additional_filter_info)
-                add_filter_step(additional_filter_info, "Additional filter");
+            {
+                auto additional_filter_step = std::make_unique<FilterStep>(
+                    query_plan.getCurrentDataStream(),
+                    additional_filter_info->actions,
+                    additional_filter_info->column_name,
+                    additional_filter_info->do_remove_column);
 
-            if (parallel_replicas_custom_filter_info)
-                add_filter_step(parallel_replicas_custom_filter_info, "Parallel replica custom key filter");
+                additional_filter_step->setStepDescription("Additional filter");
+                query_plan.addStep(std::move(additional_filter_step));
+            }
 
             if (expressions.before_array_join)
             {
