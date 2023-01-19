@@ -807,6 +807,8 @@ public:
                 value = element.getBool();
                 break;
             case ElementType::INT64:
+                value = element.getInt64() != 0;
+                break;
             case ElementType::UINT64:
                 value = element.getUInt64() != 0;
                 break;
