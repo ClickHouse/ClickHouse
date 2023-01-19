@@ -154,7 +154,7 @@ private:
 
     static void visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)
     {
-        auto & identifier = node.children[0]->as<ASTTableIdentifier &>();
+        auto & identifier = node.qualifier->as<ASTIdentifier &>();
         bool rewritten = false;
         for (const auto & table : data)
         {
