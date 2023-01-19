@@ -24,7 +24,7 @@ struct HasTokenImpl
     static constexpr bool supports_start_pos = false;
     static constexpr auto name = Name::name;
 
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2};}
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2}; }
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
@@ -32,7 +32,7 @@ struct HasTokenImpl
         const std::string & pattern,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt8> & res,
-        ColumnUInt8* null_map = nullptr)
+        ColumnUInt8 * null_map = nullptr)
     {
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' does not support start_pos argument", name);
@@ -52,14 +52,14 @@ struct HasTokenImpl
         {
             searcher.emplace(pattern.data(), pattern.size(), end - pos);
             if (null_map)
-                null_map->getData().resize_fill(haystack_offsets.size(), false);
+                std::ranges::fill(null_map->getData(), false);
         }
         catch (...)
         {
             if (!null_map)
                 throw;
 
-            null_map->getData().resize_fill(haystack_offsets.size(), true);
+            std::ranges::fill(null_map->getData(), true);
             return;
         }
 

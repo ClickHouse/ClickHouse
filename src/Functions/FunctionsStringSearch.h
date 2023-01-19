@@ -196,7 +196,7 @@ public:
         {
             if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
             {
-                auto null_map = ColumnUInt8::create();
+                auto null_map = ColumnUInt8::create(vec_res.size());
                 Impl::vectorConstant(
                     col_haystack_vector->getChars(),
                     col_haystack_vector->getOffsets(),
