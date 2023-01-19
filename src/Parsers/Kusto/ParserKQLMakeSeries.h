@@ -42,9 +42,9 @@ protected:
         String main_query;
     };
 
-    bool makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, const uint32_t & max_depth);
-    bool parseAggregationColumns(AggregationColumns & aggregation_columns, Pos & pos);
-    bool parseFromToStepClause(FromToStepClause & from_to_step, Pos & pos);
+    static bool makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, const uint32_t & max_depth);
+    static bool parseAggregationColumns(AggregationColumns & aggregation_columns, Pos & pos);
+    static bool parseFromToStepClause(FromToStepClause & from_to_step, Pos & pos);
 
     const char * getName() const override { return "KQL make-series"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

@@ -197,7 +197,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
         tokens.push_back(alias);
     }
 
-    for (auto token : tokens)
+    for (auto const & token : tokens)
         res = res.empty() ? token : res + " " + token;
     return res;
 }

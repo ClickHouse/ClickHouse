@@ -215,7 +215,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
             ++pos;
         }
         String res;
-        for (auto token : group_expression_tokens)
+        for (auto const & token : group_expression_tokens)
             res = res + token + " ";
         return res;
     };

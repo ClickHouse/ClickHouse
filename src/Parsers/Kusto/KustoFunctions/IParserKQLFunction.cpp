@@ -128,8 +128,8 @@ String IParserKQLFunction::generateUniqueIdentifier()
 
 String IParserKQLFunction::getArgument(const String & function_name, DB::IParser::Pos & pos, const ArgumentState argument_state)
 {
-    if (auto optionalArgument = getOptionalArgument(function_name, pos, argument_state))
-        return std::move(*optionalArgument);
+    if (auto optional_argument = getOptionalArgument(function_name, pos, argument_state))
+        return std::move(*optional_argument);
 
     throw Exception(std::format("Required argument was not provided in {}", function_name), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
@@ -187,7 +187,7 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
         if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
             break;
     }
-    for (auto token : tokens)
+    for (auto const & token : tokens)
         converted_arg = converted_arg.empty() ? token : converted_arg + " " + token;
 
     return converted_arg;
@@ -342,31 +342,31 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
 int IParserKQLFunction::getNullCounts(String arg)
 {
     size_t index = 0;
-    int nullCounts = 0;
-    for (size_t i = 0; i < arg.size(); i++)
+    int null_counts = 0;
+    for (char & i : arg)
     {
-        if (arg[i] == 'n')
-            arg[i] = 'N';
-        if (arg[i] == 'u')
-            arg[i] = 'U';
-        if (arg[i] == 'l')
-            arg[i] = 'L';
+        if (i == 'n')
+            i = 'N';
+        if (i == 'u')
+            i = 'U';
+        if (i == 'l')
+            i = 'L';
     }
     while ((index = arg.find("NULL", index)) != std::string::npos)
     {
         index += 4;
-        nullCounts += 1;
+        null_counts += 1;
     }
-    return nullCounts;
+    return null_counts;
 }
 
 int IParserKQLFunction::IParserKQLFunction::getArrayLength(String arg)
 {
     int array_length = 0;
     bool comma_found = false;
-    for (size_t i = 0; i < arg.size(); i++)
+    for (char i : arg)
     {
-        if (arg[i] == ',')
+        if (i == ',')
         {
             comma_found = true;
             array_length += 1;
@@ -389,7 +389,7 @@ String IParserKQLFunction::ArraySortHelper(String & out, IParser::Pos & pos, boo
         reverse = "Reverse";
     ++pos;
     String first_arg = getConvertedArgument(fn_name, pos);
-    int nullCount = getNullCounts(first_arg);
+    int null_count = getNullCounts(first_arg);
     if (pos->type == TokenType::Comma)
         ++pos;
     out = "array(";
@@ -423,14 +423,14 @@ String IParserKQLFunction::ArraySortHelper(String & out, IParser::Pos & pos, boo
         out += "array" + reverse + "Sort(" + first_arg + ")";
     }
 
-    if (argument_list.size() > 0)
+    if (!argument_list.empty())
     {
         String temp_first_arg = first_arg;
         int first_arg_length = getArrayLength(temp_first_arg);
 
-        if (nullCount > 0 && expr.empty())
+        if (null_count > 0 && expr.empty())
             expr = "true";
-        if (nullCount > 0)
+        if (null_count > 0)
             first_arg = "if (" + expr + ", array" + reverse + "Sort(" + first_arg + "), concat(arraySlice(array" + reverse + "Sort("
                 + first_arg + ") as as1, indexOf(as1, NULL) as len1 ), arraySlice( as1, 1, len1-1) ) )";
         else
@@ -438,19 +438,19 @@ String IParserKQLFunction::ArraySortHelper(String & out, IParser::Pos & pos, boo
 
         out += first_arg;
 
-        for (size_t i = 0; i < argument_list.size(); i++)
+        for (auto & i : argument_list)
         {
             out += " , ";
-            if (first_arg_length != getArrayLength(argument_list[i]))
+            if (first_arg_length != getArrayLength(i))
                 out += "array(NULL)";
-            else if (nullCount > 0)
-                out += "If (" + expr + "," + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg
-                    + "), arrayConcat(arraySlice(" + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg
-                    + ") , length(" + temp_first_arg + ") - " + std::to_string(nullCount) + " + 1) , arraySlice(" + "array" + reverse
-                    + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , 1, length(" + temp_first_arg + ") - "
-                    + std::to_string(nullCount) + ") ) )";
+            else if (null_count > 0)
+                out += "If (" + expr + "," + "array" + reverse + "Sort((x, y) -> y, " + i + "," + temp_first_arg
+                    + "), arrayConcat(arraySlice(" + "array" + reverse + "Sort((x, y) -> y, " + i + "," + temp_first_arg
+                    + ") , length(" + temp_first_arg + ") - " + std::to_string(null_count) + " + 1) , arraySlice(" + "array" + reverse
+                    + "Sort((x, y) -> y, " + i + "," + temp_first_arg + ") , 1, length(" + temp_first_arg + ") - "
+                    + std::to_string(null_count) + ") ) )";
             else
-                out += "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ")";
+                out += "array" + reverse + "Sort((x, y) -> y, " + i + "," + temp_first_arg + ")";
         }
     }
     out += " )";

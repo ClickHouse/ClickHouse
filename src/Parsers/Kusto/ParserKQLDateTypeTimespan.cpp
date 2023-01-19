@@ -1,7 +1,7 @@
 #include <cstdlib>
 #include <format>
 #include <unordered_map>
-#include <math.h>
+#include <cmath>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
@@ -52,7 +52,7 @@ double ParserKQLDateTypeTimespan ::toSeconds()
 
 bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
 {
-    std::unordered_map<String, KQLTimespanUint> TimespanSuffixes
+    std::unordered_map<String, KQLTimespanUint> timespan_suffixes
         = {{"d", KQLTimespanUint::day},
            {"day", KQLTimespanUint::day},
            {"days", KQLTimespanUint::day},
@@ -94,9 +94,9 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
     const char * ptr = text.c_str();
     bool sign = false;
 
-    auto scanDigit = [&](const char * start) -> int
+    auto scan_digit = [&](const char * start) -> int
     {
-        auto index = start;
+        const auto * index = start;
         while (isdigit(*index))
             ++index;
         return index > start ? static_cast<int>(index - start) : -1;
@@ -106,7 +106,7 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
         sign = true;
         ++ptr;
     }
-    auto number_len = scanDigit(ptr);
+    auto number_len = scan_digit(ptr);
     if (number_len <= 0)
         return false;
 
@@ -114,11 +114,11 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
 
     if (*(ptr + number_len) == '.')
     {
-        auto fractionLen = scanDigit(ptr + number_len + 1);
-        if (fractionLen >= 0)
+        auto fraction_len = scan_digit(ptr + number_len + 1);
+        if (fraction_len >= 0)
         {
-            hours = std::stoi(String(ptr + number_len + 1, ptr + number_len + 1 + fractionLen));
-            number_len += fractionLen + 1;
+            hours = std::stoi(String(ptr + number_len + 1, ptr + number_len + 1 + fraction_len));
+            number_len += fraction_len + 1;
         }
     }
     else if (*(ptr + number_len) == '\0')
@@ -142,11 +142,11 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
         String timespan_suffix(ptr + number_len, ptr + text.size());
 
         trim(timespan_suffix);
-        if (TimespanSuffixes.find(timespan_suffix) == TimespanSuffixes.end())
+        if (timespan_suffixes.find(timespan_suffix) == timespan_suffixes.end())
             return false;
 
         time_span = std::stod(String(ptr, ptr + number_len));
-        time_span_unit = TimespanSuffixes[timespan_suffix];
+        time_span_unit = timespan_suffixes[timespan_suffix];
 
         return true;
     }
@@ -154,7 +154,7 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
     if (hours > 23)
         return false;
 
-    auto min_len = scanDigit(ptr + number_len + 1);
+    auto min_len = scan_digit(ptr + number_len + 1);
     if (min_len < 0)
         return false;
 
@@ -165,7 +165,7 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
     number_len += min_len + 1;
     if (*(ptr + number_len) == ':')
     {
-        auto sec_len = scanDigit(ptr + number_len + 1);
+        auto sec_len = scan_digit(ptr + number_len + 1);
         if (sec_len > 0)
         {
             seconds = std::stoi(String(ptr + number_len + 1, ptr + number_len + 1 + sec_len));
@@ -175,7 +175,7 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
             number_len += sec_len + 1;
             if (*(ptr + number_len) == '.')
             {
-                sec_scale_len = scanDigit(ptr + number_len + 1);
+                sec_scale_len = scan_digit(ptr + number_len + 1);
                 if (sec_scale_len > 0)
                 {
                     nanoseconds = std::stoi(String(ptr + number_len + 1, ptr + number_len + 1 + sec_scale_len));

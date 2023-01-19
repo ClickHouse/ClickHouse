@@ -174,10 +174,10 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     --pos;
     apply_aliais(column_begin_pos, pos, groupby);
 
-    for (auto expr : expr_aggregations)
+    for (auto const & expr : expr_aggregations)
         expr_aggregation = expr_aggregation.empty() ? expr : expr_aggregation + "," + expr;
 
-    for (auto expr : expr_groupbys)
+    for (auto const & expr : expr_groupbys)
         expr_groupby = expr_groupby.empty() ? expr : expr_groupby + "," + expr;
 
     if (!expr_groupby.empty())
