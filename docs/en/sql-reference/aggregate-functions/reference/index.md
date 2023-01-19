@@ -57,6 +57,7 @@ ClickHouse-specific aggregate functions:
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md)
 -   [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md)
 -   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md)
+-   [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md)
 -   [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md)
 -   [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md)
@@ -74,5 +75,9 @@ ClickHouse-specific aggregate functions:
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->
+-   [contingency](./contingency.md)
+-   [cramersV](./cramersv.md)
+-   [cramersVBiasCorrected](./cramersvbiascorrected.md)
+-   [theilsU](./theilsu.md)
+-   [maxIntersections](./maxintersections.md)
+-   [maxIntersectionsPosition](./maxintersectionsposition.md)

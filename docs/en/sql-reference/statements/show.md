@@ -510,5 +510,3 @@ Result:
 **See Also**
 
 -   [system.settings](../../operations/system-tables/settings.md) table
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/show/) <!--hide-->

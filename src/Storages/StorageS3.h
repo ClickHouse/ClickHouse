@@ -137,8 +137,7 @@ public:
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
-        size_t download_thread_num,
-        bool only_need_virtual_columns_ = false);
+        size_t download_thread_num);
 
     ~StorageS3Source() override;
 
@@ -160,7 +159,6 @@ private:
     std::shared_ptr<const Aws::S3::S3Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
-    bool only_need_virtual_columns{false};
 
     struct ReaderHolder
     {
@@ -178,6 +176,24 @@ private:
         }
 
         ReaderHolder() = default;
+        ReaderHolder(const ReaderHolder & other) = delete;
+        ReaderHolder & operator=(const ReaderHolder & other) = delete;
+
+        ReaderHolder(ReaderHolder && other) noexcept
+        {
+            *this = std::move(other);
+        }
+
+        ReaderHolder & operator=(ReaderHolder && other) noexcept
+        {
+            /// The order of destruction is important.
+            /// reader uses pipeline, pipeline uses read_buf.
+            reader = std::move(other.reader);
+            pipeline = std::move(other.pipeline);
+            read_buf = std::move(other.read_buf);
+            path = std::move(other.path);
+            return *this;
+        }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }

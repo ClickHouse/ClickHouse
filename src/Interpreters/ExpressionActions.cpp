@@ -790,10 +790,10 @@ void ExpressionActions::assertDeterministic() const
 }
 
 
-std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
+NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
     std::optional<size_t> min_size;
-    String res;
+    NameAndTypePair result;
 
     for (const auto & column : columns)
     {
@@ -807,14 +807,14 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
         if (!min_size || size < *min_size)
         {
             min_size = size;
-            res = column.name;
+            result = column;
         }
     }
 
     if (!min_size)
         throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
 
-    return res;
+    return result;
 }
 
 std::string ExpressionActions::dumpActions() const
