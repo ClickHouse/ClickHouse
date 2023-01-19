@@ -114,6 +114,12 @@ SELECT JSONExtract('{"a":"1234567890123456789999"}', 'a', 'UInt64') as a, toType
 SELECT JSONExtract('{"a":0}', 'a', 'Bool') as a, toTypeName(a);
 SELECT JSONExtract('{"a":1}', 'a', 'Bool') as a, toTypeName(a);
 
+SELECT JSONExtract('{"a": "-123456789012.345"}', 'a', 'Int64') as a, toTypeName(a);
+SELECT JSONExtract('{"a": "123456789012.345"}', 'a', 'UInt64') as a, toTypeName(a);
+
+SELECT JSONExtract('{"a": "-2000.22"}', 'a', 'UInt64') as a, toTypeName(a);
+SELECT JSONExtract('{"a": "-2000.22"}', 'a', 'Int8') as a, toTypeName(a);
+
 SELECT '--JSONExtractKeysAndValues--';
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'String');
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(Float64)');
