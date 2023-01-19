@@ -109,7 +109,7 @@ bool MergeTreeDataPartChecksums::read(ReadBuffer & in, size_t format_version)
         case 4:
             return readV4(in);
         default:
-            throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Bad checksums format version: {}", DB::toString(format_version));
     }
 }
 
@@ -370,7 +370,7 @@ bool MinimalisticDataPartChecksums::deserialize(ReadBuffer & in)
     }
 
     if (format_version > MINIMAL_VERSION_WITH_MINIMALISTIC_CHECKSUMS)
-        throw Exception("Unknown checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown checksums format version: {}", DB::toString(format_version));
 
     deserializeWithoutHeader(in);
 

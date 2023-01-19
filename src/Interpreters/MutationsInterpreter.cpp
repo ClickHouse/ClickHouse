@@ -799,7 +799,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             read_columns.emplace_back(command.column_name);
         }
         else
-            throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
     }
 
     if (!read_columns.empty())

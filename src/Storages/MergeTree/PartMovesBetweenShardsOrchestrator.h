@@ -84,7 +84,7 @@ public:
                 case CANCELLED: return "CANCELLED";
             }
 
-            throw Exception("Unknown EntryState: " + DB::toString<int>(value), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown EntryState: {}", DB::toString<int>(value));
         }
 
         static EntryState::Value fromString(String in)

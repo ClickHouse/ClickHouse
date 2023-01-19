@@ -187,7 +187,7 @@ void MutationCommands::readText(ReadBuffer & in)
         auto * command_ast = child->as<ASTAlterCommand>();
         auto command = MutationCommand::parse(command_ast, true);
         if (!command)
-            throw Exception("Unknown mutation command type: " + DB::toString<int>(command_ast->type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command_ast->type));
         push_back(std::move(*command));
     }
 }
