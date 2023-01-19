@@ -25,8 +25,8 @@
             </id>
 
             <attribute>
-                <name>bad_attr</name>
-                <type>bad_type</type>
+                <name>invalid_attr</name>
+                <type>invalid_type</type>
                 <null_value></null_value>
                 <hierarchical>false</hierarchical>
                 <injective>false</injective>
