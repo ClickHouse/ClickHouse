@@ -117,9 +117,8 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
     if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
 
-    throw Exception(
-        "Unknown compression method '" + hint + "'. Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods",
-        ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception( ErrorCodes::NOT_IMPLEMENTED, "Unknown compression method '{}'. "
+        "Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods", hint);
 }
 
 std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method)

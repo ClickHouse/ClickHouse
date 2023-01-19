@@ -37,9 +37,7 @@ struct StemImpl
 
         if (stemmer == nullptr)
         {
-            throw Exception(
-            "Language " + language + " is not supported for function stem",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Language {} is not supported for function stem", language);
         }
 
         res_data.resize(data.size());
@@ -88,11 +86,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
         if (!isString(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[1]->getName(), getName());
         return arguments[1];
     }
 
@@ -109,11 +107,11 @@ public:
         const ColumnString * words_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
         if (!lang_col)
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
         if (!words_col)
-            throw Exception(
-                "Illegal column " + arguments[1].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[1].column->getName(), getName());
 
         String language = lang_col->getValue<String>();
 

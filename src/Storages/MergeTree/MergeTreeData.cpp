@@ -192,10 +192,9 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
     }
 
     if (!is_correct_sample_condition)
-        throw Exception(
-            "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
-            + ". Must be one unsigned integer type",
-            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+        throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+"            Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
+            sampling_column_type->getName());
 }
 
 
@@ -270,9 +269,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     if (format_version < min_format_version)
     {
         if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
-            throw Exception(
-                "MergeTree data format version on disk doesn't support custom partitioning",
-                ErrorCodes::METADATA_MISMATCH);
+            throw Exception( ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
 
@@ -505,9 +502,7 @@ void MergeTreeData::checkProperties(
             MergeTreeIndexFactory::instance().validate(index, attach);
 
             if (indices_names.find(index.name) != indices_names.end())
-                throw Exception(
-                        "Index with name " + backQuote(index.name) + " already exists",
-                        ErrorCodes::LOGICAL_ERROR);
+                throw Exception( ErrorCodes::LOGICAL_ERROR, "Index with name {} already exists", backQuote(index.name));
 
             indices_names.insert(index.name);
         }
@@ -520,9 +515,7 @@ void MergeTreeData::checkProperties(
         for (const auto & projection : new_metadata.projections)
         {
             if (projections_names.find(projection.name) != projections_names.end())
-                throw Exception(
-                        "Projection with name " + backQuote(projection.name) + " already exists",
-                        ErrorCodes::LOGICAL_ERROR);
+                throw Exception( ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
 
             projections_names.insert(projection.name);
         }
@@ -777,8 +770,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                 return column_to_sum == Nested::extractTableName(name_and_type.name);
             };
             if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
-                throw Exception(
-                        "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                throw Exception( ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} listed in columns to sum does not exist in table declaration.", column_to_sum);
         }
 
         /// Check that summing columns are not in partition key.
@@ -1611,9 +1603,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     {
                         std::lock_guard lock(wal_init_lock);
                         if (write_ahead_log != nullptr)
-                            throw Exception(
-                                "There are multiple WAL files appeared in current storage policy. You need to resolve this manually",
-                                ErrorCodes::CORRUPTED_DATA);
+                            throw Exception( ErrorCodes::CORRUPTED_DATA, "There are multiple WAL files appeared in current storage policy. You need to resolve this manually");
 
                         write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
                         for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext(), part_lock, is_static_storage))
@@ -1647,9 +1637,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     }
 
     if (have_non_adaptive_parts && have_adaptive_parts && !settings->enable_mixed_granularity_parts)
-        throw Exception(
-            "Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception( ErrorCodes::LOGICAL_ERROR, "Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled");
 
     has_non_adaptive_index_granularity_parts = have_non_adaptive_parts;
     has_lightweight_delete_parts = have_lightweight_in_parts;
@@ -2856,46 +2844,34 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
-            throw Exception(
-                "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax");
         }
         if (command.type == AlterCommand::MODIFY_TTL && !is_custom_partitioned)
         {
-            throw Exception(
-                "ALTER MODIFY TTL is not supported for default-partitioned tables created with the old syntax",
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER MODIFY TTL is not supported for default-partitioned tables created with the old syntax");
         }
         if (command.type == AlterCommand::MODIFY_SAMPLE_BY)
         {
             if (!is_custom_partitioned)
-                throw Exception(
-                    "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax");
 
             checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key,
                                   getSettings()->check_sample_column_is_correct);
         }
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
-            throw Exception(
-                "ALTER ADD INDEX is not supported for tables with the old syntax",
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER ADD INDEX is not supported for tables with the old syntax");
         }
         if (command.type == AlterCommand::ADD_PROJECTION)
         {
             if (!is_custom_partitioned)
-                throw Exception(
-                    "ALTER ADD PROJECTION is not supported for tables with the old syntax",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER ADD PROJECTION is not supported for tables with the old syntax");
         }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
             if (columns_in_keys.contains(command.column_name))
             {
-                throw Exception(
-                    "Trying to ALTER RENAME key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception( ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Trying to ALTER RENAME key {} column which is a part of key expression", backQuoteIfNeed(command.column_name));
             }
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -3356,10 +3332,8 @@ void MergeTreeData::checkPartPartition(MutableDataPartPtr & part, DataPartsLock 
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
     {
         if (part->partition.value != existing_part_in_partition->partition.value)
-            throw Exception(
-                "Partition value mismatch between two parts with the same partition ID. Existing part: "
-                + existing_part_in_partition->name + ", newly added part: " + part->name,
-                ErrorCodes::CORRUPTED_DATA);
+            throw Exception( ErrorCodes::CORRUPTED_DATA, "Partition value mismatch between two parts with the same partition ID. "
+                "Existing part: {}, newly added part: {}", existing_part_in_partition->name, part->name);
     }
 }
 
@@ -6064,9 +6038,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     ContextPtr query_context) const
 {
     if (!metadata_snapshot->minmax_count_projection)
-        throw Exception(
-            "Cannot find the definition of minmax_count projection but it's used in current query. It's a bug",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception( ErrorCodes::LOGICAL_ERROR, "Cannot find the definition of minmax_count projection but it's used in current query. It's a bug");
 
     auto block = metadata_snapshot->minmax_count_projection->sample_block.cloneEmpty();
     bool need_primary_key_max_column = false;
@@ -7360,14 +7332,11 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
         auto reserved_disk = reservation->getDisk();
 
         if (reserved_disk->exists(relative_data_path + part->name))
-            throw Exception(
-                "Move is not possible: " + fullPath(reserved_disk, relative_data_path + part->name) + " already exists",
-                ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+            throw Exception( ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Move is not possible: {} already exists",
+                fullPath(reserved_disk, relative_data_path + part->name));
 
         if (currently_moving_parts.contains(part) || partIsAssignedToBackgroundOperation(part))
-            throw Exception(
-                "Cannot move part '" + part->name + "' because it's participating in background process",
-                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+            throw Exception( ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Cannot move part '{}' because it's participating in background process", part->name);
 
         parts_to_move.emplace_back(part, std::move(reservation));
     }

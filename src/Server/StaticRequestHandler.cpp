@@ -143,8 +143,7 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
     else if (startsWith(response_expression, config_prefix))
     {
         if (response_expression.size() <= config_prefix.size())
-            throw Exception( "Static handling rule handler must contain a complete configuration path, for example: config://config_key",
-                ErrorCodes::INVALID_CONFIG_PARAMETER);
+            throw Exception( ErrorCodes::INVALID_CONFIG_PARAMETER, "Static handling rule handler must contain a complete configuration path, for example: config://config_key");
 
         const auto & config_path = response_expression.substr(config_prefix.size(), response_expression.size() - config_prefix.size());
         writeString(server.config().getRawString(config_path, "Ok.\n"), out);

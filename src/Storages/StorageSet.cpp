@@ -242,9 +242,8 @@ void registerStorageSet(StorageFactory & factory)
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
+                args.engine_name, toString(args.engine_args.size()));
 
         bool has_settings = args.storage_def->settings;
         SetSettings set_settings;

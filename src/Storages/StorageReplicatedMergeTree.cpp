@@ -2442,16 +2442,14 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         }
         else if (rc == Coordination::Error::ZNODEEXISTS)
         {
-            throw Exception(
-                "Can not clone replica, because the " + source_replica + " updated to new ClickHouse version",
-                ErrorCodes::REPLICA_STATUS_CHANGED);
+            throw Exception( ErrorCodes::REPLICA_STATUS_CHANGED, "Can not clone replica, because the {} updated to new ClickHouse version", source_replica);
         }
         else if (responses[1]->error == Coordination::Error::ZBADVERSION)
         {
             /// If is_lost node version changed than source replica also lost,
             /// so we cannot clone from it.
-            throw Exception(
-                "Can not clone replica, because the " + source_replica + " became lost", ErrorCodes::REPLICA_STATUS_CHANGED);
+            throw Exception( ErrorCodes::REPLICA_STATUS_CHANGED, "Can not clone replica, because the {} became lost",
+                source_replica);
         }
         else if (responses.back()->error == Coordination::Error::ZBADVERSION)
         {
@@ -3749,6 +3747,9 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
   */
 void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_parallel)
 {
+    if (is_parallel && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parallel quorum inserts are not compatible with deprecated *MergeTree-syntax");
+
     auto zookeeper = getZooKeeper();
 
     /// Information on which replicas a part has been added, if the quorum has not yet been reached.
@@ -3908,7 +3909,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 bool StorageReplicatedMergeTree::partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const
 {
     auto zookeeper = getZooKeeper();
-    return zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "parallel" / part_info.getPartNameAndCheckFormat(format_version));
+    return zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "parallel" / part_info.getPartNameV1());
 }
 
 
@@ -5509,11 +5510,7 @@ void StorageReplicatedMergeTree::checkTableCanBeRenamed(const StorageID & new_na
             return;
         }
 
-        throw Exception(
-            "Cannot rename Replicated table, because zookeeper_path contains implicit 'database' or 'table' macro. "
-            "We cannot rename path in ZooKeeper, so path may become inconsistent with table name. If you really want to rename table, "
-            "you should edit metadata file first and restart server or reattach the table.",
-            ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception( ErrorCodes::NOT_IMPLEMENTED, "Cannot rename Replicated table, because zookeeper_path contains implicit 'database' or 'table' macro. We cannot rename path in ZooKeeper, so path may become inconsistent with table name. If you really want to rename table, you should edit metadata file first and restart server or reattach the table.");
     }
 
     assert(renaming_restrictions == RenamingRestrictions::ALLOW_PRESERVING_UUID);
@@ -6888,9 +6885,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             /// Save deduplication block ids with special prefix replace_partition
 
             if (!canReplacePartition(src_part))
-                throw Exception(
-                    "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                    ErrorCodes::LOGICAL_ERROR);
+                throw Exception( ErrorCodes::LOGICAL_ERROR, "Cannot replace partition '{}' because part '{}' has inconsistent granularity with table", partition_id, src_part->name);
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
 
@@ -6993,9 +6988,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             {
                 /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
                 if (query_context->getZooKeeperMetadataTransaction())
-                    throw Exception(
-                        "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter",
-                        ErrorCodes::CANNOT_ASSIGN_ALTER);
+                    throw Exception( ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter");
                 continue;
             }
             else
@@ -7120,9 +7113,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         for (const auto & src_part : src_all_parts)
         {
             if (!dest_table_storage->canReplacePartition(src_part))
-                throw Exception(
-                    "Cannot move partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                    ErrorCodes::LOGICAL_ERROR);
+                throw Exception( ErrorCodes::LOGICAL_ERROR, "Cannot move partition '{}' because part '{}' has inconsistent granularity with table", partition_id, src_part->name);
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             String block_id_path;
@@ -7707,9 +7698,7 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
         {
             /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
             if (query_context->getZooKeeperMetadataTransaction())
-                throw Exception(
-                    "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter",
-                    ErrorCodes::CANNOT_ASSIGN_ALTER);
+                throw Exception( ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter");
             continue;
         }
         else

@@ -170,14 +170,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 
         if (res_columns.size() != num_columns)
         {
-            throw Exception(
-                "Invalid number of columns passed to MergeTreeReader::performRequiredConversions. "
-                "Expected "
-                    + toString(num_columns)
-                    + ", "
-                      "got "
-                    + toString(res_columns.size()),
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception( ErrorCodes::LOGICAL_ERROR, "Invalid number of columns passed to MergeTreeReader::performRequiredConversions. Expected {}, got {}", toString(num_columns), toString(res_columns.size()));
         }
 
         Block copy_block;

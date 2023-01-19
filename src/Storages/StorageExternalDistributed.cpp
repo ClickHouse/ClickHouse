@@ -308,10 +308,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             else
             {
                 if (engine_args.size() != 6)
-                    throw Exception(
-                        "Storage ExternalDistributed requires 5 parameters: "
-                        "ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                    throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage ExternalDistributed requires 5 parameters: ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').");
 
                 cluster_description = checkAndGetLiteralArgument<String>(engine_args[1], "cluster_description");
                 configuration.database = checkAndGetLiteralArgument<String>(engine_args[2], "database");

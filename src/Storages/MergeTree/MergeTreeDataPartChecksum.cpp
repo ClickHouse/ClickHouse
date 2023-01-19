@@ -46,14 +46,14 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
 void MergeTreeDataPartChecksum::checkSize(const DiskPtr & disk, const String & path) const
 {
     if (!disk->exists(path))
-        throw Exception(fullPath(disk, path) + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fullPath(disk, path));
     if (disk->isDirectory(path))
         // This is a projection, no need to check its size.
         return;
     UInt64 size = disk->getFileSize(path);
     if (size != file_size)
-        throw Exception(fullPath(disk, path) + " has unexpected size: " + toString(size) + " instead of " + toString(file_size),
-            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "{} has unexpected size: {} instead of {}",
+                        fullPath(disk, path), size, file_size);
 }
 
 

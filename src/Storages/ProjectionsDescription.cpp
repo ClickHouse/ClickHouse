@@ -123,8 +123,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (select.hasAggregation())
     {
         if (query.orderBy())
-            throw Exception(
-                "When aggregation is used in projection, ORDER BY cannot be specified", ErrorCodes::ILLEGAL_PROJECTION);
+            throw Exception( ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
 
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
@@ -354,8 +353,8 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
     {
         if (if_not_exists)
             return;
-        throw Exception(
-            "Cannot add projection " + projection.name + ": projection with this name already exists", ErrorCodes::ILLEGAL_PROJECTION);
+        throw Exception( ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists",
+            projection.name);
     }
 
     auto insert_it = projections.cend();

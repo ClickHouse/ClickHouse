@@ -57,8 +57,7 @@ StoragePolicy::StoragePolicy(
     for (const auto & attr_name : keys)
     {
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
-            throw Exception(
-                "Volume name can contain only alphanumeric and '_' in storage policy " + backQuote(name) + " (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception( ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Volume name can contain only alphanumeric and '_' in storage policy {} ({})", backQuote(name), attr_name);
         volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
     }
 
@@ -256,9 +255,8 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
         }
     }
     if (!max_disk)
-        throw Exception(
-            "There is no space on any disk in storage policy: " + name + ". It's likely all disks are broken",
-            ErrorCodes::NOT_ENOUGH_SPACE);
+        throw Exception( ErrorCodes::NOT_ENOUGH_SPACE, "There is no space on any disk in storage policy: {}. "
+            "It's likely all disks are broken", name);
     auto reservation = max_disk->reserve(0);
     if (!reservation)
     {
@@ -366,8 +364,7 @@ StoragePolicySelector::StoragePolicySelector(
     for (const auto & name : keys)
     {
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
-            throw Exception(
-                "Storage policy name can contain only alphanumeric and '_' (" + backQuote(name) + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception( ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Storage policy name can contain only alphanumeric and '_' ({})", backQuote(name));
 
         /*
          * A customization point for StoragePolicy, here one can add his own policy, for example, based on policy's name

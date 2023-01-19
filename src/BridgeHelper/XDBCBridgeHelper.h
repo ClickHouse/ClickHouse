@@ -216,9 +216,8 @@ protected:
             std::string character;
             readStringBinary(character, buf);
             if (character.length() > 1)
-                throw Exception(
-                    "Failed to parse quoting style from '" + character + "' for service " + BridgeHelperMixin::serviceAlias(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Failed to parse quoting style from '{}' for service {}",
+                    character, BridgeHelperMixin::serviceAlias());
             else if (character.length() == 0)
                 quote_style = IdentifierQuotingStyle::None;
             else if (character[0] == '`')

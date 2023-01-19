@@ -968,9 +968,7 @@ void registerStorageHive(StorageFactory & factory)
 
             ASTs & engine_args = args.engine_args;
             if (engine_args.size() != 3)
-                throw Exception(
-                    "Storage Hive requires 3 arguments: hive metastore address, hive database and hive table",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Hive requires 3 arguments: hive metastore address, hive database and hive table");
 
             auto * partition_by = args.storage_def->partition_by;
             if (!partition_by)

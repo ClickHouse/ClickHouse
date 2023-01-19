@@ -51,16 +51,14 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 1.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
+                getName(), toString(arguments.size()));
 
         if (arguments.size() > 2)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at most 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Number of arguments for function {} doesn't match: passed {}, should be at most 2.",
+                getName(), toString(arguments.size()));
 
         const IDataType & type = *arguments[0];
 

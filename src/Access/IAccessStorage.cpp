@@ -678,25 +678,22 @@ void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const
 
 void IAccessStorage::throwReadonlyCannotInsert(AccessEntityType type, const String & name) const
 {
-    throw Exception(
-        "Cannot insert " + formatEntityTypeWithName(type, name) + " to " + getStorageName() + " because this storage is readonly",
-        ErrorCodes::ACCESS_STORAGE_READONLY);
+    throw Exception( ErrorCodes::ACCESS_STORAGE_READONLY, "Cannot insert {} to {} because this storage is readonly",
+        formatEntityTypeWithName(type, name), getStorageName());
 }
 
 
 void IAccessStorage::throwReadonlyCannotUpdate(AccessEntityType type, const String & name) const
 {
-    throw Exception(
-        "Cannot update " + formatEntityTypeWithName(type, name) + " in " + getStorageName() + " because this storage is readonly",
-        ErrorCodes::ACCESS_STORAGE_READONLY);
+    throw Exception( ErrorCodes::ACCESS_STORAGE_READONLY, "Cannot update {} in {} because this storage is readonly",
+        formatEntityTypeWithName(type, name), getStorageName());
 }
 
 
 void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const String & name) const
 {
-    throw Exception(
-        "Cannot remove " + formatEntityTypeWithName(type, name) + " from " + getStorageName() + " because this storage is readonly",
-        ErrorCodes::ACCESS_STORAGE_READONLY);
+    throw Exception( ErrorCodes::ACCESS_STORAGE_READONLY, "Cannot remove {} from {} because this storage is readonly",
+        formatEntityTypeWithName(type, name), getStorageName());
 }
 
 

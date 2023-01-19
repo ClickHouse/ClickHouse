@@ -783,9 +783,7 @@ void registerStorageFileLog(StorageFactory & factory)
         size_t max_sleep_time = filelog_settings->poll_directory_watch_events_backoff_max.totalMilliseconds();
         if (init_sleep_time > max_sleep_time)
         {
-            throw Exception(
-                "poll_directory_watch_events_backoff_init can not be greater than poll_directory_watch_events_backoff_max",
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception( ErrorCodes::BAD_ARGUMENTS, "poll_directory_watch_events_backoff_init can not be greater than poll_directory_watch_events_backoff_max");
         }
 
         if (filelog_settings->poll_directory_watch_events_backoff_factor.changed
@@ -793,8 +791,7 @@ void registerStorageFileLog(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "poll_directory_watch_events_backoff_factor can not be 0");
 
         if (args_count != 2)
-            throw Exception(
-                "Arguments size of StorageFileLog should be 2, path and format name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of StorageFileLog should be 2, path and format name");
 
         auto path_ast = evaluateConstantExpressionAsLiteral(engine_args[0], args.getContext());
         auto format_ast = evaluateConstantExpressionAsLiteral(engine_args[1], args.getContext());

@@ -626,13 +626,9 @@ public:
             if (!WhichDataType(arguments[0].type).isDateTime()
                 || !WhichDataType(arguments[2].type).isString())
             {
-                throw Exception(
-                    "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
-                    "must be of type Date or DateTime. The 2nd argument must be a number. "
-                    "The 3rd argument (optional) must be "
-                    "a constant string with timezone name. The timezone argument is allowed "
-                    "only when the 1st argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} supports 2 or 3 arguments. "
+                    "The 1st argument must be of type Date or DateTime. "
+                    "The 2nd argument must be a number. The 3rd argument (optional) must be a constant string with timezone name. The timezone argument is allowed only when the 1st argument has the type DateTime", getName());
             }
         }
 

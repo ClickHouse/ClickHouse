@@ -219,13 +219,9 @@ namespace gd
     {
         char c;
         if (!in.read(c))
-            throw Exception(
-                "Cannot parse input: expected a digit at the end of stream",
-                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+            throw Exception( ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected a digit at the end of stream");
         else if (c < '0' || c > '9')
-            throw Exception(
-                "Cannot read input: expected a digit but got something else",
-                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+            throw Exception( ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot read input: expected a digit but got something else");
         else
             return c - '0';
     }
@@ -323,9 +319,7 @@ namespace DB
     {
         if (day_of_year < 1 || day_of_year > (gd::is_leap_year(year) ? 366 : 365))
         {
-            throw Exception(
-                "Invalid ordinal date: " + toString(year) + "-" + toString(day_of_year),
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception( ErrorCodes::LOGICAL_ERROR, "Invalid ordinal date: {}-{}", toString(year), toString(day_of_year));
         }
     }
 

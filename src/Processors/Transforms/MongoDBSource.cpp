@@ -98,9 +98,8 @@ namespace
                     parse<T>(static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value()));
                 break;
             default:
-                throw Exception(
-                    "Type mismatch, expected a number, got type id = " + toString(value.type()) + " for column " + name,
-                    ErrorCodes::TYPE_MISMATCH);
+                throw Exception( ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected a number, got type id = {} for column {}",
+                    toString(value.type()), name);
         }
     }
 

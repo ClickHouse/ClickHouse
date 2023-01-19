@@ -451,9 +451,8 @@ private:
             && !executeNumToNumWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
             && !executeNumToNumWithNonConstDefault2<T, U, Float64>(in, out, default_untyped))
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         return true;
@@ -479,9 +478,8 @@ private:
             && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
             && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         return true;
@@ -507,9 +505,8 @@ private:
             && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
             && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         return true;
@@ -535,9 +532,8 @@ private:
             && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
             && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         return true;

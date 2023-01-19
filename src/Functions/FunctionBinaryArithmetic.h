@@ -1392,11 +1392,8 @@ public:
         if (valid)
             return type_res;
 
-        throw Exception(
-            "Illegal types " + arguments[0]->getName() +
-            " and " + arguments[1]->getName() +
-            " of arguments of function " + String(name),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of arguments of function {}",
+            arguments[0]->getName(), arguments[1]->getName(), String(name));
     }
 
     ColumnPtr executeFixedString(const ColumnsWithTypeAndName & arguments) const
@@ -2118,9 +2115,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Number of arguments for function {} doesn't match: passed {}, should be 2",
+                getName(), toString(arguments.size()));
         return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::getReturnTypeImplStatic(arguments, context);
     }
 

@@ -86,10 +86,7 @@ public:
                 params);
         }
 
-        throw Exception(
-            "Illegal types of argument for aggregate function " + getName()
-                + ", the type of the last argument should be native integer or integer-like",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of argument for aggregate function {}, the type of the last argument should be native integer or integer-like", getName());
     }
 };
 

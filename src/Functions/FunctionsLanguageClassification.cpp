@@ -146,9 +146,8 @@ public:
         const ColumnString * col = checkAndGetColumn<ColumnString>(column.get());
 
         if (!col)
-            throw Exception(
-                "Illegal columns " + arguments[0].column->getName() + " of arguments of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} of arguments of function {}",
+                arguments[0].column->getName(), getName());
 
         const auto & input_data = col->getChars();
         const auto & input_offsets = col->getOffsets();

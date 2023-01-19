@@ -361,8 +361,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (format == "Distributed")
     {
         if (paths.empty())
-            throw Exception(
-                "Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
+            throw Exception( ErrorCodes::INCORRECT_FILE_NAME, "Cannot get table structure from file, because no files match specified name");
 
         auto source = StorageDistributedDirectoryMonitor::createSourceFromFile(paths[0]);
         return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
@@ -1193,9 +1192,7 @@ void registerStorageFile(StorageFactory & factory)
             ASTs & engine_args_ast = factory_args.engine_args;
 
             if (!(engine_args_ast.size() >= 1 && engine_args_ast.size() <= 3)) // NOLINT
-                throw Exception(
-                    "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.");
 
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
             storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");
@@ -1247,8 +1244,8 @@ void registerStorageFile(StorageFactory & factory)
                 else if (*opt_name == "stderr")
                     source_fd = STDERR_FILENO;
                 else
-                    throw Exception(
-                        "Unknown identifier '" + *opt_name + "' in second arg of File storage constructor", ErrorCodes::UNKNOWN_IDENTIFIER);
+                    throw Exception( ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier '{}' in second arg of File storage constructor",
+                        *opt_name);
             }
             else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
             {

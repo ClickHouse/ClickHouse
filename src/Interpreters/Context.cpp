@@ -1444,8 +1444,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 void Context::addViewSource(const StoragePtr & storage)
 {
     if (view_source)
-        throw Exception(
-            "Temporary view source storage " + backQuoteIfNeed(view_source->getName()) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception( ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary view source storage {} already exists.",
+            backQuoteIfNeed(view_source->getName()));
     view_source = storage;
 }
 

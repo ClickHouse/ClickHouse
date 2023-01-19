@@ -836,8 +836,7 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
     }
 
     if (output_ports.empty())
-        throw Exception(
-            "Transformation of Pipe is not valid because processors don't have any disconnected output ports", ErrorCodes::LOGICAL_ERROR);
+        throw Exception( ErrorCodes::LOGICAL_ERROR, "Transformation of Pipe is not valid because processors don't have any disconnected output ports");
 
     header = output_ports.front()->getHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)

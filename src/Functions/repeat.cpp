@@ -184,11 +184,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
         if (!isUnsignedInteger(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[1]->getName(), getName());
         return arguments[0];
     }
 
@@ -244,9 +244,8 @@ public:
             }
         }
 
-        throw Exception(
-            "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            arguments[0].column->getName(), getName());
     }
 };
 

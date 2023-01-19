@@ -110,9 +110,8 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (arguments.size() < 2)
-            throw Exception(
-                "Function " + getName() + " requires at least two arguments: the format name and its output expression(s)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Function {} requires at least two arguments: the format name and its output expression(s)", getName());
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(

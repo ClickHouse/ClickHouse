@@ -243,10 +243,9 @@ namespace
         {
             auto max_session_timeout = config.getUInt("max_session_timeout", 3600);
             if (session_timeout > max_session_timeout)
-                throw Exception(
-                    "Session timeout '" + std::to_string(session_timeout) + "' is larger than max_session_timeout: "
-                        + std::to_string(max_session_timeout) + ". Maximum session timeout could be modified in configuration file.",
-                    ErrorCodes::INVALID_SESSION_TIMEOUT);
+                throw Exception( ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
+                    "Maximum session timeout could be modified in configuration file.",
+                    std::to_string(session_timeout), std::to_string(max_session_timeout));
         }
         else
             session_timeout = config.getInt("default_session_timeout", 60);

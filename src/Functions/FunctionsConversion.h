@@ -291,10 +291,8 @@ struct ConvertImpl
                                 }
                                 else
                                 {
-                                    throw Exception(
-                                        "Value in column " + named_from.column->getName() + " cannot be safely converted into type "
-                                            + result_type->getName(),
-                                        ErrorCodes::CANNOT_CONVERT_TYPE);
+                                    throw Exception( ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
+                                        named_from.column->getName(), result_type->getName());
                                 }
                             }
                         }

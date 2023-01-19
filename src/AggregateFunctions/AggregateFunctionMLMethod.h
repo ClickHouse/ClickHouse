@@ -369,10 +369,9 @@ public:
         ContextPtr context) const override
     {
         if (arguments.size() != param_num + 1)
-            throw Exception(
-                "Predict got incorrect number of arguments. Got: " + std::to_string(arguments.size())
-                    + ". Required: " + std::to_string(param_num + 1),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Predict got incorrect number of arguments. Got: {}. Required: {}",
+                std::to_string(arguments.size()), std::to_string(param_num + 1));
 
         /// This cast might be correct because column type is based on getReturnTypeToPredict.
         auto * column = typeid_cast<ColumnFloat64 *>(&to);

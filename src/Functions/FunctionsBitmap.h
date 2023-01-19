@@ -111,9 +111,7 @@ public:
 
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
         if (!array_type)
-            throw Exception(
-                "First argument for function " + getName() + " must be an array but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array but it has type {}.", getName(), arguments[0]->getName());
 
         auto nested_type = array_type->getNestedType();
         DataTypes argument_types = {nested_type};
@@ -146,8 +144,8 @@ public:
             bitmap_function = AggregateFunctionFactory::instance().get(
                 AggregateFunctionGroupBitmapData<Int64>::name(), argument_types, params_row, properties);
         else
-            throw Exception(
-                "Unexpected type " + array_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                array_type->getName(), getName());
 
         return std::make_shared<DataTypeAggregateFunction>(bitmap_function, argument_types, params_row);
     }
@@ -180,8 +178,8 @@ public:
         else if (which.isInt64())
             return executeBitmapData<Int64>(argument_types, arguments);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
     }
 
 private:
@@ -238,9 +236,7 @@ public:
     {
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() =="groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a bitmap but it has type {}.", getName(), arguments[0]->getName());
 
         const DataTypePtr data_type = bitmap_type->getArgumentsDataTypes()[0];
 
@@ -279,8 +275,8 @@ public:
         else if (which.isInt64())
             executeIntType<Int64>(arguments, input_rows_count, res_data, res_offsets);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
 
         return res_ptr;
     }
@@ -330,18 +326,14 @@ public:
     {
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a bitmap but it has type {}.", getName(), arguments[0]->getName());
 
         for (size_t i = 1; i < 3; ++i)
         {
             WhichDataType which(arguments[i].get());
             if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
             {
-                throw Exception(
-                    "The second and third arguments for function " + getName() + " must be one of [UInt8, UInt16, UInt32, UInt64] but one of them has type " + arguments[1]->getName() + ".",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second and third arguments for function {} must be one of [UInt8, UInt16, UInt32, UInt64] but one of them has type {}.", getName(), arguments[1]->getName());
             }
         }
         return arguments[0];
@@ -371,8 +363,8 @@ public:
         else if (which.isInt64())
             return executeIntType<Int64>(arguments, input_rows_count);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
     }
 
 private:
@@ -505,9 +497,7 @@ public:
     {
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a bitmap but it has type {}.", getName(), arguments[0]->getName());
         for (size_t i = 0; i < 2; ++i)
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i + 1].get());
@@ -548,8 +538,8 @@ public:
         else if (which.isInt64())
             return executeIntType<Int64>(arguments, input_rows_count);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
     }
 
 private:
@@ -673,9 +663,7 @@ public:
     {
         const auto * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a bitmap but it has type {}.", getName(), arguments[0]->getName());
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
@@ -706,8 +694,8 @@ public:
         else if (which.isInt64())
             executeIntType<Int64>(arguments, input_rows_count, vec_to);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
 
         return col_to;
     }
@@ -847,15 +835,11 @@ public:
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a bitmap but it has type {}", getName(), arguments[0]->getName());
 
         WhichDataType which(arguments[1].get());
         if (!which.isNativeInt() && !which.isNativeUInt())
-            throw Exception(
-                "Second argument for function " + getName() + " must be an native integer type but it has type " + arguments[1]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an native integer type but it has type {}", getName(), arguments[1]->getName());
 
         return std::make_shared<DataTypeNumber<UInt8>>();
     }
@@ -887,8 +871,8 @@ public:
         else if (which.isInt64())
             executeIntType<Int64>(arguments, input_rows_count, vec_to);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
 
         return col_to;
     }
@@ -953,21 +937,14 @@ public:
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a bitmap but it has type {}", getName(), arguments[0]->getName());
 
         const auto * bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
         if (!(bitmap_type1 && bitmap_type1->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be a bitmap but it has type {}", getName(), arguments[1]->getName());
 
         if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
-            throw Exception(
-                "The nested type in bitmaps must be the same, but one is " + bitmap_type0->getArgumentsDataTypes()[0]->getName()
-                    + ", and the other is " + bitmap_type1->getArgumentsDataTypes()[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The nested type in bitmaps must be the same, but one is {}, and the other is {}", bitmap_type0->getArgumentsDataTypes()[0]->getName(), bitmap_type1->getArgumentsDataTypes()[0]->getName());
 
         return std::make_shared<DataTypeNumber<ToType>>();
     }
@@ -999,8 +976,8 @@ public:
         else if (which.isInt64())
             executeIntType<Int64>(arguments, input_rows_count, vec_to);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
 
         return col_to;
     }
@@ -1103,21 +1080,14 @@ public:
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a bitmap but it has type {}", getName(), arguments[0]->getName());
 
         const auto * bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
         if (!(bitmap_type1 && bitmap_type1->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be a bitmap but it has type {}", getName(), arguments[1]->getName());
 
         if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
-            throw Exception(
-                "The nested type in bitmaps must be the same, but one is " + bitmap_type0->getArgumentsDataTypes()[0]->getName()
-                    + ", and the other is " + bitmap_type1->getArgumentsDataTypes()[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The nested type in bitmaps must be the same, but one is {}, and the other is {}", bitmap_type0->getArgumentsDataTypes()[0]->getName(), bitmap_type1->getArgumentsDataTypes()[0]->getName());
 
         return arguments[0];
     }
@@ -1146,8 +1116,8 @@ public:
         else if (which.isInt64())
             return executeBitmapData<Int64>(arguments, input_rows_count);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
     }
 
 private:

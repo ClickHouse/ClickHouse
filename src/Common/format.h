@@ -26,8 +26,8 @@ namespace Format
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a number in curly braces at position {}", std::to_string(pos));
             res = res * 10 + description[pos] - '0';
             if (res >= argument_number)
-                throw Exception(
-                    "Too big number for arguments, must be at most " + std::to_string(argument_number - 1), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception( ErrorCodes::BAD_ARGUMENTS, "Too big number for arguments, must be at most {}",
+                    std::to_string(argument_number - 1));
         }
     }
 
@@ -120,8 +120,7 @@ namespace Format
                 if (last_open == i)
                 {
                     if (is_plain_numbering && !*is_plain_numbering)
-                        throw Exception(
-                            "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception( ErrorCodes::BAD_ARGUMENTS, "Cannot switch from automatic field numbering to manual field specification");
                     is_plain_numbering = true;
                     if (index_if_plain >= argument_number)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument is too big for formatting");
@@ -130,16 +129,14 @@ namespace Format
                 else
                 {
                     if (is_plain_numbering && *is_plain_numbering)
-                        throw Exception(
-                            "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception( ErrorCodes::BAD_ARGUMENTS, "Cannot switch from automatic field numbering to manual field specification");
                     is_plain_numbering = false;
 
                     UInt64 arg;
                     parseNumber(pattern, last_open, i, arg, argument_number);
 
                     if (arg >= argument_number)
-                        throw Exception(
-                            "Argument is too big for formatting. Note that indexing starts from zero", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception( ErrorCodes::BAD_ARGUMENTS, "Argument is too big for formatting. Note that indexing starts from zero");
 
                     index_positions.back() = arg;
                 }

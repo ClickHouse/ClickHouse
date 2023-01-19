@@ -326,9 +326,7 @@ void registerStorageJoin(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         if (engine_args.size() < 3)
-            throw Exception(
-                "Storage Join requires at least 3 parameters: Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT, keys...).",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Join requires at least 3 parameters: Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT, keys...).");
 
         JoinStrictness strictness = JoinStrictness::Unspecified;
         JoinKind kind = JoinKind::Comma;

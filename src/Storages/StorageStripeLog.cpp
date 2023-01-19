@@ -675,9 +675,8 @@ void registerStorageStripeLog(StorageFactory & factory)
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
+                args.engine_name, toString(args.engine_args.size()));
 
         String disk_name = getDiskName(*args.storage_def);
         DiskPtr disk = args.getContext()->getDisk(disk_name);

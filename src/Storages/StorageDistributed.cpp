@@ -803,9 +803,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     /// If sharding key is not specified, then you can only write to a shard containing only one shard
     if (!settings.insert_shard_id && !settings.insert_distributed_one_random_shard && !has_sharding_key && shard_num >= 2)
     {
-        throw Exception(
-            "Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
-            ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+        throw Exception( ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Method write is not supported by storage {} with more than one shard and no sharding key provided", getName());
     }
 
     if (settings.insert_shard_id && settings.insert_shard_id > shard_num)
@@ -917,8 +915,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
             auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
             if (connections.empty() || connections.front().isNull())
-                throw Exception(
-                    "Expected exactly one connection for shard " + toString(shard_info.shard_num), ErrorCodes::LOGICAL_ERROR);
+                throw Exception( ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}",
+                    toString(shard_info.shard_num));
 
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
@@ -1587,14 +1585,7 @@ void registerStorageDistributed(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() < 3 || engine_args.size() > 5)
-            throw Exception(
-                "Storage Distributed requires from 3 to 5 parameters - "
-                "name of configuration section with list of remote servers, "
-                "name of remote database, "
-                "name of remote table, "
-                "sharding key expression (optional), "
-                "policy to store data in (optional).",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Distributed requires from 3 to 5 parameters - name of configuration section with list of remote servers, name of remote database, name of remote table, sharding key expression (optional), policy to store data in (optional).");
 
         String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
 

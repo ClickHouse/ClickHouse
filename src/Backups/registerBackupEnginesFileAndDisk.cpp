@@ -118,9 +118,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             if (args.size() != 1)
             {
-                throw Exception(
-                    "Backup engine 'File' requires 1 argument (path)",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
             }
 
             path = args[0].safeGet<String>();
@@ -132,9 +130,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             if (args.size() != 2)
             {
-                throw Exception(
-                    "Backup engine 'Disk' requires 2 arguments (disk_name, path)",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'Disk' requires 2 arguments (disk_name, path)");
             }
 
             String disk_name = args[0].safeGet<String>();

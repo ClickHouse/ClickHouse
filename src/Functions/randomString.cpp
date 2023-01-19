@@ -40,14 +40,12 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(
-                "Function " + getName() + " requires at least one argument: the size of resulting string",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Function {} requires at least one argument: the size of resulting string", getName());
 
         if (arguments.size() > 2)
-            throw Exception(
-                "Function " + getName() + " requires at most two arguments: the size of resulting string and optional disambiguation tag",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Function {} requires at most two arguments: the size of resulting string and optional disambiguation tag", getName());
 
         const IDataType & length_type = *arguments[0];
         if (!isNumber(length_type))

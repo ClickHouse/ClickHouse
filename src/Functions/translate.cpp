@@ -284,19 +284,16 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
+                arguments[0]->getName(), getName());
 
         if (!isStringOrFixedString(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
+                arguments[1]->getName(), getName());
 
         if (!isStringOrFixedString(arguments[2]))
-            throw Exception(
-                "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}",
+                arguments[2]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -330,9 +327,8 @@ public:
             return col_res;
         }
         else
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 };
 

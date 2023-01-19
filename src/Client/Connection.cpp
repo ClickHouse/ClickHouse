@@ -260,9 +260,7 @@ void Connection::sendHello()
 #if USE_SSL
         sendClusterNameAndSalt();
 #else
-        throw Exception(
-            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception( ErrorCodes::SUPPORT_IS_DISABLED, "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
     else
@@ -593,9 +591,7 @@ void Connection::sendQuery(
             std::string hash = encodeSHA256(data);
             writeStringBinary(hash, *out);
 #else
-        throw Exception(
-            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception( ErrorCodes::SUPPORT_IS_DISABLED, "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
         }
         else

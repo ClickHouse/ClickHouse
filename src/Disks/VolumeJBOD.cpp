@@ -27,9 +27,7 @@ VolumeJBOD::VolumeJBOD(
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
     if (has_max_bytes && has_max_ratio)
     {
-        throw Exception(
-            "Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.",
-            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception( ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.");
     }
 
     if (has_max_bytes)

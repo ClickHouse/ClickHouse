@@ -53,11 +53,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
         if (!isString(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[1]->getName(), getName());
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
@@ -74,13 +74,11 @@ public:
         const ColumnString * word_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
         if (!ext_col)
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
         if (!word_col)
-            throw Exception(
-                "Illegal column " + arguments[1].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[1].column->getName(), getName());
 
         String ext_name = ext_col->getValue<String>();
         auto extension = extensions.getExtension(ext_name);

@@ -62,9 +62,7 @@ public:
         for (size_t i = 1; i < number_of_arguments; ++i)
         {
             if (!isInteger(removeNullable(arguments[i])) && !arguments[i]->onlyNull())
-                throw Exception(
-                        "Argument " + toString(i) + " for function " + getName() + " must be integer but it has type "
-                        + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} for function {} must be integer but it has type {}.", toString(i), getName(), arguments[i]->getName());
         }
 
         return arguments[0];

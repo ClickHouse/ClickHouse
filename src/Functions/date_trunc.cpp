@@ -64,10 +64,8 @@ public:
         bool second_argument_is_date = false;
         auto check_second_argument = [&] {
             if (!isDate(arguments[1].type) && !isDateTime(arguments[1].type) && !isDateTime64(arguments[1].type))
-                throw Exception(
-                    "Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName()
-                        + ". Should be a date or a date with time",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 2nd argument of function {}. "
+                    "Should be a date or a date with time", arguments[1].type->getName(), getName());
 
             second_argument_is_date = isDate(arguments[1].type);
 
@@ -78,16 +76,12 @@ public:
 
         auto check_timezone_argument = [&] {
             if (!WhichDataType(arguments[2].type).isString())
-                throw Exception(
-                    "Illegal type " + arguments[2].type->getName() + " of argument of function " + getName()
-                        + ". This argument is optional and must be a constant string with timezone name",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                    "This argument is optional and must be a constant string with timezone name",
+                    arguments[2].type->getName(), getName());
 
             if (second_argument_is_date && result_type_is_date)
-                throw Exception(
-                    "The timezone argument of function " + getName() + " with datepart '" + datepart_param
-                        + "' is allowed only when the 2nd argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The timezone argument of function {} with datepart '{}' is allowed only when the 2nd argument has the type DateTime", getName(), datepart_param);
         };
 
         if (arguments.size() == 2)
@@ -103,10 +97,9 @@ public:
         }
         else
         {
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be 2 or 3",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                getName(), toString(arguments.size()));
         }
 
         if (result_type_is_date)

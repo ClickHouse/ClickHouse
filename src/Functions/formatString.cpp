@@ -106,8 +106,8 @@ public:
                 constant_strings[i - 1] = const_col->getValue<String>();
             }
             else
-                throw Exception(
-                    "Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                    column->getName(), getName());
         }
 
         FormatImpl::formatExecute(

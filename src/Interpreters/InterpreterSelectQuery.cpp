@@ -1117,14 +1117,13 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context,
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
     if (!isNativeNumber(type))
-        throw Exception(
-            "Illegal type " + type->getName() + " of " + expr + " expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+        throw Exception( ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type",
+            type->getName(), expr);
 
     Field converted = convertFieldToType(field, DataTypeUInt64());
     if (converted.isNull())
-        throw Exception(
-            "The value " + applyVisitor(FieldVisitorToString(), field) + " of " + expr + " expression is not representable as UInt64",
-            ErrorCodes::INVALID_LIMIT_EXPRESSION);
+        throw Exception( ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
+            applyVisitor(FieldVisitorToString(), field), expr);
 
     return converted.safeGet<UInt64>();
 }
@@ -1634,9 +1633,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             if (from_aggregation_stage)
             {
                 if (query_analyzer->hasWindow())
-                    throw Exception(
-                        "Window functions does not support processing from WithMergeableStateAfterAggregation",
-                        ErrorCodes::NOT_IMPLEMENTED);
+                    throw Exception( ErrorCodes::NOT_IMPLEMENTED, "Window functions does not support processing from WithMergeableStateAfterAggregation");
             }
             else if (expressions.need_aggregate)
             {

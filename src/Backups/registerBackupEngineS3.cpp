@@ -69,9 +69,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 s3_uri = fs::path(s3_uri) / config.getString(config_prefix + ".filename");
 
             if (args.size() > 1)
-                throw Exception(
-                    "Backup S3 requires 1 or 2 arguments: named_collection, [filename]",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
 
             if (args.size() == 1)
                 s3_uri = fs::path(s3_uri) / args[0].safeGet<String>();
@@ -79,9 +77,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         else
         {
             if ((args.size() != 1) && (args.size() != 3))
-                throw Exception(
-                    "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
 
             s3_uri = args[0].safeGet<String>();
             if (args.size() >= 3)

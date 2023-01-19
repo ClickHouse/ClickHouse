@@ -42,9 +42,8 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 {
     if (settings == nullptr || !settings->allow_experimental_funnel_functions)
     {
-        throw Exception(
-            "Aggregate function " + name + " is experimental. Set `allow_experimental_funnel_functions` setting to enable it",
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        throw Exception( ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
+            "Set `allow_experimental_funnel_functions` setting to enable it", name);
     }
 
     if (parameters.size() < 2)
@@ -84,9 +83,9 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 
     bool is_base_match_type = base == SequenceBase::FirstMatch || base == SequenceBase::LastMatch;
     if (is_base_match_type && argument_types.size() < min_required_args + 1)
-        throw Exception(
-            "Aggregate function " + name + " requires at least " + toString(min_required_args + 1) + " arguments when base is first_match or last_match.",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"            Aggregate function {} requires at least {} arguments when base is first_match or last_match.",
+            name, toString(min_required_args + 1));
 
     if (argument_types.size() > max_events_size + min_required_args)
         throw Exception(fmt::format(

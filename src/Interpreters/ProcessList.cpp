@@ -130,10 +130,8 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
 
             if (!is_unlimited_query && settings.max_concurrent_queries_for_all_users
                 && processes.size() >= settings.max_concurrent_queries_for_all_users)
-                throw Exception(
-                    "Too many simultaneous queries for all users. Current: " + toString(processes.size())
-                    + ", maximum: " + settings.max_concurrent_queries_for_all_users.toString(),
-                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+                throw Exception( ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for all users. "
+                    "Current: {}, maximum: {}", toString(processes.size()), settings.max_concurrent_queries_for_all_users.toString());
         }
 
         /** Why we use current user?

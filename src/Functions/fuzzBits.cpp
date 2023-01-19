@@ -69,8 +69,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(
-                "First argument of function " + getName() + " must be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be String or FixedString",
+                getName());
 
         if (!arguments[1].column || !isFloat(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must be constant float", getName());
@@ -170,9 +170,8 @@ public:
         }
         else
         {
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
         }
     }
 };

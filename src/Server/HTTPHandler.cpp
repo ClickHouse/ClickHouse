@@ -368,9 +368,7 @@ bool HTTPHandler::authenticateUser(
             if (certificate_common_name.empty())
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name");
 #else
-            throw Exception(
-                "SSL certificate authentication disabled because ClickHouse was built without SSL library",
-                ErrorCodes::SUPPORT_IS_DISABLED);
+            throw Exception( ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificate authentication disabled because ClickHouse was built without SSL library");
 #endif
         }
     }
@@ -980,9 +978,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
-            throw Exception(
-                "The Transfer-Encoding is not chunked and there is no Content-Length header for POST request",
-                ErrorCodes::HTTP_LENGTH_REQUIRED);
+            throw Exception( ErrorCodes::HTTP_LENGTH_REQUIRED, "The Transfer-Encoding is not chunked and there is no Content-Length header for POST request");
         }
 
         processQuery(request, params, response, used_output, query_scope);
@@ -1189,10 +1185,8 @@ static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
     auto compiled_regex = std::make_shared<const re2::RE2>(expression);
 
     if (!compiled_regex->ok())
-        throw Exception(
-            "Cannot compile re2: " + expression + " for http handling rule, error: " + compiled_regex->error()
-                + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
-            ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw Exception( ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile re2: {} for http handling rule, error: {}. "
+            "Look at https://github.com/google/re2/wiki/Syntax for reference.", expression, compiled_regex->error());
 
     return compiled_regex;
 }

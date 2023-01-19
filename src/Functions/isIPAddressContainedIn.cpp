@@ -146,9 +146,9 @@ namespace DB
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (arguments.size() != 2)
-                throw Exception(
-                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) + ", should be 2",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+"                    Number of arguments for function {} doesn't match: passed {}, should be 2",
+                    getName(), toString(arguments.size()));
 
             const DataTypePtr & addr_type = arguments[0];
             const DataTypePtr & prefix_type = arguments[1];

@@ -115,9 +115,8 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 2)
-                throw Exception(
-                    "ZSTD codec must have 1 or 2 parameters, given " + std::to_string(arguments->children.size()),
-                    ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+                throw Exception( ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "ZSTD codec must have 1 or 2 parameters, given {}",
+                    std::to_string(arguments->children.size()));
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
@@ -141,15 +140,11 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
 
                 ZSTD_bounds window_log_bounds = ZSTD_cParam_getBounds(ZSTD_c_windowLog);
                 if (ZSTD_isError(window_log_bounds.error))
-                    throw Exception(
-                        "ZSTD windowLog parameter is not supported " + std::string(ZSTD_getErrorName(window_log_bounds.error)),
-                        ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                    throw Exception( ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD windowLog parameter is not supported {}",
+                        std::string(ZSTD_getErrorName(window_log_bounds.error)));
                 // 0 means "use default" for libzstd
                 if (window_log != 0 && (window_log > window_log_bounds.upperBound || window_log < window_log_bounds.lowerBound))
-                    throw Exception(
-                        "ZSTD codec can't have window log more than " + toString(window_log_bounds.upperBound) + " and lower than "
-                            + toString(window_log_bounds.lowerBound) + ", given " + toString(window_log),
-                        ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                    throw Exception( ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD codec can't have window log more than {} and lower than {}, given {}", toString(window_log_bounds.upperBound), toString(window_log_bounds.lowerBound), toString(window_log));
 
                 return std::make_shared<CompressionCodecZSTD>(level, window_log);
             }

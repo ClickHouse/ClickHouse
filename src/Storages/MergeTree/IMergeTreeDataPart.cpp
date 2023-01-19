@@ -1054,10 +1054,9 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     String calculated_partition_id = partition.getID(metadata_snapshot->getPartitionKey().sample_block);
     if (calculated_partition_id != info.partition_id)
-        throw Exception(
-            "While loading part " + getDataPartStorage().getFullPath() + ": calculated partition ID: " + calculated_partition_id
-            + " differs from partition ID in part name: " + info.partition_id,
-            ErrorCodes::CORRUPTED_DATA);
+        throw Exception( ErrorCodes::CORRUPTED_DATA, "While loading part {}: "
+            "calculated partition ID: {} differs from partition ID in part name: {}",
+            getDataPartStorage().getFullPath(), calculated_partition_id, info.partition_id);
 }
 
 void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) const
@@ -1200,19 +1199,15 @@ void IMergeTreeDataPart::loadRowsCount()
 
             if (column_size % sizeof_field != 0)
             {
-                throw Exception(
-                    "Uncompressed size of column " + column.name + "(" + toString(column_size)
-                    + ") is not divisible by the size of value (" + toString(sizeof_field) + ")",
-                    ErrorCodes::LOGICAL_ERROR);
+                throw Exception( ErrorCodes::LOGICAL_ERROR, "Uncompressed size of column {}({}) is not divisible by the size of value ({})", column.name, toString(column_size), toString(sizeof_field));
             }
 
             size_t last_mark_index_granularity = index_granularity.getLastNonFinalMarkRows();
             size_t rows_approx = index_granularity.getTotalRows();
             if (!(rows_count <= rows_approx && rows_approx < rows_count + last_mark_index_granularity))
-                throw Exception(
-                    "Unexpected size of column " + column.name + ": " + toString(rows_count) + " rows, expected "
-                    + toString(rows_approx) + "+-" + toString(last_mark_index_granularity) + " rows according to the index",
-                    ErrorCodes::LOGICAL_ERROR);
+                throw Exception( ErrorCodes::LOGICAL_ERROR, "Unexpected size of column {}: "
+                    "{} rows, expected {}+-{} rows according to the index",
+                    column.name, toString(rows_count), toString(rows_approx), toString(last_mark_index_granularity));
 
             return;
         }

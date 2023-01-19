@@ -1740,9 +1740,7 @@ try
             std::lock_guard lock(servers_lock);
             createServers(config(), listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers);
             if (servers.empty())
-                throw Exception(
-                    "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
-                    ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+                throw Exception( ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
         }
 
         if (servers.empty())

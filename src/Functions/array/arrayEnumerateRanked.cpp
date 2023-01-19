@@ -60,10 +60,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
                     if (depths.size() >= array_num)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect arguments for function arrayEnumerateUniqRanked or arrayEnumerateDenseRanked: depth ({}) for missing array.", std::to_string(value));
                     if (value > prev_array_depth)
-                        throw Exception(
-                            "Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: depth="
-                                + std::to_string(value) + " for array with depth=" + std::to_string(prev_array_depth) + ".",
-                            ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception( ErrorCodes::BAD_ARGUMENTS, "Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: depth={} for array with depth={}.", std::to_string(value), std::to_string(prev_array_depth));
 
                     depths.emplace_back(value);
                 }

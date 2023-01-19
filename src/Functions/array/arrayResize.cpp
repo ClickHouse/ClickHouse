@@ -54,9 +54,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} cannot resize {}", getName(), array_type->getName());
 
         if (!isInteger(removeNullable(arguments[1])) && !arguments[1]->onlyNull())
-            throw Exception(
-                    "Argument " + toString(1) + " for function " + getName() + " must be integer but it has type "
-                    + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} for function {} must be integer but it has type {}.", toString(1), getName(), arguments[1]->getName());
 
         if (number_of_arguments == 2)
             return arguments[0];

@@ -126,10 +126,7 @@ public:
         std::lock_guard lock{mutex};
         if (!registered_prefixes.empty())
         {
-            throw Exception(
-                "Setting " + String{setting_name} + " is neither a builtin setting nor started with the prefix '"
-                    + boost::algorithm::join(registered_prefixes, "' or '") + "' registered for user-defined settings",
-                ErrorCodes::UNKNOWN_SETTING);
+            throw Exception( ErrorCodes::UNKNOWN_SETTING, "Setting {} is neither a builtin setting nor started with the prefix '{}' registered for user-defined settings", String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
         else
             BaseSettingsHelpers::throwSettingNotFound(setting_name);

@@ -266,17 +266,14 @@ public:
             WhichDataType which_scale(arguments[2].type.get());
 
             if (!which_scale.isUInt8())
-                throw Exception(
-                    "Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName()
-                        + ". Should be constant UInt8 from range[0, 76]",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
+                    "Should be constant UInt8 from range[0, 76]", arguments[2].type->getName(), getName());
 
             const ColumnConst * scale_column = checkAndGetColumnConst<ColumnUInt8>(arguments[2].column.get());
 
             if (!scale_column)
-                throw Exception(
-                    "Illegal column of third argument of function " + getName() + ". Should be constant UInt8",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column of third argument of function {}. "
+                    "Should be constant UInt8", getName());
 
             scale = scale_column->getValue<UInt8>();
         }

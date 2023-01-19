@@ -1728,9 +1728,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!canReplacePartition(src_part))
-            throw Exception(
-                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception( ErrorCodes::BAD_ARGUMENTS, "Cannot replace partition '{}' because part '{}' has inconsistent granularity with table", partition_id, src_part->name);
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
@@ -1817,9 +1815,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!dest_table_storage->canReplacePartition(src_part))
-            throw Exception(
-                "Cannot move partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception( ErrorCodes::LOGICAL_ERROR, "Cannot move partition '{}' because part '{}' has inconsistent granularity with table", partition_id, src_part->name);
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();

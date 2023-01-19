@@ -717,8 +717,7 @@ void registerStorageNATS(StorageFactory & factory)
         nats_settings->loadFromQuery(*args.storage_def);
 
         if (!nats_settings->nats_url.changed && !nats_settings->nats_server_list.changed)
-            throw Exception(
-                "You must specify either `nats_url` or `nats_server_list` settings", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
 
         if (!nats_settings->nats_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_format` setting");

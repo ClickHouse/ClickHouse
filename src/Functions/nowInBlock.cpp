@@ -62,8 +62,8 @@ public:
         }
         if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
         {
-            throw Exception(
-                "Arguments of function " + getName() + " should be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
+                getName());
         }
         if (arguments.size() == 1)
         {

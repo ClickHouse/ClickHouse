@@ -75,9 +75,7 @@ StorageMaterializedView::StorageMaterializedView(
     /// If the destination table is not set, use inner table
     has_inner_table = query.to_table_id.empty();
     if (has_inner_table && !query.storage)
-        throw Exception(
-            "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
-            ErrorCodes::INCORRECT_QUERY);
+        throw Exception( ErrorCodes::INCORRECT_QUERY, "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause");
 
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "UNION is not supported for MATERIALIZED VIEW");
@@ -230,9 +228,8 @@ void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
 {
     if (!has_inner_table)
-        throw Exception(
-            "MATERIALIZED VIEW targets existing table " + target_table_id.getNameForLogs() + ". "
-            + "Execute the statement directly on it.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception( ErrorCodes::INCORRECT_QUERY, "MATERIALIZED VIEW targets existing table {}. "
+            "Execute the statement directly on it.", target_table_id.getNameForLogs());
 }
 
 bool StorageMaterializedView::optimize(

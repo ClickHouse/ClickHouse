@@ -90,9 +90,7 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 
     if (!endsWith(engine.name, "MergeTree"))
     {
-        throw Exception(
-                "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                ErrorCodes::BAD_ARGUMENTS);
+        throw Exception( ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
     }
 
     if (isExtendedDefinitionStorage(storage_ast))
@@ -243,9 +241,7 @@ bool isReplicatedTableEngine(const ASTPtr & storage_ast)
     if (!endsWith(engine.name, "MergeTree"))
     {
         String storage_str = queryToString(storage_ast);
-        throw Exception(
-                "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                ErrorCodes::BAD_ARGUMENTS);
+        throw Exception( ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
     }
 
     return startsWith(engine.name, "Replicated");

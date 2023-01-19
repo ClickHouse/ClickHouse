@@ -94,10 +94,8 @@ void Native41::authenticate(
     }
 
     if (auth_response->size() != Poco::SHA1Engine::DIGEST_SIZE)
-        throw Exception(
-            "Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE)
-                + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
-            ErrorCodes::UNKNOWN_EXCEPTION);
+        throw Exception( ErrorCodes::UNKNOWN_EXCEPTION, "Wrong size of auth response. Expected: {} bytes, received: {} bytes.",
+            std::to_string(Poco::SHA1Engine::DIGEST_SIZE), std::to_string(auth_response->size()));
 
     session.authenticate(MySQLNative41Credentials{user_name, scramble, *auth_response}, address);
 }

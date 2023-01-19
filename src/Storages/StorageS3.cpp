@@ -1276,9 +1276,7 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
 
         if (engine_args.empty() || engine_args.size() > 5)
-            throw Exception(
-                "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].");
 
         auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers, local_context);
         if (header_it != engine_args.end())
