@@ -38,6 +38,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
+#include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -94,6 +95,9 @@
 #include <Common/scope_guard_safe.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Common/typeid_cast.h>
+#include "Core/SettingsEnums.h"
+
+#include <boost/rational.hpp>
 
 namespace DB
 {
@@ -112,6 +116,8 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -227,10 +233,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
+namespace
+{
+
 /** There are no limits on the maximum size of the result for the subquery.
   *  Since the result of the query is not the result of the entire query.
   */
-static ContextPtr getSubqueryContext(const ContextPtr & context)
+ContextPtr getSubqueryContext(const ContextPtr & context)
 {
     auto subquery_context = Context::createCopy(context);
     Settings subquery_settings = context->getSettings();
@@ -242,7 +251,7 @@ static ContextPtr getSubqueryContext(const ContextPtr & context)
     return subquery_context;
 }
 
-static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -262,7 +271,7 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
 }
 
 /// Checks that the current user has the SELECT privilege.
-static void checkAccessRightsForSelect(
+void checkAccessRightsForSelect(
     const ContextPtr & context,
     const StorageID & table_id,
     const StorageMetadataPtr & table_metadata,
@@ -292,7 +301,7 @@ static void checkAccessRightsForSelect(
     context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
-static ASTPtr parseAdditionalFilterConditionForTable(
+ASTPtr parseAdditionalFilterConditionForTable(
     const Map & setting,
     const DatabaseAndTableWithAlias & target,
     const Context & context)
@@ -319,8 +328,20 @@ static ASTPtr parseAdditionalFilterConditionForTable(
     return nullptr;
 }
 
+ASTPtr parseParallelReplicaCustomKey(const String & setting, const Context & context)
+{
+    if (setting.empty())
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but 'parallel_replicas_custom_key' has no value");
+
+    ParserExpression parser;
+    const auto & settings = context.getSettingsRef();
+    return parseQuery(
+        parser, setting.data(), setting.data() + setting.size(),
+        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
+}
+
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
-static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 {
     if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
     {
@@ -329,6 +350,8 @@ static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
             return true;
     }
     return false;
+}
+
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -501,7 +524,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
-    auto analyze = [&] (bool try_move_to_prewhere)
+    ASTPtr parallel_replicas_custom_filter_ast = nullptr;
+    if (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY)
+    {
+        LOG_INFO(log, "Processing query on a replica using custom_key");
+        if (!storage)
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
+
+        auto custom_key_ast = parseParallelReplicaCustomKey(settings.parallel_replicas_custom_key, *context);
+        parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
+            settings.parallel_replicas_count,
+            settings.parallel_replica_offset,
+            std::move(custom_key_ast),
+            settings.parallel_replicas_custom_key_filter_type,
+            *storage,
+            context);
+    }
+
+    auto analyze = [&](bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
@@ -664,6 +704,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 additional_filter_info->do_remove_column = true;
 
                 query_info.filter_asts.push_back(query_info.additional_filter_ast);
+            }
+
+            if (parallel_replicas_custom_filter_ast)
+            {
+                parallel_replicas_custom_filter_info = generateFilterActions(
+                        table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                        prepared_sets);
+
+                parallel_replicas_custom_filter_info->do_remove_column = true;
+                query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }
 
             source_header = storage_snapshot->getSampleBlockForColumns(required_columns, parameter_values);
@@ -1409,17 +1459,23 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
-            if (additional_filter_info)
+            const auto add_filter_step = [&](const auto & new_filter_info, const std::string & description)
             {
-                auto additional_filter_step = std::make_unique<FilterStep>(
+                auto filter_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentDataStream(),
-                    additional_filter_info->actions,
-                    additional_filter_info->column_name,
-                    additional_filter_info->do_remove_column);
+                    new_filter_info->actions,
+                    new_filter_info->column_name,
+                    new_filter_info->do_remove_column);
 
-                additional_filter_step->setStepDescription("Additional filter");
-                query_plan.addStep(std::move(additional_filter_step));
-            }
+                filter_step->setStepDescription(description);
+                query_plan.addStep(std::move(filter_step));
+            };
+
+            if (additional_filter_info)
+                add_filter_step(additional_filter_info, "Additional filter");
+
+            if (parallel_replicas_custom_filter_info)
+                add_filter_step(parallel_replicas_custom_filter_info, "Parallel replica custom key filter");
 
             if (expressions.before_array_join)
             {
