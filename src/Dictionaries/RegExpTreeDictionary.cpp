@@ -257,7 +257,7 @@ void RegExpTreeDictionary::loadData()
             /// Some compile errors will be thrown as LOGICAL ERROR and cause crash, e.g. empty expression or expressions are too large.
             /// We catch the error here and rethrow again.
             /// TODO: fallback to other engine, like re2, when exceptions occur.
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Error ocurrs when compiling regular expressions, reason: {}", e.message());
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Error occurs when compiling regular expressions, reason: {}", e.message());
         }
         #endif
     }
