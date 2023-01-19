@@ -172,7 +172,7 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        size_t size,
         std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
     void copyObjectMultipartImpl(
@@ -180,13 +180,14 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        size_t size,
         std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
-    Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
+    size_t getObjectSize(const std::string & bucket_from, const std::string & key) const;
+    void checkObjectExists(const std::string & bucket_from, const std::string & key, std::string_view description) const;
 
     std::string bucket;
 
