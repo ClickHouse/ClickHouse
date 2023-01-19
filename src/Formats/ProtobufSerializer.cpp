@@ -2874,7 +2874,7 @@ namespace
 
             if (!message_serializer)
             {
-                throw Exception( ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
+                throw Exception(ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
                      "Not found matches between the names of the columns {{}} and the fields {{}} of the message {} in the protobuf schema",
                      boost::algorithm::join(column_names, ", "), boost::algorithm::join(getFieldNames(message_descriptor), ", "),
                      quoteString(message_descriptor.full_name()));
@@ -3437,7 +3437,7 @@ namespace
 
                         if (!message_serializer)
                         {
-                            throw Exception( ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
+                            throw Exception(ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
                                  "Not found matches between the names of the tuple's elements {{}} and the fields {{}} "
                                  "of the message {} in the protobuf schema",
                                  boost::algorithm::join(tuple_data_type.getElementNames(), ", "),
