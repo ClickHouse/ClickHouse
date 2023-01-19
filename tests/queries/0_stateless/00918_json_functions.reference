@@ -25,6 +25,7 @@ Array
 300
 1
 0
+1
 --JSONExtractString--
 hello
 hello
@@ -177,6 +178,11 @@ Array
 300
 1
 0
+1
+-123456789012	Int64
+123456789012	UInt64
+0	UInt64
+0	Int8
 --JSONExtractString--
 hello
 hello
