@@ -307,6 +307,11 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
 }
 
+bool useVirtualShards(const Settings & settings, const Cluster & cluster)
+{
+    return settings.max_parallel_replicas > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY
+        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+}
 }
 
 
@@ -448,9 +453,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    if (settings.max_parallel_replicas > 1
-        && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY
-        && cluster->getShardCount() == 1)
+    if (useVirtualShards(settings, *cluster))
     {
         LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
 
@@ -764,13 +767,11 @@ void StorageDistributed::read(
     auto settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (settings.max_parallel_replicas > 1
-        && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY
-        && getCluster()->getShardCount() == 1)
+    if (useVirtualShards(settings, *getCluster()))
     {
         if (query_info.getCluster()->getShardCount() == 1)
         {
-            // we are reading from single shard replica but didn't transform replicas
+            // we are reading from single shard with multiple replicas but didn't transform replicas
             // into virtual shards with custom_key set
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas weren't transformed into virtual shards");
         }
