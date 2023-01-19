@@ -758,22 +758,26 @@ void StorageDistributed::read(
     bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas
         && !settings.use_hedged_requests && settings.parallel_replicas_mode == ParallelReplicasMode::READ_TASKS;
 
-    ParserExpression parser;
-    auto custom_key_ast = parseQuery(
-        parser,
-        settings.parallel_replicas_custom_key.value.data(),
-        settings.parallel_replicas_custom_key.value.data() + settings.parallel_replicas_custom_key.value.size(),
-        "parallel replicas custom key",
-        settings.max_query_size,
-        settings.max_parser_depth);
-
     auto shard_count = query_info.getCluster()->getShardCount();
 
-    std::function<void(ASTPtr &, uint64_t)> add_additional_shard_filter;
+    ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
     if (settings.max_parallel_replicas > 1
         && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY)
     {
-        add_additional_shard_filter = [&](ASTPtr & query, uint64_t shard_num)
+
+        const std::string_view custom_key = settings.parallel_replicas_custom_key.value;
+        assert(!custom_key.empty());
+
+        ParserExpression parser;
+        auto custom_key_ast = parseQuery(
+            parser,
+            custom_key.data(),
+            custom_key.data() + custom_key.size(),
+            "parallel replicas custom key",
+            settings.max_query_size,
+            settings.max_parser_depth);
+
+        additional_shard_filter_generator = [&](uint64_t shard_num) -> ASTPtr
         {
             ParserExpression parser;
             auto custom_key_ast = parseQuery(
@@ -803,130 +807,104 @@ void StorageDistributed::read(
                 equals_function->arguments = args;
                 equals_function->children.push_back(equals_function->arguments);
 
-                shard_filter = equals_function;
+                return equals_function;
             }
             else
             {
                 assert(settings.parallel_replicas_custom_key_filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
-                auto filter_function = [&]
+
+                KeyDescription custom_key_description = KeyDescription::getKeyFromAST(custom_key_ast, getInMemoryMetadataPtr()->columns, local_context);
+
+                using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
+
+                RelativeSize size_of_universum = 0;
+                 DataTypePtr custom_key_column_type = custom_key_description.data_types[0];
+
+                size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
+                if (custom_key_description.data_types.size() == 1)
                 {
-                    KeyDescription custom_key_description = KeyDescription::getKeyFromAST(custom_key_ast, getInMemoryMetadataPtr()->columns, local_context);
-
-                    using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
-
-                    RelativeSize size_of_universum = 0;
-                     DataTypePtr custom_key_column_type = custom_key_description.data_types[0];
-
-                    size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
-                    if (custom_key_description.data_types.size() == 1)
-                    {
-                        if (typeid_cast<const DataTypeUInt64 *>(custom_key_column_type.get()))
-                            size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
-                        else if (typeid_cast<const DataTypeUInt32 *>(custom_key_column_type.get()))
-                            size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
-                        else if (typeid_cast<const DataTypeUInt16 *>(custom_key_column_type.get()))
-                            size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
-                        else if (typeid_cast<const DataTypeUInt8 *>(custom_key_column_type.get()))
-                            size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
-                    }
-
-                    if (size_of_universum == RelativeSize(0))
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Invalid custom key column type: {}. Must be one unsigned integer type", custom_key_column_type->getName());
-
-                    RelativeSize relative_range_size = RelativeSize(1) / query_info.getCluster()->getShardCount();
-                    RelativeSize relative_range_offset = relative_range_size * RelativeSize(shard_num - 1);
-
-                    /// Calculate the half-interval of `[lower, upper)` column values.
-                    bool has_lower_limit = false;
-                    bool has_upper_limit = false;
-
-                    RelativeSize lower_limit_rational = relative_range_offset * size_of_universum;
-                    RelativeSize upper_limit_rational = (relative_range_offset + relative_range_size) * size_of_universum;
-
-                    UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
-                    UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
-
-                    if (lower > 0)
-                        has_lower_limit = true;
-
-                    if (upper_limit_rational < size_of_universum)
-                        has_upper_limit = true;
-
-                    assert(has_lower_limit || has_upper_limit);
-
-                    /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
-                    std::shared_ptr<ASTFunction> lower_function;
-                    std::shared_ptr<ASTFunction> upper_function;
-
-                    if (has_lower_limit)
-                    {
-                        ASTPtr args = std::make_shared<ASTExpressionList>();
-                        args->children.push_back(custom_key_ast);
-                        args->children.push_back(std::make_shared<ASTLiteral>(lower));
-
-                        lower_function = std::make_shared<ASTFunction>();
-                        lower_function->name = "greaterOrEquals";
-                        lower_function->arguments = args;
-                        lower_function->children.push_back(lower_function->arguments);
-
-                        if (!has_upper_limit)
-                            return lower_function;
-                    }
-
-                    if (has_upper_limit)
-                    {
-                        ASTPtr args = std::make_shared<ASTExpressionList>();
-                        args->children.push_back(custom_key_ast);
-                        args->children.push_back(std::make_shared<ASTLiteral>(upper));
-
-                        upper_function = std::make_shared<ASTFunction>();
-                        upper_function->name = "less";
-                        upper_function->arguments = args;
-                        upper_function->children.push_back(upper_function->arguments);
-
-                        if (!has_lower_limit)
-                            return upper_function;
-                    }
-
-                    assert(has_lower_limit && has_upper_limit);
-
-                    ASTPtr args = std::make_shared<ASTExpressionList>();
-                    args->children.push_back(lower_function);
-                    args->children.push_back(upper_function);
-
-                    auto and_function = std::make_shared<ASTFunction>();
-                    and_function->name = "and";
-                    and_function->arguments = args;
-                    and_function->children.push_back(and_function->arguments);
-
-                    return and_function;
-                };
-
-                shard_filter = filter_function();
-            }
-
-            if (shard_filter)
-            {
-                auto & select_query = query->as<ASTSelectQuery &>();
-
-                auto where_expression = select_query.where();
-                if (where_expression)
-                {
-                    ASTPtr args = std::make_shared<ASTExpressionList>();
-                    args->children.push_back(where_expression);
-                    args->children.push_back(shard_filter);
-
-                    auto and_function = std::make_shared<ASTFunction>();
-                    and_function->name = "and";
-                    and_function->arguments = args;
-                    and_function->children.push_back(and_function->arguments);
-
-                    shard_filter = std::move(and_function);
+                    if (typeid_cast<const DataTypeUInt64 *>(custom_key_column_type.get()))
+                        size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
+                    else if (typeid_cast<const DataTypeUInt32 *>(custom_key_column_type.get()))
+                        size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
+                    else if (typeid_cast<const DataTypeUInt16 *>(custom_key_column_type.get()))
+                        size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
+                    else if (typeid_cast<const DataTypeUInt8 *>(custom_key_column_type.get()))
+                        size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
                 }
 
-                select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
+                if (size_of_universum == RelativeSize(0))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Invalid custom key column type: {}. Must be one unsigned integer type", custom_key_column_type->getName());
+
+                RelativeSize relative_range_size = RelativeSize(1) / query_info.getCluster()->getShardCount();
+                RelativeSize relative_range_offset = relative_range_size * RelativeSize(shard_num - 1);
+
+                /// Calculate the half-interval of `[lower, upper)` column values.
+                bool has_lower_limit = false;
+                bool has_upper_limit = false;
+
+                RelativeSize lower_limit_rational = relative_range_offset * size_of_universum;
+                RelativeSize upper_limit_rational = (relative_range_offset + relative_range_size) * size_of_universum;
+
+                UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
+                UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
+
+                if (lower > 0)
+                    has_lower_limit = true;
+
+                if (upper_limit_rational < size_of_universum)
+                    has_upper_limit = true;
+
+                assert(has_lower_limit || has_upper_limit);
+
+                /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
+                std::shared_ptr<ASTFunction> lower_function;
+                std::shared_ptr<ASTFunction> upper_function;
+
+                if (has_lower_limit)
+                {
+                    ASTPtr args = std::make_shared<ASTExpressionList>();
+                    args->children.push_back(custom_key_ast);
+                    args->children.push_back(std::make_shared<ASTLiteral>(lower));
+
+                    lower_function = std::make_shared<ASTFunction>();
+                    lower_function->name = "greaterOrEquals";
+                    lower_function->arguments = args;
+                    lower_function->children.push_back(lower_function->arguments);
+
+                    if (!has_upper_limit)
+                        return lower_function;
+                }
+
+                if (has_upper_limit)
+                {
+                    ASTPtr args = std::make_shared<ASTExpressionList>();
+                    args->children.push_back(custom_key_ast);
+                    args->children.push_back(std::make_shared<ASTLiteral>(upper));
+
+                    upper_function = std::make_shared<ASTFunction>();
+                    upper_function->name = "less";
+                    upper_function->arguments = args;
+                    upper_function->children.push_back(upper_function->arguments);
+
+                    if (!has_lower_limit)
+                        return upper_function;
+                }
+
+                assert(has_lower_limit && has_upper_limit);
+
+                ASTPtr args = std::make_shared<ASTExpressionList>();
+                args->children.push_back(lower_function);
+                args->children.push_back(upper_function);
+
+                auto and_function = std::make_shared<ASTFunction>();
+                and_function->name = "and";
+                and_function->arguments = args;
+                and_function->children.push_back(and_function->arguments);
+
+                return and_function;
             }
         };
     }
@@ -945,7 +923,7 @@ void StorageDistributed::read(
             select_stream_factory, log, modified_query_ast,
             local_context, query_info,
             sharding_key_expr, sharding_key_column_name,
-            query_info.cluster, add_additional_shard_filter);
+            query_info.cluster, additional_shard_filter_generator);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
