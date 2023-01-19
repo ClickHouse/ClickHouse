@@ -1112,7 +1112,6 @@ void Planner::buildPlanForQueryNode()
     checkStoragesSupportTransactions(planner_context);
     collectTableExpressionData(query_tree, *planner_context);
     collectSets(query_tree, *planner_context);
-    resolveGroupingFunctions(query_tree, *planner_context);
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 

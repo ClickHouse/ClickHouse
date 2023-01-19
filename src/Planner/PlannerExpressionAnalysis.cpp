@@ -79,7 +79,6 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
-    bool disable_grouping_sets = false;
 
     PlannerActionsVisitor actions_visitor(planner_context);
 
@@ -137,13 +136,6 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
                 grouping_sets_parameter.used_keys = std::move(grouping_sets_keys);
             }
-
-            /// It is expected by execution layer that if there are only 1 grouping sets it will be removed
-            if (grouping_sets_parameters_list.size() == 1)
-            {
-                disable_grouping_sets = true;
-                grouping_sets_parameters_list.clear();
-            }
         }
         else
         {
@@ -190,7 +182,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
     /** For non ordinary GROUP BY we add virtual __grouping_set column
       * With set number, which is used as an additional key at the stage of merging aggregating data.
       */
-    if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || (query_node.isGroupByWithGroupingSets() && !disable_grouping_sets))
+    if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets())
         aggregates_columns.emplace_back(nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set");
 
     /// Only aggregation keys and aggregates are available for next steps after GROUP BY step
