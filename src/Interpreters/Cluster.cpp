@@ -723,16 +723,20 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
         }
         else
         {
+            // shuffle replicas so we don't always pick the same subset
             std::random_device rd;
             std::mt19937 gen{rd()};
             auto shuffled_replicas = replicas;
 
             if (settings.prefer_localhost_replica)
             {
+                // force for local replica to always be included
                 auto local_replica = std::find_if(shuffled_replicas.begin(), shuffled_replicas.end(), [](const auto & replica) { return replica.is_local; });
                 if (local_replica != shuffled_replicas.end())
                 {
-                    std::swap(*shuffled_replicas.begin(), *local_replica);
+                    if (local_replica != shuffled_replicas.begin())
+                        std::swap(*shuffled_replicas.begin(), *local_replica);
+
                     std::shuffle(shuffled_replicas.begin() + 1, shuffled_replicas.end(), gen);
                 }
                 else
