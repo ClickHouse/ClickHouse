@@ -198,7 +198,7 @@ private:
             const QueryPlan::Node * node = it->node;
             /// skip removed sorting steps
             auto * step = node->step.get();
-            if (dynamic_cast<const SortingStep *>(step) && node != nodes_affect_order.back())
+            if (typeid_cast<const SortingStep *>(step) && node != nodes_affect_order.back())
                 continue;
 
             logStep("update sorting traits", node);
@@ -286,7 +286,7 @@ private:
 
             const auto * step = node->step.get();
             /// skip removed sorting steps
-            if (dynamic_cast<const SortingStep*>(step))
+            if (typeid_cast<const SortingStep*>(step))
                 continue;
 
             logStep("checking for stateful function", node);
@@ -321,7 +321,7 @@ private:
 
             const auto * step = node->step.get();
             /// skip removed sorting steps
-            if (dynamic_cast<const SortingStep *>(step))
+            if (typeid_cast<const SortingStep *>(step))
                 continue;
 
             logStep("checking path from current sorting", node);
