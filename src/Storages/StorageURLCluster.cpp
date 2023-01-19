@@ -49,7 +49,7 @@ StorageURLCluster::StorageURLCluster(
     , compression_method(compression_method_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
-    
+
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
