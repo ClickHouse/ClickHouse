@@ -27,6 +27,7 @@ namespace
 
 class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitorWithContext<ConvertOrLikeChainVisitor>
 {
+public:
     using Base = InDepthQueryTreeVisitorWithContext<ConvertOrLikeChainVisitor>;
     using Base::Base;
 
@@ -59,27 +60,27 @@ class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitorWithContext<Conv
         QueryTreeNodePtrWithHashMap<Array> node_to_patterns;
         FunctionNodes match_functions;
 
-        for (auto & arg : function_node->getArguments())
+        for (auto & argument : function_node->getArguments())
         {
-            unique_elems.push_back(arg);
+            unique_elems.push_back(argument);
 
-            auto * arg_func = arg->as<FunctionNode>();
-            if (!arg_func)
+            auto * argument_function = argument->as<FunctionNode>();
+            if (!argument_function)
                 continue;
 
-            const bool is_like  = arg_func->getFunctionName() == "like";
-            const bool is_ilike = arg_func->getFunctionName() == "ilike";
+            const bool is_like  = argument_function->getFunctionName() == "like";
+            const bool is_ilike = argument_function->getFunctionName() == "ilike";
 
             /// Not {i}like -> bail out.
             if (!is_like && !is_ilike)
                 continue;
 
-            const auto & like_arguments = arg_func->getArguments().getNodes();
+            const auto & like_arguments = argument_function->getArguments().getNodes();
             if (like_arguments.size() != 2)
                 continue;
 
-            auto identifier = like_arguments[0];
-            auto * pattern = like_arguments[1]->as<ConstantNode>();
+            const auto & like_first_argument = like_arguments[0];
+            const auto * pattern = like_arguments[1]->as<ConstantNode>();
             if (!pattern || !isString(pattern->getResultType()))
                 continue;
 
@@ -90,14 +91,14 @@ class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitorWithContext<Conv
 
             unique_elems.pop_back();
 
-            auto it = node_to_patterns.find(identifier);
+            auto it = node_to_patterns.find(like_first_argument);
             if (it == node_to_patterns.end())
             {
-                it = node_to_patterns.insert({identifier, Array{}}).first;
+                it = node_to_patterns.insert({like_first_argument, Array{}}).first;
 
                 /// The second argument will be added when all patterns are known.
                 auto match_function = std::make_shared<FunctionNode>("multiMatchAny");
-                match_function->getArguments().getNodes().push_back(identifier);
+                match_function->getArguments().getNodes().push_back(like_first_argument);
                 match_functions.push_back(match_function);
 
                 unique_elems.push_back(std::move(match_function));
