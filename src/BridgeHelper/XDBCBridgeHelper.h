@@ -63,10 +63,12 @@ public:
     XDBCBridgeHelper(
             ContextPtr context_,
             Poco::Timespan http_timeout_,
-            const std::string & connection_string_)
+            const std::string & connection_string_,
+            bool use_connection_pooling_=true)
         : IXDBCBridgeHelper(context_->getGlobalContext())
         , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
         , connection_string(connection_string_)
+        , use_connection_pooling(use_connection_pooling_)
         , http_timeout(http_timeout_)
         , config(context_->getGlobalContext()->getConfigRef())
     {
@@ -132,6 +134,7 @@ protected:
         uri.setHost(bridge_host);
         uri.setPort(bridge_port);
         uri.setScheme("http");
+        uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
         return uri;
     }
 
@@ -146,6 +149,7 @@ private:
 
     Poco::Logger * log;
     std::string connection_string;
+    bool use_connection_pooling;
     Poco::Timespan http_timeout;
     std::string bridge_host;
     size_t bridge_port;
@@ -189,6 +193,7 @@ protected:
             uri.setPath(SCHEMA_ALLOWED_HANDLER);
             uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
+            uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
             ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
@@ -210,6 +215,7 @@ protected:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
+            uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
             ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
