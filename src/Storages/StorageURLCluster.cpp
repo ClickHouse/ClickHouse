@@ -137,7 +137,6 @@ QueryProcessingStage::Enum StorageURLCluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
-
 ClusterPtr StorageURLCluster::getCluster(ContextPtr context) const
 {
     return context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
@@ -156,6 +155,5 @@ NamesAndTypesList StorageURLCluster::getVirtuals() const
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
-
 
 }

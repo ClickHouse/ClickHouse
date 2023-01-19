@@ -37,7 +37,6 @@ private:
 
     String getFormatFromFirstArgument() override;
 
-    
 };
 
 }

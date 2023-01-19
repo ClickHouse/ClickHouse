@@ -448,6 +448,7 @@ void StorageURLSource::onCancel()
     if (reader)
         reader->cancel();
 }
+
 Chunk StorageURLSource::generate() 
 {
     while (true)
@@ -494,7 +495,6 @@ StorageURLSink::StorageURLSink(
         3);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
 }
-
 
 void StorageURLSink::consume(Chunk chunk)
 {
