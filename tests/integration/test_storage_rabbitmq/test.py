@@ -1,10 +1,5 @@
 import pytest
 
-# FIXME This test is too flaky
-# https://github.com/ClickHouse/ClickHouse/issues/45160
-
-pytestmark = pytest.mark.skip
-
 import json
 import os.path as p
 import random
