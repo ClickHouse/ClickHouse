@@ -17,8 +17,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int BAD_ARGUMENTS;
 }
 
 ASTPtr getCustomKeyFilterForParallelReplica(
