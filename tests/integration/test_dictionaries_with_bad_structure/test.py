@@ -4,7 +4,7 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 DICTIONARY_FILES = [
-    "configs/dictionaries/bad_dict.xml",
+    "configs/dictionaries/invalid_dict.xml",
     "configs/dictionaries/valid_dict.xml",
 ]
 
@@ -12,7 +12,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance("instance", dictionaries=DICTIONARY_FILES)
 
 VALID_DICT_NAME = "valid_dict"
-BAD_DICT_NAME = "bad_dict"
+BAD_DICT_NAME = "invalid_dict"
 UNKNOWN_DATA_TYPE_EXCEPTION_STR = "DB::Exception: Unknown data type"
 
 
