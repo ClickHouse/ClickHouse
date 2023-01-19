@@ -310,7 +310,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 return type;
             }
 
-            /// Case when CSV value is not in quotes. Check if it's a number or date/datetime, and if not, determine it's as a string.
+            /// Case when CSV value is not in quotes. Check if it's a number or date/datetime, and if not, determine it as a string.
             if (auto number_type = tryInferNumberFromString(field, format_settings))
                 return number_type;
 
