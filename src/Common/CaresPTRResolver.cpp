@@ -149,7 +149,7 @@ namespace DB
 
         int number_of_sockets_to_poll = 0;
 
-        for (int i = 0; i < ARES_GETSOCK_MAXNUM; i++, number_of_sockets_to_poll++)
+        for (int i = 0; i < ARES_GETSOCK_MAXNUM; i++)
         {
             pollfd[i].events = 0;
             pollfd[i].revents = 0;
@@ -157,7 +157,8 @@ namespace DB
             if (ARES_GETSOCK_READABLE(sockets_bitmask, i))
             {
                 pollfd[i].fd = sockets[i];
-                pollfd[i].events = POLLIN;
+                pollfd[i].events = POLLRDNORM | POLLIN;
+                number_of_sockets_to_poll++;
             }
             else
             {

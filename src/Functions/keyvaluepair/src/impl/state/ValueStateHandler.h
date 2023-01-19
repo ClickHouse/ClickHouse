@@ -27,7 +27,7 @@ private:
     const char item_delimiter;
     [[maybe_unused]] std::unordered_set<char> special_character_allowlist;
 
-    bool isValidCharacter(char character) const;
+    static bool isValidCharacter(char character);
 };
 
 }
