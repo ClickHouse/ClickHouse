@@ -466,7 +466,10 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
     if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound in ColumnVector<T>::insertRangeFrom method (data.size() = {}).", toString(start), toString(length), toString(src_vec.data.size()));
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                        "Parameters start = {}, length = {} are out of bound "
+                        "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
+                        toString(start), toString(length), toString(src_vec.data.size()));
 
     size_t old_size = data.size();
     data.resize(old_size + length);

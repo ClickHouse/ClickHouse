@@ -54,14 +54,18 @@ public:
 
             if (!isString(json_column.type))
             {
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "JSONPath functions require first argument to be JSON of string, illegal type: {}", json_column.type->getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "JSONPath functions require first argument to be JSON of string, illegal type: {}",
+                                json_column.type->getName());
             }
 
             const auto & json_path_column = arguments[1];
 
             if (!isString(json_path_column.type))
             {
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "JSONPath functions require second argument to be JSONPath of type string, illegal type: {}", json_path_column.type->getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "JSONPath functions require second argument "
+                                "to be JSONPath of type string, illegal type: {}", json_path_column.type->getName());
             }
             if (!isColumnConst(*json_path_column.column))
             {

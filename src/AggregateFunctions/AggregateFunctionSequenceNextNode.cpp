@@ -42,13 +42,13 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 {
     if (settings == nullptr || !settings->allow_experimental_funnel_functions)
     {
-        throw Exception( ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
             "Set `allow_experimental_funnel_functions` setting to enable it", name);
     }
 
     if (parameters.size() < 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                        Aggregate function '{}' requires 2 parameters (direction, head)", name);
+                        "Aggregate function '{}' requires 2 parameters (direction, head)", name);
     auto expected_param_type = Field::Types::Which::String;
     if (parameters.at(0).getType() != expected_param_type || parameters.at(1).getType() != expected_param_type)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function '{}' requires 'String' parameters", name);
@@ -79,12 +79,13 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
             "Invalid argument combination of '{}' with '{}'", param_base, param_dir), ErrorCodes::BAD_ARGUMENTS);
 
     if (argument_types.size() < min_required_args)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least {} arguments.", name, toString(min_required_args));
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Aggregate function {} requires at least {} arguments.", name, toString(min_required_args));
 
     bool is_base_match_type = base == SequenceBase::FirstMatch || base == SequenceBase::LastMatch;
     if (is_base_match_type && argument_types.size() < min_required_args + 1)
-        throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Aggregate function {} requires at least {} arguments when base is first_match or last_match.",
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} requires at least {} arguments when base is first_match or last_match.",
             name, toString(min_required_args + 1));
 
     if (argument_types.size() > max_events_size + min_required_args)

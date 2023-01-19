@@ -191,7 +191,7 @@ namespace DB
         {
             if (!isStringOrFixedString(arguments[0]))
             {
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
                     getName());
             }
 

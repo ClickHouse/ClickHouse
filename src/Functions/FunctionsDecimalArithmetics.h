@@ -254,7 +254,7 @@ public:
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                            Number of arguments for function {} does not match: 2 or 3 expected", getName());
+                            "Number of arguments for function {} does not match: 2 or 3 expected", getName());
 
         if (!isDecimal(arguments[0].type) || !isDecimal(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for {} function must be Decimal", getName());
@@ -266,13 +266,13 @@ public:
             WhichDataType which_scale(arguments[2].type.get());
 
             if (!which_scale.isUInt8())
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
                     "Should be constant UInt8 from range[0, 76]", arguments[2].type->getName(), getName());
 
             const ColumnConst * scale_column = checkAndGetColumnConst<ColumnUInt8>(arguments[2].column.get());
 
             if (!scale_column)
-                throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column of third argument of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column of third argument of function {}. "
                     "Should be constant UInt8", getName());
 
             scale = scale_column->getValue<UInt8>();

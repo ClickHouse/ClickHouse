@@ -151,13 +151,16 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         if (sanity_check)
         {
             if (codecs_descriptions->children.size() > 1 && has_none)
-                throw Exception( ErrorCodes::BAD_ARGUMENTS, "It does not make sense to have codec NONE along with other compression codecs: {}. (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", codec_description);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "It does not make sense to have codec NONE along with other compression codecs: {}. "
+                                "(Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
+                                codec_description);
 
             /// Allow to explicitly specify single NONE codec if user don't want any compression.
             /// But applying other transformations solely without compression (e.g. Delta) does not make sense.
             /// It's okay to apply encryption codecs solely without anything else.
             if (!is_compression && !has_none && encryption_codecs.size() != codecs_descriptions->children.size())
-                throw Exception( ErrorCodes::BAD_ARGUMENTS, "Compression codec {} does not compress anything. "
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec {} does not compress anything. "
                     "You may want to add generic compression algorithm after other transformations, like: {}, LZ4. "
                     "(Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
                     codec_description, codec_description);

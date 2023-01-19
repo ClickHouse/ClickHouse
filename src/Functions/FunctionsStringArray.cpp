@@ -12,8 +12,8 @@ namespace ErrorCodes
 DataTypePtr FunctionArrayStringConcat::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments.size() != 1 && arguments.size() != 2)
-        throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
             getName(), arguments.size());
 
     const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());

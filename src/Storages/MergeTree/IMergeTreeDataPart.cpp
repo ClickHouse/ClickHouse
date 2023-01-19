@@ -518,7 +518,8 @@ void IMergeTreeDataPart::removeIfNeeded()
             String file_name = fileName(getDataPartStorage().getPartDirectory());
 
             if (file_name.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set", getDataPartStorage().getPartDirectory(), name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set",
+                                getDataPartStorage().getPartDirectory(), name);
 
             if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj"))
             {
@@ -626,7 +627,8 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subc
     }
 
     if (!minimum_size_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find a column of minimum size in MergeTree, part {}", getDataPartStorage().getFullPath());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find a column of minimum size in MergeTree, part {}",
+                        getDataPartStorage().getFullPath());
 
     return *minimum_size_column;
 }
@@ -716,7 +718,8 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
 
 void IMergeTreeDataPart::loadIndexGranularity()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'loadIndexGranularity' is not implemented for part with type {}", getType().toString());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method 'loadIndexGranularity' is not implemented for part with type {}", getType().toString());
 }
 
 /// Currently we don't cache mark files of part, because cache other meta files is enough to speed up loading.
@@ -1054,7 +1057,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     String calculated_partition_id = partition.getID(metadata_snapshot->getPartitionKey().sample_block);
     if (calculated_partition_id != info.partition_id)
-        throw Exception( ErrorCodes::CORRUPTED_DATA, "While loading part {}: "
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "While loading part {}: "
             "calculated partition ID: {} differs from partition ID in part name: {}",
             getDataPartStorage().getFullPath(), calculated_partition_id, info.partition_id);
 }
@@ -1145,9 +1148,10 @@ void IMergeTreeDataPart::loadRowsCount()
                 if (rows_in_column != rows_count)
                 {
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Column {} has rows count {} according to size in memory "
-                        "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Column {} has rows count {} according to size in memory "
+                                    "and size of single value, but data part {} has {} rows",
+                                    backQuote(column.name), rows_in_column, name, rows_count);
                 }
 
                 size_t last_possibly_incomplete_mark_rows = index_granularity.getLastNonFinalMarkRows();
@@ -1157,20 +1161,24 @@ void IMergeTreeDataPart::loadRowsCount()
                 if (rows_in_column < index_granularity_without_last_mark)
                 {
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Column {} has rows count {} according to size in memory "
-                        "and size of single value, but index granularity in part {} without last mark has {} rows, which is more than in column",
-                        backQuote(column.name), rows_in_column, name, index_granularity.getTotalRows());
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Column {} has rows count {} according to size in memory "
+                                    "and size of single value, "
+                                    "but index granularity in part {} without last mark has {} rows, which "
+                                    "is more than in column",
+                                    backQuote(column.name), rows_in_column, name, index_granularity.getTotalRows());
                 }
 
                 /// In last mark we actually written less or equal rows than stored in last mark of index granularity
                 if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
                 {
                      throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Column {} has rows count {} in last mark according to size in memory "
-                        "and size of single value, but index granularity in part {} in last mark has {} rows which is less than in column",
-                        backQuote(column.name), rows_in_column - index_granularity_without_last_mark, name, last_possibly_incomplete_mark_rows);
+                                     ErrorCodes::LOGICAL_ERROR,
+                                     "Column {} has rows count {} in last mark according to size in memory "
+                                     "and size of single value, "
+                                     "but index granularity in part {} "
+                                     "in last mark has {} rows which is less than in column",
+                                     backQuote(column.name), rows_in_column - index_granularity_without_last_mark, name, last_possibly_incomplete_mark_rows);
                 }
             }
         }
@@ -1199,13 +1207,15 @@ void IMergeTreeDataPart::loadRowsCount()
 
             if (column_size % sizeof_field != 0)
             {
-                throw Exception( ErrorCodes::LOGICAL_ERROR, "Uncompressed size of column {}({}) is not divisible by the size of value ({})", column.name, column_size, sizeof_field);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Uncompressed size of column {}({}) is not divisible by the size of value ({})",
+                                column.name, column_size, sizeof_field);
             }
 
             size_t last_mark_index_granularity = index_granularity.getLastNonFinalMarkRows();
             size_t rows_approx = index_granularity.getTotalRows();
             if (!(rows_count <= rows_approx && rows_approx < rows_count + last_mark_index_granularity))
-                throw Exception( ErrorCodes::LOGICAL_ERROR, "Unexpected size of column {}: "
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of column {}: "
                     "{} rows, expected {}+-{} rows according to the index",
                     column.name, rows_count, rows_approx, toString(last_mark_index_granularity));
 

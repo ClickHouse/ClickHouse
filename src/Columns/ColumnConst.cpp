@@ -30,7 +30,8 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
         data = const_data->getDataColumnPtr();
 
     if (data->size() != 1)
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", data->size());
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                        "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", data->size());
 
     /// Check that the value is initialized. We do it earlier, before it will be used, to ease debugging.
 #if defined(MEMORY_SANITIZER)

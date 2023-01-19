@@ -951,7 +951,9 @@ namespace S3
 
             boost::to_upper(name);
             if (name != S3 && name != COS && name != OBS && name != OSS)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
+                                quoteString(name));
 
             if (name == S3)
                 storage_name = name;

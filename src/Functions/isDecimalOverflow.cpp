@@ -42,7 +42,7 @@ public:
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
                 getName(), arguments.size());
 
         WhichDataType which_first(arguments[0]->getTypeId());

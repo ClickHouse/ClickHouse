@@ -316,7 +316,7 @@ const ColumnWithTypeAndName & Block::getByName(const std::string & name, bool ca
 {
     const auto * result = findByName(name, case_insensitive);
     if (!result)
-        throw Exception( ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
             name, dumpNames());
 
     return *result;
@@ -337,7 +337,7 @@ size_t Block::getPositionByName(const std::string & name) const
 {
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
-        throw Exception( ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
             name, dumpNames());
 
     return it->second;

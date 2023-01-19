@@ -1704,7 +1704,9 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     break;
                 default:
                     throw DB::Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", Coordination::toString(sub_zk_request->getOpNum()));
+                                        ErrorCodes::BAD_ARGUMENTS,
+                                        "Illegal command as part of multi ZooKeeper request {}",
+                                        Coordination::toString(sub_zk_request->getOpNum()));
             }
         }
 
@@ -2020,7 +2022,9 @@ void KeeperStorage::preprocessRequest(
         // if we have no uncommitted transactions it means the last zxid is possibly loaded from snapshot
         if (last_zxid != old_snapshot_zxid && new_last_zxid <= last_zxid)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
+                            new_last_zxid, last_zxid);
     }
     else
     {
@@ -2030,7 +2034,9 @@ void KeeperStorage::preprocessRequest(
 
         if (new_last_zxid <= last_zxid)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
+                            new_last_zxid, last_zxid);
     }
 
     std::vector<Delta> new_deltas;

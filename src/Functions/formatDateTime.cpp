@@ -641,8 +641,9 @@ public:
                     arguments[0].type->getName(), getName());
             if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {} when arguments size is 2 or 3. Should be a integer or a date with time",
-                    arguments[0].type->getName(), getName());
+                                "Illegal type {} of first argument of function {} when arguments size is 2 or 3. "
+                                "Should be a integer or a date with time",
+                                arguments[0].type->getName(), getName());
         }
         else
         {
@@ -686,8 +687,9 @@ public:
                     }))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64 when arguments size is 1.",
-                        arguments[0].column->getName(), getName());
+                                    "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime "
+                                    "or DateTime64 when arguments size is 1.",
+                                    arguments[0].column->getName(), getName());
                 }
             }
             else

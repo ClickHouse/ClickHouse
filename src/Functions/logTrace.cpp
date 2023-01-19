@@ -32,7 +32,7 @@ namespace
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (!isString(arguments[0]))
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                     arguments[0]->getName(), getName());
             return std::make_shared<DataTypeUInt8>();
         }
@@ -43,7 +43,7 @@ namespace
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
                 message = col->getDataAt(0).data;
             else
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Constant string",
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Constant string",
                     getName());
 
             static auto * log = &Poco::Logger::get("FunctionLogTrace");

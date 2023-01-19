@@ -364,8 +364,9 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
         if (subjects.size() > 1)
         {
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "This NATS engine reads from multiple subjects. You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "This NATS engine reads from multiple subjects. "
+                            "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
         else
         {
@@ -717,7 +718,7 @@ void registerStorageNATS(StorageFactory & factory)
         nats_settings->loadFromQuery(*args.storage_def);
 
         if (!nats_settings->nats_url.changed && !nats_settings->nats_server_list.changed)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
 
         if (!nats_settings->nats_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_format` setting");

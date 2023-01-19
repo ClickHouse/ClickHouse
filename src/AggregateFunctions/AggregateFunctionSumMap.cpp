@@ -46,7 +46,7 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 
     if (args.size() < 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Aggregate function {} requires at least two arguments of Array type or one argument of tuple of two arrays", name);
+            "Aggregate function {} requires at least two arguments of Array type or one argument of tuple of two arrays", name);
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(args[0].get());
     if (!array_type)

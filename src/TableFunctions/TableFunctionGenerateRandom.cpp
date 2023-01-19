@@ -42,7 +42,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
 
     if (args.size() > 4)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                        Table function '{}' requires at most four arguments: "
+                        "Table function '{}' requires at most four arguments: "
                         " structure, [random_seed, max_string_length, max_array_length].", getName());
 
     // All the arguments must be literals.

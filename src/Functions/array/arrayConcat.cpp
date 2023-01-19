@@ -43,7 +43,9 @@ public:
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} for function {} must be an array but it has type {}.", i, getName(), arguments[i]->getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Argument {} for function {} must be an array but it has type {}.",
+                                i, getName(), arguments[i]->getName());
         }
 
         return getLeastSupertype(arguments);

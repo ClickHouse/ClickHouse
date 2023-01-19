@@ -230,7 +230,9 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
     else
     {
         if (!all_inputs_finished) // -V547
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "GroupingAggregatedTransform should have read all chunks for single level aggregation, but not all of the inputs are finished.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "GroupingAggregatedTransform should have read all chunks for single level aggregation, "
+                            "but not all of the inputs are finished.");
 
         if (tryPushSingleLevelData())
             return Status::PortFull;

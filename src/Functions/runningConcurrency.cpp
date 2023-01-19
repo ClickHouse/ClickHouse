@@ -60,7 +60,7 @@ namespace DB
                     WriteBufferFromOwnString buf_begin, buf_end;
                     begin_serializaion->serializeTextQuoted(*(arguments[0].column), i, buf_begin, default_format);
                     end_serialization->serializeTextQuoted(*(arguments[1].column), i, buf_end, default_format);
-                    throw Exception( ErrorCodes::INCORRECT_DATA, "Incorrect order of events: {} > {}", buf_begin.str(), buf_end.str());
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect order of events: {} > {}", buf_begin.str(), buf_end.str());
                 }
 
                 ongoing_until.insert(end);
@@ -145,7 +145,7 @@ namespace DB
             case TypeIndex::DateTime:   f(TypeTag<DataTypeDateTime>());   break;
             case TypeIndex::DateTime64: f(TypeTag<DataTypeDateTime64>()); break;
             default:
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for function {} must be Date, DateTime, or DateTime64.", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for function {} must be Date, DateTime, or DateTime64.", getName());
             }
         }
 
@@ -167,7 +167,7 @@ namespace DB
             // The type of the second argument must match with that of the first one.
             if (unlikely(!arguments[1].type->equals(*(arguments[0].type))))
             {
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} must be called with two arguments having the same type.", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} must be called with two arguments having the same type.", getName());
             }
 
             DataTypes argument_types = { arguments[0].type, arguments[1].type };

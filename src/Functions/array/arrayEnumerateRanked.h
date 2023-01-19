@@ -101,8 +101,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
                 getName(), arguments.size());
 
         const ArraysDepths arrays_depths = getArraysDepths(arguments);
@@ -194,7 +194,8 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         {
             if (*offsets_by_depth[0] != array->getOffsets())
             {
-                throw Exception( ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                                "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
             }
         }
 
@@ -216,7 +217,8 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             {
                 if (*offsets_by_depth[col_depth] != array->getOffsets())
                 {
-                    throw Exception( ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
+                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                                "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
                 }
             }
         }

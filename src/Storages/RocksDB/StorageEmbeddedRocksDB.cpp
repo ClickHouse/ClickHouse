@@ -459,8 +459,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto engine_args = args.engine_args;
     if (engine_args.size() > 3)
     {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} requires at most 3 parameters. ({} given). Correct usage: EmbeddedRocksDB([ttl, rocksdb_dir, read_only])",
-            args.engine_name, engine_args.size());
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Engine {} requires at most 3 parameters. "
+                        "({} given). Correct usage: EmbeddedRocksDB([ttl, rocksdb_dir, read_only])",
+                        args.engine_name, engine_args.size());
     }
 
     Int32 ttl{0};

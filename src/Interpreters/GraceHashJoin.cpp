@@ -346,7 +346,8 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
     if (to_size > max_num_buckets)
     {
         throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-            "Too many grace hash join buckets ({} > {}), consider increasing grace_hash_join_max_buckets or max_rows_in_join/max_bytes_in_join",
+            "Too many grace hash join buckets ({} > {}), "
+            "consider increasing grace_hash_join_max_buckets or max_rows_in_join/max_bytes_in_join",
             to_size, max_num_buckets);
     }
 

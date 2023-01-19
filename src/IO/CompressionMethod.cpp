@@ -117,7 +117,7 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
     if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
 
-    throw Exception( ErrorCodes::NOT_IMPLEMENTED, "Unknown compression method '{}'. "
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown compression method '{}'. "
         "Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods", hint);
 }
 

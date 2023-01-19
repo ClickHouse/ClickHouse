@@ -28,7 +28,7 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
 
     if (arguments.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Incorrect number of arguments for aggregate function {}", name);
+            "Incorrect number of arguments for aggregate function {}", name);
 
     const DataTypePtr & data_type = arguments[0];
 

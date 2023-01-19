@@ -112,7 +112,7 @@ public:
             return Status::NeedData;
 
         if (!all_finished)
-            throw Exception( ErrorCodes::LOGICAL_ERROR, "SortingAggregatedForMemoryBoundMergingTransform has read bucket, but couldn't push it.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "SortingAggregatedForMemoryBoundMergingTransform has read bucket, but couldn't push it.");
 
         if (overflow_chunk)
         {
@@ -153,7 +153,7 @@ private:
 
         const auto & info = chunk.getChunkInfo();
         if (!info)
-            throw Exception( ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in SortingAggregatedForMemoryBoundMergingTransform.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in SortingAggregatedForMemoryBoundMergingTransform.");
 
         const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)

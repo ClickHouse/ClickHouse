@@ -55,7 +55,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
         {
             if (!params.client_key.empty())
                 return params.client_key;
-            throw Exception( ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY, "Quota {} (for user {}) requires a client supplied key.",
+            throw Exception(ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY, "Quota {} (for user {}) requires a client supplied key.",
                 quota->getName(), params.user_name);
         }
         case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:

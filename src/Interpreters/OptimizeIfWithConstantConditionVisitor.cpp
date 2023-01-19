@@ -88,8 +88,8 @@ void OptimizeIfWithConstantConditionVisitor::visit(ASTPtr & current_ast)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function 'if' (0 instead of 3)");
 
         if (function_node->arguments->children.size() != 3)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Wrong number of arguments for function 'if' ({} instead of 3)",
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Wrong number of arguments for function 'if' ({} instead of 3)",
                 function_node->arguments->children.size());
 
         visit(function_node->arguments);

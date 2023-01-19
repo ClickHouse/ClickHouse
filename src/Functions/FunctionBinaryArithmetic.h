@@ -1204,7 +1204,7 @@ public:
         {
             if (!arguments[0]->equals(*arguments[1]))
                 throw Exception(ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES,
-"                    Cannot add aggregate states of different functions: {} and {}",
+                    "Cannot add aggregate states of different functions: {} and {}",
                     arguments[0]->getName(), arguments[1]->getName());
 
             return arguments[0];
@@ -1392,7 +1392,7 @@ public:
         if (valid)
             return type_res;
 
-        throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of arguments of function {}",
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of arguments of function {}",
             arguments[0]->getName(), arguments[1]->getName(), String(name));
     }
 
@@ -2115,8 +2115,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Number of arguments for function {} doesn't match: passed {}, should be 2",
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2",
                 getName(), arguments.size());
         return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::getReturnTypeImplStatic(arguments, context);
     }

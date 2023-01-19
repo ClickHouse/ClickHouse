@@ -1101,7 +1101,7 @@ void registerStorageLog(StorageFactory & factory)
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());
 
         String disk_name = getDiskName(*args.storage_def);

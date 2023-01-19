@@ -369,8 +369,8 @@ public:
         ContextPtr context) const override
     {
         if (arguments.size() != param_num + 1)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Predict got incorrect number of arguments. Got: {}. Required: {}",
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Predict got incorrect number of arguments. Got: {}. Required: {}",
                 arguments.size(), param_num + 1);
 
         /// This cast might be correct because column type is based on getReturnTypeToPredict.

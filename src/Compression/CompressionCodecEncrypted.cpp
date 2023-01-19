@@ -228,7 +228,9 @@ inline char* writeNonce(const String& nonce, char* dest)
         ++dest;
         size_t copied_symbols = nonce.copy(dest, nonce.size());
         if (copied_symbols != nonce.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Can't copy nonce into destination. Count of copied symbols {}, need to copy {}", copied_symbols, nonce.size());
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Can't copy nonce into destination. Count of copied symbols {}, need to copy {}",
+                            copied_symbols, nonce.size());
         dest += copied_symbols;
         return dest;
     }
@@ -340,7 +342,8 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
         new_params->nonce[method] = config.getString(config_prefix + ".nonce", "");
 
     if (new_params->nonce[method].size() != actual_nonce_size && !new_params->nonce[method].empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be {}", new_params->nonce[method].size(), actual_nonce_size);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be {}",
+                        new_params->nonce[method].size(), actual_nonce_size);
 }
 
 bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -478,7 +481,9 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 
     /// Length of encrypted text should be equal to text length plus tag_size (which was added by algorithm).
     if (out_len != source_size + tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't encrypt data, length after encryption {} is wrong, expected {}", out_len, source_size + tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't encrypt data, length after encryption {} is wrong, expected {}",
+                        out_len, source_size + tag_size);
 
     size_t out_size = out_len + keyid_size + nonce_size;
     return safe_cast<UInt32>(out_size);
@@ -504,12 +509,15 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
     /// Count text size (nonce and key_id was read from source)
     size_t ciphertext_size = source_size - keyid_size - nonce_size;
     if (ciphertext_size != uncompressed_size + tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}", uncompressed_size, ciphertext_size - tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}",
+                        uncompressed_size, ciphertext_size - tag_size);
 
 
     size_t out_len = decrypt({ciphertext, ciphertext_size}, dest, encryption_method, key, nonce);
     if (out_len != ciphertext_size - tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, out length after decryption {} is wrong, expected {}", out_len, ciphertext_size - tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't decrypt data, out length after decryption {} is wrong, expected {}",
+                        out_len, ciphertext_size - tag_size);
 }
 
 }

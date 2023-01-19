@@ -263,7 +263,9 @@ void KafkaConsumer::commit()
         {
             // TODO: insert atomicity / transactions is needed here (possibility to rollback, on 2 phase commits)
             ProfileEvents::increment(ProfileEvents::KafkaCommitFailures);
-            throw Exception(ErrorCodes::CANNOT_COMMIT_OFFSET, "All commit attempts failed. Last block was already written to target table(s), but was not committed to Kafka.");
+            throw Exception(ErrorCodes::CANNOT_COMMIT_OFFSET,
+                            "All commit attempts failed. Last block was already written to target table(s), "
+                            "but was not committed to Kafka.");
         }
         else
         {

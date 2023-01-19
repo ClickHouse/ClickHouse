@@ -849,13 +849,16 @@ void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, 
 {
     /// Check that delimiters are not empty.
     if (first_delimiter.empty() || second_delimiter.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read CSV field with two possible delimiters, one of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot read CSV field with two possible delimiters, one "
+                        "of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
 
     /// Read all data until first_delimiter or second_delimiter
     while (true)
     {
         if (buf.eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA, R"(Unexpected EOF while reading CSV string, expected on of delimiters "{}" or "{}")", first_delimiter, second_delimiter);
+            throw Exception(ErrorCodes::INCORRECT_DATA, R"(Unexpected EOF while reading CSV string, expected on "
+                            "of delimiters "{}" or "{}")", first_delimiter, second_delimiter);
 
         char * next_pos = buf.position();
         while (next_pos != buf.buffer().end() && *next_pos != first_delimiter[0] && *next_pos != second_delimiter[0])
@@ -1305,7 +1308,8 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
     }
     else
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol '{}' for key '{}'", std::string(*buf.position(), 1), name_of_field.toString());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol '{}' for key '{}'",
+                        std::string(*buf.position(), 1), name_of_field.toString());
     }
 }
 

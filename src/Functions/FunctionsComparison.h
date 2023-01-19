@@ -1318,7 +1318,7 @@ public:
             {
                 /// Check does another data type is comparable to Decimal, includes Int and Float.
                 if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
-                    throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "No operation {} between {} and {}",
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "No operation {} between {} and {}",
                         getName(), left_type->getName(), right_type->getName());
                 /// When Decimal comparing to Float32/64, we convert both of them into Float64.
                 /// Other systems like MySQL and Spark also do as this.

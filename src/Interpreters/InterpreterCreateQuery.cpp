@@ -202,7 +202,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         {
             /// Ambiguity is possible: should we attach nested database as Ordinary
             /// or throw "UUID must be specified" for Atomic? So we suggest short syntax for Ordinary.
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Use short attach syntax ('ATTACH DATABASE name;' without engine) to attach existing database or specify UUID to attach new database with Atomic engine");
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Use short attach syntax ('ATTACH DATABASE name;' without engine) "
+                            "to attach existing database or specify UUID to attach new database with Atomic engine");
         }
 
         /// Set metadata path according to nested engine
@@ -226,21 +228,27 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_mysql
         && !internal && !create.attach)
     {
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "MaterializedMySQL is an experimental database engine. Enable allow_experimental_database_materialized_mysql to use it.");
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                        "MaterializedMySQL is an experimental database engine. "
+                        "Enable allow_experimental_database_materialized_mysql to use it.");
     }
 
     if (create.storage->engine->name == "Replicated"
         && !getContext()->getSettingsRef().allow_experimental_database_replicated
         && !internal && !create.attach)
     {
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Replicated is an experimental database engine. Enable allow_experimental_database_replicated to use it.");
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                        "Replicated is an experimental database engine. "
+                        "Enable allow_experimental_database_replicated to use it.");
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql
         && !internal && !create.attach)
     {
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "MaterializedPostgreSQL is an experimental database engine. Enable allow_experimental_database_materialized_postgresql to use it.");
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                        "MaterializedPostgreSQL is an experimental database engine. "
+                        "Enable allow_experimental_database_materialized_postgresql to use it.");
     }
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
@@ -565,7 +573,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (col_decl.default_specifier == "AUTO_INCREMENT"
             && !context_->getSettingsRef().compatibility_ignore_auto_increment_in_create_table)
         {
-            throw Exception( ErrorCodes::SYNTAX_ERROR, "AUTO_INCREMENT is not supported. To ignore the keyword in column declaration, set `compatibility_ignore_auto_increment_in_create_table` to true");
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                            "AUTO_INCREMENT is not supported. To ignore the keyword "
+                            "in column declaration, set `compatibility_ignore_auto_increment_in_create_table` to true");
         }
 
         if (col_decl.default_expression)
@@ -780,7 +790,10 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     {
         auto search = all_columns.find(LightweightDeleteDescription::FILTER_COLUMN.name);
         if (search != all_columns.end())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create table with column '{}' for *MergeTree engines because it is reserved for lightweight delete feature", LightweightDeleteDescription::FILTER_COLUMN.name);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for *MergeTree engines because it "
+                            "is reserved for lightweight delete feature",
+                            LightweightDeleteDescription::FILTER_COLUMN.name);
     }
 
     const auto & settings = getContext()->getSettingsRef();
@@ -1036,7 +1049,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     /// Temporary tables are created out of databases.
     if (create.temporary && create.database)
-        throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE, "Temporary tables cannot be inside a database. You should not specify a database for a temporary table.");
+        throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE,
+                        "Temporary tables cannot be inside a database. "
+                        "You should not specify a database for a temporary table.");
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
@@ -1365,7 +1380,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                            "Only tables with a Replicated engine or tables which do not store data on disk are allowed in a Replicated database");
+                            "Only tables with a Replicated engine "
+                            "or tables which do not store data on disk are allowed in a Replicated database");
     }
 
     if (from_path && !res->storesDataOnDisk())
@@ -1586,7 +1602,11 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
                 return;
         }
 
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Seems like cluster is configured for cross-replication, but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. It's not supported for cross replication, because tables must have different UUIDs. Please specify unique zookeeper_path explicitly.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Seems like cluster is configured for cross-replication, "
+                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                        "It's not supported for cross replication, because tables must have different UUIDs. "
+                        "Please specify unique zookeeper_path explicitly.");
     }
 }
 

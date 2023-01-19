@@ -36,7 +36,9 @@ namespace detail
     ColumnPtr convertToIPv6(const StringColumnType & string_column, const PaddedPODArray<UInt8> * null_map = nullptr)
     {
         if constexpr (!std::is_same_v<ToColumn, ColumnFixedString> && !std::is_same_v<ToColumn, ColumnIPv6>)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal return column type {}. Expected IPv6 or FixedString", TypeName<typename ToColumn::ValueType>);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Illegal return column type {}. Expected IPv6 or FixedString",
+                            TypeName<typename ToColumn::ValueType>);
 
 
         size_t column_size = string_column.size();

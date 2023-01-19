@@ -224,12 +224,15 @@ void BackupWriterS3::copyObjectMultipartImpl(
         if (part_number > settings.max_part_number)
         {
             throw Exception(
-                ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
-                "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_operation_copy_size = {}",
-                settings.max_part_number, size, settings.min_upload_part_size, settings.max_upload_part_size,
-                settings.upload_part_size_multiply_factor, settings.upload_part_size_multiply_parts_count_threshold,
-                settings.max_single_operation_copy_size);
+                            ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "Part number exceeded {} while writing {} bytes to S3. "
+                            "Check min_upload_part_size = {}, max_upload_part_size = {}, "
+                            "upload_part_size_multiply_factor = {}, "
+                            "upload_part_size_multiply_parts_count_threshold = {}, max_single_operation_copy_size = {}",
+                            settings.max_part_number, size, settings.min_upload_part_size,
+                            settings.max_upload_part_size, settings.upload_part_size_multiply_factor,
+                            settings.upload_part_size_multiply_parts_count_threshold,
+                            settings.max_single_operation_copy_size);
         }
 
         size_t next_position = std::min(position + upload_part_size, size);

@@ -107,7 +107,11 @@ StorageMergeTree::StorageMergeTree(
     loadDataParts(has_force_restore_data_flag);
 
     if (!attach && !getDataPartsForInternalUsage().empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.");
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Data directory for table already containing data parts - probably "
+                        "it was unclean DROP table or manual intervention. "
+                        "You must either clear directory by hand or use ATTACH TABLE instead "
+                        "of CREATE TABLE if you need to use that parts.");
 
     increment.set(getMaxBlockNumber());
 
@@ -1487,7 +1491,9 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
         DataPartsVector covered_parts_by_one_part = renameTempPartAndReplace(part, transaction);
 
         if (covered_parts_by_one_part.size() > 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} expected to cover not more then 1 part. {} covered parts have been found. This is a bug.",
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Part {} expected to cover not more then 1 part. "
+                            "{} covered parts have been found. This is a bug.",
                             part->name, covered_parts_by_one_part.size());
 
         std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
@@ -1728,7 +1734,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!canReplacePartition(src_part))
-            throw Exception( ErrorCodes::BAD_ARGUMENTS, "Cannot replace partition '{}' because part '{}' has inconsistent granularity with table", partition_id, src_part->name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot replace partition '{}' because part '{}' has inconsistent granularity with table",
+                            partition_id, src_part->name);
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
@@ -1795,9 +1803,16 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}", getStorageID().getNameForLogs(), dest_table->getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}",
+                        getStorageID().getNameForLogs(), dest_table->getName());
     if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
-        throw Exception(ErrorCodes::UNKNOWN_POLICY, "Destination table {} should have the same storage policy of source table {}. {}: {}, {}: {}", dest_table_storage->getStorageID().getNameForLogs(), getStorageID().getNameForLogs(), getStorageID().getNameForLogs(), this->getStoragePolicy()->getName(), dest_table_storage->getStorageID().getNameForLogs(), dest_table_storage->getStoragePolicy()->getName());
+        throw Exception(ErrorCodes::UNKNOWN_POLICY,
+                        "Destination table {} should have the same storage policy of source table {}. {}: {}, {}: {}",
+                        dest_table_storage->getStorageID().getNameForLogs(),
+                        getStorageID().getNameForLogs(), getStorageID().getNameForLogs(),
+                        this->getStoragePolicy()->getName(), dest_table_storage->getStorageID().getNameForLogs(),
+                        dest_table_storage->getStoragePolicy()->getName());
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -1815,7 +1830,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!dest_table_storage->canReplacePartition(src_part))
-            throw Exception( ErrorCodes::LOGICAL_ERROR, "Cannot move partition '{}' because part '{}' has inconsistent granularity with table", partition_id, src_part->name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Cannot move partition '{}' because part '{}' has inconsistent granularity with table",
+                            partition_id, src_part->name);
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();

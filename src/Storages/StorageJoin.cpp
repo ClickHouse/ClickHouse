@@ -175,7 +175,8 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
             getStorageID().getNameForLogs());
 
     if (analyzed_join->getClauses().size() != 1)
-        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "JOIN keys should match to the Join engine keys [{}]", fmt::join(getKeyNames(), ", "));
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "JOIN keys should match to the Join engine keys [{}]",
+                        fmt::join(getKeyNames(), ", "));
 
     const auto & join_on = analyzed_join->getOnlyClause();
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
@@ -326,7 +327,9 @@ void registerStorageJoin(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         if (engine_args.size() < 3)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Join requires at least 3 parameters: Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT, keys...).");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage Join requires at least 3 parameters: "
+                            "Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT, keys...).");
 
         JoinStrictness strictness = JoinStrictness::Unspecified;
         JoinKind kind = JoinKind::Comma;

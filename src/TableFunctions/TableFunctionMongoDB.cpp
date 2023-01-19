@@ -62,7 +62,8 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
     if (args.size() < 6 || args.size() > 7)
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-        "Table function 'mongodb' requires from 6 to 7 parameters: mongodb('host:port', database, collection, 'user', 'password', structure, [, 'options'])");
+                        "Table function 'mongodb' requires from 6 to 7 parameters: "
+                        "mongodb('host:port', database, collection, 'user', 'password', structure, [, 'options'])");
     }
 
     ASTs main_arguments(args.begin(), args.begin() + 5);

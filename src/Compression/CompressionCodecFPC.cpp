@@ -127,7 +127,8 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 
             level = literal->value.safeGet<UInt8>();
             if (level < 1 || level > CompressionCodecFPC::MAX_COMPRESSION_LEVEL)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "FPC codec level must be between {} and {}", 1, static_cast<int>(CompressionCodecFPC::MAX_COMPRESSION_LEVEL));
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "FPC codec level must be between {} and {}",
+                                1, static_cast<int>(CompressionCodecFPC::MAX_COMPRESSION_LEVEL));
         }
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };

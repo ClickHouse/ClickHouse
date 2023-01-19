@@ -588,7 +588,9 @@ namespace JSONUtils
             auto header_type = header.getByName(name).type;
             if (header.has(name) && !type->equals(*header_type))
                 throw Exception(
-                    ErrorCodes::INCORRECT_DATA, "Type {} of column '{}' from metadata is not the same as type in header {}", type->getName(), name, header_type->getName());
+                                ErrorCodes::INCORRECT_DATA,
+                                "Type {} of column '{}' from metadata is not the same as type in header {}",
+                                type->getName(), name, header_type->getName());
         }
         return names_and_types;
     }

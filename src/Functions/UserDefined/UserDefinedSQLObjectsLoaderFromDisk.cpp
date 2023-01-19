@@ -172,7 +172,8 @@ void UserDefinedSQLObjectsLoaderFromDisk::createDirectory()
     std::error_code create_dir_error_code;
     fs::create_directories(dir_path, create_dir_error_code);
     if (!fs::exists(dir_path) || !fs::is_directory(dir_path) || create_dir_error_code)
-        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'", dir_path, create_dir_error_code.message());
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'",
+                        dir_path, create_dir_error_code.message());
 }
 
 

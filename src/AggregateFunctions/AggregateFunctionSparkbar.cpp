@@ -28,7 +28,8 @@ IAggregateFunction * createWithUIntegerOrTimeType(const std::string & name, cons
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt128) return new AggregateFunctionTemplate<UInt128, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt256) return new AggregateFunctionTemplate<UInt256, Data>(std::forward<TArgs>(args)...);
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument type must be UInt or Date or DateTime for aggregate function {}", name);
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The first argument type must be UInt or Date or DateTime for aggregate function {}", name);
 }
 
 template <typename ... TArgs>
@@ -55,7 +56,8 @@ AggregateFunctionPtr createAggregateFunctionSparkbar(const std::string & name, c
     {
         if (params.at(1).getType() != arguments[0]->getDefault().getType() || params.at(2).getType() != arguments[0]->getDefault().getType())
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second and third parameters are not the same type as the first arguments for aggregate function {}", name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "The second and third parameters are not the same type as the first arguments for aggregate function {}", name);
         }
     }
     return createAggregateFunctionSparkbarImpl(name, *arguments[0], *arguments[1], arguments, params);

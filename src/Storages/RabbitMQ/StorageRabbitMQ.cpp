@@ -405,7 +405,7 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
         /// 1) with different exchange type.
         /// 2) with different exchange settings.
         throw Exception(ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
-"                Unable to declare exchange. Make sure specified exchange is not already declared. Error: {}",
+                "Unable to declare exchange. Make sure specified exchange is not already declared. Error: {}",
                 std::string(message));
     });
 
@@ -414,7 +414,8 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
     {
         /// This error is not supposed to happen as this exchange name is always unique to type and its settings.
         throw Exception(
-            ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE, "Unable to declare bridge exchange ({}). Reason: {}", bridge_exchange, std::string(message));
+                        ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+                        "Unable to declare bridge exchange ({}). Reason: {}", bridge_exchange, std::string(message));
     });
 
     if (!hash_exchange)
@@ -687,7 +688,8 @@ void StorageRabbitMQ::read(
     }
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
@@ -1195,7 +1197,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         if (!rabbitmq_settings->rabbitmq_host_port.changed
            && !rabbitmq_settings->rabbitmq_address.changed)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `rabbitmq_host_port` or `rabbitmq_address` settings");
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "You must specify either `rabbitmq_host_port` or `rabbitmq_address` settings");
 
         if (!rabbitmq_settings->rabbitmq_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");

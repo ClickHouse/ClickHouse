@@ -470,7 +470,9 @@ static void validateUpdateColumns(
             for (const String & materialized : materialized_it->second)
             {
                 if (key_columns.contains(materialized))
-                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Updated column {} affects MATERIALIZED column {}, which is a key column. Cannot UPDATE it.", backQuote(column_name), backQuote(materialized));
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                    "Updated column {} affects MATERIALIZED column {}, which is a key column. "
+                                    "Cannot UPDATE it.", backQuote(column_name), backQuote(materialized));
             }
         }
     }

@@ -34,18 +34,20 @@ namespace
         const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         if (parameters.size() > 4)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Aggregate function {} requires at most four parameters: "
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Aggregate function {} requires at most four parameters: "
                 "learning_rate, l2_regularization_coef, mini-batch size and weights_updater method", name);
 
         if (argument_types.size() < 2)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Aggregate function {} requires at least two arguments: target and model's parameters", name);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Aggregate function {} requires at least two arguments: target and model's parameters", name);
 
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
             if (!isNativeNumber(argument_types[i]))
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of type {} must be numeric for aggregate function {}", i, argument_types[i]->getName(), name);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Argument {} of type {} must be numeric for aggregate function {}",
+                                i, argument_types[i]->getName(), name);
         }
 
         /// Such default parameters were picked because they did good on some tests,

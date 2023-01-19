@@ -416,7 +416,8 @@ static const Pattern & appendGraphitePattern(
     if (pattern.type & pattern.TypeAggregation) /// TypeAggregation or TypeAll
         if (pattern.function->allocatesMemoryInArena())
             throw Exception(
-                "Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree", DB::ErrorCodes::NOT_IMPLEMENTED);
+                            "Aggregate function " + pattern.function->getName() + " isn't supported "
+                            "in GraphiteMergeTree", DB::ErrorCodes::NOT_IMPLEMENTED);
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll

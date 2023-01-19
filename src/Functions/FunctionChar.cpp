@@ -36,13 +36,17 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Number of arguments for function {} can't be {}, should be at least 1", getName(), arguments.size());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Number of arguments for function {} can't be {}, should be at least 1",
+                            getName(), arguments.size());
 
         for (const auto & arg : arguments)
         {
             WhichDataType which(arg);
             if (!(which.isInt() || which.isUInt() || which.isFloat()))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, must be Int, UInt or Float number", arg->getName(), getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of argument of function {}, must be Int, UInt or Float number",
+                                arg->getName(), getName());
         }
         return std::make_shared<DataTypeString>();
     }

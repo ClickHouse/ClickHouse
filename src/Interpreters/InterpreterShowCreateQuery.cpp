@@ -83,7 +83,9 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
     }
 
     if (!create_query)
-        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of {}. Maybe it was created by the system.", show_query->getTable());
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY,
+                        "Unable to show the create query of {}. Maybe it was created by the system.",
+                        show_query->getTable());
 
     if (!getContext()->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
     {

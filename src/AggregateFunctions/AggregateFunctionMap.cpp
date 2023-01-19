@@ -122,7 +122,8 @@ public:
             }
             else
                 throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '" + nested_func_name + "Map' is not implemented for mapped arrays");
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Aggregation '" + nested_func_name + "Map' is not implemented for mapped arrays");
         }
     }
 };

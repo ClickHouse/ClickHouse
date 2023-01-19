@@ -217,20 +217,26 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
 
                 if (!value_literal
                     || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
-                    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer");
+                    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                                    "Elements of Enum data type must be of form: "
+                                    "'name' = number or 'name', where name is string literal and number is an integer");
 
                 literal_child_assign_num = value_literal->value.get<Int64>();
             }
             assign_number_child.emplace_back(child);
         }
         else
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer");
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                                    "Elements of Enum data type must be of form: "
+                                    "'name' = number or 'name', where name is string literal and number is an integer");
 
         is_first_child = false;
     }
 
     if (assign_count != 0 && assign_count != arguments->children.size() - 1)
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "All elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer");
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                        "All elements of Enum data type must be of form: "
+                        "'name' = number or 'name', where name is string literal and number is an integer");
 
     arguments->children = assign_number_child;
 }
@@ -260,7 +266,9 @@ static DataTypePtr createExact(const ASTPtr & arguments)
             || !value_literal
             || name_literal->value.getType() != Field::Types::String
             || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer");
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                                    "Elements of Enum data type must be of form: "
+                                    "'name' = number or 'name', where name is string literal and number is an integer");
 
         const String & field_name = name_literal->value.get<String>();
         const auto value = value_literal->value.get<FieldType>();
@@ -291,7 +299,9 @@ static DataTypePtr create(const ASTPtr & arguments)
 
         if (!value_literal
             || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer");
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                                    "Elements of Enum data type must be of form: "
+                                    "'name' = number or 'name', where name is string literal and number is an integer");
 
         Int64 value = value_literal->value.get<Int64>();
 

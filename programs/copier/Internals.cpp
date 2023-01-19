@@ -90,7 +90,7 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 
     if (!endsWith(engine.name, "MergeTree"))
     {
-        throw Exception( ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
     }
 
     if (isExtendedDefinitionStorage(storage_ast))
@@ -221,7 +221,9 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
         {
             String pk_column = primary_key_expr_list->children[i]->getColumnName();
             if (pk_column != sorting_key_column)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but the column in the position {} is {}", i, sorting_key_column +", not " + pk_column);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Primary key must be a prefix of the sorting key, "
+                                "but the column in the position {} is {}, not {}", i, sorting_key_column, pk_column);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key contains duplicate columns");
@@ -241,7 +243,7 @@ bool isReplicatedTableEngine(const ASTPtr & storage_ast)
     if (!endsWith(engine.name, "MergeTree"))
     {
         String storage_str = queryToString(storage_ast);
-        throw Exception( ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
     }
 
     return startsWith(engine.name, "Replicated");

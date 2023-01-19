@@ -404,7 +404,10 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
     zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
     if (paths.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SELECT from system.zookeeper table must contain condition like path = 'path' or path IN ('path1','path2'...) or path IN (subquery) in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "SELECT from system.zookeeper table must contain condition like path = 'path' "
+                        "or path IN ('path1','path2'...) or path IN (subquery) "
+                        "in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.");
 
     std::unordered_set<String> added;
     while (!paths.empty())

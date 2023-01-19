@@ -68,7 +68,8 @@ SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Decimal data type family must have exactly two arguments: precision and scale");
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Decimal data type family must have exactly two arguments: precision and scale");
 
     const auto * precision = arguments->children[0]->as<ASTLiteral>();
     const auto * scale = arguments->children[1]->as<ASTLiteral>();
@@ -87,7 +88,8 @@ template <typename T>
 static DataTypePtr createExact(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Decimal data type family must have exactly two arguments: precision and scale");
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Decimal data type family must have exactly two arguments: precision and scale");
 
     const auto * scale_arg = arguments->children[0]->as<ASTLiteral>();
 

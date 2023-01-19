@@ -32,7 +32,9 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         if (!context->getSettingsRef().allow_experimental_nlp_functions)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Natural language processing function '{}' is experimental. "
+                            "Set `allow_experimental_nlp_functions` setting to enable it", name);
 
         return std::make_shared<FunctionSynonyms>(context->getSynonymsExtensions());
     }
@@ -53,10 +55,10 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                 arguments[0]->getName(), getName());
         if (!isString(arguments[1]))
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                 arguments[1]->getName(), getName());
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
@@ -74,10 +76,10 @@ public:
         const ColumnString * word_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
         if (!ext_col)
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[0].column->getName(), getName());
         if (!word_col)
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[1].column->getName(), getName());
 
         String ext_name = ext_col->getValue<String>();

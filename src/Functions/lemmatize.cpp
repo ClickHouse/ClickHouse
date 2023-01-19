@@ -61,7 +61,9 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         if (!context->getSettingsRef().allow_experimental_nlp_functions)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Natural language processing function '{}' is experimental. "
+                            "Set `allow_experimental_nlp_functions` setting to enable it", name);
 
         return std::make_shared<FunctionLemmatize>(context->getLemmatizers());
     }
@@ -82,10 +84,10 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                 arguments[0]->getName(), getName());
         if (!isString(arguments[1]))
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                 arguments[1]->getName(), getName());
         return arguments[1];
     }
@@ -103,10 +105,10 @@ public:
         const ColumnString * words_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
         if (!lang_col)
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[0].column->getName(), getName());
         if (!words_col)
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[1].column->getName(), getName());
 
         String language = lang_col->getValue<String>();

@@ -229,7 +229,8 @@ void MergeTreeRangeReader::Stream::toNextMark()
     else if (current_mark == total_marks_count)
         current_mark_index_granularity = 0; /// HACK?
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to read from mark {}, but total marks count {}", toString(current_mark), toString(total_marks_count));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to read from mark {}, but total marks count {}",
+                        toString(current_mark), toString(total_marks_count));
 
     offset_after_current_mark = 0;
 }

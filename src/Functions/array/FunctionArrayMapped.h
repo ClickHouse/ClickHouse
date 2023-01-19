@@ -199,7 +199,9 @@ public:
             ///  - lambda may return Nothing or Nullable(Nothing) because of default implementation of functions
             ///    for these types. In this case we will just create UInt8 const column full of 0.
             if (Impl::needBoolean() && !isUInt8(removeNullable(return_type)) && !isNothing(removeNullable(return_type)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expression for function {} must return UInt8 or Nullable(UInt8), found {}", getName(), return_type->getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Expression for function {} must return UInt8 or Nullable(UInt8), found {}",
+                                getName(), return_type->getName());
 
             static_assert(is_argument_type_map || is_argument_type_array, "unsupported type");
 

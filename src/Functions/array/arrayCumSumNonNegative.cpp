@@ -46,7 +46,8 @@ struct ArrayCumSumNonNegativeImpl
             return std::make_shared<DataTypeArray>(nested);
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "arrayCumSumNonNegativeImpl cannot add values of type {}", expression_return->getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "arrayCumSumNonNegativeImpl cannot add values of type {}", expression_return->getName());
     }
 
 

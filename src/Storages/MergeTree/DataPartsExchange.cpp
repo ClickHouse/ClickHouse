@@ -622,7 +622,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
         if (!try_zero_copy)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected 'remote_fs_metadata' cookie");
         if (std::find(capability.begin(), capability.end(), remote_fs_metadata) == capability.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got 'remote_fs_metadata' cookie {}, expect one from {}", remote_fs_metadata, fmt::join(capability, ", "));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got 'remote_fs_metadata' cookie {}, expect one from {}",
+                            remote_fs_metadata, fmt::join(capability, ", "));
         if (server_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got 'remote_fs_metadata' cookie with old protocol version {}", server_protocol_version);
         if (part_type == "InMemory")
@@ -989,7 +990,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
 
     if (!disk->supportZeroCopyReplication() || !disk->checkUniqueId(part_id))
     {
-        throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {} (with type {}).", part_name, part_id, disk->getName(), toString(disk->getDataSourceDescription().type));
+        throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR,
+                        "Part {} unique id {} doesn't exist on {} (with type {}).",
+                        part_name, part_id, disk->getName(), toString(disk->getDataSourceDescription().type));
     }
 
     LOG_DEBUG(log, "Downloading Part {} unique id {} metadata onto disk {}.",

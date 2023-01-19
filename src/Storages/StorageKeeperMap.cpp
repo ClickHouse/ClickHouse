@@ -397,7 +397,9 @@ StorageKeeperMap::StorageKeeperMap(
         return;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create metadata for table, because it is removed concurrently or because of wrong root_path ({})", root_path);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot create metadata for table, because it is removed concurrently or because "
+                    "of wrong root_path ({})", root_path);
 }
 
 

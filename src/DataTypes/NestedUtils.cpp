@@ -224,7 +224,9 @@ void validateArraySizes(const Block & block)
         if (isArray(elem.type))
         {
             if (!typeid_cast<const ColumnArray *>(elem.column.get()))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column with Array type is not represented by ColumnArray column: {}", elem.column->dumpStructure());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Column with Array type is not represented by ColumnArray column: {}",
+                                elem.column->dumpStructure());
 
             auto split = splitName(elem.name);
 
@@ -240,7 +242,10 @@ void validateArraySizes(const Block & block)
                     const ColumnArray & another_array_column = assert_cast<const ColumnArray &>(*elem.column);
 
                     if (!first_array_column.hasEqualOffsets(another_array_column))
-                        throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Elements '{}' and '{}' of Nested data structure '{}' (Array columns) have different array sizes.", block.getByPosition(it->second).name, elem.name, split.first);
+                        throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                                        "Elements '{}' and '{}' "
+                                        "of Nested data structure '{}' (Array columns) have different array sizes.",
+                                        block.getByPosition(it->second).name, elem.name, split.first);
                 }
             }
         }

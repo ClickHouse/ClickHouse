@@ -189,7 +189,9 @@ Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(proce
         {
             if (!port.isConnected())
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Cannot create Pipe because processor {} has disconnected input port", processor->getName());
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Cannot create Pipe because processor {} has disconnected input port",
+                                processor->getName());
 
             const auto * connected_processor = &port.getOutputPort().getProcessor();
             if (!set.contains(connected_processor))
@@ -480,10 +482,14 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
     }
 
     if (totals && !found_totals)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform {} to Pipes because specified totals port does not belong to it", transform->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot add transform {} to Pipes because specified totals port does not belong to it",
+                        transform->getName());
 
     if (extremes && !found_extremes)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform {} to Pipes because specified extremes port does not belong to it", transform->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot add transform {} to Pipes because specified extremes port does not belong to it",
+                        transform->getName());
 
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform {} to Pipes because it has no outputs",
@@ -828,15 +834,17 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
             const auto * connected_processor = &port.getInputPort().getProcessor();
             if (check_ports && !set.contains(connected_processor))
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Transformation of Pipe is not valid because processor {} has output port which is connected with unknown processor {}",
-                    processor->getName(),
-                    connected_processor->getName());
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Transformation of Pipe is not valid because processor {} has output port which "
+                                "is connected with unknown processor {}",
+                                processor->getName(),
+                                connected_processor->getName());
         }
     }
 
     if (output_ports.empty())
-        throw Exception( ErrorCodes::LOGICAL_ERROR, "Transformation of Pipe is not valid because processors don't have any disconnected output ports");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Transformation of Pipe is not valid because processors don't have any disconnected output ports");
 
     header = output_ports.front()->getHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)

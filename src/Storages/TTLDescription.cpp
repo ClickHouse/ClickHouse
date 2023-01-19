@@ -63,7 +63,9 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
         {
             const IFunctionBase & func = *action.node->function_base;
             if (!func.isDeterministic())
-                throw Exception( ErrorCodes::BAD_ARGUMENTS, "TTL expression cannot contain non-deterministic functions, but contains function {}", func.getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "TTL expression cannot contain non-deterministic functions, but contains function {}",
+                                func.getName());
         }
     }
 
@@ -72,7 +74,9 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
         && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
     {
-        throw Exception( ErrorCodes::BAD_TTL_EXPRESSION, "TTL expression result column should have DateTime or Date type, but has {}", result_column.type->getName());
+        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                        "TTL expression result column should have DateTime or Date type, but has {}",
+                        result_column.type->getName());
     }
 }
 
@@ -208,7 +212,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
                 if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception( ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
                 used_primary_key_columns_set.insert(pk_columns[i]);
             }
@@ -232,7 +236,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             }
 
             if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
-                throw Exception( ErrorCodes::BAD_TTL_EXPRESSION, "Multiple aggregations set for one column in TTL Expression");
+                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "Multiple aggregations set for one column in TTL Expression");
 
             result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
 

@@ -46,7 +46,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!WhichDataType(arguments[0].type).isString())
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1 argument of function {}. Must be String.",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1 argument of function {}. Must be String.",
                 arguments[0].type->getName(), getName());
 
         return std::make_shared<DataTypeString>();
@@ -58,7 +58,7 @@ public:
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
 
         if (!input)
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                 arguments[0].column->getName(), getName());
 
         auto dst_column = ColumnString::create();

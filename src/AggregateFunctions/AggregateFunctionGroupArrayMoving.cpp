@@ -85,7 +85,7 @@ AggregateFunctionPtr createAggregateFunctionMoving(
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
+            "Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
 
     const DataTypePtr & argument_type = argument_types[0];
     if (!limit_size)

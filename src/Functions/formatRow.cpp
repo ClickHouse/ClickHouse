@@ -65,7 +65,9 @@ public:
         /// This function make sense only for row output formats.
         auto * row_output_format = dynamic_cast<IRowOutputFormat *>(out.get());
         if (!row_output_format)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot turn rows into a {} format strings. {} function supports only row output formats", format_name, getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot turn rows into a {} format strings. {} function supports only row output formats",
+                            format_name, getName());
 
         auto columns = arg_columns.getColumns();
         for (size_t i = 0; i != input_rows_count; ++i)
@@ -110,8 +112,8 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (arguments.size() < 2)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Function {} requires at least two arguments: the format name and its output expression(s)", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least two arguments: the format name and its output expression(s)", getName());
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(

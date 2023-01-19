@@ -153,7 +153,9 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     else if (params.has(name + "_types"))
         parseStructureFromTypesField(params.get(name + "_types"));
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Neither structure nor types have not been provided for external table {}. Use fields {}_structure or {}_types to do so.", name, name, name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Neither structure nor types have not been provided for external table {}. "
+                        "Use fields {}_structure or {}_types to do so.", name, name, name);
 
     ExternalTableDataPtr data = getData(getContext());
 

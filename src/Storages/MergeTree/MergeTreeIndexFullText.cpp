@@ -91,7 +91,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFullText::getGranuleAndReset()
 void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception( ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
                 "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
@@ -234,7 +234,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     std::shared_ptr<MergeTreeIndexGranuleFullText> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleFullText>(idx_granule);
     if (!granule)
-        throw Exception( ErrorCodes::LOGICAL_ERROR, "BloomFilter index condition got a granule with the wrong type.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BloomFilter index condition got a granule with the wrong type.");
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
@@ -735,7 +735,10 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
 
         if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Bloom filter index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.");
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Bloom filter index can be used only with `String`, `FixedString`, "
+                            "`LowCardinality(String)`, `LowCardinality(FixedString)` column "
+                            "or Array with `String` or `FixedString` values column.");
     }
 
     if (index.type == NgramTokenExtractor::getName())

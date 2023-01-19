@@ -43,7 +43,9 @@ struct QuantileLevels
         if (params.empty())
         {
             if (require_at_least_one_param)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function for calculation of multiple quantiles require at least one parameter");
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Aggregate function for calculation "
+                                "of multiple quantiles require at least one parameter");
 
             /// If levels are not specified, default is 0.5 (median).
             levels.push_back(0.5);

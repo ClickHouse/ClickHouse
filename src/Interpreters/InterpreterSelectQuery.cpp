@@ -934,7 +934,8 @@ static std::pair<Field, DataTypePtr> getWithFillFieldValue(const ASTPtr & node, 
     auto field_type = evaluateConstantExpression(node, context);
 
     if (!isColumnedAsNumber(field_type.second))
-        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Illegal type {} of WITH FILL expression, must be numeric type", field_type.second->getName());
+        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                        "Illegal type {} of WITH FILL expression, must be numeric type", field_type.second->getName());
 
     return field_type;
 }
@@ -949,7 +950,8 @@ static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPt
     if (isColumnedAsNumber(type))
         return std::make_pair(std::move(field), std::nullopt);
 
-    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Illegal type {} of WITH FILL expression, must be numeric type", type->getName());
+    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "Illegal type {} of WITH FILL expression, must be numeric type", type->getName());
 }
 
 static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const ContextPtr & context)
@@ -977,7 +979,8 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
         {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
         }
     }
     else
@@ -988,7 +991,8 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
         {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
         }
     }
 
@@ -1117,12 +1121,12 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context,
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
     if (!isNativeNumber(type))
-        throw Exception( ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type",
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type",
             type->getName(), expr);
 
     Field converted = convertFieldToType(field, DataTypeUInt64());
     if (converted.isNull())
-        throw Exception( ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
             applyVisitor(FieldVisitorToString(), field), expr);
 
     return converted.safeGet<UInt64>();
@@ -1633,7 +1637,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             if (from_aggregation_stage)
             {
                 if (query_analyzer->hasWindow())
-                    throw Exception( ErrorCodes::NOT_IMPLEMENTED, "Window functions does not support processing from WithMergeableStateAfterAggregation");
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Window functions does not support processing from WithMergeableStateAfterAggregation");
             }
             else if (expressions.need_aggregate)
             {

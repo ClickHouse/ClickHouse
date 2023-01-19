@@ -81,7 +81,8 @@ private:
 
             String alias = database_and_table->tryGetAlias();
             if (alias.empty())
-                throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED, "Distributed table should have an alias when distributed_product_mode set to local");
+                throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
+                                "Distributed table should have an alias when distributed_product_mode set to local");
 
             auto & identifier = database_and_table->as<ASTTableIdentifier &>();
             renamed_tables.emplace_back(identifier.clone());
@@ -111,7 +112,10 @@ private:
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
-            throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED, "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.");
+            throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
+                            "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
+                            "You may rewrite query to use local tables "
+                            "in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.");
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting");

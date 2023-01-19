@@ -169,7 +169,7 @@ void SystemLogBase<LogElement>::flush(bool force)
 
     if (!result)
     {
-        throw Exception( ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while flushing system log '{}'.",
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while flushing system log '{}'.",
             toString(timeout_seconds), demangle(typeid(*this).name()));
     }
 }

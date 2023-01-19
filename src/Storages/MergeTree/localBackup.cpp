@@ -93,7 +93,8 @@ void localBackup(
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
-        throw DB::Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists and is not empty.", DB::fullPath(disk, destination_path));
+        throw DB::Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists and is not empty.",
+                            DB::fullPath(disk, destination_path));
     }
 
     size_t try_no = 0;

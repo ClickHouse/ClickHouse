@@ -68,11 +68,13 @@ public:
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Incorrect number of arguments of function {}. Must be 1 or 2.", getName());
+                "Incorrect number of arguments of function {}. Must be 1 or 2.", getName());
 
         const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must have type AggregateFunction - state of aggregate function.", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument for function {} must have type AggregateFunction - state "
+                            "of aggregate function.", getName());
 
         return type->getReturnType();
     }

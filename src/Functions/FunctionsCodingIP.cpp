@@ -143,7 +143,9 @@ public:
         {
             const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
             if (!ptr || ptr->getN() != IPV6_BINARY_LENGTH)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 1 of function {}, expected FixedString({})", arguments[0]->getName(), getName(), toString(IPV6_BINARY_LENGTH));
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of argument 1 of function {}, expected FixedString({})",
+                                arguments[0]->getName(), getName(), toString(IPV6_BINARY_LENGTH));
         }
 
         if (!WhichDataType(arguments[1]).isUInt8())
@@ -178,7 +180,10 @@ public:
                             arguments[0].column->getName(), getName());
 
         if (col_in_str && col_in_str->getN() != IPV6_BINARY_LENGTH)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of column {} argument of function {}, expected FixedString({})", col_type_name.type->getName(), col_in_str->getName(), getName(), toString(IPV6_BINARY_LENGTH));
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of column {} argument of function {}, expected FixedString({})",
+                            col_type_name.type->getName(), col_in_str->getName(),
+                            getName(), toString(IPV6_BINARY_LENGTH));
 
         const auto * ipv6_zeroed_tail_bytes = checkAndGetColumnConst<ColumnVector<UInt8>>(col_ipv6_zeroed_tail_bytes.get());
         if (!ipv6_zeroed_tail_bytes)
@@ -1044,7 +1049,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                 arguments[0]->getName(), getName());
         return std::make_shared<DataTypeUInt8>();
     }

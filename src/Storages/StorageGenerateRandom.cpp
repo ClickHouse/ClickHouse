@@ -462,7 +462,9 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage GenerateRandom requires at most three arguments: random_seed, max_string_length, max_array_length.");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage GenerateRandom requires at most three arguments: "
+                            "random_seed, max_string_length, max_array_length.");
 
         std::optional<UInt64> random_seed;
         UInt64 max_string_length = 10;

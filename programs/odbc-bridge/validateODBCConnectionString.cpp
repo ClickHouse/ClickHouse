@@ -63,7 +63,8 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         if (pos < end && isValidIdentifierBegin(*pos))
             ++pos;
         else
-            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string parameter name doesn't begin with valid identifier character");
+            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING,
+                            "ODBC connection string parameter name doesn't begin with valid identifier character");
 
         /// Additionally allow dash and dot symbols in names.
         /// Strictly speaking, the name with that characters should be escaped.
@@ -83,7 +84,8 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         {
             signed char c = *pos;
             if (c < 32 || strchr("[]{}(),;?*=!@'\"", c) != nullptr)
-                throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string parameter value is unescaped and contains illegal character");
+                throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING,
+                                "ODBC connection string parameter value is unescaped and contains illegal character");
             ++pos;
         }
 

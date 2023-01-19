@@ -170,7 +170,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
         if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
             && !metadata_for_reading->projections.empty())
-            throw Exception( ErrorCodes::PROJECTION_NOT_USED, "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
+            throw Exception(ErrorCodes::PROJECTION_NOT_USED,
+                            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
 
         return plan;
     }
@@ -620,8 +621,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         }
 
         if (size_of_universum == RelativeSize(0))
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-"                Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
                 sampling_column_type->getName());
 
         if (settings.parallel_replicas_count > 1)

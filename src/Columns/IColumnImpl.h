@@ -45,7 +45,7 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
     size_t num_rows = size();
 
     if (num_rows != selector.size())
-        throw Exception( ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector: {} doesn't match size of column: {}",
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector: {} doesn't match size of column: {}",
                 selector.size(), num_rows);
 
     std::vector<MutablePtr> columns(num_columns);
@@ -89,7 +89,7 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     if (compare_results.empty())
         compare_results.resize(num_rows);
     else if (compare_results.size() != num_rows)
-        throw Exception( ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of compare_results: {} doesn't match rows_num: {}",
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of compare_results: {} doesn't match rows_num: {}",
                 compare_results.size(), num_rows);
 
     for (size_t i = 0; i < num_indexes; ++i)

@@ -95,7 +95,7 @@ public:
                 const ColumnConst * default_col = checkAndGetColumn<ColumnConst>(default_column.get());
 
                 if (!default_col)
-                    throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                         arguments[1].column->getName(), getName());
 
                 default_result = default_col->getValue<String>();

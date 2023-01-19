@@ -868,7 +868,9 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (str_end == buf.c_str() + buf.size() && errno != ERANGE)
         {
             if (float_value < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: token number cannot begin with minus, but parsed float number is less than zero.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Logical error: token number cannot begin with minus, "
+                                "but parsed float number is less than zero.");
 
             if (negative)
                 float_value = -float_value;

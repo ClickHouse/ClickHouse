@@ -35,7 +35,9 @@ DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
         inner_type = static_cast<const DataTypeNullable &>(*dictionary_type).getNestedType();
 
     if (!inner_type->canBeInsideLowCardinality())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "DataTypeLowCardinality is supported only for numbers, strings, Date or DateTime, but got {}", dictionary_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "DataTypeLowCardinality is supported only for numbers, strings, Date or DateTime, but got {}",
+                        dictionary_type->getName());
 }
 
 namespace
@@ -155,7 +157,8 @@ SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "LowCardinality data type family must have single argument - type of elements");
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "LowCardinality data type family must have single argument - type of elements");
 
     return std::make_shared<DataTypeLowCardinality>(DataTypeFactory::instance().get(arguments->children[0]));
 }

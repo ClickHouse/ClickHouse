@@ -146,7 +146,7 @@ private:
                 constant_strings[i] = const_col->getValue<String>();
             }
             else
-                throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                     column->getName(), getName());
         }
 
@@ -213,8 +213,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
                 getName(), arguments.size());
 
         /// We always return Strings from concat, even if arguments were fixed strings.

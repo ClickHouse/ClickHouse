@@ -62,7 +62,9 @@ public:
 
         const auto * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must have type AggregateFunction - state of aggregate function.", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument for function {} must have type AggregateFunction - state "
+                            "of aggregate function.", getName());
 
         return type->getReturnTypeToPredict();
     }

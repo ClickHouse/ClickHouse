@@ -192,8 +192,8 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
     }
 
     if (!is_correct_sample_condition)
-        throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-"            Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
             sampling_column_type->getName());
 }
 
@@ -234,7 +234,9 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             if (!read_format_version.has_value())
                 read_format_version = current_format_version;
             else if (*read_format_version != current_format_version)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Version file on {} contains version {} expected version is {}.", fullPath(disk, format_version_path), current_format_version, *read_format_version);
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                                "Version file on {} contains version {} expected version is {}.",
+                                fullPath(disk, format_version_path), current_format_version, *read_format_version);
         }
     }
 
@@ -269,7 +271,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     if (format_version < min_format_version)
     {
         if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
-            throw Exception( ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
+            throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
 
@@ -409,7 +411,9 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
         if (!allow_nullable_key && hasNullable(element.type))
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "{} key contains nullable columns, but merge tree setting `allow_nullable_key` is disabled", key_name);
+                            ErrorCodes::ILLEGAL_COLUMN,
+                            "{} key contains nullable columns, "
+                            "but merge tree setting `allow_nullable_key` is disabled", key_name);
     }
 }
 
@@ -438,7 +442,9 @@ void MergeTreeData::checkProperties(
         {
             const String & pk_column = new_primary_key.column_names[i];
             if (pk_column != sorting_key_column)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but the column in the position {} is {}", i, sorting_key_column +", not " + pk_column);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Primary key must be a prefix of the sorting key, "
+                                "but the column in the position {} is {}", i, sorting_key_column +", not " + pk_column);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key contains duplicate columns");
@@ -484,10 +490,15 @@ void MergeTreeData::checkProperties(
             for (const String & col : used_columns)
             {
                 if (!added_columns.contains(col) || deleted_columns.contains(col))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Existing column {} is used in the expression that was added to the sorting key. You can add expressions that use only the newly added columns", backQuoteIfNeed(col));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Existing column {} is used in the expression that was added to the sorting key. "
+                                    "You can add expressions that use only the newly added columns",
+                                    backQuoteIfNeed(col));
 
                 if (new_metadata.columns.getDefaults().contains(col))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Newly added column {} has a default expression, so adding expressions that use it to the sorting key is forbidden", backQuoteIfNeed(col));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Newly added column {} has a default expression, so adding expressions that use "
+                                    "it to the sorting key is forbidden", backQuoteIfNeed(col));
             }
         }
     }
@@ -502,7 +513,7 @@ void MergeTreeData::checkProperties(
             MergeTreeIndexFactory::instance().validate(index, attach);
 
             if (indices_names.find(index.name) != indices_names.end())
-                throw Exception( ErrorCodes::LOGICAL_ERROR, "Index with name {} already exists", backQuote(index.name));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with name {} already exists", backQuote(index.name));
 
             indices_names.insert(index.name);
         }
@@ -515,7 +526,7 @@ void MergeTreeData::checkProperties(
         for (const auto & projection : new_metadata.projections)
         {
             if (projections_names.find(projection.name) != projections_names.end())
-                throw Exception( ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
 
             projections_names.insert(projection.name);
         }
@@ -696,10 +707,14 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
     const auto columns = metadata.getColumns().getAllPhysical();
 
     if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sign column for MergeTree cannot be specified in modes except Collapsing or VersionedCollapsing.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Sign column for MergeTree cannot be specified "
+                        "in modes except Collapsing or VersionedCollapsing.");
 
     if (!version_column.empty() && mode != MergingParams::Replacing && mode != MergingParams::VersionedCollapsing)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Version column for MergeTree cannot be specified in modes except Replacing or VersionedCollapsing.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Version column for MergeTree cannot be specified "
+                        "in modes except Replacing or VersionedCollapsing.");
 
     if (!columns_to_sum.empty() && mode != MergingParams::Summing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of columns to sum for MergeTree cannot be specified in all modes except Summing.");
@@ -748,7 +763,10 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
             if (column.name == version_column)
             {
                 if (!column.type->canBeUsedAsVersion())
-                    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "The column {} cannot be used as a version column for storage {} because it is of type {} (must be of an integer type or of type Date/DateTime/DateTime64)", version_column, storage, column.type->getName());
+                    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                                    "The column {} cannot be used as a version column for storage {} because it is "
+                                    "of type {} (must be of an integer type or of type Date/DateTime/DateTime64)",
+                                    version_column, storage, column.type->getName());
                 miss_column = false;
                 break;
             }
@@ -770,7 +788,9 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                 return column_to_sum == Nested::extractTableName(name_and_type.name);
             };
             if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
-                throw Exception( ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} listed in columns to sum does not exist in table declaration.", column_to_sum);
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                                "Column {} listed in columns to sum does not exist in table declaration.",
+                                column_to_sum);
         }
 
         /// Check that summing columns are not in partition key.
@@ -1603,7 +1623,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     {
                         std::lock_guard lock(wal_init_lock);
                         if (write_ahead_log != nullptr)
-                            throw Exception( ErrorCodes::CORRUPTED_DATA, "There are multiple WAL files appeared in current storage policy. You need to resolve this manually");
+                            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                                            "There are multiple WAL files appeared in current storage policy. "
+                                            "You need to resolve this manually");
 
                         write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
                         for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext(), part_lock, is_static_storage))
@@ -1637,7 +1659,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     }
 
     if (have_non_adaptive_parts && have_adaptive_parts && !settings->enable_mixed_granularity_parts)
-        throw Exception( ErrorCodes::LOGICAL_ERROR, "Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Table contains parts with adaptive and non adaptive marks, "
+                        "but `setting enable_mixed_granularity_parts` is disabled");
 
     has_non_adaptive_index_granularity_parts = have_non_adaptive_parts;
     has_lightweight_delete_parts = have_lightweight_in_parts;
@@ -1645,10 +1669,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
-            "Suspiciously many ({} parts, {} in total) broken parts to remove while maximum allowed broken parts count is {}. You can change the maximum value "
-                        "with merge tree setting 'max_suspicious_broken_parts' in <merge_tree> configuration section or in table settings in .sql file "
+                        "Suspiciously many ({} parts, {} in total) broken parts "
+                        "to remove while maximum allowed broken parts count is {}. You can change the maximum value "
+                        "with merge tree setting 'max_suspicious_broken_parts' "
+                        "in <merge_tree> configuration section or in table settings in .sql file "
                         "(don't forget to return setting back to default value)",
-            suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes), settings->max_suspicious_broken_parts);
+                        suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
+                        settings->max_suspicious_broken_parts);
 
     if (suspicious_broken_parts_bytes > settings->max_suspicious_broken_parts_bytes && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
@@ -2597,8 +2624,9 @@ void MergeTreeData::dropAllData()
                 disk->listFiles(relative_data_path, files_left);
 
                 throw Exception(
-                    ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Directory {} with table {} not empty (files [{}]) after drop. Will not drop.",
-                    relative_data_path, getStorageID().getNameForLogs(), fmt::join(files_left, ", "));
+                                ErrorCodes::ZERO_COPY_REPLICATION_ERROR,
+                                "Directory {} with table {} not empty (files [{}]) after drop. Will not drop.",
+                                relative_data_path, getStorageID().getNameForLogs(), fmt::join(files_left, ", "));
             }
 
             LOG_INFO(log, "dropAllData: removing table directory recursive to cleanup garbage");
@@ -2696,7 +2724,10 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 {
     /// Check new type can be used as version
     if (!new_type->canBeUsedAsVersion())
-        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot alter version column {} to type {} because version column must be of an integer type or of type Date or DateTime" , backQuoteIfNeed(column_name), new_type->getName());
+        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot alter version column {} to type {} because version column must be "
+                        "of an integer type or of type Date or DateTime" , backQuoteIfNeed(column_name),
+                        new_type->getName());
 
     auto which_new_type = WhichDataType(new_type);
     auto which_old_type = WhichDataType(old_type);
@@ -2742,7 +2773,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         auto mutation_commands = commands.getMutationCommands(new_metadata, settings.materialize_ttl_after_modify, getContext());
 
         if (!mutation_commands.empty())
-            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "The following alter commands: '{}' will modify data on disk, but setting `allow_non_metadata_alters` is disabled", queryToString(mutation_commands.ast()));
+            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "The following alter commands: '{}' will modify data on disk, "
+                            "but setting `allow_non_metadata_alters` is disabled",
+                            queryToString(mutation_commands.ast()));
     }
     commands.apply(new_metadata, getContext());
 
@@ -2844,34 +2878,39 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
-            throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax");
         }
         if (command.type == AlterCommand::MODIFY_TTL && !is_custom_partitioned)
         {
-            throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER MODIFY TTL is not supported for default-partitioned tables created with the old syntax");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "ALTER MODIFY TTL is not supported for default-partitioned tables created with the old syntax");
         }
         if (command.type == AlterCommand::MODIFY_SAMPLE_BY)
         {
             if (!is_custom_partitioned)
-                throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax");
 
             checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key,
                                   getSettings()->check_sample_column_is_correct);
         }
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
-            throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER ADD INDEX is not supported for tables with the old syntax");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ADD INDEX is not supported for tables with the old syntax");
         }
         if (command.type == AlterCommand::ADD_PROJECTION)
         {
             if (!is_custom_partitioned)
-                throw Exception( ErrorCodes::BAD_ARGUMENTS, "ALTER ADD PROJECTION is not supported for tables with the old syntax");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ADD PROJECTION is not supported for tables with the old syntax");
         }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
             if (columns_in_keys.contains(command.column_name))
             {
-                throw Exception( ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Trying to ALTER RENAME key {} column which is a part of key expression", backQuoteIfNeed(command.column_name));
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "Trying to ALTER RENAME key {} column which is a part of key expression",
+                                backQuoteIfNeed(command.column_name));
             }
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -2910,7 +2949,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             for (const auto & reset_setting : command.settings_resets)
             {
                 if (!settings_from_storage->has(reset_setting))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset setting '{}' because it doesn't exist for MergeTree engines family", reset_setting);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Cannot reset setting '{}' because it doesn't exist for MergeTree engines family",
+                                    reset_setting);
             }
         }
         else if (command.isRequireMutationStage(getInMemoryMetadata()))
@@ -2929,7 +2970,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
                     assert(it != old_types.end());
                     if (!isSafeForKeyConversion(it->second, command.data_type.get()))
-                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of partition key column {} from type {} to type {} is not safe because it can change the representation of partition key", backQuoteIfNeed(command.column_name), it->second->getName(), command.data_type->getName());
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                        "ALTER of partition key column {} from type {} "
+                                        "to type {} is not safe because it can change the representation "
+                                        "of partition key", backQuoteIfNeed(command.column_name),
+                                        it->second->getName(), command.data_type->getName());
                 }
 
                 if (columns_alter_type_metadata_only.contains(command.column_name))
@@ -2937,7 +2982,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     auto it = old_types.find(command.column_name);
                     assert(it != old_types.end());
                     if (!isSafeForKeyConversion(it->second, command.data_type.get()))
-                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} from type {} to type {} is not safe because it can change the representation of primary key", backQuoteIfNeed(command.column_name), it->second->getName(), command.data_type->getName());
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                        "ALTER of key column {} from type {} "
+                                        "to type {} is not safe because it can change the representation "
+                                        "of primary key", backQuoteIfNeed(command.column_name),
+                                        it->second->getName(), command.data_type->getName());
                 }
 
                 if (old_metadata.getColumns().has(command.column_name))
@@ -3033,7 +3082,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (dropped_columns.size() > 1)
                 postfix = "s";
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot drop or clear column{} '{}', because all columns in part '{}' will be removed from disk. Empty parts are not allowed", postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
+                            "Cannot drop or clear column{} '{}', because all columns "
+                            "in part '{}' will be removed from disk. Empty parts are not allowed",
+                            postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
         }
     }
 }
@@ -3332,7 +3383,7 @@ void MergeTreeData::checkPartPartition(MutableDataPartPtr & part, DataPartsLock 
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
     {
         if (part->partition.value != existing_part_in_partition->partition.value)
-            throw Exception( ErrorCodes::CORRUPTED_DATA, "Partition value mismatch between two parts with the same partition ID. "
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Partition value mismatch between two parts with the same partition ID. "
                 "Existing part: {}, newly added part: {}", existing_part_in_partition->name, part->name);
     }
 }
@@ -4389,7 +4440,9 @@ void MergeTreeData::checkAlterPartitionIsPossible(
     {
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION
             && !settings.allow_drop_detached)
-            throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot execute query: DROP DETACHED PART is disabled (see allow_drop_detached setting)");
+            throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                "Cannot execute query: DROP DETACHED PART "
+                                "is disabled (see allow_drop_detached setting)");
 
         if (command.partition && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
         {
@@ -6038,7 +6091,9 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     ContextPtr query_context) const
 {
     if (!metadata_snapshot->minmax_count_projection)
-        throw Exception( ErrorCodes::LOGICAL_ERROR, "Cannot find the definition of minmax_count projection but it's used in current query. It's a bug");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot find the definition of minmax_count projection but it's used in current query. "
+                        "It's a bug");
 
     auto block = metadata_snapshot->minmax_count_projection->sample_block.cloneEmpty();
     bool need_primary_key_max_column = false;
@@ -6768,7 +6823,9 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 {
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
     if (!src_data)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table {} supports attachPartitionFrom only for MergeTree family of table engines. Got {}", source_table.getStorageID().getNameForLogs(), source_table.getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Table {} supports attachPartitionFrom only for MergeTree family of table engines. Got {}",
+                        source_table.getStorageID().getNameForLogs(), source_table.getName());
 
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
@@ -7332,11 +7389,12 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
         auto reserved_disk = reservation->getDisk();
 
         if (reserved_disk->exists(relative_data_path + part->name))
-            throw Exception( ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Move is not possible: {} already exists",
+            throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Move is not possible: {} already exists",
                 fullPath(reserved_disk, relative_data_path + part->name));
 
         if (currently_moving_parts.contains(part) || partIsAssignedToBackgroundOperation(part))
-            throw Exception( ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Cannot move part '{}' because it's participating in background process", part->name);
+            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED,
+                            "Cannot move part '{}' because it's participating in background process", part->name);
 
         parts_to_move.emplace_back(part, std::move(reservation));
     }

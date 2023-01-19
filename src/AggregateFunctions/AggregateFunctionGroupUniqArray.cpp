@@ -99,7 +99,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                        Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
+                        "Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
 
     if (!limit_size)
         return createAggregateFunctionGroupUniqArrayImpl<std::false_type>(name, argument_types[0], parameters);

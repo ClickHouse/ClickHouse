@@ -372,7 +372,7 @@ struct OperationApplier<Op, OperationApplierImpl, 0>
     template <bool, typename Columns, typename Result>
     static void NO_INLINE doBatchedApply(Columns &, Result &, size_t)
     {
-        throw Exception( ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
     }
 };
 

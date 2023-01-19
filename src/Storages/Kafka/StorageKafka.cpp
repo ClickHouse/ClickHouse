@@ -298,7 +298,8 @@ Pipe StorageKafka::read(
         return {};
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
@@ -858,10 +859,13 @@ void registerStorageKafka(StorageFactory & factory)
         if (!args.getLocalContext()->getSettingsRef().kafka_disable_num_consumers_limit && num_consumers > max_consumers)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The number of consumers can not be bigger than {}. "
-                            "A single consumer can read any number of partitions. Extra consumers are relatively expensive, "
-                            "and using a lot of them can lead to high memory and CPU usage. To achieve better performance "
+                            "A single consumer can read any number of partitions. "
+                            "Extra consumers are relatively expensive, "
+                            "and using a lot of them can lead to high memory and CPU usage. "
+                            "To achieve better performance "
                             "of getting data from Kafka, consider using a setting kafka_thread_per_consumer=1, "
-                            "and ensure you have enough threads in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
+                            "and ensure you have enough threads "
+                            "in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
                             "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance", max_consumers);
         }
         else if (num_consumers < 1)

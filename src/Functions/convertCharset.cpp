@@ -194,7 +194,9 @@ public:
         const ColumnConst * col_charset_to = checkAndGetColumnConstStringOrFixedString(arg_charset_to.column.get());
 
         if (!col_charset_from || !col_charset_to)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "2nd and 3rd arguments of function {} (source charset and destination charset) must be constant strings.", getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "2nd and 3rd arguments of function {} (source charset and destination charset) must "
+                            "be constant strings.", getName());
 
         String charset_from = col_charset_from->getValue<String>();
         String charset_to = col_charset_to->getValue<String>();

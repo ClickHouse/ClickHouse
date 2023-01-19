@@ -750,7 +750,8 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     if (coordination->getFileInfo(adjusted_path))
     {
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", backup_name_for_logging, quoteString(file_name));
+                        ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists",
+                        backup_name_for_logging, quoteString(file_name));
     }
 
     FileInfo info

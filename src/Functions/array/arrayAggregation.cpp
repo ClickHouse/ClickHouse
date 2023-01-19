@@ -132,7 +132,7 @@ struct ArrayAggregateImpl
 
         if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), call))
         {
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "array aggregation function cannot be performed on type {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "array aggregation function cannot be performed on type {}",
                 expression_return->getName());
         }
 

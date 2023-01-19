@@ -451,7 +451,7 @@ private:
             && !executeNumToNumWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
             && !executeNumToNumWithNonConstDefault2<T, U, Float64>(in, out, default_untyped))
         {
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
                 default_untyped->getName(), getName());
         }
 
@@ -478,7 +478,7 @@ private:
             && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
             && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
                 default_untyped->getName(), getName());
         }
 
@@ -505,7 +505,7 @@ private:
             && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
             && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
                 default_untyped->getName(), getName());
         }
 
@@ -532,7 +532,7 @@ private:
             && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
             && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
                 default_untyped->getName(), getName());
         }
 

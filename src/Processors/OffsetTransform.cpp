@@ -61,7 +61,8 @@ IProcessor::Status OffsetTransform::prepare(const PortNumbers & updated_input_po
                 return;
             default:
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unexpected status for OffsetTransform::preparePair : {}", IProcessor::statusToName(status));
+                                ErrorCodes::LOGICAL_ERROR, "Unexpected status for OffsetTransform::preparePair : {}",
+                                IProcessor::statusToName(status));
         }
     };
 

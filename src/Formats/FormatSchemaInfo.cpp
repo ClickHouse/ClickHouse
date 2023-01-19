@@ -30,7 +30,7 @@ namespace
 FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & format, bool require_message, bool is_server, const std::string & format_schema_path)
 {
     if (format_schema.empty())
-        throw Exception( ErrorCodes::BAD_ARGUMENTS, "The format {} requires a schema. The corresponding setting should be set", format);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The format {} requires a schema. The corresponding setting should be set", format);
 
     String default_file_extension = getFormatSchemaDefaultFileExtension(format);
 

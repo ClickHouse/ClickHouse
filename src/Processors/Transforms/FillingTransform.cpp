@@ -187,13 +187,15 @@ FillingTransform::FillingTransform(
         const auto & type = header_.getByPosition(block_position).type;
 
         if (!tryConvertFields(descr, type))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Incompatible types of WITH FILL expression values with column type {}", type->getName());
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Incompatible types of WITH FILL expression values with column type {}", type->getName());
 
         if (type->isValueRepresentedByUnsignedInteger() &&
             ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
              (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
         {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL bound values cannot be negative for unsigned type {}", type->getName());
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "WITH FILL bound values cannot be negative for unsigned type {}", type->getName());
         }
     }
 

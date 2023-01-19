@@ -552,7 +552,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
     const auto & provided_columns_map = getColumnsMap(provided_columns);
 
     if (column_names.empty())
-        throw Exception( ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns queried. There are columns: {}",
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns queried. There are columns: {}",
             listOfColumns(available_columns));
 
     UniqueStrings unique_names;

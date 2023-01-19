@@ -321,7 +321,8 @@ bool DDLTask::tryFindHostInCluster()
                         {
                             if (!query_with_table->database)
                                 throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
+                                                "For a distributed DDL on circular replicated cluster its table name "
+                                                "must be qualified by database name.");
 
                             if (default_database == query_with_table->getDatabase())
                                 return true;

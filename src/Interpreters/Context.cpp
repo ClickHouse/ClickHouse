@@ -1444,7 +1444,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 void Context::addViewSource(const StoragePtr & storage)
 {
     if (view_source)
-        throw Exception( ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary view source storage {} already exists.",
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary view source storage {} already exists.",
             backQuoteIfNeed(view_source->getName()));
     view_source = storage;
 }
@@ -1595,7 +1595,9 @@ String Context::getInitialQueryId() const
 void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 {
     if (!isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set current database for non global context, this method should be used during server initialization");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot set current database for non global context, this method should "
+                        "be used during server initialization");
     auto lock = getLock();
 
     if (!current_database.empty())
@@ -2555,7 +2557,9 @@ void Context::setInterserverIOAddress(const String & host, UInt16 port)
 std::pair<String, UInt16> Context::getInterserverIOAddress() const
 {
     if (shared->interserver_io_host.empty() || shared->interserver_io_port == 0)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Parameter 'interserver_http(s)_port' required for replication is not specified in configuration file.");
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                        "Parameter 'interserver_http(s)_port' required for replication is not specified "
+                        "in configuration file.");
 
     return { shared->interserver_io_host, shared->interserver_io_port };
 }

@@ -123,14 +123,17 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 
             if (!used_names.insert(rule_name).second)
             {
-                throw Exception( ErrorCodes::INVALID_CONFIG_PARAMETER, "query_masking_rules configuration contains more than one rule named '{}'.", rule_name);
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                "query_masking_rules configuration contains more than one rule named '{}'.", rule_name);
             }
 
             auto regexp = config.getString(rule_config_prefix + ".regexp", "");
 
             if (regexp.empty())
             {
-                throw Exception( ErrorCodes::NO_ELEMENTS_IN_CONFIG, "query_masking_rules configuration, rule '{}' has no <regexp> node or <regexp> is empty.", rule_name);
+                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                                "query_masking_rules configuration, rule '{}' has no <regexp> node or <regexp> "
+                                "is empty.", rule_name);
             }
 
             auto replace = config.getString(rule_config_prefix + ".replace", "******");

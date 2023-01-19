@@ -115,7 +115,7 @@ public:
                 return executeForSource(column_length, column_length_const,
                     length_value, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
             else
-                throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     arguments[0].column->getName(), getName());
         }
         else
@@ -133,7 +133,7 @@ public:
                 return executeForSource(column_length, column_length_const,
                     length_value, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
             else
-                throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     arguments[0].column->getName(), getName());
         }
     }

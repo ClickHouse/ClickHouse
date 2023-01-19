@@ -329,7 +329,7 @@ public:
         auto check_first_argument = [&]
         {
             if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
                     "Should be a date or a date with time", arguments[0].type->getName(), getName());
             first_argument_is_date = isDate(arguments[0].type);
         };
@@ -341,7 +341,7 @@ public:
         {
             interval_type = checkAndGetDataType<DataTypeInterval>(arguments[1].type.get());
             if (!interval_type)
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
                     "Should be an interval of time", arguments[1].type->getName(), getName());
             result_type_is_date = (interval_type->getKind() == IntervalKind::Year)
                 || (interval_type->getKind() == IntervalKind::Quarter) || (interval_type->getKind() == IntervalKind::Month)
@@ -353,7 +353,7 @@ public:
         auto check_timezone_argument = [&]
         {
             if (!WhichDataType(arguments[2].type).isString())
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
                     "This argument is optional and must be a constant string with timezone name",
                     arguments[2].type->getName(), getName());
             if (first_argument_is_date && result_type_is_date)
@@ -376,8 +376,8 @@ public:
         }
         else
         {
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                 getName(), arguments.size());
         }
 
@@ -456,7 +456,7 @@ private:
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate32&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
-        throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
             "Must contain dates or dates with time", getName());
     }
 
@@ -467,10 +467,12 @@ private:
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column for second argument of function {}, must be an interval of time.", getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for second argument of function {}, must be an interval of time.", getName());
         const auto * interval_column_const_int64 = checkAndGetColumnConst<ColumnInt64>(interval_column.column.get());
         if (!interval_column_const_int64)
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column for second argument of function {}, must be a const interval of time.", getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Illegal column for second argument of function {}, must be a const interval of time.",
+                            getName());
         Int64 num_units = interval_column_const_int64->getValue<Int64>();
         if (num_units <= 0)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for second argument of function {} must be positive.", getName());

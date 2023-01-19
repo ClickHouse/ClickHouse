@@ -70,7 +70,7 @@ public:
         {
             ++depth;
             if (unlikely(max_depth > 0 && depth > max_depth))
-                throw Exception( ErrorCodes::TOO_DEEP_RECURSION, "Maximum parse depth ({}) exceeded. "
+                throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Maximum parse depth ({}) exceeded. "
                     "Consider rising max_parser_depth parameter.", max_depth);
         }
 

@@ -136,7 +136,9 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
     {
         roles->format(settings);
         if (!access_rights_elements.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ASTGrantQuery can contain either roles or access rights elements to grant or revoke, not both of them");
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "ASTGrantQuery can contain either roles or access rights elements "
+                            "to grant or revoke, not both of them");
     }
     else
         formatElementsWithoutOptions(access_rights_elements, settings);

@@ -43,7 +43,8 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionHistogram>(*arguments[0], bins_count, arguments, params));
 
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}", arguments[0]->getName(), name);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument for aggregate function {}", arguments[0]->getName(), name);
 
     return res;
 }

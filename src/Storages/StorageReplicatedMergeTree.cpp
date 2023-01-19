@@ -429,7 +429,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     has_metadata_in_zookeeper = true;
 
     if (!getDataPartsForInternalUsage().empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Data directory for table already contains data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.");
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Data directory for table already contains data parts - probably it was unclean DROP table "
+                        "or manual intervention. You must either clear directory by hand "
+                        "or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.");
 
     try
     {
@@ -577,7 +580,9 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         }
 
         if (partial_shutdown_called)
-            throw Exception(ErrorCodes::UNFINISHED, "Mutation is not finished because table shutdown was called. It will be done after table restart.");
+            throw Exception(ErrorCodes::UNFINISHED,
+                            "Mutation is not finished because table shutdown was called. "
+                            "It will be done after table restart.");
 
         /// Replica inactive, don't check mutation status
         if (!inactive_replicas.empty() && inactive_replicas.contains(replica))
@@ -793,7 +798,9 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
     }
 
     /// Do not use LOGICAL_ERROR code, because it may happen if user has specified wrong zookeeper_path
-    throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "Cannot create table, because it is created concurrently every time or because of wrong zookeeper_path or because of logical error");
+    throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS,
+                    "Cannot create table, because it is created concurrently every time or because "
+                    "of wrong zookeeper_path or because of logical error");
 }
 
 void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot)
@@ -1278,9 +1285,11 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         LOG_DEBUG(log, sanity_report_debug_fmt, fmt::join(uncovered_unexpected_parts, ", "), fmt::join(parts_to_fetch, ", "),
                   fmt::join(covered_unexpected_parts, ", "), fmt::join(expected_parts, ", "));
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS, sanity_report_fmt, getStorageID().getNameForLogs(),
-                        formatReadableQuantity(uncovered_unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
+                        formatReadableQuantity(uncovered_unexpected_parts_rows),
+                        formatReadableQuantity(total_rows_on_filesystem),
                         uncovered_unexpected_parts.size(), uncovered_unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
-                        parts_to_fetch.size(), parts_to_fetch_blocks, covered_unexpected_parts.size(), unexpected_parts_rows - uncovered_unexpected_parts_rows);
+                        parts_to_fetch.size(), parts_to_fetch_blocks, covered_unexpected_parts.size(),
+                        unexpected_parts_rows - uncovered_unexpected_parts_rows);
     }
 
     if (unexpected_parts_nonnew_rows > 0 || uncovered_unexpected_parts_rows > 0)
@@ -2262,7 +2271,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             String interserver_scheme = getContext()->getInterserverScheme();
 
             if (interserver_scheme != address.scheme)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Interserver schemas are different '{}' != '{}', can't fetch part from {}", interserver_scheme, address.scheme, address.host);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Interserver schemas are different '{}' != '{}', can't fetch part from {}",
+                                interserver_scheme, address.scheme, address.host);
 
             part_desc->res_part = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, source_replica_path,
@@ -2361,7 +2372,8 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
     }
 
     if (replica.empty())
-        throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Not found active replica on shard {} to clone part {}", entry.source_shard, entry.new_part_name);
+        throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Not found active replica on shard {} to clone part {}",
+                        entry.source_shard, entry.new_part_name);
 
     LOG_INFO(log, "Will clone part from shard {} and replica {}", entry.source_shard, replica);
 
@@ -2442,13 +2454,14 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         }
         else if (rc == Coordination::Error::ZNODEEXISTS)
         {
-            throw Exception( ErrorCodes::REPLICA_STATUS_CHANGED, "Can not clone replica, because the {} updated to new ClickHouse version", source_replica);
+            throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED,
+                            "Can not clone replica, because the {} updated to new ClickHouse version", source_replica);
         }
         else if (responses[1]->error == Coordination::Error::ZBADVERSION)
         {
             /// If is_lost node version changed than source replica also lost,
             /// so we cannot clone from it.
-            throw Exception( ErrorCodes::REPLICA_STATUS_CHANGED, "Can not clone replica, because the {} became lost",
+            throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Can not clone replica, because the {} became lost",
                 source_replica);
         }
         else if (responses.back()->error == Coordination::Error::ZBADVERSION)
@@ -5204,12 +5217,17 @@ void StorageReplicatedMergeTree::alter(
         else if (rc == Coordination::Error::ZBADVERSION)
         {
             if (results[0]->error != Coordination::Error::ZOK)
-                throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Metadata on replica is not up to date with common metadata in Zookeeper. It means that this replica still not applied some of previous alters."
-                                " Probably too many alters executing concurrently (highly not recommended). You can retry this error");
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
+                                "Metadata on replica is not up to date with common metadata in Zookeeper. "
+                                "It means that this replica still not applied some of previous alters."
+                                " Probably too many alters executing concurrently (highly not recommended). "
+                                "You can retry this error");
 
             /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
             if (query_context->getZooKeeperMetadataTransaction())
-                throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot execute alter, because mutations version was suddenly changed due to concurrent alter");
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
+                                "Cannot execute alter, because mutations version was suddenly changed due "
+                                "to concurrent alter");
 
             continue;
         }
@@ -5510,12 +5528,19 @@ void StorageReplicatedMergeTree::checkTableCanBeRenamed(const StorageID & new_na
             return;
         }
 
-        throw Exception( ErrorCodes::NOT_IMPLEMENTED, "Cannot rename Replicated table, because zookeeper_path contains implicit 'database' or 'table' macro. We cannot rename path in ZooKeeper, so path may become inconsistent with table name. If you really want to rename table, you should edit metadata file first and restart server or reattach the table.");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot rename Replicated table, because zookeeper_path contains implicit 'database' "
+                        "or 'table' macro. We cannot rename path "
+                        "in ZooKeeper, so path may become inconsistent with table name. "
+                        "If you really want to rename table, you should edit metadata file first and restart server or reattach the table.");
     }
 
     assert(renaming_restrictions == RenamingRestrictions::ALLOW_PRESERVING_UUID);
     if (!new_name.hasUUID() && getStorageID().hasUUID())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move Replicated table to Ordinary database, because zookeeper_path contains implicit 'uuid' macro. If you really want to rename table, you should edit metadata file first and restart server or reattach the table.");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot move Replicated table to Ordinary database, because zookeeper_path contains implicit "
+                        "'uuid' macro. If you really want to rename table, you should edit metadata file first "
+                        "and restart server or reattach the table.");
 }
 
 void StorageReplicatedMergeTree::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
@@ -6349,7 +6374,9 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
         {
             /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
             if (query_context->getZooKeeperMetadataTransaction())
-                throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot execute alter, because mutations version was suddenly changed due to concurrent alter");
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
+                                "Cannot execute alter, because mutations version was suddenly changed due "
+                                "to concurrent alter");
             LOG_TRACE(log, "Version conflict when trying to create a mutation node, retrying...");
             continue;
         }
@@ -6885,7 +6912,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             /// Save deduplication block ids with special prefix replace_partition
 
             if (!canReplacePartition(src_part))
-                throw Exception( ErrorCodes::LOGICAL_ERROR, "Cannot replace partition '{}' because part '{}' has inconsistent granularity with table", partition_id, src_part->name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Cannot replace partition '{}' because part '{}"
+                                "' has inconsistent granularity with table", partition_id, src_part->name);
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
 
@@ -6988,7 +7017,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             {
                 /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
                 if (query_context->getZooKeeperMetadataTransaction())
-                    throw Exception( ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter");
+                    throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
+                                    "Cannot execute alter, because alter partition version was suddenly changed due "
+                                    "to concurrent alter");
                 continue;
             }
             else
@@ -7045,9 +7076,16 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
     if (!dest_table_storage)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table {} supports movePartitionToTable only for ReplicatedMergeTree family of table engines. Got {}", getStorageID().getNameForLogs(), dest_table->getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Table {} supports movePartitionToTable only for ReplicatedMergeTree family of table engines. "
+                        "Got {}", getStorageID().getNameForLogs(), dest_table->getName());
     if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
-        throw Exception(ErrorCodes::UNKNOWN_POLICY, "Destination table {} should have the same storage policy of source table {}. {}: {}, {}: {}", dest_table_storage->getStorageID().getNameForLogs(), getStorageID().getNameForLogs(), getStorageID().getNameForLogs(), this->getStoragePolicy()->getName(), getStorageID().getNameForLogs(), dest_table_storage->getStoragePolicy()->getName());
+        throw Exception(ErrorCodes::UNKNOWN_POLICY,
+                        "Destination table {} should have the same storage policy of source table {}. {}: {}, {}: {}",
+                        dest_table_storage->getStorageID().getNameForLogs(),
+                        getStorageID().getNameForLogs(), getStorageID().getNameForLogs(),
+                        this->getStoragePolicy()->getName(), getStorageID().getNameForLogs(),
+                        dest_table_storage->getStoragePolicy()->getName());
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -7113,7 +7151,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         for (const auto & src_part : src_all_parts)
         {
             if (!dest_table_storage->canReplacePartition(src_part))
-                throw Exception( ErrorCodes::LOGICAL_ERROR, "Cannot move partition '{}' because part '{}' has inconsistent granularity with table", partition_id, src_part->name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Cannot move partition '{}' because part '{}"
+                                "' has inconsistent granularity with table", partition_id, src_part->name);
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             String block_id_path;
@@ -7269,7 +7309,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         return;
     }
 
-    throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot assign ALTER PARTITION, because another ALTER PARTITION query was concurrently executed");
+    throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
+                    "Cannot assign ALTER PARTITION, because another ALTER PARTITION query was concurrently executed");
 }
 
 void StorageReplicatedMergeTree::movePartitionToShard(
@@ -7303,7 +7344,9 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     {
         if (partIsLastQuorumPart(part->info))
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part {} is last inserted part with quorum in partition. Would not be able to drop", part_name);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Part {} is last inserted part with quorum in partition. Would not be able to drop",
+                            part_name);
         }
 
         /// canMergeSinglePart is overlapping with dropPart, let's try to use the same code.
@@ -7698,7 +7741,9 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
         {
             /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
             if (query_context->getZooKeeperMetadataTransaction())
-                throw Exception( ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter");
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
+                                    "Cannot execute alter, because alter partition version was suddenly changed due "
+                                    "to concurrent alter");
             continue;
         }
         else
@@ -8570,7 +8615,9 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             /// source replica will replace lost part with empty part and we
             /// will fetch this empty part instead of our source parts. This
             /// will make replicas consistent, but some data will be lost.
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Tried to create empty part {}, but it replaces existing parts {}.", lost_part_name, fmt::join(part_names, ", "));
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Tried to create empty part {}, but it replaces existing parts {}.",
+                            lost_part_name, fmt::join(part_names, ", "));
         }
 
         lockSharedData(*new_data_part, false, {});
@@ -8617,7 +8664,9 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists on replica {} on path {}", lost_part_name, replica, current_part_path);
+                    throw Exception(ErrorCodes::DUPLICATE_DATA_PART,
+                                    "Part {} already exists on replica {} on path {}",
+                                    lost_part_name, replica, current_part_path);
                 }
             }
 
@@ -8691,7 +8740,8 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
                 }
                 else if (error == Coordination::Error::ZNONODE && mode != zkutil::CreateMode::Persistent)
                 {
-                    throw Exception(ErrorCodes::NOT_FOUND_NODE, "Cannot create ephemeral zero copy lock {} because part was unlocked from zookeeper", zookeeper_node);
+                    throw Exception(ErrorCodes::NOT_FOUND_NODE,
+                                    "Cannot create ephemeral zero copy lock {} because part was unlocked from zookeeper", zookeeper_node);
                 }
             }
             else
@@ -8717,7 +8767,8 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
                 else if (error == Coordination::Error::ZNONODE && mode != zkutil::CreateMode::Persistent)
                 {
                     /// Ephemeral locks used during fetches so if parent node was removed we cannot do anything
-                    throw Exception(ErrorCodes::NOT_FOUND_NODE, "Cannot create ephemeral zero copy lock {} because part was unlocked from zookeeper", zookeeper_node);
+                    throw Exception(ErrorCodes::NOT_FOUND_NODE,
+                                    "Cannot create ephemeral zero copy lock {} because part was unlocked from zookeeper", zookeeper_node);
                 }
             }
         }
@@ -8733,7 +8784,9 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
     if (!created)
     {
         String mode_str = mode == zkutil::CreateMode::Persistent ? "persistent" : "ephemeral";
-        throw Exception(ErrorCodes::NOT_FOUND_NODE, "Cannot create {} zero copy lock {} because part was unlocked from zookeeper", mode_str, zookeeper_node);
+        throw Exception(ErrorCodes::NOT_FOUND_NODE,
+                        "Cannot create {} zero copy lock {} because part was unlocked from zookeeper",
+                        mode_str, zookeeper_node);
     }
 }
 

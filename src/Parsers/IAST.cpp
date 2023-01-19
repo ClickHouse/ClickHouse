@@ -218,7 +218,8 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         case IdentifierQuotingStyle::None:
         {
             if (always_quote_identifiers)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incompatible arguments: always_quote_identifiers = true && identifier_quoting_style == IdentifierQuotingStyle::None");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Incompatible arguments: always_quote_identifiers = true && identifier_quoting_style == IdentifierQuotingStyle::None");
             writeString(name, ostr);
             break;
         }

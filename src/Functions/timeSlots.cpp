@@ -239,27 +239,27 @@ public:
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                            Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                             getName(), arguments.size());
 
         if (WhichDataType(arguments[0].type).isDateTime())
         {
             if (!WhichDataType(arguments[1].type).isUInt32())
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
                     "Must be UInt32 when first argument is DateTime.", arguments[1].type->getName(), getName());
 
             if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isNativeUInt())
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
                     "Must be UInt32 when first argument is DateTime.", arguments[2].type->getName(), getName());
         }
         else if (WhichDataType(arguments[0].type).isDateTime64())
         {
             if (!WhichDataType(arguments[1].type).isDecimal64())
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
                     "Must be Decimal64 when first argument is DateTime64.", arguments[1].type->getName(), getName());
 
             if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isDecimal64())
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
                     "Must be Decimal64 when first argument is DateTime64.", arguments[2].type->getName(), getName());
         }
         else
@@ -374,12 +374,12 @@ public:
 
         if (arguments.size() == 3)
         {
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {}, {} of arguments of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {}, {} of arguments of function {}",
                 arguments[0].column->getName(), arguments[1].column->getName(), arguments[2].column->getName(), getName());
         }
         else
         {
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
                 arguments[0].column->getName(), arguments[1].column->getName(), getName());
         }
     }

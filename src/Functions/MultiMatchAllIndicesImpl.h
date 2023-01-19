@@ -135,7 +135,7 @@ struct MultiMatchAllIndicesImpl
         (void)edit_distance;
         (void)max_hyperscan_regexp_length;
         (void)max_hyperscan_regexp_total_length;
-        throw Exception( ErrorCodes::NOT_IMPLEMENTED, "multi-search all indices is not implemented when vectorscan is off");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "multi-search all indices is not implemented when vectorscan is off");
 #endif // USE_VECTORSCAN
     }
 
@@ -249,7 +249,7 @@ struct MultiMatchAllIndicesImpl
         (void)edit_distance;
         (void)max_hyperscan_regexp_length;
         (void)max_hyperscan_regexp_total_length;
-        throw Exception( ErrorCodes::NOT_IMPLEMENTED, "multi-search all indices is not implemented when vectorscan is off");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "multi-search all indices is not implemented when vectorscan is off");
 #endif // USE_VECTORSCAN
     }
 };

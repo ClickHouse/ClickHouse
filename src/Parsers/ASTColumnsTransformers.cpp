@@ -263,7 +263,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
         std::for_each(expected_columns.begin(), expected_columns.end(),
             [&](String x) { expected_columns_str += (" " + x) ; });
 
-        throw Exception( ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer EXCEPT expects following column(s) :{}",
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer EXCEPT expects following column(s) :{}",
             expected_columns_str);
     }
 }
@@ -376,7 +376,8 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
     {
         auto & replacement = replace_child->as<Replacement &>();
         if (replace_map.find(replacement.name) != replace_map.end())
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expressions in columns transformer REPLACE should not contain the same replacement more than once");
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Expressions in columns transformer REPLACE should not contain the same replacement more than once");
         replace_map.emplace(replacement.name, replacement.expr);
     }
 
@@ -416,7 +417,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
                 expected_columns += ", ";
             expected_columns += elem.first;
         }
-        throw Exception( ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer REPLACE expects following column(s) : {}",
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer REPLACE expects following column(s) : {}",
             expected_columns);
     }
 

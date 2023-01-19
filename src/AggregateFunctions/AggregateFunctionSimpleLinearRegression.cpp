@@ -66,7 +66,9 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
     #undef FOR_LEASTSQR_TYPES
     #undef DISPATCH
 
-    throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT , "Illegal types ({}, {}) of arguments of aggregate function {}, must be Native Ints, Native UInts or Floats", x_arg->getName(), y_arg->getName(), name);
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT ,
+                    "Illegal types ({}, {}) of arguments of aggregate function {}, must "
+                    "be Native Ints, Native UInts or Floats", x_arg->getName(), y_arg->getName(), name);
 }
 
 }

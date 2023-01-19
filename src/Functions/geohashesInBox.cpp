@@ -47,7 +47,10 @@ public:
               arguments[0]->equals(*arguments[2]) &&
               arguments[0]->equals(*arguments[3])))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument of {} all coordinate arguments must have the same type, instead they are:{}, {}, {}, {}.", getName(), arguments[0]->getName(), arguments[1]->getName(), arguments[2]->getName(), arguments[3]->getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type of argument of {} all coordinate arguments must have the same type, "
+                            "instead they are:{}, {}, {}, {}.", getName(), arguments[0]->getName(),
+                            arguments[1]->getName(), arguments[2]->getName(), arguments[3]->getName());
         }
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
@@ -95,7 +98,8 @@ public:
         if (!lon_min || !lat_min || !lon_max || !lat_max || !precision)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported argument types for function {} : {}, {}, {}, {}.",
-                            getName(), lon_min_column->getName(), lat_min_column->getName(), lon_max_column->getName(), lat_max_column->getName());
+                            getName(), lon_min_column->getName(),
+                            lat_min_column->getName(), lon_max_column->getName(), lat_max_column->getName());
         }
 
         auto col_res = ColumnArray::create(ColumnString::create());

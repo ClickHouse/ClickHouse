@@ -320,7 +320,11 @@ namespace
 
         [[noreturn]] void cannotConvertValue(std::string_view src_value, std::string_view src_type_name, std::string_view dest_type_name) const
         {
-            throw Exception( ErrorCodes::PROTOBUF_BAD_CAST, "Could not convert value '{}' from type {} to type {} while {} field {} {} column {}", String{src_value}, String{src_type_name}, String{dest_type_name}, (reader ? "reading" : "writing"), quoteString(field_descriptor.name()), (reader ? "for inserting into" : "extracted from"), quoteString(column_name));
+            throw Exception(ErrorCodes::PROTOBUF_BAD_CAST,
+                            "Could not convert value '{}' from type {} to type {} while {} field {} {} column {}",
+                            String{src_value}, String{src_type_name}, String{dest_type_name},
+                            (reader ? "reading" : "writing"), quoteString(field_descriptor.name()),
+                            (reader ? "for inserting into" : "extracted from"), quoteString(column_name));
         }
 
         const String column_name;
@@ -1103,8 +1107,8 @@ namespace
 
             if (!num_mapped_values && !enum_data_type->getValues().empty() && enum_descriptor.value_count())
             {
-                throw Exception( ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
-"                    Couldn't find mapping between data type {} and the enum {} in the protobuf schema",
+                throw Exception(ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
+                    "Couldn't find mapping between data type {} and the enum {} in the protobuf schema",
                     enum_data_type->getName(), quoteString(enum_descriptor.full_name()));
             }
         }
@@ -2713,8 +2717,10 @@ namespace
                     if (!column_array0.hasEqualOffsets(column_array))
                     {
                         throw Exception(ErrorCodes::PROTOBUF_BAD_CAST,
-                                        "Column #{} {} and column #{} {} are supposed to have equal offsets according to the following serialization tree:\n{}",
-                                        0, quoteString(column_names[0]), i, quoteString(column_names[i]), get_root_desc_function(0));
+                                        "Column #{} {} and column #{} {} are supposed "
+                                        "to have equal offsets according to the following serialization tree:\n{}",
+                                        0, quoteString(column_names[0]),
+                                        i, quoteString(column_names[i]), get_root_desc_function(0));
                     }
                 }
             }
@@ -2869,7 +2875,9 @@ namespace
             if (!message_serializer)
             {
                 throw Exception( ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
-"                    Not found matches between the names of the columns {{}} and the fields {{}} of the message {} in the protobuf schema", boost::algorithm::join(column_names, ", "), boost::algorithm::join(getFieldNames(message_descriptor), ", "), quoteString(message_descriptor.full_name()));
+                     "Not found matches between the names of the columns {{}} and the fields {{}} of the message {} in the protobuf schema",
+                     boost::algorithm::join(column_names, ", "), boost::algorithm::join(getFieldNames(message_descriptor), ", "),
+                     quoteString(message_descriptor.full_name()));
             }
 
             missing_column_indices.clear();
@@ -3114,8 +3122,8 @@ namespace
                 auto it = field_descriptors_in_use.find(&field_descriptor_);
                 if (it != field_descriptors_in_use.end())
                 {
-                    throw Exception( ErrorCodes::MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD,
-"                        Multiple columns ({}, {}) cannot be serialized to a single protobuf field {}",
+                    throw Exception(ErrorCodes::MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD,
+                        "Multiple columns ({}, {}) cannot be serialized to a single protobuf field {}",
                         backQuote(StringRef{it->second}), backQuote(StringRef{column_name_}), quoteString(field_descriptor_.full_name()));
                 }
 
@@ -3291,7 +3299,7 @@ namespace
                 {
                     const auto & field_descriptor = *message_descriptor.field(i);
                     if (field_descriptor.is_required() && !field_descriptors_in_use.count(&field_descriptor))
-                        throw Exception( ErrorCodes::NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD, "Field {} is required to be set",
+                        throw Exception(ErrorCodes::NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD, "Field {} is required to be set",
                             quoteString(field_descriptor.full_name()));
                 }
             }
@@ -3430,7 +3438,11 @@ namespace
                         if (!message_serializer)
                         {
                             throw Exception( ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
-"                                Not found matches between the names of the tuple's elements {{}} and the fields {{}} of the message {} in the protobuf schema", boost::algorithm::join(tuple_data_type.getElementNames(), ", "), boost::algorithm::join(getFieldNames(*field_descriptor.message_type()), ", "), quoteString(field_descriptor.message_type()->full_name()));
+                                 "Not found matches between the names of the tuple's elements {{}} and the fields {{}} "
+                                 "of the message {} in the protobuf schema",
+                                 boost::algorithm::join(tuple_data_type.getElementNames(), ", "),
+                                 boost::algorithm::join(getFieldNames(*field_descriptor.message_type()), ", "),
+                                 quoteString(field_descriptor.message_type()->full_name()));
                         }
 
                         return std::make_unique<ProtobufSerializerTupleAsNestedMessage>(std::move(message_serializer));
@@ -3469,9 +3481,15 @@ namespace
         [[noreturn]] static void throwFieldNotRepeated(const FieldDescriptor & field_descriptor, std::string_view column_name)
         {
             if (!field_descriptor.is_repeated())
-                throw Exception( ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED, "The field {} must be repeated in the protobuf schema to match the column {}", quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
+                throw Exception(ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED,
+                                "The field {} must be repeated in the protobuf schema to match the column {}",
+                                quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
 
-            throw Exception( ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED, "The field {} is repeated but the level of repeatedness is not enough to serialize a multidimensional array from the column {}. It's recommended to make the parent field repeated as well.", quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
+            throw Exception(ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED,
+                            "The field {} is repeated but the level of repeatedness is not enough "
+                            "to serialize a multidimensional array from the column {}. "
+                            "It's recommended to make the parent field repeated as well.",
+                            quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
         }
 
         const ProtobufReaderOrWriter reader_or_writer;

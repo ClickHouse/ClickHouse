@@ -182,7 +182,10 @@ struct ConstSource : public Base
         if constexpr (std::is_base_of_v<IArraySource, Base>)
             visitor.visit(*this);
         else
-            throw Exception( ErrorCodes::NOT_IMPLEMENTED, "accept(ArraySourceVisitor &) is not implemented for {} because {} is not derived from IArraySource", demangle(typeid(ConstSource<Base>).name()), demangle(typeid(Base).name()));
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "accept(ArraySourceVisitor &) is not implemented for {} because {} "
+                            "is not derived from IArraySource",
+                            demangle(typeid(ConstSource<Base>).name()), demangle(typeid(Base).name()));
     }
 
     virtual void accept(ValueSourceVisitor & visitor) // override
@@ -190,7 +193,10 @@ struct ConstSource : public Base
         if constexpr (std::is_base_of_v<IValueSource, Base>)
             visitor.visit(*this);
         else
-            throw Exception( ErrorCodes::NOT_IMPLEMENTED, "accept(ValueSourceVisitor &) is not implemented for {} because {} is not derived from IValueSource", demangle(typeid(ConstSource<Base>).name()), demangle(typeid(Base).name()));
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "accept(ValueSourceVisitor &) is not implemented for {} because {} "
+                            "is not derived from IValueSource",
+                            demangle(typeid(ConstSource<Base>).name()), demangle(typeid(Base).name()));
     }
 
     void next()

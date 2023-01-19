@@ -79,7 +79,7 @@ void MySQLClient::handshake()
     packet_endpoint->receivePacket(handshake);
     if (handshake.auth_plugin_name != mysql_native_password)
     {
-        throw Exception( ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Only support {} auth plugin name, but got {}",
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Only support {} auth plugin name, but got {}",
             mysql_native_password, handshake.auth_plugin_name);
     }
 

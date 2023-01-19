@@ -19,7 +19,7 @@ off_t ReadBufferFromMemory::seek(off_t offset, int whence)
             return static_cast<size_t>(pos - internal_buffer.begin());
         }
         else
-            throw Exception( ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}",
+            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}",
                 offset, std::to_string(static_cast<size_t>(internal_buffer.end() - internal_buffer.begin())));
     }
     else if (whence == SEEK_CUR)
@@ -32,7 +32,7 @@ off_t ReadBufferFromMemory::seek(off_t offset, int whence)
             return static_cast<size_t>(pos - internal_buffer.begin());
         }
         else
-            throw Exception( ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}",
+            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}",
                 offset, std::to_string(static_cast<size_t>(internal_buffer.end() - internal_buffer.begin())));
     }
     else

@@ -483,7 +483,10 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     const auto & create = create_query->as<ASTCreateQuery>();
 
     if (!create->attach)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MySQL database engine does not support create table. for tables that were detach or dropped before, you can use attach to add them back to the MySQL database");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "MySQL database engine does not support create table. "
+                        "for tables that were detach or dropped before, you can use attach "
+                        "to add them back to the MySQL database");
 
     /// XXX: hack
     /// In order to prevent users from broken the table structure by executing attach table database_name.table_name (...)
@@ -492,7 +495,9 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
     if (queryToString(origin_create_query) != queryToString(create_query))
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "The MySQL database engine can only execute attach statements of type attach table database_name.table_name");
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                        "The MySQL database engine can only execute attach statements "
+                        "of type attach table database_name.table_name");
 
     attachTable(local_context, table_name, storage, {});
 }

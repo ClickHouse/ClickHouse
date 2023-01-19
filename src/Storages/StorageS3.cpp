@@ -1121,7 +1121,8 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     else
     {
         if (is_key_with_globs)
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                            "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
 
         bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
 
@@ -1142,11 +1143,12 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             }
             else
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Object in bucket {} with key {} already exists. If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
-                    "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
-                    s3_configuration.uri.bucket,
-                    keys.back());
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Object in bucket {} with key {} already exists. "
+                                "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
+                                "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
+                                s3_configuration.uri.bucket,
+                                keys.back());
         }
 
         return std::make_shared<StorageS3Sink>(
@@ -1166,7 +1168,8 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     updateS3Configuration(local_context, s3_configuration);
 
     if (is_key_with_globs)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                            "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
 
     Aws::S3::Model::Delete delkeys;
 
@@ -1276,7 +1279,9 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
 
         if (engine_args.empty() || engine_args.size() > 5)
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage S3 requires 1 to 5 arguments: "
+                            "url, [access_key_id, secret_access_key], name of used format and [compression_method].");
 
         auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers, local_context);
         if (header_it != engine_args.end())
@@ -1364,9 +1369,8 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
             if (first)
                 throw Exception(
                     ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
-                    "table structure manually",
-                    format);
+                    "Cannot extract table structure from {} format file, because there are no files with provided path "
+                    "in S3. You must specify table structure manually", format);
 
             return nullptr;
         }

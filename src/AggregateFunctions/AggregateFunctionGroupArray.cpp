@@ -71,7 +71,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
+            "Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
 
     if (!limit_size)
     {
@@ -90,7 +90,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 
     if (parameters.size() != 1 && parameters.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Incorrect number of parameters for aggregate function {}, should be 1 or 2", name);
+            "Incorrect number of parameters for aggregate function {}, should be 1 or 2", name);
 
     auto get_parameter = [&](size_t i)
     {

@@ -537,7 +537,7 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
                     list_of_non_const_columns << "\n" << column.name;
 
             throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS,
-"                Too many temporary non-const columns:{}. Maximum: {}",
+                "Too many temporary non-const columns:{}. Maximum: {}",
                 list_of_non_const_columns.str(), settings.max_temporary_non_const_columns);
         }
     }

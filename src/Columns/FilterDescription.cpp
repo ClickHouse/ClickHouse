@@ -36,7 +36,7 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
             if (!column_nested_nullable || !typeid_cast<const ColumnUInt8 *>(&column_nested_nullable->getNestedColumn()))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-"                                Illegal type {} of column for constant filter. Must be UInt8 or Nullable(UInt8).",
+                                "Illegal type {} of column for constant filter. Must be UInt8 or Nullable(UInt8).",
                                 column_nested->getName());
             }
         }
@@ -74,7 +74,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
         ColumnUInt8 * concrete_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get());
         if (!concrete_column)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-"                Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8).", column.getName());
+                "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8).", column.getName());
 
         const NullMap & null_map = nullable_column->getNullMapData();
         IColumn::Filter & res = concrete_column->getData();
@@ -89,7 +89,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
     }
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-"        Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
+        "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
         column.getName());
 }
 

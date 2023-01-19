@@ -92,7 +92,9 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     Array params_row;
 
     if (!arguments || arguments->children.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Data type SimpleAggregateFunction requires parameters: name of aggregate function and list of data types for arguments");
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Data type SimpleAggregateFunction requires parameters: "
+                        "name of aggregate function and list of data types for arguments");
 
     if (const ASTFunction * parametric = arguments->children[0]->as<ASTFunction>())
     {
@@ -126,10 +128,14 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     }
     else if (arguments->children[0]->as<ASTLiteral>())
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function name for data type SimpleAggregateFunction must be passed as identifier (without quotes) or function");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Aggregate function name for data type SimpleAggregateFunction must "
+                        "be passed as identifier (without quotes) or function");
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected AST element passed as aggregate function name for data type SimpleAggregateFunction. Must be identifier or function.");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Unexpected AST element passed as aggregate function name for data type "
+                        "SimpleAggregateFunction. Must be identifier or function.");
 
     for (size_t i = 1; i < arguments->children.size(); ++i)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));

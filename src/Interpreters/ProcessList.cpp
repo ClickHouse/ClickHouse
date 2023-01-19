@@ -130,7 +130,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
 
             if (!is_unlimited_query && settings.max_concurrent_queries_for_all_users
                 && processes.size() >= settings.max_concurrent_queries_for_all_users)
-                throw Exception( ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for all users. "
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for all users. "
                     "Current: {}, maximum: {}", processes.size(), settings.max_concurrent_queries_for_all_users.toString());
         }
 
@@ -151,8 +151,11 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             {
                 if (!is_unlimited_query && settings.max_concurrent_queries_for_user
                     && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
-                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for user {}. "
-                        "Current: {}, maximum: {}", client_info.current_user, user_process_list->second.queries.size(), settings.max_concurrent_queries_for_user.toString());
+                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                    "Too many simultaneous queries for user {}. "
+                                    "Current: {}, maximum: {}",
+                                    client_info.current_user, user_process_list->second.queries.size(),
+                                    settings.max_concurrent_queries_for_user.toString());
 
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
 

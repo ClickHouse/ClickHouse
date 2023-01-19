@@ -48,7 +48,9 @@ namespace
         size_t expected_key_size = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
         if (key_size != expected_key_size)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Got an encryption key with unexpected size {}, the size should be {}", key_size, expected_key_size);
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Got an encryption key with unexpected size {}, the size should be {}",
+                            key_size, expected_key_size);
     }
 
     void checkInitVectorSize(const EVP_CIPHER * evp_cipher)

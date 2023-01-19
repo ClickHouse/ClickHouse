@@ -192,14 +192,14 @@ namespace DB
                 return std::make_unique<FunctionBaseFromModifiedJulianDay<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
             else
                 // Should not happen.
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
         }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (!isInteger(arguments[0]))
             {
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
             }
 
             DataTypePtr base_type = std::make_shared<DataTypeString>();

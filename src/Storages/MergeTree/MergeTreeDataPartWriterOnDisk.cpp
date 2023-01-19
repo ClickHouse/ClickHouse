@@ -112,7 +112,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , compress_primary_key(settings.compress_primary_key)
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't take information about index granularity from blocks, when non empty index_granularity array specified");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't take information about index granularity from blocks, when non empty index_granularity array specified");
 
     if (!data_part->getDataPartStorage().exists())
         data_part->getDataPartStorage().createDirectories();

@@ -519,7 +519,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 auto hints = metadata.secondary_indices.getHints(after_index_name);
                 auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
-                throw Exception( ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to insert after{}",
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to insert after{}",
                     backQuote(after_index_name), hints_string);
             }
 
@@ -546,7 +546,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     return;
                 auto hints = metadata.secondary_indices.getHints(index_name);
                 auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
-                throw Exception( ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to drop{}",
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to drop{}",
                     backQuote(index_name), hints_string);
             }
 

@@ -608,7 +608,7 @@ public:
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                 getName(), arguments.size());
 
         if (!isNativeNumber(arguments[1].type))
@@ -626,9 +626,12 @@ public:
             if (!WhichDataType(arguments[0].type).isDateTime()
                 || !WhichDataType(arguments[2].type).isString())
             {
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} supports 2 or 3 arguments. "
-                    "The 1st argument must be of type Date or DateTime. "
-                    "The 2nd argument must be a number. The 3rd argument (optional) must be a constant string with timezone name. The timezone argument is allowed only when the 1st argument has the type DateTime", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} supports 2 or 3 arguments. "
+                                "The 1st argument must be of type Date or DateTime. "
+                                "The 2nd argument must be a number. "
+                                "The 3rd argument (optional) must be a constant string with timezone name. "
+                                "The timezone argument is allowed only when the 1st argument has the type DateTime",
+                                getName());
             }
         }
 

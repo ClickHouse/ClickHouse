@@ -91,7 +91,7 @@ public:
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Number of arguments for function {} doesn't match: passed {}, should be 2",
+                "Number of arguments for function {} doesn't match: passed {}, should be 2",
                 getName(), arguments.size());
 
         const auto which_type = WhichDataType(arguments[0].type);

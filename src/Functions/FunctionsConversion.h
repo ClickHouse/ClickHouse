@@ -210,18 +210,23 @@ struct ConvertImpl
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted");
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                    "Conversion between numeric types and UUID is not supported. "
+                                    "Probably the passed UUID is unquoted");
                 }
                 else if constexpr (
                     (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
                     && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
                 )
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported", TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
+                                    TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
                 }
                 else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6>)
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion between numeric types and IPv6 is not supported. Probably the passed IPv6 is unquoted");
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                    "Conversion between numeric types and IPv6 is not supported. "
+                                    "Probably the passed IPv6 is unquoted");
                 }
                 else
                 {
@@ -291,7 +296,7 @@ struct ConvertImpl
                                 }
                                 else
                                 {
-                                    throw Exception( ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
+                                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
                                         named_from.column->getName(), result_type->getName());
                                 }
                             }
@@ -2074,7 +2079,7 @@ public:
         {
             if ((arguments.size() != 1 && arguments.size() != 2) || (to_decimal && arguments.size() != 2))
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                    Number of arguments for function {} doesn't match: passed {}, should be 1 or 2. "
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2. "
                     "Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
                     getName(), arguments.size());
 
@@ -2109,7 +2114,7 @@ public:
                 else
                 {
                     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                        Number of arguments for function {} doesn't match: passed {}, should be 1. "
+                        "Number of arguments for function {} doesn't match: passed {}, should be 1. "
                         "Second argument makes sense only for DateTime and Decimal.",
                         getName(), arguments.size());
                 }

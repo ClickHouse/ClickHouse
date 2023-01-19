@@ -417,7 +417,8 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
 {
     if (!this->areTypesEqual(set_type_idx, other_type))
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Types of column {} in section IN don't match: "
-                        "{} on the left, {} on the right", toString(set_type_idx + 1), other_type->getName(), data_types[set_type_idx]->getName());
+                        "{} on the left, {} on the right", toString(set_type_idx + 1),
+                        other_type->getName(), data_types[set_type_idx]->getName());
 }
 
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)

@@ -37,7 +37,7 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
 
     if (argument_types.empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Incorrect number of arguments for aggregate function {}", name);
+            "Incorrect number of arguments for aggregate function {}", name);
 
     bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
 
@@ -84,7 +84,7 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
 
     if (argument_types.empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Incorrect number of arguments for aggregate function {}", name);
+            "Incorrect number of arguments for aggregate function {}", name);
 
     /// We use exact hash function if the user wants it;
     /// or if the arguments are not contiguous in memory, because only exact hash function have support for this case.

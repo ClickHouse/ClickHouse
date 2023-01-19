@@ -407,7 +407,7 @@ public:
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Number of arguments for function {} doesn't match: passed {}, should be 2",
+                "Number of arguments for function {} doesn't match: passed {}, should be 2",
                 getName(), arguments.size());
 
         if (!isDate(arguments[0]) && !isDate32(arguments[0]) && !isDateTime(arguments[0]) && !isDateTime64(arguments[0]))

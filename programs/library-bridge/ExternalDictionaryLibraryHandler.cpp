@@ -177,7 +177,7 @@ Block ExternalDictionaryLibraryHandler::dataToBlock(ExternalDictionaryLibraryAPI
 
     const auto * columns_received = static_cast<const ExternalDictionaryLibraryAPI::Table *>(data);
     if (columns_received->error_code)
-        throw Exception( ErrorCodes::EXTERNAL_LIBRARY_ERROR, "LibraryDictionarySource: Returned error: {} {}",
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "LibraryDictionarySource: Returned error: {} {}",
             std::to_string(columns_received->error_code), (columns_received->error_string ? columns_received->error_string : ""));
 
     MutableColumns columns = sample_block.cloneEmptyColumns();
@@ -185,7 +185,7 @@ Block ExternalDictionaryLibraryHandler::dataToBlock(ExternalDictionaryLibraryAPI
     for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
     {
         if (columns.size() != columns_received->data[col_n].size)
-            throw Exception( ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "LibraryDictionarySource: "
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "LibraryDictionarySource: "
                 "Returned unexpected number of columns: {}, must be {}",
                 columns_received->data[col_n].size, columns.size());
 

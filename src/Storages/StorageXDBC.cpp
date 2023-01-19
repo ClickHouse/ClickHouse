@@ -166,7 +166,7 @@ namespace
 
             if (engine_args.size() != 3)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                    Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)", name, name);
+                    "Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)", name, name);
 
             for (size_t i = 0; i < 3; ++i)
                 engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());

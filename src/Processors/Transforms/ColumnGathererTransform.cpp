@@ -131,7 +131,7 @@ ColumnGathererTransform::ColumnGathererTransform(
     , log(&Poco::Logger::get("ColumnGathererStream"))
 {
     if (header.columns() != 1)
-        throw Exception( ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Header should have 1 column, but contains {}",
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Header should have 1 column, but contains {}",
             toString(header.columns()));
 }
 

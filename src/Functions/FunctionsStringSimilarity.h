@@ -44,11 +44,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                 arguments[0]->getName(), getName());
 
         if (!isString(arguments[1]))
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                 arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
@@ -70,7 +70,7 @@ public:
             const String & needle = col_needle_const->getValue<String>();
             if (needle.size() > Impl::max_string_size)
             {
-                throw Exception( ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of needle is too big for function {}. "
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of needle is too big for function {}. "
                     "Should be at most {}", getName(), Impl::max_string_size);
             }
             Impl::constantConstant(col_haystack_const->getValue<String>(), needle, res);
@@ -90,7 +90,7 @@ public:
             const String & needle = col_needle_const->getValue<String>();
             if (needle.size() > Impl::max_string_size)
             {
-                throw Exception( ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of needle is too big for function {}. "
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of needle is too big for function {}. "
                     "Should be at most {}", getName(), Impl::max_string_size);
             }
             Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
@@ -109,14 +109,14 @@ public:
             const String & haystack = col_haystack_const->getValue<String>();
             if (haystack.size() > Impl::max_string_size)
             {
-                throw Exception( ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of haystack is too big for function {}. "
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of haystack is too big for function {}. "
                     "Should be at most {}", getName(), Impl::max_string_size);
             }
             Impl::constantVector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         }
         else
         {
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} and {} of arguments of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} and {} of arguments of function {}",
                 arguments[0].column->getName(), arguments[1].column->getName(), getName());
         }
 

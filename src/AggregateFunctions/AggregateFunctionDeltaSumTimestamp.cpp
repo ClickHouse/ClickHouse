@@ -27,7 +27,7 @@ AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
 
     if (arguments.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Incorrect number of arguments for aggregate function {}", name);
+            "Incorrect number of arguments for aggregate function {}", name);
 
     if (!isInteger(arguments[0]) && !isFloat(arguments[0]) && !isDate(arguments[0]) && !isDateTime(arguments[0]))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "

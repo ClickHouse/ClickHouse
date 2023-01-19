@@ -352,23 +352,31 @@ bool HTTPHandler::authenticateUser(
     {
         /// It is prohibited to mix different authorization schemes.
         if (has_http_credentials)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: it is not allowed to use SSL certificate authentication and Authorization HTTP header simultaneously");
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                            "Invalid authentication: it is not allowed "
+                            "to use SSL certificate authentication and Authorization HTTP header simultaneously");
         if (has_credentials_in_query_params)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via parameters simultaneously simultaneously");
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                            "Invalid authentication: it is not allowed "
+                            "to use SSL certificate authentication and authentication via parameters simultaneously simultaneously");
 
         if (has_ssl_certificate_auth)
         {
 #if USE_SSL
             if (!password.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via password simultaneously");
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                                "Invalid authentication: it is not allowed "
+                                "to use SSL certificate authentication and authentication via password simultaneously");
 
             if (request.havePeerCertificate())
                 certificate_common_name = request.peerCertificate().commonName();
 
             if (certificate_common_name.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name");
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name");
 #else
-            throw Exception( ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificate authentication disabled because ClickHouse was built without SSL library");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "SSL certificate authentication disabled because ClickHouse was built without SSL library");
 #endif
         }
     }
@@ -376,7 +384,9 @@ bool HTTPHandler::authenticateUser(
     {
         /// It is prohibited to mix different authorization schemes.
         if (has_credentials_in_query_params)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: it is not allowed to use Authorization HTTP header and authentication via parameters simultaneously");
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                            "Invalid authentication: it is not allowed "
+                            "to use Authorization HTTP header and authentication via parameters simultaneously");
 
         std::string scheme;
         std::string auth_info;
@@ -978,7 +988,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
-            throw Exception( ErrorCodes::HTTP_LENGTH_REQUIRED, "The Transfer-Encoding is not chunked and there is no Content-Length header for POST request");
+            throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
+                            "The Transfer-Encoding is not chunked and there "
+                            "is no Content-Length header for POST request");
         }
 
         processQuery(request, params, response, used_output, query_scope);
@@ -1185,7 +1197,7 @@ static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
     auto compiled_regex = std::make_shared<const re2::RE2>(expression);
 
     if (!compiled_regex->ok())
-        throw Exception( ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile re2: {} for http handling rule, error: {}. "
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile re2: {} for http handling rule, error: {}. "
             "Look at https://github.com/google/re2/wiki/Syntax for reference.", expression, compiled_regex->error());
 
     return compiled_regex;

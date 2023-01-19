@@ -47,7 +47,9 @@ void parseLDAPSearchParams(LDAPClient::SearchParams & params, const Poco::Util::
         else if (scope == "subtree")   params.scope = LDAPClient::SearchParams::Scope::SUBTREE;
         else if (scope == "children")  params.scope = LDAPClient::SearchParams::Scope::CHILDREN;
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value for 'scope' field of LDAP search parameters in '{}' section, must be one of 'base', 'one_level', 'subtree', or 'children'", prefix);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value for 'scope' field of LDAP search parameters "
+                            "in '{}' section, must be one of 'base', 'one_level', 'subtree', or 'children'", prefix);
     }
 }
 
@@ -140,7 +142,9 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         else if (tls_minimum_protocol_version_lc_str == "tls1.2")
             params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2; //-V1048
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad value for 'tls_minimum_protocol_version' entry, allowed values are: 'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2'");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Bad value for 'tls_minimum_protocol_version' entry, allowed values are: "
+                            "'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2'");
     }
 
     if (has_tls_require_cert)
@@ -157,7 +161,9 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         else if (tls_require_cert_lc_str == "demand")
             params.tls_require_cert = LDAPClient::Params::TLSRequireCert::DEMAND; //-V1048
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad value for 'tls_require_cert' entry, allowed values are: 'never', 'allow', 'try', 'demand'");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Bad value for 'tls_require_cert' entry, allowed values are: "
+                            "'never', 'allow', 'try', 'demand'");
     }
 
     if (has_tls_cert_file)

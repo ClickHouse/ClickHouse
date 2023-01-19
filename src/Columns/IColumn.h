@@ -294,7 +294,9 @@ public:
     /// Equivalent to compareAt, but collator is used to compare values.
     [[nodiscard]] virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
     {
-        throw Exception(ErrorCodes::BAD_COLLATION, "Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing it.");
+        throw Exception(ErrorCodes::BAD_COLLATION,
+                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
+                        "or for Array or Tuple, containing it.");
     }
 
     /// Compare the whole column with single value from rhs column.
@@ -348,13 +350,17 @@ public:
     virtual void getPermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
                             size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/) const
     {
-        throw Exception(ErrorCodes::BAD_COLLATION, "Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.");
+        throw Exception(ErrorCodes::BAD_COLLATION,
+                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
+                        "or for Array or Tuple, containing them.");
     }
 
     virtual void updatePermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
                             size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/, EqualRanges & /*equal_ranges*/) const
     {
-        throw Exception(ErrorCodes::BAD_COLLATION, "Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.");
+        throw Exception(ErrorCodes::BAD_COLLATION,
+                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
+                        "or for Array or Tuple, containing them.");
     }
 
     /** Copies each element according offsets parameter.

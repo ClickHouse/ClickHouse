@@ -303,12 +303,15 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
     if (!multipart_upload_id.empty() && (part_number > settings.max_part_number))
     {
         throw Exception(
-            ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
-            "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_part_upload_size = {}",
-            settings.max_part_number, count(), settings.min_upload_part_size, settings.max_upload_part_size,
-            settings.upload_part_size_multiply_factor, settings.upload_part_size_multiply_parts_count_threshold,
-            settings.max_single_part_upload_size);
+                        ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Part number exceeded {} while writing {} bytes to S3. "
+                        "Check min_upload_part_size = {}, max_upload_part_size = {}, "
+                        "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, "
+                        "max_single_part_upload_size = {}",
+                        settings.max_part_number, count(), settings.min_upload_part_size, settings.max_upload_part_size,
+                        settings.upload_part_size_multiply_factor,
+                        settings.upload_part_size_multiply_parts_count_threshold,
+                        settings.max_single_part_upload_size);
     }
 
     /// Setup request.

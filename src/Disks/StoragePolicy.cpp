@@ -57,7 +57,9 @@ StoragePolicy::StoragePolicy(
     for (const auto & attr_name : keys)
     {
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
-            throw Exception( ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Volume name can contain only alphanumeric and '_' in storage policy {} ({})", backQuote(name), attr_name);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                            "Volume name can contain only alphanumeric and '_' in storage policy {} ({})",
+                            backQuote(name), attr_name);
         volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
     }
 
@@ -78,7 +80,9 @@ StoragePolicy::StoragePolicy(
     const double default_move_factor = volumes.size() > 1 ? 0.1 : 0.0;
     move_factor = config.getDouble(config_prefix + ".move_factor", default_move_factor);
     if (move_factor > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}", toString(move_factor), backQuote(name));
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
+                        toString(move_factor), backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -95,7 +99,9 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Storage policy {} must contain at least one Volume.", backQuote(name));
 
     if (move_factor > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}", toString(move_factor), backQuote(name));
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
+                        toString(move_factor), backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -255,7 +261,7 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
         }
     }
     if (!max_disk)
-        throw Exception( ErrorCodes::NOT_ENOUGH_SPACE, "There is no space on any disk in storage policy: {}. "
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "There is no space on any disk in storage policy: {}. "
             "It's likely all disks are broken", name);
     auto reservation = max_disk->reserve(0);
     if (!reservation)
@@ -324,7 +330,9 @@ void StoragePolicy::buildVolumeIndices()
         const VolumePtr & volume = volumes[index];
 
         if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
-            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Volume names must be unique in storage policy {} ({} is duplicated)" , backQuote(name), backQuote(volume->getName()));
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                            "Volume names must be unique in storage policy {} ({} "
+                            "is duplicated)" , backQuote(name), backQuote(volume->getName()));
 
         volume_index_by_volume_name[volume->getName()] = index;
 
@@ -333,7 +341,9 @@ void StoragePolicy::buildVolumeIndices()
             const String & disk_name = disk->getName();
 
             if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
-                throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Disk names must be unique in storage policy {} ({} is duplicated)" , backQuote(name), backQuote(disk_name));
+                throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                                "Disk names must be unique in storage policy {} ({} "
+                                "is duplicated)" , backQuote(name), backQuote(disk_name));
 
             volume_index_by_disk_name[disk_name] = index;
         }
@@ -364,7 +374,8 @@ StoragePolicySelector::StoragePolicySelector(
     for (const auto & name : keys)
     {
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
-            throw Exception( ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Storage policy name can contain only alphanumeric and '_' ({})", backQuote(name));
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                            "Storage policy name can contain only alphanumeric and '_' ({})", backQuote(name));
 
         /*
          * A customization point for StoragePolicy, here one can add his own policy, for example, based on policy's name

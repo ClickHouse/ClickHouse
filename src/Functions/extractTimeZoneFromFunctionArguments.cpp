@@ -22,7 +22,9 @@ std::string extractTimeZoneNameFromColumn(const IColumn & column)
     const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(&column);
 
     if (!time_zone_column)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of time zone argument of function, must be constant string", column.getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of time zone argument of function, must be constant string",
+                        column.getName());
 
     return time_zone_column->getValue<String>();
 }

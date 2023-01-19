@@ -436,7 +436,9 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
     : IRowSchemaReader(buf, format_settings_), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
 {
     if (!number_of_columns)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "You must specify setting input_format_msgpack_number_of_columns to extract table schema from MsgPack data");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "You must specify setting input_format_msgpack_number_of_columns "
+                        "to extract table schema from MsgPack data");
 }
 
 

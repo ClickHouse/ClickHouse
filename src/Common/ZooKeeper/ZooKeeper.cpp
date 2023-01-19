@@ -1174,7 +1174,9 @@ size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::
             return index;
 
     if (!Coordination::isUserError(exception_code))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "There are no failed OPs because '{}' is not valid response code for that", std::string(Coordination::errorMessage(exception_code)));
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+                            "There are no failed OPs because '{}' is not valid response code for that",
+                            std::string(Coordination::errorMessage(exception_code)));
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "There is no failed OpResult");
 }

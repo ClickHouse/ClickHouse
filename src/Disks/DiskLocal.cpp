@@ -79,7 +79,8 @@ static void loadDiskLocalConfig(const String & name,
     bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
 
     if (config.has(config_prefix + ".keep_free_space_bytes") && has_space_ratio)
-        throw Exception( ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified");
+        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                        "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified");
 
     keep_free_space_bytes = config.getUInt64(config_prefix + ".keep_free_space_bytes", 0);
 

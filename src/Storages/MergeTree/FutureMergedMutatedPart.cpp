@@ -39,7 +39,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
         const MergeTreeData::DataPartPtr & first_part = parts_.front();
 
         if (part->partition.value != first_part->partition.value)
-            throw Exception( ErrorCodes::LOGICAL_ERROR, "Attempting to merge parts {} and {} that are in different partitions",
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempting to merge parts {} and {} that are in different partitions",
                 first_part->name, part->name);
     }
 

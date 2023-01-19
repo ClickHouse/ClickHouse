@@ -368,7 +368,8 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
 void MySQLHandler::authPluginSSL()
 {
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.");
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.");
 }
 
 void MySQLHandler::finishHandshakeSSL(

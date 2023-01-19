@@ -31,7 +31,7 @@ struct FunctionPortImpl : public IFunction
     {
         if (arguments.size() != 1 && arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                            Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
                             getName(), arguments.size());
 
         if (!WhichDataType(arguments[0].type).isString())
@@ -68,7 +68,7 @@ struct FunctionPortImpl : public IFunction
             return col_res;
         }
         else
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[0].column->getName(), getName());
 }
 

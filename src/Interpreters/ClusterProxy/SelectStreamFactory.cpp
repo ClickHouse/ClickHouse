@@ -152,7 +152,7 @@ void SelectStreamFactory::createForShard(
                 return;
             }
             else
-                throw Exception( ErrorCodes::ALL_REPLICAS_ARE_STALE, "Local replica of shard {} is stale (delay: "
+                throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "Local replica of shard {} is stale (delay: "
                     "{}s.), but no other replica configured", shard_info.shard_num, toString(local_delay));
         }
 

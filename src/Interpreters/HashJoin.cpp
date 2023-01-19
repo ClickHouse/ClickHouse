@@ -1609,8 +1609,8 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
 {
     size_t num_keys = data_types.size();
     if (right_table_keys.columns() != num_keys)
-        throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Number of arguments for function joinGet{} doesn't match: passed, should be equal to {}",
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function joinGet{} doesn't match: passed, should be equal to {}",
             toString(or_null ? "OrNull" : ""), toString(num_keys));
 
     for (size_t i = 0; i < num_keys; ++i)
@@ -1620,7 +1620,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
         auto left_type = removeNullable(recursiveRemoveLowCardinality(left_type_origin));
         auto right_type = removeNullable(recursiveRemoveLowCardinality(right_type_origin));
         if (!left_type->equals(*right_type))
-            throw Exception( ErrorCodes::TYPE_MISMATCH, "Type mismatch in joinGet key {}: "
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in joinGet key {}: "
                 "found type {}, while the needed type is {}", i, left_type->getName(), right_type->getName());
     }
 

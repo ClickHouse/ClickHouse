@@ -116,7 +116,7 @@ StoragePtr StorageFactory::get(
             const ASTFunction & engine_def = *storage_def->engine;
 
             if (engine_def.parameters)
-                throw Exception( ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Engine definition cannot take the form of a parametric function");
+                throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Engine definition cannot take the form of a parametric function");
 
             if (engine_def.arguments)
                 has_engine_args = true;
@@ -125,19 +125,25 @@ StoragePtr StorageFactory::get(
 
             if (name == "View")
             {
-                throw Exception( ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
             }
             else if (name == "MaterializedView")
             {
-                throw Exception( ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE MaterializedView is not supported, use CREATE MATERIALIZED VIEW statement");
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Direct creation of tables with ENGINE MaterializedView "
+                                "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
             else if (name == "LiveView")
             {
-                throw Exception( ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement");
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Direct creation of tables with ENGINE LiveView "
+                                "is not supported, use CREATE LIVE VIEW statement");
             }
             else if (name == "WindowView")
             {
-                throw Exception( ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE WindowView is not supported, use CREATE WINDOW VIEW statement");
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Direct creation of tables with ENGINE WindowView "
+                                "is not supported, use CREATE WINDOW VIEW statement");
             }
 
             auto it = storages.find(name);

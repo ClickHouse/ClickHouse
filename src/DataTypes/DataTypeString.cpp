@@ -44,7 +44,8 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (arguments && !arguments->children.empty())
     {
         if (arguments->children.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "String data type family mustn't have more than one argument - size in characters");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "String data type family mustn't have more than one argument - size in characters");
 
         const auto * argument = arguments->children[0]->as<ASTLiteral>();
         if (!argument || argument->value.getType() != Field::Types::UInt64)

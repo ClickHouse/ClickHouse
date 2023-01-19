@@ -30,7 +30,8 @@ public:
     {
         if (!context->getSettingsRef().allow_experimental_nlp_functions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
+                            "Natural language processing function '{}' is experimental. "
+                            "Set `allow_experimental_nlp_functions` setting to enable it", name);
 
         return std::make_shared<FunctionTextClassificationString>();
     }
@@ -59,7 +60,7 @@ public:
         const ColumnString * col = checkAndGetColumn<ColumnString>(column.get());
 
         if (!col)
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[0].column->getName(), getName());
 
         auto col_res = ColumnString::create();
@@ -78,7 +79,8 @@ public:
     {
         if (!context->getSettingsRef().allow_experimental_nlp_functions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
+                            "Natural language processing function '{}' is experimental. "
+                            "Set `allow_experimental_nlp_functions` setting to enable it", name);
 
         return std::make_shared<FunctionTextClassificationFloat>();
     }
@@ -107,7 +109,7 @@ public:
         const ColumnString * col = checkAndGetColumn<ColumnString>(column.get());
 
         if (!col)
-            throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[0].column->getName(), getName());
 
         auto col_res = ColumnVector<Float32>::create();

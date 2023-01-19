@@ -163,13 +163,13 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
     assertNoParameters(name, params);
 
     if (arguments.size() < 2)
-        throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires two or more arguments",
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires two or more arguments",
             name);
 
     for (const auto & argument : arguments)
     {
         if (!WhichDataType(argument).isUInt8())
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All the arguments of aggregate function {} should be UInt8",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All the arguments of aggregate function {} should be UInt8",
                 name);
     }
 

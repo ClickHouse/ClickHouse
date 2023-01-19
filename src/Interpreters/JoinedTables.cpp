@@ -250,7 +250,10 @@ bool JoinedTables::resolveTables()
             const auto & t = tables_with_columns[i];
             if (t.table.table.empty() && t.table.alias.empty())
             {
-                throw Exception(ErrorCodes::ALIAS_REQUIRED, "No alias for subquery or table function in JOIN (set joined_subquery_requires_alias=0 to disable restriction). While processing '{}'", table_expressions[i]->formatForErrorMessage());
+                throw Exception(ErrorCodes::ALIAS_REQUIRED,
+                                "No alias for subquery or table function "
+                                "in JOIN (set joined_subquery_requires_alias=0 to disable restriction). "
+                                "While processing '{}'", table_expressions[i]->formatForErrorMessage());
             }
         }
     }

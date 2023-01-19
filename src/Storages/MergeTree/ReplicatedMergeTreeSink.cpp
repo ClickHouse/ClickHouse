@@ -851,7 +851,9 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
             block_id_path.clear();
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Conflict block ids and block number lock should not be empty at the same time for async inserts");
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Conflict block ids and block number lock should not "
+                            "be empty at the same time for async inserts");
 
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);

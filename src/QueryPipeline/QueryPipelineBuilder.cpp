@@ -464,7 +464,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     {
         delayed_root = std::make_shared<DelayedJoinedBlocksTransform>(num_streams, join);
         if (!delayed_root->getInputs().empty() || delayed_root->getOutputs().size() != num_streams)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksTransform should have no inputs and {} outputs, but has {} inputs and {} outputs",
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "DelayedJoinedBlocksTransform should have no inputs and {} outputs, "
+                            "but has {} inputs and {} outputs",
                             num_streams, delayed_root->getInputs().size(), delayed_root->getOutputs().size());
 
         if (collected_processors)

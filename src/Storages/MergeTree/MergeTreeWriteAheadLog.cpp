@@ -356,7 +356,9 @@ void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
 {
     readIntBinary(min_compatible_version, meta_in);
     if (min_compatible_version > WAL_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "WAL metadata version {} is not compatible with this ClickHouse version", toString(min_compatible_version));
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+                        "WAL metadata version {} is not compatible with this ClickHouse version",
+                        toString(min_compatible_version));
 
     size_t metadata_size;
     readVarUInt(metadata_size, meta_in);

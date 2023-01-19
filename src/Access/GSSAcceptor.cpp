@@ -387,7 +387,9 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
         if (major_status == GSS_S_COMPLETE)
         {
             if (!params.mechanism.empty() && !equalMechanisms(params.mechanism, mech_type))
-                throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the authentication mechanism is not what was expected");
+                throw Exception(ErrorCodes::KERBEROS_ERROR,
+                                "gss_accept_sec_context() succeeded, but: "
+                                "the authentication mechanism is not what was expected");
 
             if (flags & GSS_C_ANON_FLAG)
                 throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the initiator does not wish to be authenticated");
@@ -401,7 +403,10 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
                 throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the initiator realm cannot be extracted");
 
             if (!params.realm.empty() && params.realm != realm)
-                throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the initiator realm is not what was expected (expected: {}, actual: {})", params.realm, realm);
+                throw Exception(ErrorCodes::KERBEROS_ERROR,
+                                "gss_accept_sec_context() succeeded, but: "
+                                "the initiator realm is not what was expected (expected: {}, actual: {})",
+                                params.realm, realm);
 
             output_token = bufferToString(output_token_buf);
 

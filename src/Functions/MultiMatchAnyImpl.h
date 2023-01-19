@@ -148,7 +148,7 @@ struct MultiMatchAnyImpl
 #else
         /// fallback if vectorscan is not compiled
         if constexpr (WithEditDistance)
-            throw Exception( ErrorCodes::NOT_IMPLEMENTED, "Edit distance multi-search is not implemented when vectorscan is off");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Edit distance multi-search is not implemented when vectorscan is off");
         PaddedPODArray<UInt8> accum(res.size());
         memset(res.data(), 0, res.size() * sizeof(res.front()));
         memset(accum.data(), 0, accum.size());
@@ -275,7 +275,7 @@ struct MultiMatchAnyImpl
         /// -- the code is copypasted from vectorVector() in MatchImpl.h and quite complex code ... all of it can be removed once vectorscan is
         ///    enabled on all platforms (#38906)
         if constexpr (WithEditDistance)
-            throw Exception( ErrorCodes::NOT_IMPLEMENTED, "Edit distance multi-search is not implemented when vectorscan is off");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Edit distance multi-search is not implemented when vectorscan is off");
 
         (void)edit_distance;
 

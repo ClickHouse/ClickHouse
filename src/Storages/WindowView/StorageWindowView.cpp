@@ -119,7 +119,7 @@ namespace
                     else
                     {
                         if (data.check_duplicate_window && serializeAST(*temp_node) != data.serialized_window_function)
-                            throw Exception( ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "WINDOW VIEW only support ONE TIME WINDOW FUNCTION");
+                            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "WINDOW VIEW only support ONE TIME WINDOW FUNCTION");
                         t->name = "windowID";
                     }
                 }
@@ -1167,7 +1167,9 @@ StorageWindowView::StorageWindowView(
     /// If the target table is not set, use inner target table
     has_inner_target_table = query.to_table_id.empty();
     if (has_inner_target_table && !query.storage)
-        throw Exception( ErrorCodes::INCORRECT_QUERY, "You must specify where to save results of a WindowView query: either ENGINE or an existing table in a TO clause");
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "You must specify where to save results of a WindowView query: "
+                        "either ENGINE or an existing table in a TO clause");
 
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception(
@@ -1660,7 +1662,9 @@ void registerStorageWindowView(StorageFactory & factory)
     factory.registerStorage("WindowView", [](const StorageFactory::Arguments & args)
     {
         if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
-            throw Exception( ErrorCodes::SUPPORT_IS_DISABLED, "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Experimental WINDOW VIEW feature "
+                            "is not enabled (the setting 'allow_experimental_window_view')");
 
         return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
     });

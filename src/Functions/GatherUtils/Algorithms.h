@@ -207,7 +207,8 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     {
         if (source == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Concat function expected {} or {} but got {}",
-                            demangle(typeid(Source).name()), demangle(typeid(ConstSource<Source>).name()), demangle(typeid(*array_source).name()));
+                            demangle(typeid(Source).name()), demangle(typeid(ConstSource<Source>).name()),
+                            demangle(typeid(*array_source).name()));
         return source->getSizeForReserve();
     };
 

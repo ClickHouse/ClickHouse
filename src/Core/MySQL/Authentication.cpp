@@ -94,7 +94,7 @@ void Native41::authenticate(
     }
 
     if (auth_response->size() != Poco::SHA1Engine::DIGEST_SIZE)
-        throw Exception( ErrorCodes::UNKNOWN_EXCEPTION, "Wrong size of auth response. Expected: {} bytes, received: {} bytes.",
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Wrong size of auth response. Expected: {} bytes, received: {} bytes.",
             std::to_string(Poco::SHA1Engine::DIGEST_SIZE), std::to_string(auth_response->size()));
 
     session.authenticate(MySQLNative41Credentials{user_name, scramble, *auth_response}, address);
@@ -122,7 +122,7 @@ void Sha256Password::authenticate(
 
         if (packet_endpoint->in->eof())
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES,
-"                            Client doesn't support authentication method {} used by ClickHouse. "
+                            "Client doesn't support authentication method {} used by ClickHouse. "
                             "Specifying user password using 'password_double_sha1_hex' may fix the problem.",
                             getName());
 

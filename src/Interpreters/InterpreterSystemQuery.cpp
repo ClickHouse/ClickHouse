@@ -731,7 +731,13 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                     ReplicatedTableStatus status;
                     storage_replicated->getStatus(status);
                     if (status.zookeeper_path == query.replica_zk_path)
-                        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "There is a local table {}, which has the same table path in ZooKeeper. Please check the path in query. If you want to drop replica of this table, use `DROP TABLE` or `SYSTEM DROP REPLICA 'name' FROM db.table`", storage_replicated->getStorageID().getNameForLogs());
+                        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
+                                        "There is a local table {}, which has the same table path in ZooKeeper. "
+                                        "Please check the path in query. "
+                                        "If you want to drop replica "
+                                        "of this table, use `DROP TABLE` "
+                                        "or `SYSTEM DROP REPLICA 'name' FROM db.table`",
+                                        storage_replicated->getStorageID().getNameForLogs());
                 }
             }
         }
@@ -766,7 +772,9 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
 
     /// Do not allow to drop local replicas and active remote replicas
     if (query.replica == status.replica_name)
-        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica");
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
+                        "We can't drop local replica, please use `DROP TABLE` if you want "
+                        "to clean the data and drop this replica");
 
     /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
     /// However, the main use case is to drop dead replica, which cannot become active.

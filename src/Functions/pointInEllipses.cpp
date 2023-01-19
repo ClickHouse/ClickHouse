@@ -63,15 +63,15 @@ private:
     {
         if (arguments.size() < 6 || arguments.size() % 4 != 2)
         {
-            throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"                Incorrect number of arguments of function {}. "
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of arguments of function {}. "
                 "Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).", getName());
         }
 
         /// For array on stack, see below.
         if (arguments.size() > 10000)
         {
-            throw Exception( ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Number of arguments of function {} is too large.",
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Number of arguments of function {} is too large.",
                 getName());
         }
 
@@ -80,7 +80,7 @@ private:
             const auto * arg = arguments[arg_idx].get();
             if (!WhichDataType(arg).isFloat64())
             {
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
                     "Must be Float64", arg->getName(), std::to_string(arg_idx + 1), getName());
             }
         }
@@ -109,7 +109,7 @@ private:
                 }
                 else
                 {
-                    throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
                         "Must be const Float64", column->getName(), std::to_string(arg_idx + 1), getName());
                 }
             }
@@ -160,7 +160,7 @@ private:
         }
         else
         {
-            throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {}, {} of arguments 1, 2 of function {}. "
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {}, {} of arguments 1, 2 of function {}. "
                 "Both must be either const or vector", col_x->getName(), col_y->getName(), getName());
         }
     }

@@ -68,7 +68,7 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
 
     if (args.size() != 3 && args.size() != 4)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-"            Table function '{}' requires 1, 2, 3 or 4 arguments: "
+            "Table function '{}' requires 1, 2, 3 or 4 arguments: "
             "filename, format (default auto), structure (default auto) and compression method (default auto)",
             getName());
 
