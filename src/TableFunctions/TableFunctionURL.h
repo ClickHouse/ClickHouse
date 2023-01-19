@@ -26,6 +26,8 @@ public:
 protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override;
 
+    StorageURL::Configuration configuration;
+    
 private:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
@@ -35,7 +37,7 @@ private:
 
     String getFormatFromFirstArgument() override;
 
-    StorageURL::Configuration configuration;
+    
 };
 
 }
