@@ -118,7 +118,7 @@ FROM
     )
     ORDER BY number DESC
 ) AS t2
-ORDER BY t1.number ASC"
+ORDER BY t1.number, t2.number"
 run_query "$query"
 
 echo "-- GROUP BY with aggregation function which does NOT depend on order -> eliminate ORDER BY(s) in _all_ subqueries"

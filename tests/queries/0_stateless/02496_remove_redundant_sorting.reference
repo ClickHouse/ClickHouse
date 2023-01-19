@@ -197,7 +197,7 @@ FROM
     )
     ORDER BY number DESC
 ) AS t2
-ORDER BY t1.number ASC
+ORDER BY t1.number, t2.number
 -- explain
 Expression (Projection)
 Header: number UInt64
