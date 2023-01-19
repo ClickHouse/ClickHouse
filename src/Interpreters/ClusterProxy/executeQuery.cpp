@@ -9,12 +9,14 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTFunction.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
+
 
 namespace DB
 {
@@ -127,7 +129,8 @@ void executeQuery(
     const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster)
+    const ClusterPtr & not_optimized_cluster,
+    AdditionalShardFilterGenerator shard_filter_generator)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -177,7 +180,22 @@ void executeQuery(
             visitor.visit(query_ast_for_shard);
         }
         else
-            query_ast_for_shard = query_ast;
+            query_ast_for_shard = query_ast->clone();
+
+        if (shard_filter_generator)
+        {
+            auto shard_filter = shard_filter_generator(shard_info.shard_num);
+            if (shard_filter)
+            {
+                auto & select_query = query_ast_for_shard->as<ASTSelectQuery &>();
+
+                auto where_expression = select_query.where();
+                if (where_expression)
+                    shard_filter = makeASTFunction("and", where_expression, shard_filter);
+
+                select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
+            }
+        }
 
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,

@@ -38,6 +38,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
+#include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -329,145 +330,14 @@ ASTPtr parseAdditionalFilterConditionForTable(
 
 ASTPtr parseParallelReplicaCustomKey(const String & setting, const Context & context)
 {
+    if (setting.empty())
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but 'parallel_replicas_custom_key' has no value");
+
     ParserExpression parser;
     const auto & settings = context.getSettingsRef();
     return parseQuery(
         parser, setting.data(), setting.data() + setting.size(),
         "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
-}
-
-ASTPtr getCustomKeyFilterForParallelReplica(const Settings & settings, const StoragePtr & storage, const ContextPtr & context)
-{
-    assert(settings.parallel_replicas_count > 1);
-
-    if (settings.parallel_replicas_custom_key.value.empty())
-        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but 'parallel_replicas_custom_key' has no value");
-
-    auto custom_key_ast = parseParallelReplicaCustomKey(
-            settings.parallel_replicas_custom_key, *context);
-
-    if (settings.parallel_replicas_custom_key_filter_type == ParallelReplicasCustomKeyFilterType::DEFAULT)
-    {
-        // first we do modulo with replica count
-        ASTPtr args = std::make_shared<ASTExpressionList>();
-        args->children.push_back(custom_key_ast);
-        args->children.push_back(std::make_shared<ASTLiteral>(settings.parallel_replicas_count.value));
-
-        auto modulo_function = std::make_shared<ASTFunction>();
-        modulo_function->name = "positiveModulo";
-        modulo_function->arguments = args;
-        modulo_function->children.push_back(modulo_function->arguments);
-
-        /// then we compare result to the current replica number (offset)
-        args = std::make_shared<ASTExpressionList>();
-        args->children.push_back(modulo_function);
-        args->children.push_back(std::make_shared<ASTLiteral>(settings.parallel_replica_offset.value));
-
-        auto equals_function = std::make_shared<ASTFunction>();
-        equals_function->name = "equals";
-        equals_function->arguments = args;
-        equals_function->children.push_back(equals_function->arguments);
-
-        return equals_function;
-    }
-
-    // create range query
-    assert(settings.parallel_replicas_custom_key_filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
-
-    if (!storage)
-        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
-
-    KeyDescription custom_key_description = KeyDescription::getKeyFromAST(custom_key_ast, storage->getInMemoryMetadataPtr()->columns, context);
-
-    using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
-
-    RelativeSize size_of_universum = 0;
-    DataTypePtr custom_key_column_type = custom_key_description.data_types[0];
-
-    if (custom_key_description.data_types.size() == 1)
-    {
-        if (typeid_cast<const DataTypeUInt64 *>(custom_key_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt32 *>(custom_key_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt16 *>(custom_key_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt8 *>(custom_key_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
-    }
-
-    if (size_of_universum == RelativeSize(0))
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "Invalid custom key column type: {}. Must be one unsigned integer type", custom_key_column_type->getName());
-
-    RelativeSize relative_range_size = RelativeSize(1) / settings.parallel_replicas_count.value;
-    RelativeSize relative_range_offset = relative_range_size * RelativeSize(settings.parallel_replica_offset.value);
-
-    /// Calculate the half-interval of `[lower, upper)` column values.
-    bool has_lower_limit = false;
-    bool has_upper_limit = false;
-
-    RelativeSize lower_limit_rational = relative_range_offset * size_of_universum;
-    RelativeSize upper_limit_rational = (relative_range_offset + relative_range_size) * size_of_universum;
-
-    UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
-    UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
-
-    if (lower > 0)
-        has_lower_limit = true;
-
-    if (upper_limit_rational < size_of_universum)
-        has_upper_limit = true;
-
-    assert(has_lower_limit || has_upper_limit);
-
-    /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
-    std::shared_ptr<ASTFunction> lower_function;
-    std::shared_ptr<ASTFunction> upper_function;
-
-    if (has_lower_limit)
-    {
-        ASTPtr args = std::make_shared<ASTExpressionList>();
-        args->children.push_back(custom_key_ast);
-        args->children.push_back(std::make_shared<ASTLiteral>(lower));
-
-        lower_function = std::make_shared<ASTFunction>();
-        lower_function->name = "greaterOrEquals";
-        lower_function->arguments = args;
-        lower_function->children.push_back(lower_function->arguments);
-
-        if (!has_upper_limit)
-            return lower_function;
-    }
-
-    if (has_upper_limit)
-    {
-        ASTPtr args = std::make_shared<ASTExpressionList>();
-        args->children.push_back(custom_key_ast);
-        args->children.push_back(std::make_shared<ASTLiteral>(upper));
-
-        upper_function = std::make_shared<ASTFunction>();
-        upper_function->name = "less";
-        upper_function->arguments = args;
-        upper_function->children.push_back(upper_function->arguments);
-
-        if (!has_lower_limit)
-            return upper_function;
-    }
-
-    assert(has_lower_limit && has_upper_limit);
-
-    ASTPtr args = std::make_shared<ASTExpressionList>();
-    args->children.push_back(lower_function);
-    args->children.push_back(upper_function);
-
-    auto filter_function = std::make_shared<ASTFunction>();
-    filter_function->name = "and";
-    filter_function->arguments = args;
-    filter_function->children.push_back(filter_function->arguments);
-
-    return filter_function;
 }
 
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
@@ -656,9 +526,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
     if (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY)
-        parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(settings, storage, context);
+    {
+        LOG_INFO(log, "Processing query on a replica using custom_key");
+        if (!storage)
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
 
-    auto analyze = [&] (bool try_move_to_prewhere)
+        auto custom_key_ast = parseParallelReplicaCustomKey(settings.parallel_replicas_custom_key, *context);
+        parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
+            settings.parallel_replicas_count,
+            settings.parallel_replica_offset,
+            std::move(custom_key_ast),
+            settings.parallel_replicas_custom_key_filter_type,
+            *storage,
+            context);
+    }
+
+    auto analyze = [&](bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
