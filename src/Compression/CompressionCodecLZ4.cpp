@@ -127,7 +127,7 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "LZ4HC codec must have 1 parameter, given {}", std::to_string(arguments->children.size()));
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "LZ4HC codec must have 1 parameter, given {}", arguments->children.size());
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();

@@ -131,7 +131,7 @@ struct TimeWindowImpl<TUMBLE>
         {
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                function_name, toString(arguments.size()));
+                function_name, arguments.size());
         }
 
         DataTypePtr data_type = nullptr;
@@ -309,7 +309,7 @@ struct TimeWindowImpl<HOP>
         {
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 3 or 4",
-                function_name, toString(arguments.size()));
+                function_name, arguments.size());
         }
 
         if (interval_kind_1 != interval_kind_2)
@@ -458,7 +458,7 @@ struct TimeWindowImpl<WINDOW_ID>
         {
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 2, 3 or 4",
-                function_name, toString(arguments.size()));
+                function_name, arguments.size());
         }
 
         if (result_type_is_date)

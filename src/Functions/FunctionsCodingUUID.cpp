@@ -160,7 +160,7 @@ public:
 
         const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
         if (!ptr || ptr->getN() != uuid_bytes_length)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected FixedString({})", arguments[0]->getName(), getName(), toString(uuid_bytes_length));
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected FixedString({})", arguments[0]->getName(), getName(), uuid_bytes_length);
 
         checkFormatArgument(arguments, name);
 
@@ -177,7 +177,7 @@ public:
         if (const auto * col_in = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             if (col_in->getN() != uuid_bytes_length)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of column {} argument of function {}, expected FixedString({})", col_type_name.type->getName(), col_in->getName(), getName(), toString(uuid_bytes_length));
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of column {} argument of function {}, expected FixedString({})", col_type_name.type->getName(), col_in->getName(), getName(), uuid_bytes_length);
 
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
@@ -233,7 +233,7 @@ public:
         {
             const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
             if (!ptr || ptr->getN() != uuid_text_length)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}, expected FixedString({})", arguments[0]->getName(), getName(), toString(uuid_text_length));
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}, expected FixedString({})", arguments[0]->getName(), getName(), uuid_text_length);
         }
 
         checkFormatArgument(arguments, name);
@@ -283,7 +283,7 @@ public:
         else if (const auto * col_in_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             if (col_in_fixed->getN() != uuid_text_length)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of column {} argument of function {}, expected FixedString({})", col_type_name.type->getName(), col_in_fixed->getName(), getName(), toString(uuid_text_length));
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of column {} argument of function {}, expected FixedString({})", col_type_name.type->getName(), col_in_fixed->getName(), getName(), uuid_text_length);
 
             const auto size = col_in_fixed->size();
             const auto & vec_in = col_in_fixed->getChars();

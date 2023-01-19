@@ -916,7 +916,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
             if (connections.empty() || connections.front().isNull())
                 throw Exception( ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}",
-                    toString(shard_info.shard_num));
+                    shard_info.shard_num);
 
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor

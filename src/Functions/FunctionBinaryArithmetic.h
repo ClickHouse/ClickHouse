@@ -2117,7 +2117,7 @@ public:
         if (arguments.size() != 2)
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
         return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::getReturnTypeImplStatic(arguments, context);
     }
 

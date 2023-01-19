@@ -86,13 +86,13 @@ namespace DB
             const DataTypes & arg_data_types1 = sketch_type1->getArgumentsDataTypes();
 
             if (arg_data_types0.size() != arg_data_types1.size())
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The nested type in uniqThetas must be the same length, but one is {}, and the other is {}", std::to_string(arg_data_types0.size()), std::to_string(arg_data_types1.size()));
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The nested type in uniqThetas must be the same length, but one is {}, and the other is {}", arg_data_types0.size(), arg_data_types1.size());
 
             size_t types_size = arg_data_types0.size();
             for (size_t i = 0; i < types_size; ++i)
             {
                 if (!arg_data_types0[i]->equals(*arg_data_types1[i]))
-                    throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th nested type in uniqThetas must be the same, but one is {}, and the other is {}", std::to_string(i), arg_data_types0[i]->getName(), arg_data_types1[i]->getName());
+                    throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th nested type in uniqThetas must be the same, but one is {}, and the other is {}", i, arg_data_types0[i]->getName(), arg_data_types1[i]->getName());
             }
 
 

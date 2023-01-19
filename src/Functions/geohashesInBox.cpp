@@ -118,9 +118,9 @@ public:
 
             if (prepared_args.items_count > max_array_size)
             {
-                throw Exception(getName() + " would produce " + std::to_string(prepared_args.items_count) +
-                                " array elements, which is bigger than the allowed maximum of " + std::to_string(max_array_size),
-                                ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "{} would produce {} array elements, "
+                                "which is bigger than the allowed maximum of {}",
+                                getName(), prepared_args.items_count, max_array_size);
             }
 
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
@@ -144,7 +144,7 @@ public:
         if (!res_offsets.empty() && res_offsets.back() != res_strings.size())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Array column size mismatch (internal logical error){} != {}",
-                            std::to_string(res_offsets.back()), std::to_string(res_strings.size()));
+                            res_offsets.back(), std::to_string(res_strings.size()));
         }
 
         result = std::move(col_res);

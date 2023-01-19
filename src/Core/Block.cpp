@@ -173,7 +173,7 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
 {
     if (position > data.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position out of bound in Block::insert(), max position = {}",
-        toString(data.size()));
+        data.size());
 
     if (elem.name.empty())
         throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Column name in Block cannot be empty");
@@ -231,7 +231,7 @@ void Block::erase(size_t position)
 
     if (position >= data.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position out of bound in Block::erase(), max position = {}",
-            toString(data.size() - 1));
+            data.size() - 1);
 
     eraseImpl(position);
 }
@@ -361,7 +361,7 @@ void Block::checkNumberOfRows(bool allow_null_columns) const
             rows = size;
         else if (rows != size)
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Sizes of columns doesn't match: {}: {}, {}: {}",
-                data.front().name, toString(rows), elem.name, toString(size));
+                data.front().name, rows, elem.name, toString(size));
     }
 }
 
@@ -498,7 +498,7 @@ void Block::setColumn(size_t position, ColumnWithTypeAndName column)
 {
     if (position >= data.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Block::setColumn(), max position {}",
-                        position, toString(data.size()));
+                        position, data.size());
 
     if (data[position].name != column.name)
     {

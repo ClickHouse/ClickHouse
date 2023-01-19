@@ -102,7 +102,7 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
 
     if (read_bytes % n != 0)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data of type FixedString. "
-            "Bytes read:{}. String size:{}.", toString(read_bytes), toString(n));
+            "Bytes read:{}. String size:{}.", read_bytes, toString(n));
 
     data.resize(initial_size + read_bytes);
 }

@@ -108,7 +108,7 @@ public:
 
         if (groups_count > MAX_GROUPS_COUNT - 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups in regexp: {}, max: {}",
-                            std::to_string(groups_count), std::to_string(MAX_GROUPS_COUNT - 1));
+                            groups_count, std::to_string(MAX_GROUPS_COUNT - 1));
 
         // Including 0-group, which is the whole regexp.
         PODArrayWithStackMemory<StringPiece, MAX_GROUPS_COUNT> matched_groups(groups_count + 1);

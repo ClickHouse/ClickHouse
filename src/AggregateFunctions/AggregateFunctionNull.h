@@ -427,7 +427,7 @@ public:
         if (number_of_arguments > MAX_ARGS)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Maximum number of arguments for aggregate function with Nullable types is {}",
-                toString(size_t(MAX_ARGS)));
+                size_t(MAX_ARGS));
 
         for (size_t i = 0; i < number_of_arguments; ++i)
             is_nullable[i] = arguments[i]->isNullable();

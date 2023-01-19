@@ -366,7 +366,7 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
     if (detached_tables.contains(uuid))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table with UUID {}, "
-                        "because it was detached but still used by some query. Retry later.", toString(uuid));
+                        "because it was detached but still used by some query. Retry later.", uuid);
 }
 
 void DatabaseAtomic::setDetachedTableNotInUseForce(const UUID & uuid)

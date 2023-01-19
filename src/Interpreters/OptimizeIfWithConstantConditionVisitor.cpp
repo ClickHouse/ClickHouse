@@ -90,7 +90,7 @@ void OptimizeIfWithConstantConditionVisitor::visit(ASTPtr & current_ast)
         if (function_node->arguments->children.size() != 3)
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Wrong number of arguments for function 'if' ({} instead of 3)",
-                toString(function_node->arguments->children.size()));
+                function_node->arguments->children.size());
 
         visit(function_node->arguments);
         const auto * args = function_node->arguments->as<ASTExpressionList>();

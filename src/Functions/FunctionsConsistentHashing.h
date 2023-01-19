@@ -50,7 +50,7 @@ public:
 
         if (arguments[0]->getSizeOfValueInMemory() > sizeof(HashType))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} accepts {}-bit integers at most, got {}",
-                    getName(), std::to_string(sizeof(HashType) * 8), arguments[0]->getName());
+                    getName(), sizeof(HashType) * 8, arguments[0]->getName());
 
         if (!isInteger(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the second argument of function {}",
@@ -90,7 +90,7 @@ private:
 
         if (unlikely(static_cast<UInt64>(buckets) > Impl::max_buckets))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the second argument of function {} "
-                            "(number of buckets) must not be greater than {}", getName(), std::to_string(Impl::max_buckets));
+                            "(number of buckets) must not be greater than {}", getName(), Impl::max_buckets);
 
         return static_cast<BucketsType>(buckets);
     }

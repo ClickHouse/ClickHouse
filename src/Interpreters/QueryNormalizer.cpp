@@ -33,7 +33,7 @@ public:
         : data(data_)
     {
         if (data.level > data.settings.max_ast_depth)
-            throw Exception(ErrorCodes::TOO_DEEP_AST, "Normalized AST is too deep. Maximum: {}", toString(data.settings.max_ast_depth));
+            throw Exception(ErrorCodes::TOO_DEEP_AST, "Normalized AST is too deep. Maximum: {}", data.settings.max_ast_depth);
         ++data.level;
     }
 

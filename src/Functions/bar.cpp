@@ -55,7 +55,7 @@ public:
         if (arguments.size() != 3 && arguments.size() != 4)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                    Function {} requires from 3 or 4 parameters: value, min_value, max_value, [max_width_of_bar = 80]. "
-                    "Passed {}.", getName(), toString(arguments.size()));
+                    "Passed {}.", getName(), arguments.size());
 
         if (!isNumber(arguments[0]) || !isNumber(arguments[1]) || !isNumber(arguments[2])
             || (arguments.size() == 4 && !isNumber(arguments[3])))

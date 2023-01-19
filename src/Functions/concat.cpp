@@ -215,7 +215,7 @@ public:
         if (arguments.size() < 2)
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         /// We always return Strings from concat, even if arguments were fixed strings.
         return std::make_shared<DataTypeString>();

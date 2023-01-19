@@ -47,7 +47,7 @@ inline void assertArityAtMost(const std::string & name, const DataTypes & argume
                         name);
 
     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at most {} arguments",
-                    name, toString(maximal_arity));
+                    name, maximal_arity);
 }
 
 }

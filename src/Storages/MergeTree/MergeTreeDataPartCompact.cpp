@@ -210,7 +210,7 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                     "Part {} is broken: bad size of marks file '{}': {}, must be: {}",
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name),
-                    std::to_string(file_size), std::to_string(expected_file_size));
+                    file_size, expected_file_size);
         }
     }
 }

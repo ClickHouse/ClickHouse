@@ -197,7 +197,7 @@ void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod
         {
             if (!arguments->children.empty())
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "Codec {} must not have parameters, given {}",
-                                getMethodName(Method), std::to_string(arguments->children.size()));
+                                getMethodName(Method), arguments->children.size());
         }
         return std::make_shared<CompressionCodecEncrypted>(Method);
     });

@@ -322,7 +322,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             if (dst_tuple_size != src_tuple_size)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Bad size of tuple in IN or VALUES section. "
-                    "Expected size: {}, actual size: {}", toString(dst_tuple_size), toString(src_tuple_size));
+                    "Expected size: {}, actual size: {}", dst_tuple_size, src_tuple_size);
 
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;

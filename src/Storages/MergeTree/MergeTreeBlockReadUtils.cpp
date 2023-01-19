@@ -247,7 +247,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     if (num_rows < block_size_rows)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Updated block has less rows ({}) than previous one ({})",
-                        toString(num_rows), toString(block_size_rows));
+                        num_rows, block_size_rows);
     }
 
     size_t diff_rows = num_rows - block_size_rows;

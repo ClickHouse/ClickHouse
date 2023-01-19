@@ -765,7 +765,7 @@ void IMergeTreeDataPart::loadIndex()
             loaded_index[i]->protect();
             if (loaded_index[i]->size() != marks_count)
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from index file {}(expected size: "
-                    "{}, read: {})", index_path, toString(marks_count), toString(loaded_index[i]->size()));
+                    "{}, read: {})", index_path, marks_count, loaded_index[i]->size());
         }
 
         if (!index_file->eof())
@@ -1199,7 +1199,7 @@ void IMergeTreeDataPart::loadRowsCount()
 
             if (column_size % sizeof_field != 0)
             {
-                throw Exception( ErrorCodes::LOGICAL_ERROR, "Uncompressed size of column {}({}) is not divisible by the size of value ({})", column.name, toString(column_size), toString(sizeof_field));
+                throw Exception( ErrorCodes::LOGICAL_ERROR, "Uncompressed size of column {}({}) is not divisible by the size of value ({})", column.name, column_size, sizeof_field);
             }
 
             size_t last_mark_index_granularity = index_granularity.getLastNonFinalMarkRows();
@@ -1207,7 +1207,7 @@ void IMergeTreeDataPart::loadRowsCount()
             if (!(rows_count <= rows_approx && rows_approx < rows_count + last_mark_index_granularity))
                 throw Exception( ErrorCodes::LOGICAL_ERROR, "Unexpected size of column {}: "
                     "{} rows, expected {}+-{} rows according to the index",
-                    column.name, toString(rows_count), toString(rows_approx), toString(last_mark_index_granularity));
+                    column.name, rows_count, rows_approx, toString(last_mark_index_granularity));
 
             return;
         }

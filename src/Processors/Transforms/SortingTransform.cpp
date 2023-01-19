@@ -360,7 +360,7 @@ void SortingTransform::removeConstColumns(Chunk & chunk)
 
     if (num_columns != const_columns_to_remove.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Block has different number of columns with header: {} vs {}",
-                        toString(num_columns), toString(const_columns_to_remove.size()));
+                        num_columns, const_columns_to_remove.size());
 
     auto columns = chunk.detachColumns();
     Columns column_without_constants;

@@ -38,7 +38,7 @@ namespace
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Encryption algorithm {} is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
-            std::to_string(static_cast<int>(algorithm)));
+            static_cast<int>(algorithm));
     }
 
     void checkKeySize(const EVP_CIPHER * evp_cipher, size_t key_size)
@@ -201,7 +201,7 @@ String toString(Algorithm algorithm)
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Encryption algorithm {} is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
-        std::to_string(static_cast<int>(algorithm)));
+        static_cast<int>(algorithm));
 }
 
 void parseFromString(Algorithm & algorithm, const String & str)

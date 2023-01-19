@@ -1747,7 +1747,7 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
             case OverflowMode::THROW:
                 ProfileEvents::increment(ProfileEvents::OverflowThrow);
                 throw Exception(ErrorCodes::TOO_MANY_ROWS, "Limit for rows to GROUP BY exceeded: has {} rows, maximum: {}",
-                    toString(result_size), toString(params.max_rows_to_group_by));
+                    result_size, params.max_rows_to_group_by);
 
             case OverflowMode::BREAK:
                 ProfileEvents::increment(ProfileEvents::OverflowBreak);

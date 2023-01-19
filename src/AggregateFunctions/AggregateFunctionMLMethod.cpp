@@ -45,7 +45,7 @@ namespace
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
             if (!isNativeNumber(argument_types[i]))
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of type {} must be numeric for aggregate function {}", std::to_string(i), argument_types[i]->getName(), name);
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of type {} must be numeric for aggregate function {}", i, argument_types[i]->getName(), name);
         }
 
         /// Such default parameters were picked because they did good on some tests,
@@ -456,7 +456,7 @@ void LogisticRegression::predict(
     if (offset > rows_num || offset + limit > rows_num)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid offset and limit for LogisticRegression::predict. "
                         "Block has {} rows, but offset is {} and limit is {}",
-                        toString(rows_num), toString(offset), toString(limit));
+                        rows_num, offset, toString(limit));
 
     std::vector<Float64> results(limit, bias);
 
@@ -529,7 +529,7 @@ void LinearRegression::predict(
     if (offset > rows_num || offset + limit > rows_num)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid offset and limit for LogisticRegression::predict. "
                         "Block has {} rows, but offset is {} and limit is {}",
-                        toString(rows_num), toString(offset), toString(limit));
+                        rows_num, offset, toString(limit));
 
     std::vector<Float64> results(limit, bias);
 
@@ -543,7 +543,7 @@ void LinearRegression::predict(
         auto features_column = cur_col.column;
 
         if (!features_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpectedly cannot dynamically cast features column {}", std::to_string(i));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpectedly cannot dynamically cast features column {}", i);
 
         for (size_t row_num = 0; row_num < limit; ++row_num)
             results[row_num] += weights[i - 1] * features_column->getFloat64(row_num + offset);

@@ -37,7 +37,7 @@ bool CompressedReadBufferFromFile::nextImpl()
     /// check that we are not seeking beyond working buffer.
     if (nextimpl_working_buffer_offset > working_buffer.size())
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Required to move position beyond the decompressed block (pos: "
-        "{}, block size: {})", toString(nextimpl_working_buffer_offset), toString(working_buffer.size()));
+        "{}, block size: {})", nextimpl_working_buffer_offset, toString(working_buffer.size()));
 
     return true;
 }

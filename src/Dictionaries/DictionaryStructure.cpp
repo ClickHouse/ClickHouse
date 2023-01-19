@@ -162,7 +162,7 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
         if (!areTypesEqual(expected_type, actual_type))
             throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Key type for complex key at position {} does not match, expected {}, found {}",
-            std::to_string(i),
+            i,
             expected_type->getName(),
             actual_type->getName());
     }

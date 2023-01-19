@@ -113,7 +113,7 @@ MagicNumber serializeTypeId(TypeIndex type_id)
             break;
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type is not supported by T64 codec: {}", toString(static_cast<UInt32>(type_id)));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type is not supported by T64 codec: {}", static_cast<UInt32>(type_id));
 }
 
 TypeIndex deserializeTypeId(uint8_t serialized_type_id)
@@ -138,7 +138,7 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Decimal64:    return TypeIndex::Decimal64;
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad magic number in T64 codec: {}", toString(static_cast<UInt32>(serialized_type_id)));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad magic number in T64 codec: {}", static_cast<UInt32>(serialized_type_id));
 }
 
 
@@ -474,7 +474,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 
     if (bytes_size % sizeof(T))
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress, data size {} is not multiplier of {}",
-                        toString(bytes_size), toString(sizeof(T)));
+                        bytes_size, sizeof(T));
 
     UInt32 src_size = bytes_size / sizeof(T);
     UInt32 num_full = src_size / matrix_size;
@@ -529,11 +529,11 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
 
     if (bytes_size < header_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size {} is less then T64 header",
-                        toString(bytes_size));
+                        bytes_size);
 
     if (uncompressed_size % sizeof(T))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, unexpected uncompressed size {}",
-                        toString(uncompressed_size));
+                        uncompressed_size);
 
     UInt64 num_elements = uncompressed_size / sizeof(T);
     MinMaxType min;
@@ -561,7 +561,7 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
 
     if (!bytes_size || bytes_size % src_shift)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size {} is not multiplier of {}",
-                        toString(bytes_size), toString(src_shift));
+                        bytes_size, toString(src_shift));
 
     UInt32 num_full = bytes_size / src_shift;
     UInt32 tail = num_elements % matrix_size;
@@ -721,7 +721,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
         {
             if (arguments->children.size() > 1)
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 support zero or one parameter, given {}",
-                                std::to_string(arguments->children.size()));
+                                arguments->children.size());
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();

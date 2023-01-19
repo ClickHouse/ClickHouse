@@ -321,7 +321,7 @@ public:
         for (const auto & c : centroids)
         {
             if (c.count <= 0 || std::isnan(c.count)) // invalid count breaks compress()
-                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid centroid {}:{}", std::to_string(c.count), std::to_string(c.mean));
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid centroid {}:{}", c.count, std::to_string(c.mean));
             if (!std::isnan(c.mean))
             {
                 count += c.count;

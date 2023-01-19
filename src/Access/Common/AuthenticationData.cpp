@@ -179,7 +179,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
         case AuthenticationType::SHA256_PASSWORD:
         {
             if (hash.size() != 32)
-                throw Exception( ErrorCodes::BAD_ARGUMENTS, "Password hash for the 'SHA256_PASSWORD' authentication type has length {} but must be exactly 32 bytes.", std::to_string(hash.size()));
+                throw Exception( ErrorCodes::BAD_ARGUMENTS, "Password hash for the 'SHA256_PASSWORD' authentication type has length {} but must be exactly 32 bytes.", hash.size());
             password_hash = hash;
             return;
         }
@@ -187,7 +187,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
         {
             if (hash.size() != 20)
-                throw Exception( ErrorCodes::BAD_ARGUMENTS, "Password hash for the 'DOUBLE_SHA1_PASSWORD' authentication type has length {} but must be exactly 20 bytes.", std::to_string(hash.size()));
+                throw Exception( ErrorCodes::BAD_ARGUMENTS, "Password hash for the 'DOUBLE_SHA1_PASSWORD' authentication type has length {} but must be exactly 20 bytes.", hash.size());
             password_hash = hash;
             return;
         }

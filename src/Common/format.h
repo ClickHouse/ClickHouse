@@ -27,7 +27,7 @@ namespace Format
             res = res * 10 + description[pos] - '0';
             if (res >= argument_number)
                 throw Exception( ErrorCodes::BAD_ARGUMENTS, "Too big number for arguments, must be at most {}",
-                    std::to_string(argument_number - 1));
+                    argument_number - 1);
         }
     }
 
@@ -90,7 +90,7 @@ namespace Format
                 }
 
                 if (is_open_curly)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two open curly braces without close one at position {}", std::to_string(i));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two open curly braces without close one at position {}", i);
 
                 String to_add = String(pattern.data() + start_pos, i - start_pos);
                 double_brace_removal(to_add);
@@ -113,7 +113,7 @@ namespace Format
                 }
 
                 if (!is_open_curly)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Closed curly brace without open one at position {}", std::to_string(i));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Closed curly brace without open one at position {}", i);
 
                 is_open_curly = false;
 

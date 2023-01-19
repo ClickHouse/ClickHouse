@@ -575,7 +575,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             };
         }
         default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported Avro type {} ({})", root_node->name().fullname(), toString(int(root_node->type())));
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported Avro type {} ({})", root_node->name().fullname(), int(root_node->type()));
     }
 }
 
@@ -898,7 +898,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
     if (magic != 0x00)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid magic byte before AvroConfluent schema identifier. "
-            "Must be zero byte, found {} instead", std::to_string(int(magic)));
+            "Must be zero byte, found {} instead", int(magic));
     }
 
     return schema_id;

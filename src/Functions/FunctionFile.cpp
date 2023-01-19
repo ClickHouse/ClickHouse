@@ -45,7 +45,7 @@ public:
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         if (!isString(arguments[0].type))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is only implemented for type String", getName());

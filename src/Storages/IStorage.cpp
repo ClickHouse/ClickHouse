@@ -39,12 +39,9 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
     if (!lock_holder)
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
-        throw Exception(
-            type_str + " locking attempt on \"" + getStorageID().getFullTableName() + "\" has timed out! ("
-                + std::to_string(acquire_timeout.count())
-                + "ms) "
-                  "Possible deadlock avoided. Client should retry.",
-            ErrorCodes::DEADLOCK_AVOIDED);
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+            "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry.",
+            type_str, getStorageID(), acquire_timeout.count());
     }
     return lock_holder;
 }
@@ -82,7 +79,7 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
                         "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
                         "Possible deadlock avoided. Client should retry.",
-                        getStorageID().getFullTableName(), std::to_string(acquire_timeout.count()));
+                        getStorageID().getFullTableName(), acquire_timeout.count());
 
     if (is_dropped)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");

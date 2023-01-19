@@ -30,7 +30,7 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
     if (whence == SEEK_SET)
     {
         if (off < 0)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", std::to_string(off));
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", off);
         new_pos = off;
     }
     else if (whence == SEEK_CUR)

@@ -67,7 +67,7 @@ public:
     {
         if (free_chunks.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough space in SharedChunkAllocator. Chunks allocated: {}",
-                            std::to_string(chunks.size()));
+                            chunks.size());
 
         auto pos = free_chunks.back();
         free_chunks.pop_back();

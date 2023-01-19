@@ -99,7 +99,7 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
 
         if (idx == 0 && uncompressed_size != decompressed_size)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Wrong final decompressed size in codec Multiple, got {}, expected {}",
-                toString(uncompressed_size), toString(decompressed_size));
+                uncompressed_size, decompressed_size);
 
         uncompressed_buf.resize(uncompressed_size + additional_size_at_the_end_of_buffer);
         codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());

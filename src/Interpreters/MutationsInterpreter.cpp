@@ -247,7 +247,7 @@ bool isStorageTouchedByMutations(
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", toString(block.rows()));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
     Block tmp_block;
     while (executor.pull(tmp_block));

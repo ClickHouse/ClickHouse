@@ -162,7 +162,7 @@ public:
         if (arguments.size() != 1 && arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         if (arguments[0]->getName() != TypeName<T>)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {} (must be {})",
@@ -251,7 +251,7 @@ public:
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 2 or 3.",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         if (arguments[0]->getName() != TypeName<T>)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {} (must be {})",
@@ -382,7 +382,7 @@ public:
         if (arguments.size() != 1 && arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         if (arguments[0]->getName() != TypeName<T>)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {} (must be {})",
@@ -583,7 +583,7 @@ public:
         if (arguments.size() != 1 && arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         if (arguments[0]->getName() != TypeName<UInt32>)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the first argument of function {} (must be {})", arguments[0]->getName(), getName(), String(TypeName<UInt32>));

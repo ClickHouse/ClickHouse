@@ -310,7 +310,7 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
     if (num_rows_to_subtract > rows_per_granule.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Can't adjust last granule because it has {} rows, but try to subtract {} rows.",
-                        toString(rows_per_granule.back()), toString(num_rows_to_subtract));
+                        rows_per_granule.back(), num_rows_to_subtract);
 
     rows_per_granule.back() -= num_rows_to_subtract;
     total_rows_per_granule -= num_rows_to_subtract;
@@ -1198,7 +1198,7 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
     /// added_rows may be zero if all columns were read in prewhere and it's ok.
     if (num_rows && num_rows != result.total_rows_per_granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RangeReader read {} rows, but {} expected.",
-                        toString(num_rows), toString(result.total_rows_per_granule));
+                        num_rows, result.total_rows_per_granule);
 
     return columns;
 }

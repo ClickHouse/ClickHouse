@@ -550,7 +550,7 @@ void ColumnLowCardinality::Index::callForType(Callback && callback, size_t size_
         case sizeof(UInt64): { callback(UInt64()); break; }
         default: {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnLowCardinality: {}",
-                            toString(size_of_type));
+                            size_of_type);
         }
     }
 }
@@ -594,7 +594,7 @@ typename ColumnVector<IndexType>::Container & ColumnLowCardinality::Index::getPo
     auto * positions_ptr = typeid_cast<ColumnVector<IndexType> *>(positions->assumeMutable().get());
     if (!positions_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid indexes type for ColumnLowCardinality. Expected UInt{}, got {}",
-                        toString(8 * sizeof(IndexType)), positions->getName());
+                        8 * sizeof(IndexType), positions->getName());
 
     return positions_ptr->getData();
 }
@@ -605,7 +605,7 @@ const typename ColumnVector<IndexType>::Container & ColumnLowCardinality::Index:
     const auto * positions_ptr = typeid_cast<const ColumnVector<IndexType> *>(positions.get());
     if (!positions_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid indexes type for ColumnLowCardinality. Expected UInt{}, got {}",
-                        toString(8 * sizeof(IndexType)), positions->getName());
+                        8 * sizeof(IndexType), positions->getName());
 
     return positions_ptr->getData();
 }
@@ -620,7 +620,7 @@ void ColumnLowCardinality::Index::convertPositions()
 
         if (sizeof(CurIndexType) > sizeof(IndexType))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting indexes to smaller type: from {} to {}",
-                            toString(sizeof(CurIndexType)), toString(sizeof(IndexType)));
+                            sizeof(CurIndexType), sizeof(IndexType));
 
         if (sizeof(CurIndexType) != sizeof(IndexType))
         {
@@ -738,7 +738,7 @@ void ColumnLowCardinality::Index::checkSizeOfType()
 {
     if (size_of_type != getSizeOfIndexType(*positions, size_of_type))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid size of type. Expected {}, but positions are {}",
-                        toString(8 * size_of_type), positions->getName());
+                        8 * size_of_type, positions->getName());
 }
 
 void ColumnLowCardinality::Index::countKeys(ColumnUInt64::Container & counts) const

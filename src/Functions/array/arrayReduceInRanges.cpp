@@ -72,7 +72,7 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
     if (arguments.size() < 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "            Number of arguments for function {} doesn't match: passed {}, should be at least 3.",
-            getName(), toString(arguments.size()));
+            getName(), arguments.size());
 
     const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!aggregate_function_name_column)
@@ -96,7 +96,7 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
     {
         const DataTypeArray * arg = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
         if (!arg)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} for function {} must be an array but it has type {}.", toString(i), getName(), arguments[i].type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} for function {} must be an array but it has type {}.", i, getName(), arguments[i].type->getName());
 
         argument_types[i - 2] = arg->getNestedType();
     }

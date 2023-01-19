@@ -488,7 +488,7 @@ Columns RegExpTreeDictionary::getColumns(
     /// valid check
     if (key_columns.size() != 1)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expect 1 key for DictGet, but got {} arguments", std::to_string(key_columns.size()));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expect 1 key for DictGet, but got {} arguments", key_columns.size());
     }
     structure.validateKeyTypes(key_types);
 

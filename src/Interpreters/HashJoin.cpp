@@ -675,7 +675,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
     if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", toString(source_block.rows()));
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block.rows());
 
     /// There's no optimization for right side const columns. Remove constness if any.
     Block block = materializeBlock(source_block);
@@ -1621,7 +1621,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
         auto right_type = removeNullable(recursiveRemoveLowCardinality(right_type_origin));
         if (!left_type->equals(*right_type))
             throw Exception( ErrorCodes::TYPE_MISMATCH, "Type mismatch in joinGet key {}: "
-                "found type {}, while the needed type is {}", toString(i), left_type->getName(), right_type->getName());
+                "found type {}, while the needed type is {}", i, left_type->getName(), right_type->getName());
     }
 
     if (!sample_block_with_columns_to_add.has(column_name))

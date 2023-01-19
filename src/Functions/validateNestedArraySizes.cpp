@@ -41,7 +41,7 @@ DataTypePtr FunctionValidateNestedArraySizes::getReturnTypeImpl(const DataTypes 
 
     if (num_args < 3)
         throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs more than two arguments; passed {}.",
-            getName(), toString(arguments.size()));
+            getName(), arguments.size());
 
     if (!WhichDataType(arguments[0]).isUInt8())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {} Must be UInt.",
@@ -50,7 +50,7 @@ DataTypePtr FunctionValidateNestedArraySizes::getReturnTypeImpl(const DataTypes 
     for (size_t i = 1; i < num_args; ++i)
         if (!WhichDataType(arguments[i]).isArray())
             throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {} Must be Array.",
-                arguments[i]->getName(), toString(i), getName());
+                arguments[i]->getName(), i, getName());
 
     return std::make_shared<DataTypeUInt8>();
 }

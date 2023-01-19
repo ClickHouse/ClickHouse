@@ -201,7 +201,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
     static const auto LEADING_ZEROES_BIT_LENGTH = DATA_BIT_LENGTH - 1;
 
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress, data size {} is not aligned to {}", toString(source_size), toString(sizeof(T)));
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress, data size {} is not aligned to {}", source_size, sizeof(T));
     const char * source_end = source + source_size;
     const char * dest_start = dest;
     const char * dest_end = dest + dest_size;

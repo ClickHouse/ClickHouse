@@ -163,7 +163,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
 
             if (tuple_size != columns_num)
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
-                    toString(tuple_size), toString(columns_num));
+                    tuple_size, columns_num);
 
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
@@ -278,7 +278,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
             size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size(); //-V1004
             if (tuple_size != num_columns)
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
-                    toString(tuple_size), toString(num_columns));
+                    tuple_size, num_columns);
 
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);

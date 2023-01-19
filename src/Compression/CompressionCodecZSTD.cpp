@@ -116,7 +116,7 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
         {
             if (arguments->children.size() > 2)
                 throw Exception( ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "ZSTD codec must have 1 or 2 parameters, given {}",
-                    std::to_string(arguments->children.size()));
+                    arguments->children.size());
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();

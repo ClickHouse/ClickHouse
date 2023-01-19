@@ -50,7 +50,7 @@ public:
     {
         if (arguments.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument; passed {}.",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         const auto & type = arguments[0].type;
 

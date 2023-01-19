@@ -509,15 +509,15 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
 
         if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got dictionary with size {} but max dictionary size is {}",
-                            toString(global_dictionary->size()), toString(settings.low_cardinality_max_dictionary_size));
+                            global_dictionary->size(), settings.low_cardinality_max_dictionary_size);
 
         positions = indexes_with_overflow.indexes->index(*positions, 0);
         keys = std::move(indexes_with_overflow.overflowed_keys);
 
         if (global_dictionary->size() < settings.low_cardinality_max_dictionary_size && !keys->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Has additional keys, but dict size is {} which is less "
-                            "then max dictionary size ({})", toString(global_dictionary->size()),
-                            toString(settings.low_cardinality_max_dictionary_size));
+                            "then max dictionary size ({})", global_dictionary->size(),
+                            settings.low_cardinality_max_dictionary_size);
     }
 
     if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))

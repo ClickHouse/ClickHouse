@@ -68,7 +68,7 @@ ASTs OptimizeIfChainsVisitor::ifChain(const ASTPtr & child)
     if (!function_args || function_args->children.size() != 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                        Wrong number of arguments for function 'if' ({} instead of 3)",
-                        toString(function_args->children.size()));
+                        function_args->children.size());
 
     const auto * else_arg = function_args->children[2]->as<ASTFunction>();
 

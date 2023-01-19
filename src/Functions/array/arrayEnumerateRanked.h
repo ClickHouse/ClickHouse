@@ -103,7 +103,7 @@ public:
         if (arguments.empty())
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
-                getName(), std::to_string(arguments.size()));
+                getName(), arguments.size());
 
         const ArraysDepths arrays_depths = getArraysDepths(arguments);
 
@@ -223,11 +223,9 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
         if (col_depth < arrays_depths.depths[array_num])
         {
-            throw Exception(
-                getName() + ": Passed array number " + std::to_string(array_num) + " depth ("
-                    + std::to_string(arrays_depths.depths[array_num]) + ") is more than the actual array depth ("
-                    + std::to_string(col_depth) + ").",
-                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                            "{}: Passed array number {} depth ({}) is more than the actual array depth ({}).",
+                            getName(), array_num, std::to_string(arrays_depths.depths[array_num]), col_depth);
         }
 
         auto * array_data = &array->getData();

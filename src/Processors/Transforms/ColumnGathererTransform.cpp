@@ -116,7 +116,7 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
 
     if (0 == source.size)
     {
-        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Fetched block is empty. Source {}", toString(source_num));
+        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Fetched block is empty. Source {}", source_num);
     }
 }
 

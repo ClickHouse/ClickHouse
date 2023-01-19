@@ -516,7 +516,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                     "Number of arguments for function \"{}\" should be at least 2: passed {}",
-                    getName(), toString(arguments.size()));
+                    getName(), arguments.size());
 
     bool has_nullable_arguments = false;
     bool has_bool_arguments = false;
@@ -538,7 +538,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
         if (!(isNativeNumber(arg_type)
             || (Impl::specialImplementationForNulls() && (arg_type->onlyNull() || isNativeNumber(removeNullable(arg_type))))))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type ({}) of {} argument of function {}",
-                arg_type->getName(), toString(i + 1), getName());
+                arg_type->getName(), i + 1, getName());
     }
 
     auto result_type = has_bool_arguments ? DataTypeFactory::instance().get("Bool") : std::make_shared<DataTypeUInt8>();

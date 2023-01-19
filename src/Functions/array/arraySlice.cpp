@@ -50,7 +50,7 @@ public:
         if (number_of_arguments < 2 || number_of_arguments > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                            Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), toString(number_of_arguments));
+                            getName(), number_of_arguments);
 
         if (arguments[0]->onlyNull())
             return arguments[0];
@@ -62,7 +62,7 @@ public:
         for (size_t i = 1; i < number_of_arguments; ++i)
         {
             if (!isInteger(removeNullable(arguments[i])) && !arguments[i]->onlyNull())
-                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} for function {} must be integer but it has type {}.", toString(i), getName(), arguments[i]->getName());
+                throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} for function {} must be integer but it has type {}.", i, getName(), arguments[i]->getName());
         }
 
         return arguments[0];

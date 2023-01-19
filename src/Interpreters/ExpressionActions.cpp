@@ -67,7 +67,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag->dumpNames(), std::to_string(settings.max_temporary_columns));
+                        actions_dag->dumpNames(), settings.max_temporary_columns);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
@@ -538,7 +538,7 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
 
             throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS,
 "                Too many temporary non-const columns:{}. Maximum: {}",
-                list_of_non_const_columns.str(), std::to_string(settings.max_temporary_non_const_columns));
+                list_of_non_const_columns.str(), settings.max_temporary_non_const_columns);
         }
     }
 }

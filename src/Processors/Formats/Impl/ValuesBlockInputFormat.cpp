@@ -319,7 +319,7 @@ namespace
 
             if (src_tuple_size != dst_tuple_size)
                 throw Exception(fmt::format("Bad size of tuple. Expected size: {}, actual size: {}.",
-                    std::to_string(src_tuple_size), std::to_string(dst_tuple_size)), ErrorCodes::TYPE_MISMATCH);
+                    src_tuple_size, dst_tuple_size), ErrorCodes::TYPE_MISMATCH);
 
             for (size_t i = 0; i < src_tuple_size; ++i)
             {

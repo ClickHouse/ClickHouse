@@ -426,7 +426,7 @@ void MergeTreeData::checkProperties(
     size_t primary_key_size = new_primary_key.column_names.size();
     if (primary_key_size > sorting_key_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but its length: "
-            "{} is greater than the sorting key length: {}", toString(primary_key_size), toString(sorting_key_size));
+            "{} is greater than the sorting key length: {}", primary_key_size, sorting_key_size);
 
     NameSet primary_key_columns_set;
 
@@ -438,7 +438,7 @@ void MergeTreeData::checkProperties(
         {
             const String & pk_column = new_primary_key.column_names[i];
             if (pk_column != sorting_key_column)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but the column in the position {} is {}", toString(i), sorting_key_column +", not " + pk_column);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but the column in the position {} is {}", i, sorting_key_column +", not " + pk_column);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key contains duplicate columns");
@@ -3498,7 +3498,7 @@ bool MergeTreeData::renameTempPartAndAdd(
 
     if (!covered_parts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Added part {} covers {} existing part(s) (including {})",
-            part->name, toString(covered_parts.size()), covered_parts[0]->name);
+            part->name, covered_parts.size(), covered_parts[0]->name);
 
     return true;
 }
@@ -4002,7 +4002,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             ErrorCodes::TOO_MANY_PARTS,
             "Too many parts ({}) in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified "
             "with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.",
-            toString(parts_count_in_total));
+            parts_count_in_total);
     }
 
     size_t outdated_parts_over_threshold = 0;

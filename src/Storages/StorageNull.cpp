@@ -26,7 +26,7 @@ void registerStorageNull(StorageFactory & factory)
     {
         if (!args.engine_args.empty())
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
-                args.engine_name, toString(args.engine_args.size()));
+                args.engine_name, args.engine_args.size());
 
         return std::make_shared<StorageNull>(args.table_id, args.columns, args.constraints, args.comment);
     },

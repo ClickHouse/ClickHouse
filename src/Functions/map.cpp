@@ -203,7 +203,7 @@ public:
         if (arguments.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
@@ -252,7 +252,7 @@ public:
         if (arguments.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
@@ -361,7 +361,7 @@ public:
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                            Number of arguments for function {} doesn't match: passed {}, should be 2",
-                            getName(), toString(arguments.size()));
+                            getName(), arguments.size());
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
         const DataTypeString * pattern_type = checkAndGetDataType<DataTypeString>(arguments[1].type.get());
@@ -405,7 +405,7 @@ public:
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
@@ -541,7 +541,7 @@ public:
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         const DataTypeMap * left = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
         const DataTypeMap * right = checkAndGetDataType<DataTypeMap>(arguments[1].type.get());

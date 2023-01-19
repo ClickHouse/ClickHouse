@@ -36,7 +36,7 @@ struct RepeatImpl
         static constexpr UInt64 max_string_size = 1 << 30;
         if (size > max_string_size)
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size ({}) in function repeat, maximum is: {}",
-                std::to_string(size), std::to_string(max_string_size));
+                size, max_string_size);
     }
 
     static void vectorStrConstRepeat(

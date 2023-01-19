@@ -108,7 +108,7 @@ size_t IAST::checkSize(size_t max_size) const
         res += child->checkSize(max_size);
 
     if (res > max_size)
-        throw Exception(ErrorCodes::TOO_BIG_AST, "AST is too big. Maximum: {}", toString(max_size));
+        throw Exception(ErrorCodes::TOO_BIG_AST, "AST is too big. Maximum: {}", max_size);
 
     return res;
 }
@@ -156,7 +156,7 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
         stack.pop_back();
 
         if (top.second >= max_depth)
-            throw Exception(ErrorCodes::TOO_DEEP_AST, "AST is too deep. Maximum: {}", toString(max_depth));
+            throw Exception(ErrorCodes::TOO_DEEP_AST, "AST is too deep. Maximum: {}", max_depth);
 
         res = std::max(res, top.second);
 

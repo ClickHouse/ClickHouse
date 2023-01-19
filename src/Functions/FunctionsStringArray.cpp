@@ -14,7 +14,7 @@ DataTypePtr FunctionArrayStringConcat::getReturnTypeImpl(const DataTypes & argum
     if (arguments.size() != 1 && arguments.size() != 2)
         throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "            Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-            getName(), toString(arguments.size()));
+            getName(), arguments.size());
 
     const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)

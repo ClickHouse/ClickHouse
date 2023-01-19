@@ -53,7 +53,7 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
 {
     if (elements_size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets ({}) doesn't match size of column ({})",
-                        toString(offsets.size()), toString(elements_size));
+                        offsets.size(), elements_size);
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
@@ -110,7 +110,7 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
 {
     if (elements_size != filt.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
-                        toString(filt.size()), toString(elements_size));
+                        filt.size(), elements_size);
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
@@ -181,7 +181,7 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
 {
     if (elements_size != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
-                        toString(selector.size()), toString(elements_size));
+                        selector.size(), elements_size);
 
     std::vector<size_t> counts;
     if (captured_columns.empty())
@@ -263,7 +263,7 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
     auto index = captured_columns.size();
     if (!is_short_circuit_argument && !column.type->equals(*argumnet_types[index]))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture column {} because it has incompatible type: "
-                        "got {}, but {} is expected.", std::to_string(argumnet_types.size()), column.type->getName(), argumnet_types[index]->getName());
+                        "got {}, but {} is expected.", argumnet_types.size(), column.type->getName(), argumnet_types[index]->getName());
 
     captured_columns.push_back(column);
 }

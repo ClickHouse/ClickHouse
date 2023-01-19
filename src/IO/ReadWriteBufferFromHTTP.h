@@ -631,7 +631,7 @@ namespace detail
 
             if (offset_ < 0)
                 throw Exception( ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}",
-                    std::to_string(offset_));
+                    offset_);
 
             off_t current_offset = getOffset();
             if (!working_buffer.empty() && size_t(offset_) >= current_offset - working_buffer.size() && offset_ < current_offset)

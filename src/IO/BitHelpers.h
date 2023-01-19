@@ -133,7 +133,7 @@ private:
                 return 0;
 
             throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Buffer is empty, but requested to read {} more bytes.",
-                            std::to_string(bytes_to_read));
+                            bytes_to_read);
         }
 
         UInt64 tmp_buffer = 0;

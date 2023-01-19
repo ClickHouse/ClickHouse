@@ -265,7 +265,7 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
         if (session_timeout > max_session_timeout)
             throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
                 "Maximum session timeout could be modified in configuration file.",
-                session_timeout_str, toString(max_session_timeout));
+                session_timeout_str, max_session_timeout);
     }
 
     return std::chrono::seconds(session_timeout);

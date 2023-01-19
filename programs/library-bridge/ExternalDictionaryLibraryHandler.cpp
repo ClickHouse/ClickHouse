@@ -187,7 +187,7 @@ Block ExternalDictionaryLibraryHandler::dataToBlock(ExternalDictionaryLibraryAPI
         if (columns.size() != columns_received->data[col_n].size)
             throw Exception( ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "LibraryDictionarySource: "
                 "Returned unexpected number of columns: {}, must be {}",
-                std::to_string(columns_received->data[col_n].size), std::to_string(columns.size()));
+                columns_received->data[col_n].size, columns.size());
 
         for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
         {

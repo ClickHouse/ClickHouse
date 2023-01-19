@@ -71,7 +71,7 @@ public:
             ++depth;
             if (unlikely(max_depth > 0 && depth > max_depth))
                 throw Exception( ErrorCodes::TOO_DEEP_RECURSION, "Maximum parse depth ({}) exceeded. "
-                    "Consider rising max_parser_depth parameter.", std::to_string(max_depth));
+                    "Consider rising max_parser_depth parameter.", max_depth);
         }
 
         ALWAYS_INLINE void decreaseDepth()

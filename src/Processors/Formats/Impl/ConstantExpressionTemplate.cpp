@@ -617,7 +617,7 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
 
     if (!evaluated || evaluated.rows() != rows_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of rows mismatch after evaluation of batch of constant expressions: "
-                        "got {} rows for {} expressions", std::to_string(evaluated.rows()), std::to_string(rows_count));
+                        "got {} rows for {} expressions", evaluated.rows(), rows_count);
 
     if (!evaluated.has(structure->result_column_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot evaluate template {}, block structure:\n{}",

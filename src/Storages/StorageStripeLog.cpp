@@ -676,7 +676,7 @@ void registerStorageStripeLog(StorageFactory & factory)
     {
         if (!args.engine_args.empty())
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
-                args.engine_name, toString(args.engine_args.size()));
+                args.engine_name, args.engine_args.size());
 
         String disk_name = getDiskName(*args.storage_def);
         DiskPtr disk = args.getContext()->getDisk(disk_name);

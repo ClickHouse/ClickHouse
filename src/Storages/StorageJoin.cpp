@@ -380,7 +380,7 @@ void registerStorageJoin(StorageFactory & factory)
         {
             auto opt_key = tryGetIdentifierName(engine_args[i]);
             if (!opt_key)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter №{} of storage Join don't look like column name.", toString(i + 1));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter №{} of storage Join don't look like column name.", i + 1);
 
             key_names.push_back(*opt_key);
         }
@@ -509,7 +509,7 @@ private:
 
             default:
                 throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys in StorageJoin. Type: {}",
-                                toString(static_cast<UInt32>(join->data->type)));
+                                static_cast<UInt32>(join->data->type));
         }
 
         if (!rows_added)

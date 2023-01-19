@@ -145,7 +145,7 @@ private:
     {
         if (size() + 1 == container.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough space to insert into FixedSizeDequeWithGaps with capacity {}",
-                            std::to_string(container.size() - 1));
+                            container.size() - 1);
     }
 
     void checkHasValuesToRemove() const

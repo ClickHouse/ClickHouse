@@ -243,7 +243,7 @@ void registerStorageSet(StorageFactory & factory)
     {
         if (!args.engine_args.empty())
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
-                args.engine_name, toString(args.engine_args.size()));
+                args.engine_name, args.engine_args.size());
 
         bool has_settings = args.storage_def->settings;
         SetSettings set_settings;

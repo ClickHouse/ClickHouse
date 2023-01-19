@@ -164,7 +164,7 @@ namespace
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                     getName(),
-                    std::to_string(number_of_arguments));
+                    number_of_arguments);
 
             if (!isStringOrFixedString(arguments[0]))
                 throw Exception(

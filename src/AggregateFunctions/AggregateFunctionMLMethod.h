@@ -371,7 +371,7 @@ public:
         if (arguments.size() != param_num + 1)
             throw Exception( ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Predict got incorrect number of arguments. Got: {}. Required: {}",
-                std::to_string(arguments.size()), std::to_string(param_num + 1));
+                arguments.size(), param_num + 1);
 
         /// This cast might be correct because column type is based on getReturnTypeToPredict.
         auto * column = typeid_cast<ColumnFloat64 *>(&to);

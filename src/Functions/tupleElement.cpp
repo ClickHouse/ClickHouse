@@ -70,7 +70,7 @@ public:
         if (number_of_arguments < 2 || number_of_arguments > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                            Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), toString(number_of_arguments));
+                            getName(), number_of_arguments);
 
         size_t count_arrays = 0;
         const IDataType * tuple_col = arguments[0].type.get();

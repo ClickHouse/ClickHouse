@@ -107,7 +107,7 @@ off_t ConcatSeekableReadBuffer::seek(off_t off, int whence)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ConcatSeekableReadBuffer::seek expects SEEK_SET or SEEK_CUR as whence");
 
     if (new_position < 0)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", std::to_string(off));
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", off);
     if (static_cast<UInt64>(new_position) > total_size)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_CUR shift out of bounds");
 

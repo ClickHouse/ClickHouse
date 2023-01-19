@@ -276,7 +276,7 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
     }
 
     if (from_zk.index_granularity_bytes_found_in_zk && index_granularity_bytes != from_zk.index_granularity_bytes)
-        throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in index granularity bytes. Stored in ZooKeeper: {}, local: {}", DB::toString(from_zk.index_granularity_bytes), DB::toString(index_granularity_bytes));
+        throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in index granularity bytes. Stored in ZooKeeper: {}, local: {}", from_zk.index_granularity_bytes, index_granularity_bytes);
 }
 
 ReplicatedMergeTreeTableMetadata::Diff

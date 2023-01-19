@@ -32,7 +32,7 @@ struct FunctionPortImpl : public IFunction
         if (arguments.size() != 1 && arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                            Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-                            getName(), std::to_string(arguments.size()));
+                            getName(), arguments.size());
 
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "

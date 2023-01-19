@@ -56,7 +56,7 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
 {
     if (s != filt.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
-            toString(filt.size()), toString(s));
+            filt.size(), toString(s));
 
     size_t new_size = countBytesInFilter(filt);
     return ColumnConst::create(data, new_size);
@@ -84,7 +84,7 @@ ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
 {
     if (s != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets ({}) doesn't match size of column ({})",
-            toString(offsets.size()), toString(s));
+            offsets.size(), toString(s));
 
     size_t replicated_size = 0 == s ? 0 : offsets.back();
     return ColumnConst::create(data, replicated_size);
@@ -103,7 +103,7 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
 
     if (indexes.size() < limit)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})",
-                        toString(indexes.size()), toString(limit));
+                        indexes.size(), toString(limit));
 
     return ColumnConst::create(data, limit);
 }
@@ -112,7 +112,7 @@ MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & se
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
-            toString(selector.size()), toString(s));
+            selector.size(), toString(s));
 
     std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 

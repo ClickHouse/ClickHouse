@@ -2076,7 +2076,7 @@ public:
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                    Number of arguments for function {} doesn't match: passed {}, should be 1 or 2. "
                     "Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
-                    getName(), toString(arguments.size()));
+                    getName(), arguments.size());
 
             if (!isStringOrFixedString(arguments[0].type))
             {
@@ -2111,7 +2111,7 @@ public:
                     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                        Number of arguments for function {} doesn't match: passed {}, should be 1. "
                         "Second argument makes sense only for DateTime and Decimal.",
-                        getName(), toString(arguments.size()));
+                        getName(), arguments.size());
                 }
             }
 

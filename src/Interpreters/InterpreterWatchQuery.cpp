@@ -81,7 +81,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     /// Limitation on the number of columns to read.
     if (settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
         throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Limit for number of columns to read exceeded. "
-            "Requested: {}, maximum: {}", std::to_string(required_columns.size()), settings.max_columns_to_read.toString());
+            "Requested: {}, maximum: {}", required_columns.size(), settings.max_columns_to_read.toString());
 
     size_t max_block_size = settings.max_block_size;
     size_t max_streams = 1;

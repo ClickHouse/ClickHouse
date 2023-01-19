@@ -7331,7 +7331,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     }
 
     if (src_pins.part_uuids.contains(part->uuid) || dst_pins.part_uuids.contains(part->uuid))
-        throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part {} has it's uuid ({}) already pinned.", part_name, toString(part->uuid));
+        throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part {} has it's uuid ({}) already pinned.", part_name, part->uuid);
 
     src_pins.part_uuids.insert(part->uuid);
     dst_pins.part_uuids.insert(part->uuid);

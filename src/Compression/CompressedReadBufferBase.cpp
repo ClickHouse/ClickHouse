@@ -143,12 +143,12 @@ static void readHeaderAndGetCodecAndSize(
 
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
         throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed_without_checksum: {}. "
-                        "Most likely corrupted data.", toString(size_compressed_without_checksum));
+                        "Most likely corrupted data.", size_compressed_without_checksum);
 
     if (size_compressed_without_checksum < header_size)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
             "the compressed data size ({}, this should include header size) is less than the header size ({})",
-            toString(size_compressed_without_checksum), toString(header_size));
+            size_compressed_without_checksum, static_cast<size_t>(header_size));
 }
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.

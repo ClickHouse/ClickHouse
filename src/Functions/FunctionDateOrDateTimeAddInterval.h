@@ -609,7 +609,7 @@ public:
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
 "                Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         if (!isNativeNumber(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} (delta) must be a number",

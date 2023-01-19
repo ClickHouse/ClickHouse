@@ -66,7 +66,7 @@ size_t MergeTreeReaderInMemory::readRows(
     size_t part_rows = part_in_memory->block.rows();
     if (total_rows_read >= part_rows)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data in MergeTreeReaderInMemory. "
-            "Rows already read: {}. Rows in part: {}", toString(total_rows_read), toString(part_rows));
+            "Rows already read: {}. Rows in part: {}", total_rows_read, part_rows);
 
     size_t rows_to_read = std::min(max_rows_to_read, part_rows - total_rows_read);
     for (size_t i = 0; i < num_columns; ++i)
