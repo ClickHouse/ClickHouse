@@ -191,18 +191,7 @@ void executeQuery(
 
                 auto where_expression = select_query.where();
                 if (where_expression)
-                {
-                    ASTPtr args = std::make_shared<ASTExpressionList>();
-                    args->children.push_back(where_expression);
-                    args->children.push_back(shard_filter);
-
-                    auto and_function = std::make_shared<ASTFunction>();
-                    and_function->name = "and";
-                    and_function->arguments = args;
-                    and_function->children.push_back(and_function->arguments);
-
-                    shard_filter = std::move(and_function);
-                }
+                    shard_filter = makeASTFunction("and", where_expression, shard_filter);
 
                 select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
             }

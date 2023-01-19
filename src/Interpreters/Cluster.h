@@ -250,7 +250,7 @@ public:
     std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
 
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
-    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings) const;
+    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
 
     /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
@@ -271,7 +271,7 @@ private:
 
     /// For getClusterWithReplicasAsShards implementation
     struct ReplicasAsShardsTag {};
-    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings);
+    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
 
     /// Inter-server secret
     String secret;
