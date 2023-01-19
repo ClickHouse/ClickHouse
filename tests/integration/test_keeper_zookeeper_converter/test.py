@@ -46,6 +46,41 @@ def restart_zookeeper():
     start_zookeeper()
 
 
+def generate_zk_snapshot():
+    for _ in range(100):
+        stop_zookeeper()
+        start_zookeeper()
+        time.sleep(2)
+        stop_zookeeper()
+
+        # get last snapshot
+        last_snapshot = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "find /zookeeper/version-2 -name 'snapshot.*' -printf '%T@ %p\n' | sort -n | awk 'END {print $2}'",
+            ]
+        ).strip()
+
+        print(f"Latest snapshot: {last_snapshot}")
+
+        try:
+            # verify last snapshot
+            # zkSnapShotToolkit is a tool to inspect generated snapshots - if it's broken, an exception is thrown
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"/opt/zookeeper/bin/zkSnapShotToolkit.sh {last_snapshot}",
+                ]
+            )
+            return
+        except Exception as err:
+            print(f"Got error while reading snapshot: {err}")
+
+    raise Exception("Failed to generate a ZooKeeper snapshot")
+
+
 def clear_clickhouse_data():
     node.exec_in_container(
         [
@@ -57,6 +92,14 @@ def clear_clickhouse_data():
 
 
 def convert_zookeeper_data():
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "tar -cvzf /var/lib/clickhouse/zk-data.tar.gz /zookeeper/version-2",
+        ]
+    )
+
     cmd = "/usr/bin/clickhouse keeper-converter --zookeeper-logs-dir /zookeeper/version-2/ --zookeeper-snapshots-dir  /zookeeper/version-2/ --output-dir /var/lib/clickhouse/coordination/snapshots"
     node.exec_in_container(["bash", "-c", cmd])
 
@@ -71,10 +114,10 @@ def start_clickhouse():
 
 
 def copy_zookeeper_data(make_zk_snapshots):
-    stop_zookeeper()
 
     if make_zk_snapshots:  # force zookeeper to create snapshot
-        start_zookeeper()
+        generate_zk_snapshot()
+    else:
         stop_zookeeper()
 
     stop_clickhouse()

@@ -103,7 +103,7 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/MeiliSearch)
-add_headers_and_sources(dbms Storages/NamedCollections)
+add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -360,6 +360,14 @@ if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
 
+if (TARGET ch_contrib::crc32_s390x)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
+endif()
+
+if (TARGET ch_contrib::crc32-vpmsum)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
+ endif()
+
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
 
@@ -580,13 +588,7 @@ if (ENABLE_TESTS)
 
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
-        -Wno-zero-as-null-pointer-constant
-        -Wno-covered-switch-default
-        -Wno-undef
         -Wno-sign-compare
-        -Wno-used-but-marked-unused
-        -Wno-missing-noreturn
-        -Wno-gnu-zero-variadic-macro-arguments
     )
 
     target_link_libraries(unit_tests_dbms PRIVATE
@@ -607,6 +609,11 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
+
+    if (TARGET ch_contrib::azure_sdk)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
+    endif()
+
 
     add_check(unit_tests_dbms)
 endif ()

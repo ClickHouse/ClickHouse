@@ -76,8 +76,6 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 
-#define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
-
 namespace DB
 {
 
@@ -721,7 +719,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-        Block as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
+        Block as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext(), false /* is_subquery */, create.isParameterizedView());
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
