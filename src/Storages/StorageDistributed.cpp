@@ -27,6 +27,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
+#include "Core/SettingsEnums.h"
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -60,6 +61,8 @@
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
+
 #include <Functions/IFunction.h>
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -87,6 +90,8 @@
 #include <filesystem>
 #include <optional>
 #include <cassert>
+
+#include <boost/rational.hpp>
 
 
 namespace fs = std::filesystem;
@@ -130,6 +135,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int UNSUPPORTED_METHOD;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 namespace ActionLocks
@@ -440,6 +446,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     const auto & settings = local_context->getSettingsRef();
 
     ClusterPtr cluster = getCluster();
+
     query_info.cluster = cluster;
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
@@ -749,6 +756,37 @@ void StorageDistributed::read(
     bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas
         && !settings.use_hedged_requests && settings.parallel_replicas_mode == ParallelReplicasMode::READ_TASKS;
 
+    ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
+    if (settings.max_parallel_replicas > 1
+        && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY
+        && getCluster()->getShardCount() == 1)
+    {
+        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into shards");
+
+        query_info.cluster = getCluster()->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+        query_info.optimized_cluster = nullptr; // it's a single shard cluster so nothing could've been optimized
+
+        const std::string_view custom_key = settings.parallel_replicas_custom_key.value;
+        if (custom_key.empty())
+            throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but 'parallel_replicas_custom_key' has no value");
+
+        ParserExpression parser;
+        auto custom_key_ast = parseQuery(
+            parser,
+            custom_key.data(),
+            custom_key.data() + custom_key.size(),
+            "parallel replicas custom key",
+            settings.max_query_size,
+            settings.max_parser_depth);
+
+        additional_shard_filter_generator =
+            [&, custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
+        {
+            return getCustomKeyFilterForParallelReplica(
+                shard_count, shard_num - 1, custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
+        };
+    }
+
     if (parallel_replicas)
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, main_table, remote_table_function_ptr,
@@ -763,7 +801,7 @@ void StorageDistributed::read(
             select_stream_factory, log, modified_query_ast,
             local_context, query_info,
             sharding_key_expr, sharding_key_column_name,
-            query_info.cluster);
+            query_info.cluster, additional_shard_filter_generator);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -1235,39 +1273,19 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
 
-    auto create_node_data = [&]()
+    std::lock_guard lock(cluster_nodes_mutex);
+    auto & node_data = cluster_nodes_data[key];
+    if (!node_data.directory_monitor)
     {
-        ClusterNodeData data;
-        data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
-        data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
+        node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
+        node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
             *this, disk, relative_data_path + name,
-            data.connection_pool,
+            node_data.connection_pool,
             monitors_blocker,
             getContext()->getDistributedSchedulePool(),
             /* initialize_from_disk= */ startup);
-        return data;
-    };
-
-    /// In case of startup the lock can be acquired later.
-    if (startup)
-    {
-        auto tmp_node_data = create_node_data();
-        std::lock_guard lock(cluster_nodes_mutex);
-        auto & node_data = cluster_nodes_data[key];
-        assert(!node_data.directory_monitor);
-        node_data = std::move(tmp_node_data);
-        return *node_data.directory_monitor;
     }
-    else
-    {
-        std::lock_guard lock(cluster_nodes_mutex);
-        auto & node_data = cluster_nodes_data[key];
-        if (!node_data.directory_monitor)
-        {
-            node_data = create_node_data();
-        }
-        return *node_data.directory_monitor;
-    }
+    return *node_data.directory_monitor;
 }
 
 std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getDirectoryMonitorsStatuses() const

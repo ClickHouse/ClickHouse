@@ -653,9 +653,9 @@ void Cluster::initMisc()
     }
 }
 
-std::unique_ptr<Cluster> Cluster::getClusterWithReplicasAsShards(const Settings & settings) const
+std::unique_ptr<Cluster> Cluster::getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard) const
 {
-    return std::unique_ptr<Cluster>{ new Cluster(ReplicasAsShardsTag{}, *this, settings)};
+    return std::unique_ptr<Cluster>{ new Cluster(ReplicasAsShardsTag{}, *this, settings, max_replicas_from_shard)};
 }
 
 std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
@@ -668,7 +668,7 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
     return std::unique_ptr<Cluster>{ new Cluster(SubclusterTag{}, *this, indices) };
 }
 
-Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings)
+Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard)
 {
     if (from.addresses_with_failover.empty())
         throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
@@ -678,6 +678,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
     for (size_t shard_index : collections::range(0, from.shards_info.size()))
     {
         const auto & replicas = from.addresses_with_failover[shard_index];
+        size_t replicas_used = 0;
         for (const auto & address : replicas)
         {
             if (!unique_hosts.emplace(address.host_name, address.port).second)
@@ -685,6 +686,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
             ShardInfo info;
             info.shard_num = ++shard_num;
+            ++replicas_used;
 
             if (address.is_local)
                 info.local_addresses.push_back(address);
@@ -711,6 +713,9 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
             addresses_with_failover.emplace_back(Addresses{address});
             shards_info.emplace_back(std::move(info));
+
+            if (max_replicas_from_shard && replicas_used == max_replicas_from_shard)
+                break;
         }
     }
 
