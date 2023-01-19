@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/ReplaceStringImpl.h>
 #include <Functions/keyvaluepair/src/KeyValuePairExtractorBuilder.h>
+#include <Functions/keyvaluepair/src/impl/CHKeyValuePairExtractor.h>
 #include <Common/assert_cast.h>
 
 #include <chrono>
@@ -22,18 +23,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/*
- * In order to leverage DB::ReplaceStringImpl for a better performance, the default escaping processor needs
- * to be overridden by a no-op escaping processor. DB::ReplaceStringImpl does in-place replacing and leverages the
- * Volnitsky searcher.
- * */
-struct NoOpEscapingProcessor : KeyValuePairEscapingProcessor<ExtractKeyValuePairs::EscapingProcessorOutput>
-{
-    explicit NoOpEscapingProcessor(char) { }
-
-    Response process(const ResponseViews & response_views) const override { return response_views; }
-};
-
 ExtractKeyValuePairs::ExtractKeyValuePairs()
     : return_type(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()))
 {
@@ -44,20 +33,57 @@ String ExtractKeyValuePairs::getName() const
     return name;
 }
 
+ColumnPtr ExtractKeyValuePairs::chInline(
+    ColumnPtr data_column,
+    CharArgument escape_character,
+    CharArgument key_value_pair_delimiter,
+    CharArgument item_delimiter,
+    CharArgument enclosing_character,
+    SetArgument)
+{
+    InlineEscapingKeyStateHandler key_state_handler(*key_value_pair_delimiter, *escape_character, *enclosing_character);
+    InlineEscapingValueStateHandler value_state_handler(*escape_character, *item_delimiter, *enclosing_character);
+    CHKeyValuePairExtractor ch_extractor(key_state_handler, value_state_handler);
+
+    auto offsets = ColumnUInt64::create();
+
+    auto keys = ColumnString::create();
+    auto values = ColumnString::create();
+
+    uint64_t offset = 0u;
+
+    for (auto i = 0u; i < data_column->size(); i++)
+    {
+        auto row = data_column->getDataAt(i).toView();
+
+        auto inserted_rows = ch_extractor.extract(row, keys, values);
+
+        offset += inserted_rows;
+
+        offsets->insert(offset);
+    }
+
+    ColumnPtr keys_ptr = std::move(keys);
+
+    return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
+}
+
+
 ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
-    using std::chrono::high_resolution_clock;
-    using std::chrono::duration_cast;
-    using std::chrono::duration;
-    using std::chrono::microseconds;
-
 //    auto t1 = high_resolution_clock::now();
 
-    auto [data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list]
+    auto [data_column, escape_character, key_value_pair_delimiter, item_delimiter,
+          enclosing_character, value_special_characters_allow_list, ch_inline]
         = parseArguments(arguments);
 
+    if (ch_inline)
+    {
+        return chInline(data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list);
+    }
+
     auto extractor = getExtractor(
-        escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list);
+        escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character);
 
 //    auto t2 = high_resolution_clock::now();
     auto raw_columns = extract(extractor, data_column);
@@ -159,13 +185,22 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
             value_special_characters_allow_list};
     }
 
+    bool ch_inline = false;
+
+    if (arguments.size() == 7u)
+    {
+        ch_inline = true;
+    }
+
     auto value_special_characters_allow_list_characters = arguments[5].column->getDataAt(0).toView();
 
     value_special_characters_allow_list.insert(
         value_special_characters_allow_list_characters.begin(), value_special_characters_allow_list_characters.end());
 
     return ParsedArguments{
-        data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list};
+        data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list,
+        ch_inline
+    };
 }
 
 char ExtractKeyValuePairs::extractControlCharacter(ColumnPtr column)
@@ -184,10 +219,9 @@ std::shared_ptr<KeyValuePairExtractor<ExtractKeyValuePairs::EscapingProcessorOut
     CharArgument escape_character,
     CharArgument key_value_pair_delimiter,
     CharArgument item_delimiter,
-    CharArgument enclosing_character,
-    SetArgument value_special_characters_allow_list)
+    CharArgument enclosing_character)
 {
-    auto builder = KeyValuePairExtractorBuilder<ExtractKeyValuePairs::EscapingProcessorOutput>();
+    auto builder = KeyValuePairExtractorBuilder();
 
     if (escape_character)
     {
@@ -209,11 +243,47 @@ std::shared_ptr<KeyValuePairExtractor<ExtractKeyValuePairs::EscapingProcessorOut
         builder.withEnclosingCharacter(enclosing_character.value());
     }
 
-    builder.withEscapingProcessor<NoOpEscapingProcessor>();
-
-    builder.withValueSpecialCharacterAllowList(value_special_characters_allow_list);
-
     return builder.build();
+}
+
+std::shared_ptr<KeyValuePairExtractor<std::unordered_map<std::string, std::string>>> ExtractKeyValuePairs::getExtractor2(
+    CharArgument escape_character,
+    CharArgument key_value_pair_delimiter,
+    CharArgument item_delimiter,
+    CharArgument enclosing_character,
+    SetArgument)
+{
+    InlineEscapingKeyStateHandler key_state_handler(*key_value_pair_delimiter, *escape_character, enclosing_character);
+    InlineEscapingValueStateHandler value_state_handler(*escape_character, *item_delimiter, enclosing_character);
+
+    return std::make_shared<InlineKeyValuePairExtractor>(key_state_handler, value_state_handler);
+//    auto builder = KeyValuePairExtractorBuilder<ExtractKeyValuePairs::EscapingProcessorOutput>();
+//
+//    if (escape_character)
+//    {
+//        builder.withEscapeCharacter(escape_character.value());
+//    }
+//
+//    if (key_value_pair_delimiter)
+//    {
+//        builder.withKeyValuePairDelimiter(key_value_pair_delimiter.value());
+//    }
+//
+//    if (item_delimiter)
+//    {
+//        builder.withItemDelimiter(item_delimiter.value());
+//    }
+//
+//    if (enclosing_character)
+//    {
+//        builder.withEnclosingCharacter(enclosing_character.value());
+//    }
+//
+//    builder.withEscapingProcessor<NoOpEscapingProcessor>();
+//
+//    builder.withValueSpecialCharacterAllowList(value_special_characters_allow_list);
+//
+//    return builder.build();
 }
 
 ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column)
@@ -245,12 +315,12 @@ ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<K
     for (auto i = 0u; i < data_column->size(); i++)
     {
         auto row = data_column->getDataAt(i).toView();
-//        auto t2 = high_resolution_clock::now();
+        //        auto t2 = high_resolution_clock::now();
 
         auto response = extractor->extract(row);
-//        auto t3 = high_resolution_clock::now();
+        //        auto t3 = high_resolution_clock::now();
 
-        for (auto [key, value] : response)
+        for (auto & [key, value] : response)
         {
             keys->insert(key);
             values->insert(value);
@@ -259,45 +329,7 @@ ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<K
         }
 
         offsets->insert(row_offset);
-
-//        auto t4 = high_resolution_clock::now();
-//
-//        long extractionTime = duration_cast<microseconds>(t3 - t2).count();
-//        long insertionTime = duration_cast<microseconds>(t4 - t3).count();
-//
-//        totalExtractionTime += extractionTime;
-//        totalInsertionTime += insertionTime;
-//
-//        if (extractionTime > longestExtractionTime)
-//        {
-//            longestExtractionTime = extractionTime;
-//        }
-//
-//        if (extractionTime < shortestExtractionTime)
-//        {
-//            shortestExtractionTime = extractionTime;
-//        }
-//
-//        if (insertionTime > longestInsertionTime)
-//        {
-//            longestInsertionTime = insertionTime;
-//        }
-//
-//        if (insertionTime < shortestInsertionTime)
-//        {
-//            shortestInsertionTime = insertionTime;
-//        }
     }
-
-//    if (!data_column->empty())
-//    {
-//        auto averageInsertionTime = totalInsertionTime / data_column->size();
-//        auto averageExtractionTime = totalExtractionTime / data_column->size();
-//
-//        std::cout<<"Longest extraction time: "<<longestExtractionTime<<" - Shortest extraction time: "<<shortestExtractionTime<<" - Average extraction time: "<<averageExtractionTime<<" - Total: "<<totalExtractionTime<<"\n";
-//        std::cout<<"Longest insertion time: "<<longestInsertionTime<<" - Shortest extraction time: "<<shortestInsertionTime<<" - Average insertion time: "<<averageInsertionTime<<" - Total: "<<totalInsertionTime<<"\n";
-//
-//    }
 
     return {std::move(keys), std::move(values), std::move(offsets)};
 }

@@ -1,19 +1,19 @@
-#include "KeyStateHandler.h"
+#include "InlineEscapingKeyStateHandler.h"
 
 namespace DB
 {
 
-KeyStateHandler::KeyStateHandler(char key_value_delimiter_, char escape_character_, std::optional<char> enclosing_character_)
+InlineEscapingKeyStateHandler::InlineEscapingKeyStateHandler(char key_value_delimiter_, char escape_character_, std::optional<char> enclosing_character_)
     : StateHandler(escape_character_, enclosing_character_), key_value_delimiter(key_value_delimiter_)
 {
 }
 
-NextState KeyStateHandler::wait(std::string_view file, size_t pos)
+NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos)
 {
     while (pos < file.size())
     {
         const auto current_character = file[pos];
-        if (isalnum(current_character))
+        if (isalnum(current_character) || current_character == escape_character)
         {
             return {pos, State::READING_KEY};
         }
@@ -30,19 +30,18 @@ NextState KeyStateHandler::wait(std::string_view file, size_t pos)
     return {pos, State::END};
 }
 
-NextState KeyStateHandler::read(std::string_view file, size_t pos, std::string_view & key)
+NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos, Key & key) const
 {
     bool escape = false;
 
-    auto start_index = pos;
-
-    key = {};
+    key.clear();
 
     while (pos < file.size())
     {
         const auto current_character = file[pos++];
         if (escape)
         {
+            key.push_back(current_character);
             escape = false;
         }
         else if (escape_character == current_character)
@@ -51,47 +50,48 @@ NextState KeyStateHandler::read(std::string_view file, size_t pos, std::string_v
         }
         else if (current_character == key_value_delimiter)
         {
-            // not checking for empty key because with current waitKey implementation
-            // there is no way this piece of code will be reached for the very first key character
-            key = createElement(file, start_index, pos - 1);
             return {pos, State::WAITING_VALUE};
         }
         else if (!std::isalnum(current_character) && current_character != '_')
         {
             return {pos, State::WAITING_KEY};
         }
-    }
-
-    return {pos, State::END};
-}
-
-NextState KeyStateHandler::readEnclosed(std::string_view file, size_t pos, std::string_view & key)
-{
-    auto start_index = pos;
-    key = {};
-
-    while (pos < file.size())
-    {
-        const auto current_character = file[pos++];
-
-        if (enclosing_character && enclosing_character == current_character)
+        else
         {
-            auto is_key_empty = start_index == pos;
-
-            if (is_key_empty)
-            {
-                return {pos, State::WAITING_KEY};
-            }
-
-            key = createElement(file, start_index, pos - 1);
-            return {pos, State::READING_KV_DELIMITER};
+            key.push_back(current_character);
         }
     }
 
     return {pos, State::END};
 }
 
-NextState KeyStateHandler::readKeyValueDelimiter(std::string_view file, size_t pos) const
+NextState InlineEscapingKeyStateHandler::readEnclosed(std::string_view file, size_t pos, Key & key)
+{
+    key.clear();
+
+    while (pos < file.size())
+    {
+        const auto current_character = file[pos++];
+
+        if (*enclosing_character == current_character)
+        {
+            if (key.empty())
+            {
+                return {pos, State::WAITING_KEY};
+            }
+
+            return {pos, State::READING_KV_DELIMITER};
+        }
+        else
+        {
+            key.push_back(current_character);
+        }
+    }
+
+    return {pos, State::END};
+}
+
+NextState InlineEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file, size_t pos) const
 {
     if (pos == file.size())
     {

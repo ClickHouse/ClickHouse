@@ -1,4 +1,4 @@
-#include <Functions/keyvaluepair/src/KeyValuePairExtractorBuilder.h>
+#include <Functions/keyvaluepair/src/StaleKeyValuePairExtractorBuilder.h>
 #include <gtest/gtest.h>
 
 namespace DB
@@ -40,8 +40,7 @@ INSTANTIATE_TEST_SUITE_P(
                     "age",
                     ""
                 }
-            },
-            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
+            }, StaleKeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         },
         {
             "name: neymar, favorite_movie:,favorite_song:",
@@ -50,7 +49,7 @@ INSTANTIATE_TEST_SUITE_P(
                 {"favorite_movie", ""},
                 {"favorite_song", ""},
             },
-            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
+         StaleKeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         }
     }));
 
@@ -77,7 +76,7 @@ INSTANTIATE_TEST_SUITE_P(
                     "team", "psg"
                 }
             },
-            KeyValuePairExtractorBuilder()
+         StaleKeyValuePairExtractorBuilder()
                 .withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>()
                 .withValueSpecialCharacterAllowList({'.'})
                 .build()
@@ -90,7 +89,7 @@ INSTANTIATE_TEST_SUITE_P(
                     "F"
                 }
             },
-            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
+         StaleKeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         },
     }));
 
@@ -105,7 +104,7 @@ INSTANTIATE_TEST_SUITE_P(
                     "age", "30"
                 }
             },
-            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
+         StaleKeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()
         },
         {
             "na$me,: neymar, age:30",
@@ -114,7 +113,7 @@ INSTANTIATE_TEST_SUITE_P(
                     "age", "30"
                 }
             },
-            KeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()},
+         StaleKeyValuePairExtractorBuilder().withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>().build()},
         {
             R"(name: neymar, favorite_quote: Premature\ optimization\ is\ the\ r\$\$t\ of\ all\ evil, age:30)",
             {
@@ -128,7 +127,7 @@ INSTANTIATE_TEST_SUITE_P(
                     "age", "30"
                 }
             },
-         KeyValuePairExtractorBuilder()
+         StaleKeyValuePairExtractorBuilder()
              .withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>()
              .withEnclosingCharacter('"')
              .build()
@@ -157,7 +156,7 @@ INSTANTIATE_TEST_SUITE_P(
                     "height", "1.75"
                 }
             },
-            KeyValuePairExtractorBuilder()
+         StaleKeyValuePairExtractorBuilder()
                 .withEscapingProcessor<SimpleKeyValuePairEscapingProcessor>()
                 .withValueSpecialCharacterAllowList({'.'})
                 .withEnclosingCharacter('"')

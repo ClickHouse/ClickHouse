@@ -40,7 +40,7 @@ struct KeyValuePairExtractor
 
     virtual Response extract(const std::string & data) = 0;
 
-    virtual Response extract(const std::string_view & data) = 0;
+    virtual Response extract(std::string_view data) = 0;
 };
 
 }

@@ -51,6 +51,18 @@ WITH
 SELECT
     x;
 
+-- Expected output: {'name':'neymar','favorite_quote':'Premature\ optimization\ is\ the\ root of all evi','age':'30'}
+WITH
+    extractKeyValuePairs('name: neymar, favorite_quote: Premature\\\ optimization\\\ is\\\ the\\\ root of all evil, age:30', '\\', ':', ',', '"') AS s_map,
+    CAST(
+    arrayMap(
+    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+    ),
+    'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
 ----- Mix Strings -----
 
 -- Expected output: {'na:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}

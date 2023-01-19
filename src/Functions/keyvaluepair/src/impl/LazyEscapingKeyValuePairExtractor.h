@@ -38,7 +38,7 @@ public:
         return extract(view);
     }
 
-    [[nodiscard]] Response extract(const std::string_view & file) override
+    [[nodiscard]] Response extract(std::string_view file) override
     {
         std::unordered_map<std::string_view, std::string_view> response_views;
 
