@@ -90,6 +90,20 @@ private:
 
     const Derived & getDerived() const { return *static_cast<Derived *>(this); }
 
+    std::unordered_map<const IQueryPlanStep*, std::string> address2name;
+    std::unordered_map<std::string, UInt32> name_gen;
+
+    std::string getStepId(const IQueryPlanStep* step)
+    {
+        const auto step_name = step->getName();
+        auto it = address2name.find(step);
+        if (it != address2name.end())
+            return it->second;
+
+        const auto seq_num = name_gen[step_name]++;
+        return address2name.insert({step, fmt::format("{}{}", step_name, seq_num)}).first->second;
+    }
+
 protected:
     void logStep(const char * prefix, const QueryPlan::Node * node)
     {
@@ -100,13 +114,13 @@ protected:
                 &Poco::Logger::get("QueryPlanVisitor"),
                 "{}: {}: {}",
                 prefix,
-                current_step->getName(),
+                getStepId(current_step),
                 reinterpret_cast<const void *>(current_step));
         }
     }
 };
 
-constexpr bool debug_logging_enabled = false;
+constexpr bool debug_logging_enabled = true;
 
 class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting, debug_logging_enabled>
 {
@@ -182,9 +196,13 @@ private:
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {
             const QueryPlan::Node * node = it->node;
+            /// skip removed sorting steps
+            auto * step = node->step.get();
+            if (dynamic_cast<const SortingStep *>(step) && node != nodes_affect_order.back())
+                continue;
+
             logStep("update sorting traits", node);
 
-            auto * step = node->step.get();
             auto * trans = dynamic_cast<ITransformingStep *>(step);
             if (!trans)
             {
@@ -262,15 +280,16 @@ private:
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {
             const QueryPlan::Node * node = it->node;
-            logStep("checking for stateful function", node);
-
             /// walking though stack until reach node which affects order
             if (node == node_affect_order)
                 break;
 
             const auto * step = node->step.get();
+            /// skip removed sorting steps
+            if (dynamic_cast<const SortingStep*>(step))
+                continue;
 
-
+            logStep("checking for stateful function", node);
             if (const auto * expr = typeid_cast<const ExpressionStep *>(step); expr)
             {
                 if (expr->getExpression()->hasStatefulFunctions())
@@ -296,13 +315,16 @@ private:
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {
             const QueryPlan::Node * node = it->node;
-            logStep("checking path from current sorting", node);
-
             /// walking though stack until reach node which affects order
             if (node == node_affect_order)
                 break;
 
             const auto * step = node->step.get();
+            /// skip removed sorting steps
+            if (dynamic_cast<const SortingStep *>(step))
+                continue;
+
+            logStep("checking path from current sorting", node);
 
             /// (2) for window function we do ORDER BY in 2 Sorting steps,
             /// so do not delete Sorting if window function step is on top
