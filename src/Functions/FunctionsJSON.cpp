@@ -704,7 +704,8 @@ public:
                     break;
                 }
                 return false;
-            case ElementType::STRING: {
+            case ElementType::STRING:
+            {
                 auto rb = ReadBufferFromMemory{element.getString()};
                 if constexpr (std::is_floating_point_v<NumberType>)
                 {
@@ -713,7 +714,16 @@ public:
                 }
                 else
                 {
-                    if (!tryReadIntText(value, rb) || !rb.eof())
+                    if (tryReadIntText(value, rb) && rb.eof())
+                        break;
+
+                    /// Try to parse float and convert it to integer.
+                    Float64 tmp_float;
+                    rb.position() = rb.buffer().begin();
+                    if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
+                        return false;
+
+                    if (!accurate::convertNumeric<Float64, NumberType, false>(tmp_float, value))
                         return false;
                 }
                 break;
