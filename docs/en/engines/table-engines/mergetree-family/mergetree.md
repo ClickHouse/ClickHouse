@@ -490,9 +490,6 @@ For example:
 :::
 
 
-## Approximate Nearest Neighbor Search Indexes [experimental] {#table_engines-ANNIndex}
-In addition to skip indices, there are also [Approximate Nearest Neighbor Search Indexes](/docs/en/engines/table-engines/mergetree-family/annindexes.md).
-
 ## Projections {#projections}
 Projections are like [materialized views](/docs/en/sql-reference/statements/create/view.md/#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
