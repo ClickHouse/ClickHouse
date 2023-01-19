@@ -155,9 +155,11 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
             return nullptr;
         }
     }
-
-    assert(creator);
-    return (*creator)(parameters);
+    else
+    {
+        assert(creator);
+        return (*creator)(parameters);
+    }
 }
 
 DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
