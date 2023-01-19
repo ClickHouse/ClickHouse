@@ -3759,6 +3759,9 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
   */
 void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_parallel)
 {
+    if (is_parallel && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parallel quorum inserts are not compatible with deprecated *MergeTree-syntax");
+
     auto zookeeper = getZooKeeper();
 
     /// Information on which replicas a part has been added, if the quorum has not yet been reached.
@@ -3918,7 +3921,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 bool StorageReplicatedMergeTree::partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const
 {
     auto zookeeper = getZooKeeper();
-    return zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "parallel" / part_info.getPartNameAndCheckFormat(format_version));
+    return zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "parallel" / part_info.getPartNameV1());
 }
 
 
