@@ -8453,14 +8453,14 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     return res;
 }
 
-bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk)
+bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica)
 {
     auto path = getZeroCopyPartPath(part_name, disk);
     if (path)
     {
         /// FIXME
         auto lock_path = fs::path(*path) / "part_exclusive_lock";
-        if (getZooKeeper()->exists(lock_path))
+        if (getZooKeeper()->tryGet(lock_path, lock_replica))
         {
             return true;
         }
@@ -8493,7 +8493,7 @@ std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusi
     zookeeper->createIfNotExists(zc_zookeeper_path, "");
 
     /// Create actual lock
-    ZeroCopyLock lock(zookeeper, zc_zookeeper_path);
+    ZeroCopyLock lock(zookeeper, zc_zookeeper_path, replica_name);
     if (lock.lock->tryLock())
         return lock;
     else
