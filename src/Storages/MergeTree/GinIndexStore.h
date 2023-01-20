@@ -119,7 +119,7 @@ struct GinSegmentDictionary
 
 using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 
-/// Gin Index Store which has Gin Index meta data for the corresponding Data Part
+/// Gin index store which has gin index meta data for the corresponding column data part
 class GinIndexStore
 {
 public:
@@ -183,8 +183,8 @@ private:
     /// Dictionaries indexed by segment ID
     using GinSegmentDictionaries = std::unordered_map<UInt32, GinSegmentDictionaryPtr>;
 
-    /// Dictionaries which are loaded from .gin_dict files
-    GinSegmentDictionaries dicts;
+    /// Term's dictionaries which are loaded from .gin_dict files
+    GinSegmentDictionaries segment_dictionaries;
 
     /// Container for building postings lists during index construction
     GinIndexPostingsBuilderContainer current_postings;
@@ -265,9 +265,7 @@ private:
     std::mutex mutex;
 };
 
-/// Dictionary information, which contains:
-
-/// Gin Index Store Reader which helps to read segments, dictionaries and postings list
+/// Gin index store reader which helps to read segments, dictionaries and postings list
 class GinIndexStoreDeserializer : private boost::noncopyable
 {
 public:
@@ -285,7 +283,7 @@ public:
     /// Read postings lists for the term
     SegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);
 
-    /// Read postings lists for terms(which are created by tokenzing query string)
+    /// Read postings lists for terms (which are created by tokenzing query string)
     PostingsCachePtr createPostingsCacheFromTerms(const std::vector<String> & terms);
 
 private:
