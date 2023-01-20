@@ -59,7 +59,7 @@ void MergeTreeIndexGranuleGinFilter::serializeBinary(WriteBuffer & ostr) const
     {
         size_t filter_size = gin_filter.getFilter().size();
         size_serialization->serializeBinary(filter_size, ostr, {});
-        ostr.write(reinterpret_cast<const char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::GinSegmentWithRowIDRanges::value_type));
+        ostr.write(reinterpret_cast<const char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
     }
 }
 
@@ -81,7 +81,7 @@ void MergeTreeIndexGranuleGinFilter::deserializeBinary(ReadBuffer & istr, MergeT
             continue;
 
         gin_filter.getFilter().assign(filter_size, {});
-        istr.readStrict(reinterpret_cast<char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::GinSegmentWithRowIDRanges::value_type));
+        istr.readStrict(reinterpret_cast<char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
     }
     has_elems = true;
 }
@@ -764,7 +764,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
             throw Exception("Inverted index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
     }
 
-    if (index.type != GinFilter::getName())
+    if (index.type != INVERTED_INDEX_NAME)
         throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
 
     if (index.arguments.size() > 2)

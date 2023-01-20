@@ -1692,9 +1692,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     PostingsCacheForStore cache_in_store;
 
     if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
-    {
         cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
-    }
 
     for (size_t i = 0; i < ranges.size(); ++i)
     {
@@ -1736,7 +1734,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 continue;
             }
 
-            bool result{false};
+            bool result = false;
             if (!gin_filter_condition)
                 result = condition->mayBeTrueOnGranule(granule);
             else
