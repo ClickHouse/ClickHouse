@@ -195,12 +195,12 @@ private:
     const UInt64 max_digestion_size = 0;
 
     /// File streams for segment, dictionaries and postings lists
-    std::unique_ptr<WriteBufferFromFileBase> segment_file_stream;
+    std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
 
     static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
-    static constexpr auto GIN_SEGMENT_FILE_TYPE = ".gin_seg";
+    static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
     static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
     static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
 
@@ -251,7 +251,7 @@ private:
     GinIndexStorePtr store;
 
     /// File streams for reading Gin Index
-    std::unique_ptr<ReadBufferFromFileBase> segment_file_stream;
+    std::unique_ptr<ReadBufferFromFileBase> metadata_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
 

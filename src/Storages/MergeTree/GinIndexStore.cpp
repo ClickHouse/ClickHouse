@@ -240,25 +240,25 @@ void GinIndexStore::finalize()
 
 void GinIndexStore::initFileStreams()
 {
-    String segment_file_name = getName() + GIN_SEGMENT_FILE_TYPE;
+    String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;
     String dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
 
-    segment_file_stream = data_part_storage_builder->writeFile(segment_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+    metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }
 
 void GinIndexStore::writeSegment()
 {
-    if (segment_file_stream == nullptr)
+    if (metadata_file_stream == nullptr)
         initFileStreams();
 
     using TokenPostingsBuilderPair = std::pair<std::string_view, GinIndexPostingsBuilderPtr>;
     using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
 
     /// Write segment
-    segment_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
+    metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
     TokenPostingsBuilderPairs token_postings_list_pairs;
     token_postings_list_pairs.reserve(current_postings.size());
 
@@ -311,7 +311,7 @@ void GinIndexStore::writeSegment()
     current_postings.clear();
     current_segment.segment_id = getNextSegmentID();
 
-    segment_file_stream->sync();
+    metadata_file_stream->sync();
     dict_file_stream->sync();
     postings_file_stream->sync();
 }
@@ -324,11 +324,11 @@ GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & st
 
 void GinIndexStoreDeserializer::initFileStreams()
 {
-    String segment_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_FILE_TYPE;
+    String metadata_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE;
     String dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = store->getName() + GinIndexStore::GIN_POSTINGS_FILE_TYPE;
 
-    segment_file_stream = store->storage->readFile(segment_file_name, {}, std::nullopt, std::nullopt);
+    metadata_file_stream = store->storage->readFile(metadata_file_name, {}, std::nullopt, std::nullopt);
     dict_file_stream = store->storage->readFile(dict_file_name, {}, std::nullopt, std::nullopt);
     postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
 }
@@ -341,9 +341,9 @@ void GinIndexStoreDeserializer::readSegments()
     using GinIndexSegments = std::vector<GinIndexSegment>;
     GinIndexSegments segments (num_segments);
 
-    assert(segment_file_stream != nullptr);
+    assert(metadata_file_stream != nullptr);
 
-    segment_file_stream->readStrict(reinterpret_cast<char *>(segments.data()), num_segments * sizeof(GinIndexSegment));
+    metadata_file_stream->readStrict(reinterpret_cast<char *>(segments.data()), num_segments * sizeof(GinIndexSegment));
     for (size_t i = 0; i < num_segments; ++i)
     {
         auto seg_id = segments[i].segment_id;
