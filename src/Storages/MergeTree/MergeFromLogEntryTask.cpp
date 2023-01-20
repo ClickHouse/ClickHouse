@@ -333,7 +333,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
                 " We will download merged part from replica to force byte-identical result.",
                 getCurrentExceptionMessage(false));
 
-            write_part_log(ExecutionStatus::fromCurrentExceptionWithStackTrace());
+            write_part_log(ExecutionStatus::fromCurrentException("", true));
 
             if (storage.getSettings()->detach_not_byte_identical_parts)
                 storage.forcefullyMovePartToDetachedAndRemoveFromMemory(std::move(part), "merge-not-byte-identical");
