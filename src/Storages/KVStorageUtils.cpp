@@ -81,6 +81,10 @@ bool traverseASTFilter(
 
             set->checkColumnsNumber(1);
             const auto & set_column = *set->getSetElements()[0];
+
+            if (set_column.getDataType() != primary_key_type->getTypeId())
+                return false;
+
             for (size_t row = 0; row < set_column.size(); ++row)
                 res->push_back(set_column[row]);
             return true;
