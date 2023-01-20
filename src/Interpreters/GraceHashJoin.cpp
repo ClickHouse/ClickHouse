@@ -59,21 +59,22 @@ namespace
 
             Blocks blocks;
             size_t rows_read = 0;
-            while (true)
+            do
             {
                 Block block = reader.read();
                 rows_read += block.rows();
                 if (!block)
                 {
                     eof = true;
+                    if (blocks.size() == 1)
+                        return blocks.front();
                     return concatenateBlocks(blocks);
                 }
                 blocks.push_back(std::move(block));
+            } while (rows_read < result_block_size);
 
-                if (rows_read >= result_block_size)
-                    break;
-            }
-
+            if (blocks.size() == 1)
+                return blocks.front();
             return concatenateBlocks(blocks);
         }
 
@@ -121,20 +122,12 @@ class GraceHashJoin::FileBucket : boost::noncopyable
 public:
     using BucketLock = std::unique_lock<std::mutex>;
 
-    struct Stats
-    {
-        TemporaryFileStream::Stat left;
-        TemporaryFileStream::Stat right;
-    };
-
-    explicit FileBucket(size_t bucket_index_, GraceHashJoin & grace_join_)
+    explicit FileBucket(size_t bucket_index_, TemporaryFileStream & left_file_, TemporaryFileStream & right_file_, Poco::Logger * log_)
         : idx{bucket_index_}
-        , left_file{
-            grace_join_.tmp_data->createStream(grace_join_.left_sample_block)}
-        , right_file{
-            grace_join_.tmp_data->createStream(grace_join_.prepareRightBlock(grace_join_.right_sample_block))}
+        , left_file{left_file_}
+        , right_file{right_file_}
         , state{State::WRITING_BLOCKS}
-        , log{grace_join_.log}
+        , log{log_}
     {
     }
 
@@ -170,8 +163,6 @@ public:
 
     bool empty() const { return is_empty.load(); }
 
-    Stats getStat() const { return stats; }
-
     AccumulatedBlockReader startJoining()
     {
         LOG_TRACE(log, "Joining file bucket {}", idx);
@@ -179,8 +170,8 @@ public:
         std::unique_lock<std::mutex> left_lock(left_file_mutex);
         std::unique_lock<std::mutex> right_lock(right_file_mutex);
 
-        stats.left = left_file.finishWriting();
-        stats.right = right_file.finishWriting();
+        left_file.finishWriting();
+        right_file.finishWriting();
 
         state = State::JOINING_BLOCKS;
 
@@ -232,7 +223,6 @@ private:
     std::atomic_bool is_empty = true;
 
     std::atomic<State> state;
-    Stats stats;
 
     Poco::Logger * log;
 };
@@ -395,7 +385,10 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
 
 void GraceHashJoin::addBucket(Buckets & destination)
 {
-    BucketPtr new_bucket = std::make_shared<FileBucket>(destination.size(), *this);
+    auto & left_file = tmp_data->createStream(left_sample_block);
+    auto & right_file = tmp_data->createStream(prepareRightBlock(right_sample_block));
+
+    BucketPtr new_bucket = std::make_shared<FileBucket>(destination.size(), left_file, right_file, log);
     destination.emplace_back(std::move(new_bucket));
 }
 
@@ -649,7 +642,10 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
                 current_blocks.emplace_back(std::move(blocks[bucket_index]));
             }
 
-            current_block = concatenateBlocks(current_blocks);
+            if (current_blocks.size() == 1)
+                current_block = std::move(current_blocks.front());
+            else
+                current_block = concatenateBlocks(current_blocks);
         }
 
         hash_join = makeInMemoryJoin();
