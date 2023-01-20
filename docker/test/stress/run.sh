@@ -362,7 +362,7 @@ rg -Fa " received signal " /test_output/gdb.log > /dev/null \
 
 for table in query_log trace_log
 do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
+    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
 done
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
