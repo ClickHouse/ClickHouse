@@ -34,13 +34,6 @@
 
 namespace DB
 {
-enum : uint8_t
-{
-    GIN_VERSION_0 = 0,
-    GIN_VERSION_1 = 1, /// Initial version
-};
-
-static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = GIN_VERSION_1;
 
 /// GinIndexPostingsList which uses 32-bit Roaring
 using GinIndexPostingsList = roaring::Roaring;
@@ -217,6 +210,14 @@ private:
     static constexpr auto GIN_SEGMENT_FILE_TYPE = ".gin_seg";
     static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
     static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
+
+    enum class Format : uint8_t
+    {
+        v0 = 0,
+        v1 = 1, /// Initial version
+    };
+
+    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v0;
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
