@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <utility>
 #include "IO/WriteBufferFromFileDecorator.h"
