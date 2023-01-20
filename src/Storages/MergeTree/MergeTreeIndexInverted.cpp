@@ -13,7 +13,7 @@
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
