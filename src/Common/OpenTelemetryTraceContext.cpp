@@ -56,7 +56,15 @@ bool Span::addAttribute(std::string_view name, std::function<String()> value_sup
     if (!this->isTraceEnabled() || !value_supplier)
         return false;
 
-    return addAttributeIfNotEmpty(name, value_supplier());
+    try
+    {
+        return addAttributeIfNotEmpty(name, value_supplier());
+    }
+    catch (...)
+    {
+        /// Ignore exception raised by value_supplier
+        return false;
+    }
 }
 
 bool Span::addAttribute(const Exception & e) noexcept
