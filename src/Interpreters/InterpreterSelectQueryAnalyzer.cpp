@@ -16,6 +16,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
+#include "config_version.h"
+
 namespace DB
 {
 
