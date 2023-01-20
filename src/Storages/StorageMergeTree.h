@@ -213,6 +213,11 @@ private:
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
+    /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
+    /// Merges have to be aware of the outdated part's levels inside designated merge range.
+    /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
+    /// There should not be an unactive part all_1_1_1. Otherwise it is imposible to load parts after restart, they intersects.
+    /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with hight level outdated parts.
     UInt32 getMaxLevelInBetween(
         const DataPartPtr & left,
         const DataPartPtr & right) const;

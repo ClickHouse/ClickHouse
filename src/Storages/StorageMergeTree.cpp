@@ -848,11 +848,11 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             return false;
         }
 
-        auto maxPossibleLevel = getMaxLevelInBetween(left, right);
-        if (maxPossibleLevel > std::max(left->info.level, right->info.level))
+        auto max_possible_level = getMaxLevelInBetween(left, right);
+        if (max_possible_level > std::max(left->info.level, right->info.level))
         {
             if (disable_reason)
-                *disable_reason = fmt::format("There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have", left->name, right->name, maxPossibleLevel);
+                *disable_reason = fmt::format("There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have", left->name, right->name, max_possible_level);
             return false;
         }
 
@@ -1140,11 +1140,11 @@ UInt32 StorageMergeTree::getMaxLevelInBetween(const DataPartPtr & left, const Da
 
     auto begin = data_parts_by_info.find(left->info);
     if (begin == data_parts_by_info.end())
-        return 0;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find left part, left part {}. It's a bug", left->name);
 
     auto end = data_parts_by_info.find(right->info);
     if (end == data_parts_by_info.end())
-        return 0;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find right part, right part {}. It's a bug", right->name);
 
     UInt32 level = 0;
 
