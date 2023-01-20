@@ -420,6 +420,14 @@ GinPostingsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(cons
     return postings_cache;
 }
 
+GinPostingsCachePtr PostingsCacheForStore::getPostings(const String & query_string) const
+{
+    auto it = cache.find(query_string);
+    if (it == cache.end())
+        return nullptr;
+    return it->second;
+}
+
 GinIndexStoreFactory & GinIndexStoreFactory::instance()
 {
     static GinIndexStoreFactory instance;

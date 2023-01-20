@@ -400,9 +400,7 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
             stream->sync();
     }
     for (auto & store: gin_index_stores)
-    {
         store.second->finalize();
-    }
     gin_index_stores.clear();
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();
