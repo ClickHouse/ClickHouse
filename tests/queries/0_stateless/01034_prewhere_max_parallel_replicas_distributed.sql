@@ -9,6 +9,9 @@ CREATE TABLE test_max_parallel_replicas_lr (timestamp UInt64) ENGINE = MergeTree
 INSERT INTO test_max_parallel_replicas_lr select number as timestamp from system.numbers limit 100;
 
 SET max_parallel_replicas = 2;
+SET parallel_replicas_mode = 'sample_key';
+SET allow_experimental_parallel_reading_from_replicas = 0;
+
 select count() FROM remote('127.0.0.{2|3}', currentDatabase(), test_max_parallel_replicas_lr) PREWHERE timestamp > 0;
 
 drop table test_max_parallel_replicas_lr;
