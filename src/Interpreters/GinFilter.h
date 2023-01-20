@@ -54,7 +54,6 @@ public:
     /// given postings list cache
     bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store) const;
 
-
     /// Set the query string of the filter
     void setQueryString(const char * data, size_t len)
     {

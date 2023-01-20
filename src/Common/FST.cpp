@@ -61,6 +61,14 @@ void LabelsAsBitmap::addLabel(char label)
     data |= bit_label;
 }
 
+bool LabelsAsBitmap::hasLabel(char label) const
+{
+    UInt8 index = label;
+    UInt256 bit_label = 1;
+    bit_label <<= index;
+    return ((data & bit_label) != 0);
+}
+
 UInt64 LabelsAsBitmap::getIndex(char label) const
 {
     UInt64 bit_count = 0;
@@ -97,12 +105,22 @@ UInt64 LabelsAsBitmap::serialize(WriteBuffer & write_buffer)
         + getLengthOfVarUInt(data.items[3]);
 }
 
-bool LabelsAsBitmap::hasLabel(char label) const
+UInt64 State::hash() const
 {
-    UInt8 index = label;
-    UInt256 bit_label = 1;
-    bit_label <<= index;
-    return ((data & bit_label) != 0);
+    std::vector<char> values;
+    values.reserve(arcs.size() * (sizeof(Output) + sizeof(UInt64) + 1));
+
+    for (const auto & [label, arc] : arcs)
+    {
+        values.push_back(label);
+        const auto * ptr = reinterpret_cast<const char *>(&arc.output);
+        std::copy(ptr, ptr + sizeof(Output), std::back_inserter(values));
+
+        ptr = reinterpret_cast<const char *>(&arc.target->id);
+        std::copy(ptr, ptr + sizeof(UInt64), std::back_inserter(values));
+    }
+
+    return CityHash_v1_0_2::CityHash64(values.data(), values.size());
 }
 
 Arc * State::getArc(char label) const
@@ -125,41 +143,6 @@ void State::clear()
     state_index = 0;
     arcs.clear();
     flag = 0;
-}
-
-UInt64 State::hash() const
-{
-    std::vector<char> values;
-    values.reserve(arcs.size() * (sizeof(Output) + sizeof(UInt64) + 1));
-
-    for (const auto & [label, arc] : arcs)
-    {
-        values.push_back(label);
-        const auto * ptr = reinterpret_cast<const char *>(&arc.output);
-        std::copy(ptr, ptr + sizeof(Output), std::back_inserter(values));
-
-        ptr = reinterpret_cast<const char *>(&arc.target->id);
-        std::copy(ptr, ptr + sizeof(UInt64), std::back_inserter(values));
-    }
-
-    return CityHash_v1_0_2::CityHash64(values.data(), values.size());
-}
-
-bool operator==(const State & state1, const State & state2)
-{
-    if (state1.arcs.size() != state2.arcs.size())
-        return false;
-
-    for (const auto & [label, arc] : state1.arcs)
-    {
-        const auto it = state2.arcs.find(label);
-        if (it == state2.arcs.end())
-            return false;
-
-        if (it->second != arc)
-            return false;
-    }
-    return true;
 }
 
 UInt64 State::serialize(WriteBuffer & write_buffer)
@@ -212,6 +195,23 @@ UInt64 State::serialize(WriteBuffer & write_buffer)
     }
 
     return written_bytes;
+}
+
+bool operator==(const State & state1, const State & state2)
+{
+    if (state1.arcs.size() != state2.arcs.size())
+        return false;
+
+    for (const auto & [label, arc] : state1.arcs)
+    {
+        const auto it = state2.arcs.find(label);
+        if (it == state2.arcs.end())
+            return false;
+
+        if (it->second != arc)
+            return false;
+    }
+    return true;
 }
 
 void State::readFlag(ReadBuffer & read_buffer)

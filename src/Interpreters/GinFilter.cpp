@@ -88,6 +88,22 @@ void GinFilter::clear()
     rowid_ranges.clear();
 }
 
+bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache_store) const
+{
+    if (filter.getTerms().empty())
+        return true;
+
+    PostingsCachePtr postings_cache = cache_store.getPostings(filter.getQueryString());
+    if (postings_cache == nullptr)
+    {
+        GinIndexStoreDeserializer reader(cache_store.store);
+        postings_cache = reader.createPostingsCacheFromTerms(filter.getTerms());
+        cache_store.cache[filter.getQueryString()] = postings_cache;
+    }
+
+    return match(*postings_cache);
+}
+
 namespace
 {
 
@@ -155,22 +171,6 @@ bool GinFilter::match(const PostingsCache & postings_cache) const
         if (matchInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
             return true;
     return false;
-}
-
-bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache_store) const
-{
-    if (filter.getTerms().empty())
-        return true;
-
-    PostingsCachePtr postings_cache = cache_store.getPostings(filter.getQueryString());
-    if (postings_cache == nullptr)
-    {
-        GinIndexStoreDeserializer reader(cache_store.store);
-        postings_cache = reader.createPostingsCacheFromTerms(filter.getTerms());
-        cache_store.cache[filter.getQueryString()] = postings_cache;
-    }
-
-    return match(*postings_cache);
 }
 
 }
