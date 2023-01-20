@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, long
 
 create table t(a UInt64, b UInt64) engine=MergeTree order by a;
 system stop merges t;
