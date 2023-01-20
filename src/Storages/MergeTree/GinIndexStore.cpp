@@ -24,6 +24,113 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT_VERSION;
 };
 
+GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit)
+    : rowid_lst{}
+    , size_limit(limit)
+{}
+
+bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
+{
+    if (useRoaring())
+        return rowid_bitmap.contains(row_id);
+    else
+    {
+        const auto * const it = std::find(rowid_lst.begin(), rowid_lst.begin()+rowid_lst_length, row_id);
+        return it != rowid_lst.begin() + rowid_lst_length;
+    }
+}
+
+void GinIndexPostingsBuilder::add(UInt32 row_id)
+{
+    if (containsAllRows())
+        return;
+
+    if (useRoaring())
+    {
+        if (rowid_bitmap.cardinality() == size_limit)
+        {
+            /// reset the postings list with MATCH ALWAYS;
+            rowid_lst_length = 1; /// makes sure useRoaring() returns false;
+            rowid_lst[0] = CONTAINS_ALL; /// set CONTAINS_ALL flag;
+        }
+        else
+            rowid_bitmap.add(row_id);
+    }
+    else
+    {
+        assert(rowid_lst_length < MIN_SIZE_FOR_ROARING_ENCODING);
+        rowid_lst[rowid_lst_length] = row_id;
+        rowid_lst_length++;
+
+        if (rowid_lst_length == MIN_SIZE_FOR_ROARING_ENCODING)
+        {
+            for (size_t i = 0; i < rowid_lst_length; i++)
+                rowid_bitmap.add(rowid_lst[i]);
+
+            rowid_lst_length = USES_BIT_MAP;
+        }
+    }
+}
+
+UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer) const
+{
+    UInt64 written_bytes = 0;
+    buffer.write(rowid_lst_length);
+    written_bytes += 1;
+
+    if (useRoaring())
+    {
+        auto size = rowid_bitmap.getSizeInBytes();
+
+        writeVarUInt(size, buffer);
+        written_bytes += getLengthOfVarUInt(size);
+
+        auto buf = std::make_unique<char[]>(size);
+        rowid_bitmap.write(buf.get());
+        buffer.write(buf.get(), size);
+        written_bytes += size;
+    }
+    else
+    {
+        for (size_t i = 0; i <  rowid_lst_length; ++i)
+        {
+            writeVarUInt(rowid_lst[i], buffer);
+            written_bytes += getLengthOfVarUInt(rowid_lst[i]);
+        }
+    }
+
+    return written_bytes;
+}
+
+GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer)
+{
+    UInt8 postings_list_size = 0;
+    buffer.readStrict(reinterpret_cast<char &>(postings_list_size));
+
+    if (postings_list_size != USES_BIT_MAP)
+    {
+        size_t size = 0;
+        readVarUInt(size, buffer);
+        auto buf = std::make_unique<char[]>(size);
+        buffer.readStrict(reinterpret_cast<char *>(buf.get()), size);
+
+        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(buf.get()));
+
+        return postings_list;
+    }
+    else
+    {
+        assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
+        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
+        UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
+
+        for (auto i = 0; i < postings_list_size; ++i)
+            readVarUInt(row_ids[i], buffer);
+        postings_list->addMany(postings_list_size, row_ids);
+        return postings_list;
+    }
+}
+
 GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_)
     : name(name_)
     , storage(storage_)
@@ -37,134 +144,31 @@ GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, 
 {
 }
 
-GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit)
-    : rowid_lst{}
-    , size_limit(limit)
-{}
-
-bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
-{
-    if (useRoaring())
-        return rowid_bitmap.contains(row_id);
-
-    const auto * const it = std::find(rowid_lst.begin(), rowid_lst.begin()+rowid_lst_length, row_id);
-    return it != rowid_lst.begin() + rowid_lst_length;
-}
-
-void GinIndexPostingsBuilder::add(UInt32 row_id)
-{
-    if (containsAllRows())
-        return;
-
-    if (useRoaring())
-    {
-        if (rowid_bitmap.cardinality() == size_limit)
-        {
-            //reset the postings list with MATCH ALWAYS;
-            rowid_lst_length = 1; //makes sure useRoaring() returns false;
-            rowid_lst[0] = CONTAINS_ALL; //set CONTAINS ALL flag;
-        }
-        else
-            rowid_bitmap.add(row_id);
-        return;
-    }
-
-    assert(rowid_lst_length < MIN_SIZE_FOR_ROARING_ENCODING);
-    rowid_lst[rowid_lst_length] = row_id;
-    rowid_lst_length++;
-
-    if (rowid_lst_length == MIN_SIZE_FOR_ROARING_ENCODING)
-    {
-        for (size_t i = 0; i < rowid_lst_length; i++)
-            rowid_bitmap.add(rowid_lst[i]);
-
-        rowid_lst_length = USES_BIT_MAP;
-    }
-}
-
-UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer) const
-{
-    UInt64 written_bytes = 0;
-    buffer.write(rowid_lst_length);
-    written_bytes += 1;
-
-    if (!useRoaring())
-    {
-        for (size_t i = 0; i <  rowid_lst_length; ++i)
-        {
-            writeVarUInt(rowid_lst[i], buffer);
-            written_bytes += getLengthOfVarUInt(rowid_lst[i]);
-        }
-    }
-    else
-    {
-        auto size = rowid_bitmap.getSizeInBytes();
-
-        writeVarUInt(size, buffer);
-        written_bytes += getLengthOfVarUInt(size);
-
-        auto buf = std::make_unique<char[]>(size);
-        rowid_bitmap.write(buf.get());
-        buffer.write(buf.get(), size);
-        written_bytes += size;
-    }
-    return written_bytes;
-}
-
-GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer)
-{
-    UInt8 postings_list_size = 0;
-    buffer.readStrict(reinterpret_cast<char &>(postings_list_size));
-
-    if (postings_list_size != USES_BIT_MAP)
-    {
-        assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
-        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
-        UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
-
-        for (auto i = 0; i < postings_list_size; ++i)
-            readVarUInt(row_ids[i], buffer);
-        postings_list->addMany(postings_list_size, row_ids);
-        return postings_list;
-    }
-    else
-    {
-        size_t size = 0;
-        readVarUInt(size, buffer);
-        auto buf = std::make_unique<char[]>(size);
-        buffer.readStrict(reinterpret_cast<char *>(buf.get()), size);
-
-        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(buf.get()));
-
-        return postings_list;
-    }
-}
-
 bool GinIndexStore::exists() const
 {
-    String id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    return storage->exists(id_file_name);
+    String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
+    return storage->exists(segment_id_file_name);
 }
 
 UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
 {
     std::lock_guard guard(mutex);
 
-    /// When the method is called for the first time, the file doesn't exist yet, need to create it
-    /// and write segment ID 1.
+    /// When the method is called for the first time, the file doesn't exist yet, need to create it and write segment ID 1.
     if (!storage->exists(file_name))
     {
-        /// Create file and write initial segment id = 1
+        /// Create file
         std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
 
         /// Write version
         writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
 
+        /// Write segment ID 1
         writeVarUInt(1, *ostr);
         ostr->sync();
     }
 
-    /// read id in file
+    /// Read id in file
     UInt32 result = 0;
     {
         std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(file_name, {}, std::nullopt, std::nullopt);
@@ -174,7 +178,8 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
 
         readVarUInt(result, *istr);
     }
-    //save result+n
+
+    /// Save result + n
     {
         std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
 
@@ -189,15 +194,15 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
 
 UInt32 GinIndexStore::getNextRowIDRange(size_t numIDs)
 {
-    UInt32 result =current_segment.next_row_id;
+    UInt32 result = current_segment.next_row_id;
     current_segment.next_row_id += numIDs;
     return result;
 }
 
 UInt32 GinIndexStore::getNextSegmentID()
 {
-    String sid_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    return getNextSegmentIDRange(sid_file_name, 1);
+    String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
+    return getNextSegmentIDRange(segment_id_file_name, 1);
 }
 
 UInt32 GinIndexStore::getNumOfSegments()
@@ -205,13 +210,13 @@ UInt32 GinIndexStore::getNumOfSegments()
     if (cached_segment_num)
         return cached_segment_num;
 
-    String sid_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    if (!storage->exists(sid_file_name))
+    String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
+    if (!storage->exists(segment_id_file_name))
         return 0;
 
     UInt32 result = 0;
     {
-        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(sid_file_name, {}, std::nullopt, std::nullopt);
+        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
 
         uint8_t version = 0;
         readBinary(version, *istr);
@@ -267,43 +272,43 @@ void GinIndexStore::writeSegment()
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
     std::sort(token_postings_list_pairs.begin(), token_postings_list_pairs.end(),
-                    [](const TokenPostingsBuilderPair & a, const TokenPostingsBuilderPair & b)
+                    [](const TokenPostingsBuilderPair & x, const TokenPostingsBuilderPair & y)
                     {
-                        return a.first < b.first;
+                        return x.first < y.first;
                     });
 
-    ///write postings
+    /// Write postings
     std::vector<UInt64> posting_list_byte_sizes(current_postings.size(), 0);
 
-    for (size_t current_index = 0; const auto & [token, postings_list] : token_postings_list_pairs)
+    for (size_t i = 0; const auto & [token, postings_list] : token_postings_list_pairs)
     {
         auto posting_list_byte_size = postings_list->serialize(*postings_file_stream);
 
-        posting_list_byte_sizes[current_index] = posting_list_byte_size;
-        current_index++;
+        posting_list_byte_sizes[i] = posting_list_byte_size;
+        i++;
         current_segment.postings_start_offset += posting_list_byte_size;
     }
     ///write item dictionary
     std::vector<UInt8> buffer;
     WriteBufferFromVector<std::vector<UInt8>> write_buf(buffer);
-    FST::FstBuilder builder(write_buf);
+    FST::FstBuilder fst_builder(write_buf);
 
     UInt64 offset = 0;
-    for (size_t current_index = 0; const auto & [token, postings_list] : token_postings_list_pairs)
+    for (size_t i = 0; const auto & [token, postings_list] : token_postings_list_pairs)
     {
-        builder.add(token, offset);
-        offset += posting_list_byte_sizes[current_index];
-        current_index++;
+        fst_builder.add(token, offset);
+        offset += posting_list_byte_sizes[i];
+        i++;
     }
 
-    builder.build();
+    fst_builder.build();
     write_buf.finalize();
 
     /// Write FST size
     writeVarUInt(buffer.size(), *dict_file_stream);
     current_segment.dict_start_offset += getLengthOfVarUInt(buffer.size());
 
-    /// Write FST content
+    /// Write FST blob
     dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), buffer.size());
     current_segment.dict_start_offset += buffer.size();
 
@@ -334,7 +339,7 @@ void GinIndexStoreDeserializer::initFileStreams()
 }
 void GinIndexStoreDeserializer::readSegments()
 {
-    auto num_segments = store->getNumOfSegments();
+    UInt32 num_segments = store->getNumOfSegments();
     if (num_segments == 0)
         return;
 
@@ -344,13 +349,13 @@ void GinIndexStoreDeserializer::readSegments()
     assert(metadata_file_stream != nullptr);
 
     metadata_file_stream->readStrict(reinterpret_cast<char *>(segments.data()), num_segments * sizeof(GinIndexSegment));
-    for (size_t i = 0; i < num_segments; ++i)
+    for (UInt32 i = 0; i < num_segments; ++i)
     {
         auto seg_id = segments[i].segment_id;
-        auto dict = std::make_shared<GinSegmentDictionary>();
-        dict->postings_start_offset = segments[i].postings_start_offset;
-        dict->dict_start_offset = segments[i].dict_start_offset;
-        store->segment_dictionaries[seg_id] = dict;
+        auto seg_dict = std::make_shared<GinSegmentDictionary>();
+        seg_dict->postings_start_offset = segments[i].postings_start_offset;
+        seg_dict->dict_start_offset = segments[i].dict_start_offset;
+        store->segment_dictionaries[seg_id] = seg_dict;
     }
 }
 
@@ -377,7 +382,7 @@ void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
     size_t fst_size = 0;
     readVarUInt(fst_size, *dict_file_stream);
 
-    /// Read FST content
+    /// Read FST blob
     it->second->offsets.getData().resize(fst_size);
     dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), fst_size);
 }
@@ -470,4 +475,5 @@ void GinIndexStoreFactory::remove(const String & part_path)
             ++it;
     }
 }
+
 }

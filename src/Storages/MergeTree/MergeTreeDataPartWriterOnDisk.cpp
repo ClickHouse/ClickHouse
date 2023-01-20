@@ -275,15 +275,13 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         auto & stream = *skip_indices_streams[i];
         WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
-        GinIndexStorePtr store = nullptr;
+        GinIndexStorePtr store;
         if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
         {
             String stream_name = index_helper->getFileName();
             auto it = gin_index_stores.find(stream_name);
             if (it == gin_index_stores.cend())
-            {
                 throw Exception("Index '" + stream_name + "' does not exist", ErrorCodes::LOGICAL_ERROR);
-            }
             store = it->second;
         }
 
