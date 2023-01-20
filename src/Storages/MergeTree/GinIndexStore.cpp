@@ -250,11 +250,11 @@ void GinIndexStore::finalize()
 void GinIndexStore::initFileStreams()
 {
     String segment_file_name = getName() + GIN_SEGMENT_FILE_TYPE;
-    String term_dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
+    String dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
 
     segment_file_stream = data_part_storage_builder->writeFile(segment_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
-    term_dict_file_stream = data_part_storage_builder->writeFile(term_dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+    dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }
 
@@ -306,19 +306,19 @@ void GinIndexStore::writeSegment()
     write_buf.finalize();
 
     /// Write FST size
-    writeVarUInt(buffer.size(), *term_dict_file_stream);
-    current_segment.term_dict_start_offset += getLengthOfVarUInt(buffer.size());
+    writeVarUInt(buffer.size(), *dict_file_stream);
+    current_segment.dict_start_offset += getLengthOfVarUInt(buffer.size());
 
     /// Write FST content
-    term_dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), buffer.size());
-    current_segment.term_dict_start_offset += buffer.size();
+    dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), buffer.size());
+    current_segment.dict_start_offset += buffer.size();
 
     current_size = 0;
     current_postings.clear();
     current_segment.segment_id = getNextSegmentID();
 
     segment_file_stream->sync();
-    term_dict_file_stream->sync();
+    dict_file_stream->sync();
     postings_file_stream->sync();
 }
 
@@ -331,11 +331,11 @@ GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & st
 void GinIndexStoreDeserializer::initFileStreams()
 {
     String segment_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_FILE_TYPE;
-    String term_dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
+    String dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = store->getName() + GinIndexStore::GIN_POSTINGS_FILE_TYPE;
 
     segment_file_stream = store->storage->readFile(segment_file_name, {}, std::nullopt, std::nullopt);
-    term_dict_file_stream = store->storage->readFile(term_dict_file_name, {}, std::nullopt, std::nullopt);
+    dict_file_stream = store->storage->readFile(dict_file_name, {}, std::nullopt, std::nullopt);
     postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
 }
 void GinIndexStoreDeserializer::readSegments()
@@ -353,39 +353,39 @@ void GinIndexStoreDeserializer::readSegments()
     for (size_t i = 0; i < num_segments; ++i)
     {
         auto seg_id = segments[i].segment_id;
-        auto term_dict = std::make_shared<SegmentTermDictionary>();
-        term_dict->postings_start_offset = segments[i].postings_start_offset;
-        term_dict->term_dict_start_offset = segments[i].term_dict_start_offset;
-        store->term_dicts[seg_id] = term_dict;
+        auto dict = std::make_shared<SegmentDictionary>();
+        dict->postings_start_offset = segments[i].postings_start_offset;
+        dict->dict_start_offset = segments[i].dict_start_offset;
+        store->dicts[seg_id] = dict;
     }
 }
 
-void GinIndexStoreDeserializer::readSegmentTermDictionaries()
+void GinIndexStoreDeserializer::readSegmentDictionaries()
 {
     for (UInt32 seg_index = 0; seg_index < store->getNumOfSegments(); ++seg_index)
-        readSegmentTermDictionary(seg_index);
+        readSegmentDictionary(seg_index);
 }
 
-void GinIndexStoreDeserializer::readSegmentTermDictionary(UInt32 segment_id)
+void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
 {
     /// Check validity of segment_id
-    auto it = store->term_dicts.find(segment_id);
-    if (it == store->term_dicts.end())
+    auto it = store->dicts.find(segment_id);
+    if (it == store->dicts.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid segment id {}", segment_id);
 
-    assert(term_dict_file_stream != nullptr);
+    assert(dict_file_stream != nullptr);
 
-    /// Set file pointer of term dictionary file
-    term_dict_file_stream->seek(it->second->term_dict_start_offset, SEEK_SET);
+    /// Set file pointer of dictionary file
+    dict_file_stream->seek(it->second->dict_start_offset, SEEK_SET);
 
     it->second->offsets.getData().clear();
     /// Read FST size
     size_t fst_size = 0;
-    readVarUInt(fst_size, *term_dict_file_stream);
+    readVarUInt(fst_size, *dict_file_stream);
 
     /// Read FST content
     it->second->offsets.getData().resize(fst_size);
-    term_dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), fst_size);
+    dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), fst_size);
 }
 
 SegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsLists(const String & term)
@@ -393,16 +393,16 @@ SegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsL
     assert(postings_file_stream != nullptr);
 
     SegmentedPostingsListContainer container;
-    for (auto const & seg_term_dict : store->term_dicts)
+    for (auto const & seg_dict : store->dicts)
     {
-        auto segment_id = seg_term_dict.first;
+        auto segment_id = seg_dict.first;
 
-        auto [offset, found] = seg_term_dict.second->offsets.getOutput(term);
+        auto [offset, found] = seg_dict.second->offsets.getOutput(term);
         if (!found)
             continue;
 
         // Set postings file pointer for reading postings list
-        postings_file_stream->seek(seg_term_dict.second->postings_start_offset + offset, SEEK_SET);
+        postings_file_stream->seek(seg_dict.second->postings_start_offset + offset, SEEK_SET);
 
         // Read posting list
         auto postings_list = GinIndexPostingsBuilder::deserialize(*postings_file_stream);
@@ -448,7 +448,7 @@ GinIndexStorePtr GinIndexStoreFactory::get(const String & name, DataPartStorageP
 
         GinIndexStoreDeserializer deserializer(store);
         deserializer.readSegments();
-        deserializer.readSegmentTermDictionaries();
+        deserializer.readSegmentDictionaries();
 
         stores[key] = store;
 
