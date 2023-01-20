@@ -87,8 +87,8 @@ public:
                   || executeNumber<Float32>(*column, out_vec, idx, input_rows_count, size_per_row)
                   || executeNumber<Float64>(*column, out_vec, idx, input_rows_count, size_per_row)))
             {
-                throw Exception{"Illegal column " + arguments[idx].column->getName()
-                                + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                                arguments[idx].column->getName(), getName());
             }
         }
 

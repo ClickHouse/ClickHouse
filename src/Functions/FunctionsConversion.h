@@ -1883,8 +1883,7 @@ private:
     ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (arguments.empty())
-            throw Exception{"Function " + getName() + " expects at least 1 argument",
-               ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
 
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -1905,13 +1904,11 @@ private:
                 {
                     /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
-                        throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DataTypeDateTime64.",
-                            ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+                        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects 2 or 3 arguments for DataTypeDateTime64.", getName());
                 }
                 else if (arguments.size() != 2)
                 {
-                    throw Exception{"Function " + getName() + " expects 2 arguments for Decimal.",
-                        ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+                    throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects 2 arguments for Decimal.", getName());
                 }
 
                 const ColumnWithTypeAndName & scale_column = arguments[1];
@@ -2998,8 +2995,8 @@ private:
             if (cast_type == CastType::accurateOrNull)
                 return createToNullableColumnWrapper();
             else
-                throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+                    from_type->getName(), to_type->getName());
         }
 
         auto wrapper_cast_type = cast_type;
@@ -3084,8 +3081,8 @@ private:
             if (cast_type == CastType::accurateOrNull)
                 return createToNullableColumnWrapper();
             else
-                throw Exception{"Conversion from " + from_type_untyped->getName() + " to " + to_type->getName() +
-                    " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+                    from_type_untyped->getName(), to_type->getName());
         }
     }
 
@@ -3563,8 +3560,8 @@ private:
             if (cast_type == CastType::accurateOrNull)
                 return createToNullableColumnWrapper();
             else
-                throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+                    from_type->getName(), to_type->getName());
         }
     }
 
@@ -3588,8 +3585,8 @@ private:
             const auto & old_value = name_value.second;
             const auto & new_value = to_type->getValue(name_value.first);
             if (old_value != new_value)
-                throw Exception{"Enum conversion changes value for element '" + name_value.first +
-                    "' from " + toString(old_value) + " to " + toString(new_value), ErrorCodes::CANNOT_CONVERT_TYPE};
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Enum conversion changes value for element '{}' from {} to {}",
+                    name_value.first, toString(old_value), toString(new_value));
         }
     }
 
@@ -3637,8 +3634,8 @@ private:
                 return res;
             }
             else
-                throw Exception{"Unexpected column " + first_col->getName() + " as first argument of function " + function_name,
-                    ErrorCodes::LOGICAL_ERROR};
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
+                    first_col->getName(), function_name);
         };
     }
 
@@ -4021,8 +4018,8 @@ private:
         if (cast_type == CastType::accurateOrNull)
             return createToNullableColumnWrapper();
         else
-            throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
-                ErrorCodes::CANNOT_CONVERT_TYPE};
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+                from_type->getName(), to_type->getName());
     }
 };
 

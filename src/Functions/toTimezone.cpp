@@ -96,8 +96,8 @@ public:
 
         const auto which_type = WhichDataType(arguments[0].type);
         if (!which_type.isDateTime() && !which_type.isDateTime64())
-            throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
-                ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                "Should be DateTime or DateTime64", arguments[0].type->getName(), getName());
 
         String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
         if (which_type.isDateTime())

@@ -1178,7 +1178,8 @@ void IMergeTreeDataPart::loadRowsCount()
                                      "and size of single value, "
                                      "but index granularity in part {} "
                                      "in last mark has {} rows which is less than in column",
-                                     backQuote(column.name), rows_in_column - index_granularity_without_last_mark, name, last_possibly_incomplete_mark_rows);
+                                     backQuote(column.name), rows_in_column - index_granularity_without_last_mark,
+                                     name, last_possibly_incomplete_mark_rows);
                 }
             }
         }

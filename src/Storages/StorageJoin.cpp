@@ -63,7 +63,7 @@ StorageJoin::StorageJoin(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     for (const auto & key : key_names)
         if (!metadata_snapshot->getColumns().hasPhysical(key))
-            throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Key column ({}) does not exist in table declaration.", key);
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
     join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);

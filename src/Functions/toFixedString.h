@@ -121,7 +121,7 @@ public:
             {
                 if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
                 {
-                    throw Exception{"String too long for type FixedString(" + toString(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE};
+                    throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String too long for type FixedString({})", toString(n));
                 }
                 else
                 {

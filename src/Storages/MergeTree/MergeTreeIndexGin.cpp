@@ -761,7 +761,9 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
 
         if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception("Inverted index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Inverted index can be used only with `String`, `FixedString`,"
+                            "`LowCardinality(String)`, `LowCardinality(FixedString)` "
+                            "column or Array with `String` or `FixedString` values column.");
     }
 
     if (index.type != GinFilter::getName())
@@ -774,7 +776,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         throw Exception("The first Inverted index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
 
     if (index.arguments.size() == 2 && (index.arguments[1].getType() != Field::Types::Float64 || index.arguments[1].get<Float64>() <= 0 || index.arguments[1].get<Float64>() > 1))
-        throw Exception("The second Inverted index argument must be a float between 0 and 1.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The second Inverted index argument must be a float between 0 and 1.");
 
     size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
     Float64 density = index.arguments.size() < 2 ? 1.0f : index.arguments[1].get<Float64>();

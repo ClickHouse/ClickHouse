@@ -2500,7 +2500,7 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
     for (const auto & disk : disks)
     {
         if (disk->exists(new_table_path))
-            throw Exception{"Target path already exists: " + fullPath(disk, new_table_path), ErrorCodes::DIRECTORY_ALREADY_EXISTS};
+            throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Target path already exists: {}", fullPath(disk, new_table_path));
     }
 
     {
@@ -3030,8 +3030,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if ((!current_value || *current_value != new_value)
                 && MergeTreeSettings::isReadonlySetting(setting_name))
             {
-                throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'",
-                                 ErrorCodes::READONLY_SETTING};
+                throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'", setting_name, getName());
             }
 
             if (!current_value && MergeTreeSettings::isPartFormatSetting(setting_name))
@@ -3055,8 +3054,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// Prevent unsetting readonly setting
             if (MergeTreeSettings::isReadonlySetting(setting_name) && !new_value)
             {
-                throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'",
-                                ErrorCodes::READONLY_SETTING};
+                throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'", setting_name, getName());
             }
 
             if (MergeTreeSettings::isPartFormatSetting(setting_name) && !new_value)

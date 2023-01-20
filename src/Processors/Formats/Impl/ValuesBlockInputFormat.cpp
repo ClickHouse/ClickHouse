@@ -528,10 +528,9 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             return false;
         }
         buf->rollbackToCheckpoint();
-        throw Exception{"Cannot insert NULL value into a column of type '" + type.getName() + "'"
-                        + " at: " +
-                        String(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())),
-                        ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at: {}",
+                        type.getName(), String(buf->position(),
+                        std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
     column.insert(value);

@@ -81,7 +81,7 @@ public:
         if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
             array_source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
         else
-            throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "First arguments for function {} must be array.", getName());
 
 
         bool is_appended_const = false;

@@ -647,22 +647,22 @@ public:
         const DataTypePtr & type_x = arguments[0];
 
         if (!isNumber(type_x))
-            throw Exception{"Unsupported type " + type_x->getName()
-                            + " of first argument of function " + getName()
-                            + ", must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Unsupported type {} of first argument of function {}, must be numeric type.",
+                            type_x->getName(), getName());
 
         const DataTypeArray * type_arr = checkAndGetDataType<DataTypeArray>(arguments[1].get());
 
         if (!type_arr)
-            throw Exception{"Second argument of function " + getName()
-                            + ", must be array of boundaries to round to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Second argument of function {}, must be array of boundaries to round to.", getName());
 
         const auto type_arr_nested = type_arr->getNestedType();
 
         if (!isNumber(type_arr_nested))
         {
-            throw Exception{"Elements of array of second argument of function " + getName()
-                            + " must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Elements of array of second argument of function {} must be numeric type.", getName());
         }
         return getLeastSupertype(DataTypes{type_x, type_arr_nested});
     }
@@ -705,7 +705,7 @@ public:
             && !executeDecimal<Decimal64>(in, out, boundaries)
             && !executeDecimal<Decimal128>(in, out, boundaries))
         {
-            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
         }
 
         return column_result;

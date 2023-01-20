@@ -274,8 +274,8 @@ static DataTypePtr createExact(const ASTPtr & arguments)
         const auto value = value_literal->value.get<FieldType>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
-            throw Exception{"Value " + toString(value) + " for element '" + field_name + "' exceeds range of " + EnumName<FieldType>::value,
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
+                toString(value), field_name, EnumName<FieldType>::value);
 
         values.emplace_back(field_name, value);
     }

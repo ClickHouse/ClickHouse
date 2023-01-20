@@ -887,8 +887,8 @@ class FunctionBinaryArithmetic : public IFunction
             std::swap(new_arguments[0], new_arguments[1]);
 
         if (!isColumnConst(*new_arguments[1].column))
-            throw Exception{"Illegal column " + new_arguments[1].column->getName()
-                + " of argument of aggregation state multiply. Should be integer constant", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of aggregation state multiply. "
+                "Should be integer constant", new_arguments[1].column->getName());
 
         const IColumn & agg_state_column = *new_arguments[0].column;
         bool agg_state_is_const = isColumnConst(agg_state_column);

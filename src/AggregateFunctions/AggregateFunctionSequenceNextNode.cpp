@@ -59,7 +59,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         {"backward", SequenceDirection::Backward},
     };
     if (!seq_dir_mapping.contains(param_dir))
-        throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_dir, ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", name, param_dir);
     SequenceDirection direction = seq_dir_mapping[param_dir];
 
     String param_base = parameters.at(1).safeGet<String>();
@@ -70,7 +70,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         {"last_match", SequenceBase::LastMatch},
     };
     if (!seq_base_mapping.contains(param_base))
-        throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_base, ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", name, param_base);
     SequenceBase base = seq_base_mapping[param_base];
 
     if ((base == SequenceBase::Head && direction == SequenceDirection::Backward) ||
@@ -107,9 +107,9 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     }
 
     if (WhichDataType(argument_types[1].get()).idx != TypeIndex::String)
-        throw Exception{"Illegal type " + argument_types[1].get()->getName()
-                + " of second argument of aggregate function " + name + ", must be String",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of second argument of aggregate function {}, must be String",
+                        argument_types[1].get()->getName(), name);
 
     DataTypePtr data_type = makeNullable(argument_types[1]);
 
@@ -127,9 +127,9 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     if (timestamp_type.isDateTime())
         return createAggregateFunctionSequenceNodeImpl<DataTypeDateTime::FieldType>(data_type, argument_types, parameters, direction, base);
 
-    throw Exception{"Illegal type " + argument_types.front().get()->getName()
-            + " of first argument of aggregate function " + name + ", must be Unsigned Number, Date, DateTime",
-        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of aggregate function {}, must "
+                    "be Unsigned Number, Date, DateTime", argument_types.front().get()->getName(), name);
 }
 
 }

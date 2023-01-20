@@ -496,8 +496,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             if (if_not_exists)
                 return;
             else
-                throw Exception{"Cannot add index " + index_name + ": index with this name already exists",
-                                ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add index {}: index with this name already exists", index_name);
         }
 
         auto insert_it = metadata.secondary_indices.end();
@@ -1235,9 +1234,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                        throw Exception{"Transitive renames in a single ALTER query are not allowed (don't make sense)",
                                                             ErrorCodes::NOT_IMPLEMENTED};
                    else if (next_command.column_name == command.column_name)
-                       throw Exception{"Cannot rename column '" + backQuote(command.column_name)
-                                           + "' to two different names in a single ALTER query",
-                                       ErrorCodes::BAD_ARGUMENTS};
+                       throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column '{}' to two different names in a single ALTER query",
+                                           backQuote(command.column_name));
                }
            }
 

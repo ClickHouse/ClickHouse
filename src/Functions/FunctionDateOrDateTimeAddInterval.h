@@ -618,8 +618,8 @@ public:
         if (arguments.size() == 2)
         {
             if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
-                    ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                    "Should be a date or a date with time", arguments[0].type->getName(), getName());
         }
         else
         {
