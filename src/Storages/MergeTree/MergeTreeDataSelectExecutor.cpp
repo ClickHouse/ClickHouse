@@ -1691,7 +1691,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     PostingsCacheForStore cache_in_store;
 
-    if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
+    if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
         cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
 
     for (size_t i = 0; i < ranges.size(); ++i)
@@ -1707,7 +1707,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
-            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionGinFilter *>(&*condition);
+            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionInverted *>(&*condition);
             // Cast to Ann condition
             auto ann_condition = std::dynamic_pointer_cast<ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn>(condition);
             if (ann_condition != nullptr)
