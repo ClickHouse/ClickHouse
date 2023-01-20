@@ -33,7 +33,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-MergeTreeIndexGranuleGinFilter::MergeTreeIndexGranuleGinFilter(
+MergeTreeIndexGranuleInverted::MergeTreeIndexGranuleInverted(
     const String & index_name_,
     size_t columns_number,
     const GinFilterParameters & params_)
@@ -44,7 +44,7 @@ MergeTreeIndexGranuleGinFilter::MergeTreeIndexGranuleGinFilter(
 {
 }
 
-void MergeTreeIndexGranuleGinFilter::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleInverted::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
@@ -60,7 +60,7 @@ void MergeTreeIndexGranuleGinFilter::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeIndexGranuleGinFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleInverted::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
@@ -84,7 +84,7 @@ void MergeTreeIndexGranuleGinFilter::deserializeBinary(ReadBuffer & istr, MergeT
 }
 
 
-MergeTreeIndexAggregatorGinFilter::MergeTreeIndexAggregatorGinFilter(
+MergeTreeIndexAggregatorInverted::MergeTreeIndexAggregatorInverted(
     GinIndexStorePtr store_,
     const Names & index_columns_,
     const String & index_name_,
@@ -96,20 +96,20 @@ MergeTreeIndexAggregatorGinFilter::MergeTreeIndexAggregatorGinFilter(
     , params(params_)
     , token_extractor(token_extractor_)
     , granule(
-        std::make_shared<MergeTreeIndexGranuleGinFilter>(
+        std::make_shared<MergeTreeIndexGranuleInverted>(
             index_name, index_columns.size(), params))
 {
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGinFilter::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorInverted::getGranuleAndReset()
 {
-    auto new_granule = std::make_shared<MergeTreeIndexGranuleGinFilter>(
+    auto new_granule = std::make_shared<MergeTreeIndexGranuleInverted>(
         index_name, index_columns.size(), params);
     new_granule.swap(granule);
     return new_granule;
 }
 
-void MergeTreeIndexAggregatorGinFilter::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter, UInt64 limit)
+void MergeTreeIndexAggregatorInverted::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter, UInt64 limit)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -119,7 +119,7 @@ void MergeTreeIndexAggregatorGinFilter::addToGinFilter(UInt32 rowID, const char 
         gin_filter.add(data + token_start, token_len, rowID, store, limit);
 }
 
-void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -184,7 +184,7 @@ void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos
     *pos += rows_read;
 }
 
-MergeTreeConditionGinFilter::MergeTreeConditionGinFilter(
+MergeTreeConditionInverted::MergeTreeConditionInverted(
     const SelectQueryInfo & query_info,
     ContextPtr context_,
     const Block & index_sample_block,
@@ -231,7 +231,7 @@ MergeTreeConditionGinFilter::MergeTreeConditionGinFilter(
 }
 
 /// Keep in-sync with MergeTreeConditionFullText::alwaysUnknownOrTrue
-bool MergeTreeConditionGinFilter::alwaysUnknownOrTrue() const
+bool MergeTreeConditionInverted::alwaysUnknownOrTrue() const
 {
     /// Check like in KeyCondition.
     std::vector<bool> rpn_stack;
@@ -278,10 +278,10 @@ bool MergeTreeConditionGinFilter::alwaysUnknownOrTrue() const
     return rpn_stack[0];
 }
 
-bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const
+bool MergeTreeConditionInverted::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const
 {
-    std::shared_ptr<MergeTreeIndexGranuleGinFilter> granule
-            = std::dynamic_pointer_cast<MergeTreeIndexGranuleGinFilter>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleInverted> granule
+            = std::dynamic_pointer_cast<MergeTreeIndexGranuleInverted>(idx_granule);
     if (!granule)
         throw Exception(
                 "GinFilter index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
@@ -370,7 +370,7 @@ bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranule
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeConditionGinFilter::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
         Field const_value;
@@ -450,7 +450,7 @@ bool MergeTreeConditionGinFilter::traverseAtomAST(const RPNBuilderTreeNode & nod
     return false;
 }
 
-bool MergeTreeConditionGinFilter::traverseASTEquals(
+bool MergeTreeConditionInverted::traverseASTEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_ast,
     const DataTypePtr & value_type,
@@ -621,7 +621,7 @@ bool MergeTreeConditionGinFilter::traverseASTEquals(
     return false;
 }
 
-bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
+bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
     const RPNBuilderTreeNode & lhs,
     const RPNBuilderTreeNode & rhs,
     RPNElement & out)
@@ -690,30 +690,30 @@ bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
     return true;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexGinFilter::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexInverted::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleGinFilter>(index.name, index.column_names.size(), params);
+    return std::make_shared<MergeTreeIndexGranuleInverted>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexGinFilter::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregator() const
 {
     /// should not be called: createIndexAggregatorForPart should be used
     assert(false);
     return nullptr;
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexGinFilter::createIndexAggregatorForPart(const GinIndexStorePtr & store) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart(const GinIndexStorePtr & store) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorGinFilter>(store, index.column_names, index.name, params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorInverted>(store, index.column_names, index.name, params, token_extractor.get());
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexGinFilter::createIndexCondition(
+MergeTreeIndexConditionPtr MergeTreeIndexInverted::createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionGinFilter>(query, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionInverted>(query, context, index.sample_block, params, token_extractor.get());
 };
 
-bool MergeTreeIndexGinFilter::mayBenefitFromIndexForIn(const ASTPtr & node) const
+bool MergeTreeIndexInverted::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
     return std::find(std::cbegin(index.column_names), std::cend(index.column_names), node->getColumnName()) != std::cend(index.column_names);
 }
@@ -729,12 +729,12 @@ MergeTreeIndexPtr invertedIndexCreator(
     if (n > 0)
     {
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
-        return std::make_shared<MergeTreeIndexGinFilter>(index, params, std::move(tokenizer));
+        return std::make_shared<MergeTreeIndexInverted>(index, params, std::move(tokenizer));
     }
     else
     {
         auto tokenizer = std::make_unique<SplitTokenExtractor>();
-        return std::make_shared<MergeTreeIndexGinFilter>(index, params, std::move(tokenizer));
+        return std::make_shared<MergeTreeIndexInverted>(index, params, std::move(tokenizer));
     }
 }
 
