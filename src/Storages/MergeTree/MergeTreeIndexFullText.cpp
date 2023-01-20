@@ -182,6 +182,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     rpn = std::move(builder).extractRPN();
 }
 
+/// Keep in-sync with MergeTreeConditionGinFilter::alwaysUnknownOrTrue
 bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
 {
     /// Check like in KeyCondition.
