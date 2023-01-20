@@ -215,7 +215,7 @@ Possible values:
 
 Default value: false.
 
-A block bearing multiple async inserts will generate multiple hash sums. When some of the inserts are duplicated, keeper will only return one duplicated hash sum in one RPC, which will cause unnecessary RPC retries. This cache will watch the hash sums path in keeper. If updates are watched in the keeper, the cache will update as soon as possible, so that we are able to filter the duplicated inserts in the memory.
+A block bearing multiple async inserts will generate multiple hash sums. When some of the inserts are duplicated, keeper will only return one duplicated hash sum in one RPC, which will cause unnecessary RPC retries. This cache will watch the hash sums path in Keeper. If updates are watched in the Keeper, the cache will update as soon as possible, so that we are able to filter the duplicated inserts in the memory.
 
 ## async_block_ids_cache_min_update_interval_ms
 
