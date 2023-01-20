@@ -42,7 +42,7 @@ bool BoundedReadBuffer::nextImpl()
         SwapHelper swap(*this, *impl);
         result = impl->next();
     }
-
+    chassert(file_offset_of_buffer_end + available() == impl->getFileOffsetOfBufferEnd());
     if (result && read_until_position)
     {
         size_t remaining_size_to_read = *read_until_position - file_offset_of_buffer_end;
@@ -58,7 +58,6 @@ bool BoundedReadBuffer::nextImpl()
         }
     }
     file_offset_of_buffer_end += available();
-    chassert(file_offset_of_buffer_end == impl->getFileOffsetOfBufferEnd());
     return result;
 }
 
