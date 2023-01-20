@@ -20,14 +20,14 @@
 ///  2. Segment Metadata file(.gin_seg): it contains index segment metadata.
 ///     - Its file format is an array of GinIndexSegment as defined in this file.
 ///     - postings_start_offset points to the file(.gin_post) starting position for the segment's postings list.
-///     - term_dict_start_offset points to the file(.gin_dict) starting position for the segment's term dictionaries.
-///  3. Term Dictionary file(.gin_dict): it contains term dictionaries.
+///     - dict_start_offset points to the file(.gin_dict) starting position for the segment's dictionaries.
+///  3. Dictionary file(.gin_dict): it contains dictionaries.
 ///     - It contains an array of (FST_size, FST_blob) which has size and actual data of FST.
 ///  4. Postings Lists(.gin_post): it contains postings lists data.
 ///     - It contains an array of serialized postings lists.
 ///
 /// During the searching in the segment, the segment's meta data can be found in .gin_seg file. From the meta data,
-/// the starting position of its term dictionary is used to locate its FST. Then FST is read into memory.
+/// the starting position of its dictionary is used to locate its FST. Then FST is read into memory.
 /// By using the term and FST, the offset("output" in FST) of the postings list for the term
 /// in FST is found. The offset plus the postings_start_offset is the file location in .gin_post file
 /// for its postings list.
@@ -106,27 +106,27 @@ struct GinIndexSegment
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset = 0;
 
-    /// .term_dict file offset of this segment's term dictionaries
-    UInt64 term_dict_start_offset = 0;
+    /// .dict file offset of this segment's dictionaries
+    UInt64 dict_start_offset = 0;
 };
 
-struct SegmentTermDictionary
+struct SegmentDictionary
 {
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset;
 
-    /// .gin_dict file offset of this segment's term dictionaries
-    UInt64 term_dict_start_offset;
+    /// .gin_dict file offset of this segment's dictionaries
+    UInt64 dict_start_offset;
 
     /// (Minimized) Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
     /// offset to the term's posting list in postings list file
     FST::FiniteStateTransducer offsets;
 };
 
-using SegmentTermDictionaryPtr = std::shared_ptr<SegmentTermDictionary>;
+using SegmentDictionaryPtr = std::shared_ptr<SegmentDictionary>;
 
-/// Term dictionaries indexed by segment ID
-using SegmentTermDictionaries = std::unordered_map<UInt32, SegmentTermDictionaryPtr>;
+/// Dictionaries indexed by segment ID
+using SegmentDictionaries = std::unordered_map<UInt32, SegmentDictionaryPtr>;
 
 /// Gin Index Store which has Gin Index meta data for the corresponding Data Part
 class GinIndexStore
@@ -190,8 +190,8 @@ private:
 
     std::mutex mutex;
 
-    /// Terms dictionaries which are loaded from .gin_dict files
-    SegmentTermDictionaries term_dicts;
+    /// Dictionaries which are loaded from .gin_dict files
+    SegmentDictionaries dicts;
 
     /// Container for building postings lists during index construction
     GinIndexPostingsBuilderContainer current_postings;
@@ -201,9 +201,9 @@ private:
     UInt64 current_size = 0;
     const UInt64 max_digestion_size = 0;
 
-    /// File streams for segment, term dictionaries and postings lists
+    /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> segment_file_stream;
-    std::unique_ptr<WriteBufferFromFileBase> term_dict_file_stream;
+    std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
 
     static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
@@ -265,9 +265,9 @@ private:
     std::mutex mutex;
 };
 
-/// Term dictionary information, which contains:
+/// Dictionary information, which contains:
 
-/// Gin Index Store Reader which helps to read segments, term dictionaries and postings list
+/// Gin Index Store Reader which helps to read segments, dictionaries and postings list
 class GinIndexStoreDeserializer : private boost::noncopyable
 {
 public:
@@ -276,11 +276,11 @@ public:
     /// Read segment information from .gin_seg files
     void readSegments();
 
-    /// Read all term dictionaries from .gin_dict files
-    void readSegmentTermDictionaries();
+    /// Read all dictionaries from .gin_dict files
+    void readSegmentDictionaries();
 
-    /// Read term dictionary for given segment id
-    void readSegmentTermDictionary(UInt32 segment_id);
+    /// Read dictionary for given segment id
+    void readSegmentDictionary(UInt32 segment_id);
 
     /// Read postings lists for the term
     SegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);
@@ -297,7 +297,7 @@ private:
 
     /// File streams for reading Gin Index
     std::unique_ptr<ReadBufferFromFileBase> segment_file_stream;
-    std::unique_ptr<ReadBufferFromFileBase> term_dict_file_stream;
+    std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
 
     /// Current segment, used in building index
