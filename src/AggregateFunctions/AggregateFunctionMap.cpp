@@ -19,7 +19,7 @@ public:
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Incorrect number of arguments for aggregate function with {} suffix",  getName());
+                "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
         const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
         if (map_type)
