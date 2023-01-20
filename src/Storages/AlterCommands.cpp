@@ -918,13 +918,12 @@ bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata, C
         {
             continue;
         }
-        if (index.type == GinFilter::FilterName)
-        {
+        if (index.type == INVERTED_INDEX_NAME)
             return true;
-        }
     }
     return false;
 }
+
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
