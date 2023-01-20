@@ -5,6 +5,7 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
@@ -105,7 +106,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
                     String conflict_block_id = p.filename();
                     auto it = block_id_to_offset_idx.find(conflict_block_id);
                     if (it == block_id_to_offset_idx.end())
-                        throw Exception("Unknown conflict path " + conflict_block_id, ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown conflict path {}", conflict_block_id);
                     /// if this filter is for self_dedup, that means the block paths is selected by `filterSelfDuplicate`, which is a self purge.
                     /// in this case, we don't know if zk has this insert, then we should keep one insert, to avoid missing this insert.
                     offset_idx.insert(std::end(offset_idx), std::begin(it->second) + self_dedup, std::end(it->second));
@@ -544,6 +545,8 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             partition.temp_part = storage.writer.writeTempPart(partition.block_with_partition, metadata_snapshot, context);
         }
 
+        /// reset the cache version to zero for every partition write.
+        cache_version = 0;
         while (true)
         {
             partition.temp_part.finalize();
@@ -676,6 +679,13 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         BlockIDsType block_id_path ;
         if constexpr (async_insert)
         {
+            /// prefilter by cache
+            conflict_block_ids = storage.async_block_ids_cache.detectConflicts(block_id, cache_version);
+            if (!conflict_block_ids.empty())
+            {
+                cache_version = 0;
+                return;
+            }
             for (const auto & single_block_id : block_id)
                 block_id_path.push_back(storage.zookeeper_path + "/async_blocks/" + single_block_id);
         }

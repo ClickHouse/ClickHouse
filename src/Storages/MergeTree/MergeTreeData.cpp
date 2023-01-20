@@ -2774,6 +2774,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "The following alter commands: '{}' will modify data on disk, but setting `allow_non_metadata_alters` is disabled", queryToString(mutation_commands.ast()));
     }
+
+    if (commands.hasInvertedIndex(new_metadata, getContext()) && !settings.allow_experimental_inverted_index)
+    {
+        throw Exception(
+                "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')",
+                ErrorCodes::SUPPORT_IS_DISABLED);
+    }
     commands.apply(new_metadata, getContext());
 
     /// Set of columns that shouldn't be altered.
@@ -3899,7 +3906,9 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
         if (error)
         {
-            LOG_ERROR(log, "The set of parts restored in place of {} looks incomplete. There might or might not be a data loss.{}", part->name, (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
+            LOG_WARNING(log, "The set of parts restored in place of {} looks incomplete. "
+                             "SELECT queries may observe gaps in data until this replica is synchronized with other replicas.{}",
+                        part->name, (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
         }
     }
 
