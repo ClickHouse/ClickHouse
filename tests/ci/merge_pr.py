@@ -111,6 +111,11 @@ class Reviews:
                     "here's debug info about reviews: %s",
                     "\n".join(pformat(review) for review in self.reviews.values()),
                 )
+            else:
+                logging.info(
+                    "The PR is approved at %s",
+                    approved_at.isoformat(),
+                )
 
             if approved_at < last_changed:
                 logging.info(
