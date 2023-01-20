@@ -205,21 +205,37 @@ struct PositionImpl
             {
                 for (auto & x : res)
                     x = 1;
+                return;
             }
-            else
+
+            ColumnString::Offset prev_offset = 0;
+            auto rows = haystack_offsets.size();
+            const ColumnConst * start_pos_const = typeid_cast<const ColumnConst *>(&*start_pos);
+            if (start_pos_const)
             {
-                ColumnString::Offset prev_offset = 0;
-                for (size_t i = 0; i < haystack_offsets.size(); ++i)
+                UInt64 start = std::max(start_pos_const->getUInt(0), UInt64(1));
+                for (size_t i = 0; i < rows; ++i)
                 {
                     size_t haystack_size = Impl::countChars(
                         reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
-                    UInt64 start = start_pos->getUInt(i);
-                    start = std::max(UInt64(1), start);
                     res[i] = start <= haystack_size + 1 ? start : 0;
 
                     pos = begin + haystack_offsets[i];
                     prev_offset = haystack_offsets[i];
                 }
+                return;
+            }
+
+            for (size_t i = 0; i < rows; ++i)
+            {
+                size_t haystack_size = Impl::countChars(
+                    reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
+                UInt64 start = start_pos->getUInt(i);
+                start = std::max(UInt64(1), start);
+                res[i] = start <= haystack_size + 1 ? start : 0;
+
+                pos = begin + haystack_offsets[i];
+                prev_offset = haystack_offsets[i];
             }
             return;
         }
