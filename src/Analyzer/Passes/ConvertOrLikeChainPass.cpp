@@ -24,11 +24,13 @@ class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitor<ConvertOrLikeCh
     using FunctionNodes = std::vector<std::shared_ptr<FunctionNode>>;
 
     const FunctionOverloadResolverPtr match_function_ref;
+    const FunctionOverloadResolverPtr or_function_resolver;
 public:
 
-    explicit ConvertOrLikeChainVisitor(FunctionOverloadResolverPtr _match_function_ref)
+    explicit ConvertOrLikeChainVisitor(ContextPtr context)
         : InDepthQueryTreeVisitor<ConvertOrLikeChainVisitor>()
-        , match_function_ref(_match_function_ref)
+        , match_function_ref(FunctionFactory::instance().get("multiMatchAny", context))
+        , or_function_resolver(FunctionFactory::instance().get("or", context))
     {}
 
     static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
@@ -117,6 +119,7 @@ public:
             unique_elems.push_back(std::make_shared<ConstantNode>(false));
 
         function_node->getArguments().getNodes() = std::move(unique_elems);
+        function_node->resolveAsFunction(or_function_resolver);
     }
 };
 
@@ -124,7 +127,7 @@ public:
 
 void ConvertOrLikeChainPass::run(QueryTreeNodePtr query_tree_node, ContextPtr  context)
 {
-    ConvertOrLikeChainVisitor visitor(FunctionFactory::instance().get("multiMatchAny", context));
+    ConvertOrLikeChainVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 
