@@ -1,13 +1,12 @@
 #pragma once
-#include <atomic>
-#include <base/types.h>
 
-#include <memory>
-
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Interpreters/ITokenExtractor.h>
 #include <Interpreters/GinFilter.h>
+#include <Interpreters/ITokenExtractor.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <base/types.h>
+#include <atomic>
+#include <memory>
 
 namespace DB
 {
@@ -27,7 +26,6 @@ struct MergeTreeIndexGranuleGinFilter final : public IMergeTreeIndexGranule
 
     String index_name;
     GinFilterParameters params;
-
     std::vector<GinFilter> gin_filters;
     bool has_elems;
 };
@@ -50,7 +48,7 @@ struct MergeTreeIndexAggregatorGinFilter final : IMergeTreeIndexAggregator
 
     void update(const Block & block, size_t * pos, size_t limit) override;
 
-    void addToGinFilter(UInt32 rowID, const char* data, size_t length, GinFilter& gin_filter, UInt64 limit);
+    void addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter, UInt64 limit);
 
     GinIndexStorePtr store;
     Names index_columns;
@@ -81,7 +79,8 @@ public:
         assert(false);
         return false;
     }
-    bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, [[maybe_unused]] PostingsCacheForStore& cache_store) const;
+    bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, [[maybe_unused]] PostingsCacheForStore & cache_store) const;
+
 private:
     struct KeyTuplePositionMapping
     {
@@ -169,9 +168,8 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr &store) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, ContextPtr context) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
