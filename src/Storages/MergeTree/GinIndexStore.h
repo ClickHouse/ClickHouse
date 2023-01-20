@@ -86,14 +86,9 @@ private:
     bool containsAllRows() const { return rowid_lst[0] == CONTAINS_ALL; }
 };
 
-/// Container for postings lists for each segment
-using SegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostingsListPtr>;
+using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
 
-/// Postings lists and terms built from query string
-using PostingsCache = std::unordered_map<std::string, SegmentedPostingsListContainer>;
-using PostingsCachePtr = std::shared_ptr<PostingsCache>;
-
-/// Gin Index Segment information, which contains:
+/// Gin index segment descriptor, which contains:
 struct GinIndexSegment
 {
     ///  Segment ID retrieved from next available ID from file .gin_sid
@@ -105,7 +100,7 @@ struct GinIndexSegment
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset = 0;
 
-    /// .dict file offset of this segment's dictionaries
+    /// .gin_dict file offset of this segment's dictionaries
     UInt64 dict_start_offset = 0;
 };
 
@@ -131,7 +126,6 @@ using SegmentDictionaries = std::unordered_map<UInt32, SegmentDictionaryPtr>;
 class GinIndexStore
 {
 public:
-    using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
     /// Container for all term's Gin Index Postings List Builder
     using GinIndexPostingsBuilderContainer = std::unordered_map<std::string, GinIndexPostingsBuilderPtr>;
 
@@ -223,6 +217,13 @@ using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 
 /// GinIndexStores indexed by part file path
 using GinIndexStores = std::unordered_map<std::string, GinIndexStorePtr>;
+
+/// Container for postings lists for each segment
+using SegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostingsListPtr>;
+
+/// Postings lists and terms built from query string
+using PostingsCache = std::unordered_map<std::string, SegmentedPostingsListContainer>;
+using PostingsCachePtr = std::shared_ptr<PostingsCache>;
 
 /// PostingsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
 /// PostingsCache is per query string(one query can have multiple query strings): when skipping index(row ID ranges) is used for the part during the
