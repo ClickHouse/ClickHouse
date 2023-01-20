@@ -1205,11 +1205,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         const auto & dir_path = it->path();
         if (std::filesystem::is_directory(dir_path))
         {
+            /// Created by DistributedSink
             const auto & tmp_path = dir_path / "tmp";
-
-            /// "tmp" created by DistributedSink
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
+
+            const auto & broken_path = dir_path / "broken";
+            if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
+                std::filesystem::remove(broken_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
@@ -1231,38 +1234,19 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
 
-    auto create_node_data = [&]()
+    std::lock_guard lock(cluster_nodes_mutex);
+    auto & node_data = cluster_nodes_data[key];
+    if (!node_data.directory_monitor)
     {
-        ClusterNodeData data;
-        data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
-        data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
+        node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
+        node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
             *this, disk, relative_data_path + name,
-            data.connection_pool,
+            node_data.connection_pool,
             monitors_blocker,
-            getContext()->getDistributedSchedulePool());
-        return data;
-    };
-
-    /// In case of startup the lock can be acquired later.
-    if (startup)
-    {
-        auto tmp_node_data = create_node_data();
-        std::lock_guard lock(cluster_nodes_mutex);
-        auto & node_data = cluster_nodes_data[key];
-        assert(!node_data.directory_monitor);
-        node_data = std::move(tmp_node_data);
-        return *node_data.directory_monitor;
+            getContext()->getDistributedSchedulePool(),
+            /* initialize_from_disk= */ startup);
     }
-    else
-    {
-        std::lock_guard lock(cluster_nodes_mutex);
-        auto & node_data = cluster_nodes_data[key];
-        if (!node_data.directory_monitor)
-        {
-            node_data = create_node_data();
-        }
-        return *node_data.directory_monitor;
-    }
+    return *node_data.directory_monitor;
 }
 
 std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getDirectoryMonitorsStatuses() const
