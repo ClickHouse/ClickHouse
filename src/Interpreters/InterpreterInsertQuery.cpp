@@ -405,7 +405,7 @@ BlockIO InterpreterInsertQuery::execute()
                 if (settings.allow_experimental_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, new_context, select_query_options);
-                    pipeline = std::move(interpreter_select_analyzer).extractQueryPipelineBuilder();
+                    pipeline = interpreter_select_analyzer.buildQueryPipeline();
                 }
                 else
                 {
@@ -421,7 +421,7 @@ BlockIO InterpreterInsertQuery::execute()
                 if (settings.allow_experimental_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, getContext(), select_query_options);
-                    pipeline = std::move(interpreter_select_analyzer).extractQueryPipelineBuilder();
+                    pipeline = interpreter_select_analyzer.buildQueryPipeline();
                 }
                 else
                 {

@@ -36,7 +36,7 @@ public:
 
     QueryPlan && extractQueryPlan() &&;
 
-    QueryPipelineBuilder && extractQueryPipelineBuilder() &&;
+    QueryPipelineBuilder buildQueryPipeline();
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
