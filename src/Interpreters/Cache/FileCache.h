@@ -325,7 +325,7 @@ private:
     FileSegments getImpl(
         const Key & key,
         const FileSegment::Range & range,
-        const KeyTransaction & key_transaction) const;
+        const KeyTransaction & key_transaction);
 
     FileSegments splitRangeIntoCells(
         const Key & key,

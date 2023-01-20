@@ -508,7 +508,9 @@ TEST_F(FileCacheTest, get)
 
         auto settings2 = settings;
         settings2.max_file_segment_size = 10;
-        auto cache2 = DB::FileCache(caches_dir / "cache2", settings2);
+        std::string cache_path = caches_dir / "cache2";
+        fs::create_directories(cache_path);
+        auto cache2 = DB::FileCache(cache_path, settings2);
         cache2.initialize();
         auto key = cache2.createKeyForPath("key1");
 
