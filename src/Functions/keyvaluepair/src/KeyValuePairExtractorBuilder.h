@@ -3,7 +3,6 @@
 #include <unordered_set>
 #include "KeyValuePairExtractor.h"
 #include <Functions/keyvaluepair/src/impl/InlineKeyValuePairExtractor.h>
-#include <Functions/keyvaluepair/src/impl/SimpleKeyValuePairEscapingProcessor.h>
 
 namespace DB
 {
