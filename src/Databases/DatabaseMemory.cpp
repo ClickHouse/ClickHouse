@@ -70,7 +70,7 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            assert(getDatabaseName() != DatabaseCatalog::TEMPORARY_DATABASE);
+            // assert(getDatabaseName() != DatabaseCatalog::TEMPORARY_DATABASE);
             fs::path table_data_dir{getTableDataPath(table_name)};
             if (fs::exists(table_data_dir))
                 fs::remove_all(table_data_dir);
@@ -79,7 +79,7 @@ void DatabaseMemory::dropTable(
     catch (...)
     {
         std::lock_guard lock{mutex};
-        assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
+        // assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
         attachTableUnlocked(table_name, table);
         throw;
     }

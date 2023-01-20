@@ -1368,10 +1368,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.temporary)
         {
             String temporary_table_name = create.getTable();
-            auto creator = [&](const StorageID &)
+            auto creator = [&](const StorageID & table_id)
             {
                 return StorageFactory::instance().get(create,
-                    data_path,
+                    database->getTableDataPath(table_id.getTableName()),
                     getContext(),
                     getContext()->getGlobalContext(),
                     properties.columns,
