@@ -123,7 +123,7 @@ bool FileCache::readThrowCacheAllowed()
 }
 
 FileSegments FileCache::getImpl(
-    const Key & key, const FileSegment::Range & range, const KeyTransaction & key_transaction) const
+    const Key & key, const FileSegment::Range & range, const KeyTransaction & key_transaction)
 {
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
@@ -131,7 +131,7 @@ FileSegments FileCache::getImpl(
     if (bypass_cache_threshold && range.size() > bypass_cache_threshold)
     {
         auto file_segment = std::make_shared<FileSegment>(
-            range.left, range.size(), key, nullptr, nullptr,
+            range.left, range.size(), key, nullptr, this,
             FileSegment::State::SKIP_CACHE, CreateFileSegmentSettings{});
         return { file_segment };
     }
