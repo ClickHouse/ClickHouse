@@ -759,9 +759,6 @@ void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
             throw Exception("Inverted index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
     }
 
-    if (index.type != INVERTED_INDEX_NAME)
-        throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
-
     if (index.arguments.size() > 2)
         throw Exception("Inverted index must have less than two arguments.", ErrorCodes::INCORRECT_QUERY);
 
