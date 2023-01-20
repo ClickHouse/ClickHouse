@@ -88,23 +88,23 @@ Pipe outputPerPartitionIfRequested(
     }
     else
     {
+        const size_t partitions_per_stream = std::max<size_t>(1, countPartitions(parts_with_ranges) / num_streams);
         num_streams = std::max<size_t>(1, num_streams / countPartitions(parts_with_ranges));
 
         Pipes pipes;
-        for (auto begin = parts_with_ranges.begin(); begin != parts_with_ranges.end();)
+        for (auto begin = parts_with_ranges.begin(), end = begin; end != parts_with_ranges.end(); begin = end)
         {
-            const auto end = std::find_if(
-                begin,
-                parts_with_ranges.end(),
-                [&begin](const auto & part) { return begin->data_part->info.partition_id != part.data_part->info.partition_id; });
+            for (size_t i = 0; i < partitions_per_stream; ++i)
+                end = std::find_if(
+                    end,
+                    parts_with_ranges.end(),
+                    [&end](const auto & part) { return end->data_part->info.partition_id != part.data_part->info.partition_id; });
 
             RangesInDataParts partition_parts{std::make_move_iterator(begin), std::make_move_iterator(end)};
 
             pipes.emplace_back(read(std::move(partition_parts), num_streams));
             if (!pipes.back().empty())
                 pipes.back().resize(1);
-
-            begin = end;
         }
 
         return Pipe::unitePipes(std::move(pipes));
