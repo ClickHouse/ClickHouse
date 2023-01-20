@@ -243,13 +243,23 @@ void RegExpTreeDictionary::loadData()
             initRegexNodes(block);
         }
         initGraph();
+        if (regexps.empty())
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
         #if USE_VECTORSCAN
-        std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
-        hyperscan_regex = MultiRegexps::getOrSet<true, false>(regexps_views, std::nullopt);
-        /// TODO: fallback when exceptions occur.
-        hyperscan_regex->get();
+        try
+        {
+            std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
+            hyperscan_regex = MultiRegexps::getOrSet<true, false>(regexps_views, std::nullopt);
+            hyperscan_regex->get();
+        }
+        catch (Exception & e)
+        {
+            /// Some compile errors will be thrown as LOGICAL ERROR and cause crash, e.g. empty expression or expressions are too large.
+            /// We catch the error here and rethrow again.
+            /// TODO: fallback to other engine, like re2, when exceptions occur.
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Error occurs when compiling regular expressions, reason: {}", e.message());
+        }
         #endif
-
     }
     else
     {

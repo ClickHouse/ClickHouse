@@ -100,6 +100,7 @@
     M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
+    M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
