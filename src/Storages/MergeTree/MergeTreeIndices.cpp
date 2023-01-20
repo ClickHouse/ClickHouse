@@ -105,8 +105,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("annoy", annoyIndexCreator);
     registerValidator("annoy", annoyIndexValidator);
 #endif
-    registerCreator("inverted", ginIndexCreator);
-    registerValidator("inverted", ginIndexValidator);
+
+    registerCreator("inverted", invertedIndexCreator);
+    registerValidator("inverted", invertedIndexValidator);
 
 }
 
