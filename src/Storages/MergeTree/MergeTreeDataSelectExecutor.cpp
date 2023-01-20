@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1692,6 +1693,14 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
+
+    PostingsCacheForStore cache_in_store;
+
+    if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
+    {
+        cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
+    }
+
     for (size_t i = 0; i < ranges.size(); ++i)
     {
         const MarkRange & index_range = index_ranges[i];
@@ -1705,6 +1714,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
+            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionGinFilter *>(&*condition);
             // Cast to Ann condition
             auto ann_condition = std::dynamic_pointer_cast<ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn>(condition);
             if (ann_condition != nullptr)
@@ -1731,7 +1741,13 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 continue;
             }
 
-            if (!condition->mayBeTrueOnGranule(granule))
+            bool result{false};
+            if (!gin_filter_condition)
+                result = condition->mayBeTrueOnGranule(granule);
+            else
+                result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+
+            if (!result)
             {
                 ++granules_dropped;
                 continue;
