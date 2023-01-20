@@ -18,9 +18,6 @@
 namespace DB
 {
 
-using TokenPostingsBuilderPair = std::pair<std::string_view, GinIndexStore::GinIndexPostingsBuilderPtr>;
-using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -256,6 +253,9 @@ void GinIndexStore::writeSegment()
 {
     if (segment_file_stream == nullptr)
         initFileStreams();
+
+    using TokenPostingsBuilderPair = std::pair<std::string_view, GinIndexPostingsBuilderPtr>;
+    using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
 
     /// Write segment
     segment_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
