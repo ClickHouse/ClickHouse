@@ -1256,14 +1256,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (create.temporary)
     {
-        /*
-        UUID id;
-        if (create.uuid == UUIDHelpers::Nil)
-            create.uuid = UUIDHelpers::generateV4();
-        id = create.uuid;
-        create.setTable("_tmp_" + toString(id));
-        */
-        // create.setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+        create.setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
     }
 
     if (!ddl_guard)
@@ -1372,13 +1365,34 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
     else
     {
-        res = StorageFactory::instance().get(create,
-            data_path,
-            getContext(),
-            getContext()->getGlobalContext(),
-            properties.columns,
-            properties.constraints,
-            false);
+        if (create.temporary)
+        {
+            String temporary_table_name = create.getTable();
+            auto creator = [&](const StorageID &)
+            {
+                return StorageFactory::instance().get(create,
+                    data_path,
+                    getContext(),
+                    getContext()->getGlobalContext(),
+                    properties.columns,
+                    properties.constraints,
+                    false);
+            };
+            auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
+
+            getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
+            return true;
+        }
+        else
+        {
+            res = StorageFactory::instance().get(create,
+                data_path,
+                getContext(),
+                getContext()->getGlobalContext(),
+                properties.columns,
+                properties.constraints,
+                false);
+        }
 
         /// If schema wes inferred while storage creation, add columns description to create query.
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
@@ -1396,22 +1410,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
-
-    if (create.temporary)
-    {
-        // if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
-        //     return false;
-
-        String temporary_table_name = create.getTable();
-        auto creator = [&](const StorageID &)
-        {
-            return std::move(res);
-        };
-        auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
-        // auto temporary_table = TemporaryTableHolder(getContext(), properties.columns, properties.constraints, query_ptr);
-        getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
-        return true;
-    }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
