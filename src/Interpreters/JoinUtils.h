@@ -21,6 +21,7 @@ using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 namespace JoinCommon
 {
 
+/// Helper interface to work with mask from JOIN ON section
 class JoinMask
 {
 public:

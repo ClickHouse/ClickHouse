@@ -1774,10 +1774,10 @@ HashJoin::~HashJoin()
 {
     if (!data)
     {
-        LOG_DEBUG(log, "Join data has been released");
+        LOG_TRACE(log, "Join data has been released");
         return;
     }
-    LOG_DEBUG(log, "Join data is being destroyed, {} bytes and {} rows in hash table", getTotalByteCount(), getTotalRowCount());
+    LOG_TRACE(log, "Join data is being destroyed, {} bytes and {} rows in hash table", getTotalByteCount(), getTotalRowCount());
 }
 
 template <typename Mapped>
@@ -2058,7 +2058,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
 BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
 {
-    LOG_DEBUG(log, "Join data is being released, {} bytes and {} rows in hash table", getTotalByteCount(), getTotalRowCount());
+    LOG_TRACE(log, "Join data is being released, {} bytes and {} rows in hash table", getTotalByteCount(), getTotalRowCount());
 
     BlocksList right_blocks = std::move(data->blocks);
     if (!restructure)

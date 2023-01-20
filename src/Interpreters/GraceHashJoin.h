@@ -95,7 +95,7 @@ private:
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addJoinedBlockImpl(Block block);
 
-    /// Check that join satisifes limits on rows/bytes in table_join.
+    /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
     bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;
     bool hasMemoryOverflow(const BlocksList & blocks) const;
