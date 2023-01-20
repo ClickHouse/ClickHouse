@@ -219,14 +219,51 @@ using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 using GinIndexStores = std::unordered_map<std::string, GinIndexStorePtr>;
 
 /// Container for postings lists for each segment
-using SegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostingsListPtr>;
+using GinSegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostingsListPtr>;
 
 /// Postings lists and terms built from query string
-using PostingsCache = std::unordered_map<std::string, SegmentedPostingsListContainer>;
-using PostingsCachePtr = std::shared_ptr<PostingsCache>;
+using GinPostingsCache = std::unordered_map<std::string, GinSegmentedPostingsListContainer>;
+using GinPostingsCachePtr = std::shared_ptr<GinPostingsCache>;
+
+/// Gin index store reader which helps to read segments, dictionaries and postings list
+class GinIndexStoreDeserializer : private boost::noncopyable
+{
+public:
+    explicit GinIndexStoreDeserializer(const GinIndexStorePtr & store_);
+
+    /// Read segment information from .gin_seg files
+    void readSegments();
+
+    /// Read all dictionaries from .gin_dict files
+    void readSegmentDictionaries();
+
+    /// Read dictionary for given segment id
+    void readSegmentDictionary(UInt32 segment_id);
+
+    /// Read postings lists for the term
+    GinSegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);
+
+    /// Read postings lists for terms (which are created by tokenzing query string)
+    GinPostingsCachePtr createPostingsCacheFromTerms(const std::vector<String> & terms);
+
+private:
+    /// Initialize gin index files
+    void initFileStreams();
+
+    /// The store for the reader
+    GinIndexStorePtr store;
+
+    /// File streams for reading Gin Index
+    std::unique_ptr<ReadBufferFromFileBase> segment_file_stream;
+    std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
+    std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
+
+    /// Current segment, used in building index
+    GinIndexSegment current_segment;
+};
 
 /// PostingsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
-/// PostingsCache is per query string(one query can have multiple query strings): when skipping index(row ID ranges) is used for the part during the
+/// GinPostingsCache is per query string(one query can have multiple query strings): when skipping index(row ID ranges) is used for the part during the
 /// query, the postings cache is created and associated with the store where postings lists are read
 /// for the tokenized query string. The postings caches are released automatically when the query is done.
 struct PostingsCacheForStore
@@ -235,10 +272,10 @@ struct PostingsCacheForStore
     GinIndexStorePtr store;
 
     /// map of <query, postings lists>
-    std::unordered_map<String, PostingsCachePtr> cache;
+    std::unordered_map<String, GinPostingsCachePtr> cache;
 
     /// Get postings lists for query string, return nullptr if not found
-    PostingsCachePtr getPostings(const String & query_string) const
+    GinPostingsCachePtr getPostings(const String & query_string) const
     {
         auto it = cache.find(query_string);
         if (it == cache.end())
@@ -263,43 +300,6 @@ public:
 private:
     GinIndexStores stores;
     std::mutex mutex;
-};
-
-/// Gin index store reader which helps to read segments, dictionaries and postings list
-class GinIndexStoreDeserializer : private boost::noncopyable
-{
-public:
-    explicit GinIndexStoreDeserializer(const GinIndexStorePtr & store_);
-
-    /// Read segment information from .gin_seg files
-    void readSegments();
-
-    /// Read all dictionaries from .gin_dict files
-    void readSegmentDictionaries();
-
-    /// Read dictionary for given segment id
-    void readSegmentDictionary(UInt32 segment_id);
-
-    /// Read postings lists for the term
-    SegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);
-
-    /// Read postings lists for terms (which are created by tokenzing query string)
-    PostingsCachePtr createPostingsCacheFromTerms(const std::vector<String> & terms);
-
-private:
-    /// Initialize gin index files
-    void initFileStreams();
-
-    /// The store for the reader
-    GinIndexStorePtr store;
-
-    /// File streams for reading Gin Index
-    std::unique_ptr<ReadBufferFromFileBase> segment_file_stream;
-    std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
-    std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
-
-    /// Current segment, used in building index
-    GinIndexSegment current_segment;
 };
 
 }

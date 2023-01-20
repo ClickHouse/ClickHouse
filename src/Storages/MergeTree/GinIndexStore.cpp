@@ -382,11 +382,11 @@ void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
     dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), fst_size);
 }
 
-SegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsLists(const String & term)
+GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsLists(const String & term)
 {
     assert(postings_file_stream != nullptr);
 
-    SegmentedPostingsListContainer container;
+    GinSegmentedPostingsListContainer container;
     for (auto const & seg_dict : store->segment_dictionaries)
     {
         auto segment_id = seg_dict.first;
@@ -405,9 +405,9 @@ SegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsL
     return container;
 }
 
-PostingsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(const std::vector<String> & terms)
+GinPostingsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(const std::vector<String> & terms)
 {
-    auto postings_cache = std::make_shared<PostingsCache>();
+    auto postings_cache = std::make_shared<GinPostingsCache>();
     for (const auto & term : terms)
     {
         // Make sure don't read for duplicated terms
