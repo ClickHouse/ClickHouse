@@ -134,6 +134,14 @@ echo '"a""b","c"
 echo '"a""b","c"
 1,2' | $CLICKHOUSE_LOCAL --input-format='CSV' --table='test' -q "select * from test";
 
+echo 17
+echo '"a","b","c"
+1,2,3' | $CLICKHOUSE_LOCAL --input-format='CSV' --structure='a UInt32, b UInt32' --table='test' -q "select * from test";
+
+echo 18
+echo '"a"
+1' | $CLICKHOUSE_LOCAL --input-format='CSV' --structure='a UInt32, b UInt32' --table='test' -q "select * from test";
+
 echo "TSV"
 echo 1
 echo -e 'x\ty\tz
