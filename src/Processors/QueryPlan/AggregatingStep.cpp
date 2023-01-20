@@ -406,6 +406,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
+    /// use all available threads to parallelize aggregation
+    if (pipeline.getNumStreams() < params.max_threads)
+        pipeline.resize(params.max_threads);
+
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
