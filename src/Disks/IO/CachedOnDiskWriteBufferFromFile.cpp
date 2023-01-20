@@ -160,7 +160,7 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
-    auto holder = cache->set(key, offset, cache->max_file_segment_size, create_settings);
+    auto holder = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings);
     chassert(holder->size() == 1);
     holder->moveTo(file_segments);
     return file_segments.back();
@@ -236,7 +236,7 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
     {
         /// If something was already written to cache, remove it.
         cache_writer.reset();
-        cache->removeIfExists(key);
+        cache->removeKeyIfExists(key);
 
         throw;
     }

@@ -536,12 +536,12 @@ void FileSegment::setBroken()
 
 void FileSegment::complete()
 {
-    auto queue_lock = cache->priority_queue_guard.lock();
+    auto cache_lock = cache->createCacheTransaction();
     auto key_transaction = createKeyTransaction();
-    return completeUnlocked(*key_transaction, queue_lock);
+    return completeUnlocked(*key_transaction, cache_lock);
 }
 
-void FileSegment::completeUnlocked(KeyTransaction & key_transaction, CachePriorityQueueGuard::LockPtr queue_lock)
+void FileSegment::completeUnlocked(KeyTransaction & key_transaction, CacheGuard::LockPtr cache_lock)
 {
     auto segment_lock = segment_guard.lock();
 
@@ -588,7 +588,7 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction, CachePriori
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
         detach(segment_lock, key_transaction);
         setDownloadState(State::SKIP_CACHE, segment_lock);
-        key_transaction.remove(offset(), segment_lock, queue_lock);
+        key_transaction.remove(offset(), segment_lock, cache_lock);
         return;
     }
 
@@ -620,7 +620,7 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction, CachePriori
                     LOG_TEST(log, "Remove cell {} (nothing downloaded)", range().toString());
 
                     setDownloadState(State::SKIP_CACHE, segment_lock);
-                    key_transaction.remove(offset(), segment_lock, queue_lock);
+                    key_transaction.remove(offset(), segment_lock, cache_lock);
                 }
                 else
                 {
@@ -638,7 +638,7 @@ void FileSegment::completeUnlocked(KeyTransaction & key_transaction, CachePriori
                     /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
                     /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
                     /// (this will be crucial for other file segment holder, not for current one).
-                    key_transaction.reduceSizeToDownloaded(offset(), segment_lock, queue_lock);
+                    key_transaction.reduceSizeToDownloaded(offset(), segment_lock, cache_lock);
                 }
 
                 detachAssumeStateFinalized(segment_lock);
@@ -817,7 +817,7 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
         return file_segments.erase(file_segments.begin());
     }
 
-    auto queue_lock = file_segment.cache->priority_queue_guard.lock();
+    auto cache_lock = file_segment.cache->createCacheTransaction();
 
     /// File segment pointer must be reset right after calling complete() and
     /// under the same mutex, because complete() checks for segment pointers.
@@ -826,11 +826,11 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
     {
         auto queue_iter = key_transaction->getOffsets().tryGet(file_segment.offset())->queue_iterator;
         if (queue_iter)
-            LockedCachePriorityIterator(queue_lock, queue_iter).use();
+            LockedCachePriorityIterator(cache_lock, queue_iter).use();
 
         if (!file_segment.isCompleted())
         {
-            file_segment.completeUnlocked(*key_transaction, queue_lock);
+            file_segment.completeUnlocked(*key_transaction, cache_lock);
         }
     }
 
