@@ -16,7 +16,7 @@ The following operations are available:
 
 -   `ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX name [IN PARTITION partition_name]` - Rebuilds the secondary index `name` for the specified `partition_name`. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations). If `IN PARTITION` part is omitted then it rebuilds the index for the whole table data.
 
-The first two commands are lightweight in a sense that they only change metadata or remove files.
+The first two commands are lightweight in a sense that they only change metadata or remove files but they also do create a mutation that will add/drop a column for the index for each part.
 
 Also, they are replicated, syncing indices metadata via ZooKeeper.
 
