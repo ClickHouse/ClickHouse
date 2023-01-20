@@ -40,7 +40,9 @@ GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, 
 {
 }
 
-GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit) : rowid_lst{}, size_limit(limit)
+GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit)
+    : rowid_lst{}
+    , size_limit(limit)
 {}
 
 bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
@@ -56,6 +58,7 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
 {
     if (containsAllRows())
         return;
+
     if (useRoaring())
     {
         if (rowid_bitmap.cardinality() == size_limit)
@@ -68,6 +71,7 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
             rowid_bitmap.add(row_id);
         return;
     }
+
     assert(rowid_lst_length < MIN_SIZE_FOR_ROARING_ENCODING);
     rowid_lst[rowid_lst_length] = row_id;
     rowid_lst_length++;
@@ -77,18 +81,8 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
         for (size_t i = 0; i < rowid_lst_length; i++)
             rowid_bitmap.add(rowid_lst[i]);
 
-        rowid_lst_length = UsesBitMap;
+        rowid_lst_length = USES_BIT_MAP;
     }
-}
-
-bool GinIndexPostingsBuilder::useRoaring() const
-{
-    return rowid_lst_length == UsesBitMap;
-}
-
-bool GinIndexPostingsBuilder::containsAllRows() const
-{
-    return rowid_lst[0] == CONTAINS_ALL;
 }
 
 UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer) const
@@ -125,7 +119,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     UInt8 postings_list_size = 0;
     buffer.readStrict(reinterpret_cast<char &>(postings_list_size));
 
-    if (postings_list_size != UsesBitMap)
+    if (postings_list_size != USES_BIT_MAP)
     {
         assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
         GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
