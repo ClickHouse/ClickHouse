@@ -13,7 +13,10 @@ select count() from sample_final sample 1/2;
 select 'count sample final';
 select count() from sample_final final sample 1/2;
 select 'count final max_parallel_replicas';
+
+set allow_experimental_parallel_reading_from_replicas = 0;
 set max_parallel_replicas=2;
+set parallel_replicas_mode='sample_key';
 select count() from remote('127.0.0.{2|3}', currentDatabase(), sample_final) final;
 
 drop table if exists sample_final;

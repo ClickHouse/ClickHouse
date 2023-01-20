@@ -1,6 +1,7 @@
 -- Tags: replica, distributed
 
 SET max_parallel_replicas = 2;
+SET parallel_replicas_mode = 'sample_key';
 DROP TABLE IF EXISTS report;
 
 set allow_deprecated_syntax_for_merge_tree=1;
