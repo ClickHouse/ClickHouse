@@ -199,9 +199,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecEncrypted(*this);
 #endif
     registerCodecFPC(*this);
-    #ifdef ENABLE_QPL_COMPRESSION
-        registerCodecDeflateQpl(*this);
-    #endif
+#ifdef ENABLE_QPL_COMPRESSION
+    registerCodecDeflateQpl(*this);
+#endif
 #endif
 
     default_codec = get("LZ4", {});
