@@ -40,8 +40,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
-    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2,
+    INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
+    INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
     ...
     PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
     PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
@@ -359,12 +359,14 @@ ClickHouse uses this logic not only for days of the month sequences, but for any
 The index declaration is in the columns section of the `CREATE` query.
 
 ``` sql
-INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
+INDEX index_name expr TYPE type(...) [GRANULARITY granularity_value]
 ```
 
 For tables from the `*MergeTree` family, data skipping indices can be specified.
 
 These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (the size of the granule is specified using the `index_granularity` setting in the table engine). Then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where the `where` query cannot be satisfied.
+
+The `GRANULARITY` clause can be omitted, the default value of `granularity_value` is 1.
 
 **Example**
 
