@@ -217,7 +217,7 @@ private:
     /// Merges have to be aware of the outdated part's levels inside designated merge range.
     /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
     /// There should not be an unactive part all_1_1_1. Otherwise it is impossible to load parts after restart, they intersects.
-    /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with height level outdated parts.
+    /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
     UInt32 getMaxLevelInBetween(
         const DataPartPtr & left,
         const DataPartPtr & right) const;
