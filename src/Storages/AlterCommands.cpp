@@ -13,6 +13,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
+#include <Interpreters/GinFilter.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -904,7 +905,26 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-
+bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata, ContextPtr context)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        IndexDescription index_desc;
+        try
+        {
+            index_desc = IndexDescription::getIndexFromAST(index.definition_ast, metadata.columns, context);
+        }
+        catch (...)
+        {
+            continue;
+        }
+        if (index.type == GinFilter::FilterName)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
