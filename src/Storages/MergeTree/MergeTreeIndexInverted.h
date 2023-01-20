@@ -26,7 +26,7 @@ struct MergeTreeIndexGranuleGinFilter final : public IMergeTreeIndexGranule
 
     String index_name;
     GinFilterParameters params;
-    std::vector<GinFilter> gin_filters;
+    GinFilters gin_filters;
     bool has_elems;
 };
 
@@ -123,7 +123,7 @@ private:
         std::unique_ptr<GinFilter> gin_filter;
 
         /// For FUNCTION_IN, FUNCTION_NOT_IN and FUNCTION_MULTI_SEARCH
-        std::vector<std::vector<GinFilter>> set_gin_filters;
+        std::vector<GinFilters> set_gin_filters;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<size_t> set_key_position;

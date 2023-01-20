@@ -603,7 +603,7 @@ bool MergeTreeConditionGinFilter::traverseASTEquals(
         out.function = RPNElement::FUNCTION_MULTI_SEARCH;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
-        std::vector<std::vector<GinFilter>> gin_filters;
+        std::vector<GinFilters> gin_filters;
         gin_filters.emplace_back();
         for (const auto & element : const_value.get<Array>())
         {
@@ -664,7 +664,7 @@ bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
         if (data_type->getTypeId() != TypeIndex::String && data_type->getTypeId() != TypeIndex::FixedString)
             return false;
 
-    std::vector<std::vector<GinFilter>> gin_filters;
+    std::vector<GinFilters> gin_filters;
     std::vector<size_t> key_position;
 
     Columns columns = prepared_set->getSetElements();
