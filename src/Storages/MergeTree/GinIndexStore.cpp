@@ -350,7 +350,7 @@ void GinIndexStoreDeserializer::readSegments()
         auto dict = std::make_shared<GinSegmentDictionary>();
         dict->postings_start_offset = segments[i].postings_start_offset;
         dict->dict_start_offset = segments[i].dict_start_offset;
-        store->dicts[seg_id] = dict;
+        store->segment_dictionaries[seg_id] = dict;
     }
 }
 
@@ -363,8 +363,8 @@ void GinIndexStoreDeserializer::readSegmentDictionaries()
 void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
 {
     /// Check validity of segment_id
-    auto it = store->dicts.find(segment_id);
-    if (it == store->dicts.end())
+    auto it = store->segment_dictionaries.find(segment_id);
+    if (it == store->segment_dictionaries.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid segment id {}", segment_id);
 
     assert(dict_file_stream != nullptr);
@@ -387,7 +387,7 @@ SegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsL
     assert(postings_file_stream != nullptr);
 
     SegmentedPostingsListContainer container;
-    for (auto const & seg_dict : store->dicts)
+    for (auto const & seg_dict : store->segment_dictionaries)
     {
         auto segment_id = seg_dict.first;
 
