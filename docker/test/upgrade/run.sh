@@ -53,9 +53,11 @@ function configure()
     echo "<clickhouse><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></clickhouse>" \
         > /etc/clickhouse-server/config.d/asynchronous_metrics_update_period_s.xml
 
+
     local total_mem
     total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
     total_mem=$(( total_mem*1024 )) # bytes
+
     # Set maximum memory usage as half of total memory (less chance of OOM).
     #
     # But not via max_server_memory_usage but via max_memory_usage_for_user,
@@ -68,21 +70,23 @@ function configure()
     # max_server_memory_usage will be hard limit, and queries that should be
     # executed regardless memory limits will use max_memory_usage_for_user=0,
     # instead of relying on max_untracked_memory
-    local max_server_mem
-    max_server_mem=$((total_mem*75/100)) # 75%
-    echo "Setting max_server_memory_usage=$max_server_mem"
+
+    max_server_memory_usage_to_ram_ratio=0.5
+    echo "Setting max_server_memory_usage_to_ram_ratio to ${max_server_memory_usage_to_ram_ratio}"
     cat > /etc/clickhouse-server/config.d/max_server_memory_usage.xml <<EOL
 <clickhouse>
-    <max_server_memory_usage>${max_server_mem}</max_server_memory_usage>
+    <max_server_memory_usage_to_ram_ratio>${max_server_memory_usage_to_ram_ratio}</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 EOL
+
     local max_users_mem
-    max_users_mem=$((total_mem*50/100)) # 50%
-    echo "Setting max_memory_usage_for_user=$max_users_mem"
+    max_users_mem=$((total_mem*30/100)) # 30%
+    echo "Setting max_memory_usage_for_user=$max_users_mem and max_memory_usage for queries to 10G"
     cat > /etc/clickhouse-server/users.d/max_memory_usage_for_user.xml <<EOL
 <clickhouse>
     <profiles>
         <default>
+            <max_memory_usage>10G</max_memory_usage>
             <max_memory_usage_for_user>${max_users_mem}</max_memory_usage_for_user>
         </default>
     </profiles>
@@ -99,6 +103,13 @@ EOL
          since clickhouse is not started as daemon (via clickhouse start)
     -->
     <core_path>$PWD</core_path>
+</clickhouse>
+EOL
+
+    # Let OOM killer terminate other processes before clickhouse-server:
+    cat > /etc/clickhouse-server/config.d/oom_score.xml <<EOL
+<clickhouse>
+    <oom_score>-1000</oom_score>
 </clickhouse>
 EOL
 
@@ -121,18 +132,12 @@ EOL
 
 function stop()
 {
+    local max_tries="${1:-90}"
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    clickhouse stop $max_tries --do-not-kill && return
-
-    if [ -n "$1" ]
-    then
-        # temporarily disable it in BC check
-        clickhouse stop --force
-        return
-    fi
+    clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
@@ -322,7 +327,8 @@ else
         clickhouse stop --force
     )
 
-    stop 1
+    # Use bigger timeout for previous version
+    stop 300
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
     # Start new server
@@ -334,7 +340,7 @@ else
     start 500
     clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
         || (echo -e 'Server failed to start\tFAIL' >> /test_output/test_results.tsv \
-        && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/application_errors.txt)
+        && rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/application_errors.txt)
 
     # Remove file application_errors.txt if it's empty
     [ -s /test_output/application_errors.txt ] || rm /test_output/application_errors.txt
@@ -357,7 +363,7 @@ else
     #       ("This engine is deprecated and is not supported in transactions", "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part")
     # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
     echo "Check for Error messages in server log:"
-    zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
+    rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                -e "Code: 236. DB::Exception: Cancelled mutating parts" \
                -e "REPLICA_IS_ALREADY_ACTIVE" \
                -e "REPLICA_ALREADY_EXISTS" \
@@ -401,21 +407,21 @@ else
     [ -s /test_output/upgrade_error_messages.txt ] || rm /test_output/upgrade_error_messages.txt
 
     # Sanitizer asserts
-    zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-    zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-    zgrep -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
+    rg -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+    rg -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+    rg -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
         && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
     rm -f /test_output/tmp
 
     # OOM
-    zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.*.log > /dev/null \
+    rg -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.*.log > /dev/null \
         && echo -e 'OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
     # Logical errors
     echo "Check for Logical errors in server log:"
-    zgrep -Fa -A20 "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.*.log > /test_output/logical_errors.txt \
+    rg -Fa -A20 "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.*.log > /test_output/logical_errors.txt \
         && echo -e 'Logical error thrown (see server logs or logical_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'No logical errors\tOK' >> /test_output/test_results.tsv
 
@@ -423,13 +429,13 @@ else
     [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
     # Crash
-    zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.*.log > /dev/null \
+    rg -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.*.log > /dev/null \
         && echo -e 'Killed by signal (in server logs)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Not crashed\tOK' >> /test_output/test_results.tsv
 
     # It also checks for crash without stacktrace (printed by watchdog)
     echo "Check for Fatal message in server log:"
-    zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.*.log > /test_output/fatal_messages.txt \
+    rg -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.*.log > /test_output/fatal_messages.txt \
         && echo -e 'Fatal message in server logs (see bc_check_fatal_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'No fatal messages in server logs\tOK' >> /test_output/test_results.tsv
 
@@ -439,7 +445,7 @@ else
     tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
     for table in query_log trace_log
     do
-        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.tsv.gz ||:
+        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.backward.tsv.zst ||:
     done
 fi
 
@@ -457,7 +463,7 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps
-for core in core.*; do
-    pigz $core
-    mv $core.gz /test_output/
+find . -type f -maxdepth 1 -name 'core.*' | while read core; do
+    zstd --threads=0 $core
+    mv $core.zst /test_output/
 done
