@@ -39,8 +39,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-template <typename IteratorSrc, typename IteratorDst>
-void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
+template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
+inline void parseHex(IteratorSrc src, IteratorDst dst)
 {
     size_t src_pos = 0;
     size_t dst_pos = 0;
@@ -52,18 +52,18 @@ void parseUUID(const UInt8 * src36, UInt8 * dst16)
 {
     /// If string is not like UUID - implementation specific behaviour.
 
-    parseHex(&src36[0], &dst16[0], 4);
-    parseHex(&src36[9], &dst16[4], 2);
-    parseHex(&src36[14], &dst16[6], 2);
-    parseHex(&src36[19], &dst16[8], 2);
-    parseHex(&src36[24], &dst16[10], 6);
+    parseHex<4>(&src36[0], &dst16[0]);
+    parseHex<2>(&src36[9], &dst16[4]);
+    parseHex<2>(&src36[14], &dst16[6]);
+    parseHex<2>(&src36[19], &dst16[8]);
+    parseHex<6>(&src36[24], &dst16[10]);
 }
 
 void parseUUIDWithoutSeparator(const UInt8 * src36, UInt8 * dst16)
 {
     /// If string is not like UUID - implementation specific behaviour.
 
-    parseHex(&src36[0], &dst16[0], 16);
+    parseHex<16>(&src36[0], &dst16[0]);
 }
 
 /** Function used when byte ordering is important when parsing uuid
@@ -74,11 +74,11 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
     /// If string is not like UUID - implementation specific behaviour.
 
     /// FIXME This code looks like trash.
-    parseHex(&src36[0], dst16 + 8, 4);
-    parseHex(&src36[9], dst16 + 12, 2);
-    parseHex(&src36[14], dst16 + 14, 2);
-    parseHex(&src36[19], dst16, 2);
-    parseHex(&src36[24], dst16 + 2, 6);
+    parseHex<4>(&src36[0], dst16 + 8);
+    parseHex<2>(&src36[9], dst16 + 12);
+    parseHex<2>(&src36[14], dst16 + 14);
+    parseHex<2>(&src36[19], dst16);
+    parseHex<6>(&src36[24], dst16 + 2);
 }
 
 /** Function used when byte ordering is important when parsing uuid
@@ -88,8 +88,8 @@ void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 
 {
     /// If string is not like UUID - implementation specific behaviour.
 
-    parseHex(&src36[0], dst16 + 8, 8);
-    parseHex(&src36[16], dst16, 8);
+    parseHex<8>(&src36[0], dst16 + 8);
+    parseHex<8>(&src36[16], dst16);
 }
 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
