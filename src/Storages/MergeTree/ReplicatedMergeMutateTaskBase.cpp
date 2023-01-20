@@ -188,7 +188,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             catch (...)
             {
                 if (part_log_writer)
-                    part_log_writer(ExecutionStatus::fromCurrentExceptionWithStackTrace());
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
 
@@ -204,7 +204,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             catch (...)
             {
                 if (part_log_writer)
-                    part_log_writer(ExecutionStatus::fromCurrentExceptionWithStackTrace());
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
 
