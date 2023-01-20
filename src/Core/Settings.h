@@ -627,6 +627,10 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     \
     M(Bool, load_marks_asynchronously, false, "Load MergeTree marks asynchronously", 0) \
     \
+    /* Transitory setting needed for ca. six months. After v23.6, the setting can be moved into the obsolete section below and assumed as false. */ \
+    /* Gorilla is a float-codec which happend to be enabled for non-float datatypes. Users (self-hosted or on-premise) might have non-float Gorilla-compressed data so allow some time for migration. */ \
+    M(Bool, enable_gorilla_codec_for_non_float_data, true, "Enable Gorilla compression of columns with non-float data type", 0) \
+    \
     M(UInt64, use_structure_from_insertion_table_in_table_functions, 2, "Use structure from insertion table instead of schema inference from data. Possible values: 0 - disabled, 1 - enabled, 2 - auto", 0) \
     \
     M(UInt64, http_max_tries, 10, "Max attempts to read via http.", 0) \
