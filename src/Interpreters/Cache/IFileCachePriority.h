@@ -22,11 +22,8 @@ class IFileCachePriority
 {
 friend class LockedCachePriority;
 public:
-    class IIterator;
     using Key = FileCacheKey;
     using KeyAndOffset = FileCacheKeyAndOffset;
-    using Iterator = std::shared_ptr<IIterator>;
-    using ConstIterator = std::shared_ptr<const IIterator>;
 
     struct Entry
     {
@@ -42,7 +39,7 @@ public:
               KeyTransactionCreatorPtr key_transaction_creator_);
     };
 
-    /// It provides an iterator to traverse the cache priority. Under normal circumstances,
+    /// Provides an iterator to traverse the cache priority. Under normal circumstances,
     /// the iterator can only return the records that have been directly swapped out.
     /// For example, in the LRU algorithm, it can traverse all records, but in the LRU-K, it
     /// can only traverse the records in the low priority queue.
@@ -60,8 +57,19 @@ public:
 
         virtual void incrementSize(ssize_t) = 0;
 
-        virtual Iterator remove() = 0;
+        virtual std::shared_ptr<IIterator> remove() = 0;
     };
+
+    using Iterator = std::shared_ptr<IIterator>;
+    using ConstIterator = std::shared_ptr<const IIterator>;
+
+    enum class IterationResult
+    {
+        BREAK,
+        CONTINUE,
+        REMOVE_AND_CONTINUE,
+    };
+    using IterateFunc = std::function<IterationResult(const Entry &)>;
 
     IFileCachePriority(size_t max_size_, size_t max_elements_) : max_size(max_size_), max_elements(max_elements_) {}
 
@@ -70,13 +78,6 @@ public:
     size_t getElementsLimit() const { return max_elements; }
 
     size_t getSizeLimit() const { return max_size; }
-
-    enum class IterationResult
-    {
-        BREAK,
-        CONTINUE,
-        REMOVE_AND_CONTINUE,
-    };
 
 protected:
     const size_t max_size = 0;
@@ -93,14 +94,13 @@ protected:
 
     virtual void removeAll() = 0;
 
-    using IterateFunc = std::function<IterationResult(const Entry &)>;
     virtual void iterate(IterateFunc && func) = 0;
 };
 
 class LockedCachePriority
 {
 public:
-    LockedCachePriority(CachePriorityQueueGuard::LockPtr lock_, IFileCachePriority & priority_queue_)
+    LockedCachePriority(CacheGuard::LockPtr lock_, IFileCachePriority & priority_queue_)
         : lock(lock_), queue(priority_queue_) {}
 
     size_t getElementsLimit() const { return queue.max_elements; }
@@ -120,14 +120,14 @@ public:
     void iterate(IFileCachePriority::IterateFunc && func) { queue.iterate(std::move(func)); }
 
 private:
-    CachePriorityQueueGuard::LockPtr lock;
+    CacheGuard::LockPtr lock;
     IFileCachePriority & queue;
 };
 
 class LockedCachePriorityIterator
 {
 public:
-    LockedCachePriorityIterator(CachePriorityQueueGuard::LockPtr lock_, IFileCachePriority::Iterator & iterator_)
+    LockedCachePriorityIterator(CacheGuard::LockPtr lock_, IFileCachePriority::Iterator & iterator_)
         : lock(lock_), iterator(iterator_) {}
 
     IFileCachePriority::Entry & operator *() { return **iterator; }
@@ -140,7 +140,7 @@ public:
     IFileCachePriority::Iterator remove() { return iterator->remove(); }
 
 private:
-    CachePriorityQueueGuard::LockPtr lock;
+    CacheGuard::LockPtr lock;
     IFileCachePriority::Iterator & iterator;
 };
 

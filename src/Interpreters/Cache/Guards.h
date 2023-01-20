@@ -32,13 +32,32 @@ struct KeyGuard
 using KeyGuardPtr = std::shared_ptr<KeyGuard>;
 
 /**
- * Cache priority queue guard.
+ * Guard for cache metadata.
  */
-struct CachePriorityQueueGuard
+struct CacheMetadataGuard
 {
     struct Lock
     {
-        explicit Lock(CachePriorityQueueGuard & guard) : lock(guard.mutex) {}
+        explicit Lock(CacheMetadataGuard & guard) : lock(guard.mutex) {}
+        std::unique_lock<std::mutex> lock;
+    };
+    using LockPtr = std::shared_ptr<Lock>;
+
+    std::mutex mutex;
+
+    Lock lock() { return Lock(*this); }
+
+    CacheMetadataGuard() = default;
+};
+
+/**
+ * Cache priority queue guard.
+ */
+struct CacheGuard
+{
+    struct Lock
+    {
+        explicit Lock(CacheGuard & guard) : lock(guard.mutex) {}
         std::unique_lock<std::mutex> lock;
     };
     using LockPtr = std::shared_ptr<Lock>;
@@ -46,9 +65,8 @@ struct CachePriorityQueueGuard
     std::mutex mutex;
 
     LockPtr lock() { return std::make_shared<Lock>(*this); }
-    std::shared_ptr<Lock> lockShared() { return std::make_shared<Lock>(*this); }
 
-    CachePriorityQueueGuard() = default;
+    CacheGuard() = default;
 };
 
 /**

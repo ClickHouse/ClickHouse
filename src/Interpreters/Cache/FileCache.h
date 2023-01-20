@@ -21,6 +21,9 @@
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/Guards.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 
 namespace DB
@@ -29,6 +32,8 @@ namespace DB
 struct KeyTransaction;
 using KeyTransactionPtr = std::shared_ptr<KeyTransaction>;
 using KeyTransactionsMap = std::unordered_map<FileCacheKey, KeyTransactionPtr>;
+struct KeysQueue;
+using KeysQueuePtr = std::shared_ptr<KeysQueue>;
 
 namespace ErrorCodes
 {
@@ -39,12 +44,6 @@ namespace ErrorCodes
 /// Different caching algorithms are implemented using IFileCachePriority.
 class FileCache : private boost::noncopyable
 {
-friend class FileSegmentRangeWriter;
-friend struct KeyTransaction;
-friend struct KeyTransactionCreator;
-friend struct FileSegmentsHolder;
-friend class FileSegment;
-
 public:
     using Key = DB::FileCacheKey;
 
@@ -55,6 +54,8 @@ public:
     void initialize();
 
     const String & getBasePath() const { return cache_base_path; }
+
+    static Key createKeyForPath(const String & path);
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -83,14 +84,10 @@ public:
     FileSegmentsHolderPtr set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
     /// Remove files by `key`. Removes files which might be used at the moment.
-    void removeIfExists(const Key & key);
+    void removeKeyIfExists(const Key & key);
 
     /// Remove files by `key`. Will not remove files which are used at the moment.
     void removeAllReleasable();
-
-    bool tryReserve(const Key & key, size_t offset, size_t size);
-
-    static Key createKeyForPath(const String & path);
 
     String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
 
@@ -102,7 +99,11 @@ public:
 
     size_t getFileSegmentsNum() const;
 
+    size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
+
     static bool readThrowCacheAllowed();
+
+    bool tryReserve(const Key & key, size_t offset, size_t size);
 
     struct QueryContextHolder;
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
@@ -114,13 +115,16 @@ public:
 
     FileSegmentsHolderPtr dumpQueue();
 
+    bool isInitialized() const { return is_initialized; }
+
     void assertCacheCorrectness();
+
+    CacheGuard::LockPtr createCacheTransaction() { return cache_guard.lock(); }
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
-    String cache_base_path;
-
+    const String cache_base_path;
     const size_t max_file_segment_size;
     const bool allow_persistent_files;
     const size_t bypass_cache_threshold = 0;
@@ -150,7 +154,8 @@ private:
             : file_segment(std::move(other.file_segment)), queue_iterator(std::move(other.queue_iterator)) {}
     };
 
-    struct CacheCells : public std::map<size_t, FileSegmentCell>
+public:
+    struct KeyMetadata : public std::map<size_t, FileSegmentCell>
     {
         const FileSegmentCell * get(size_t offset) const;
         FileSegmentCell * get(size_t offset);
@@ -163,15 +168,16 @@ private:
         KeyGuardPtr guard = std::make_shared<KeyGuard>();
         bool created_base_directory = false;
     };
-    using CacheCellsPtr = std::shared_ptr<CacheCells>;
+    using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
+private:
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
 
-    using CachedFiles = std::unordered_map<Key, CacheCellsPtr>;
-    CachedFiles files;
-    mutable std::mutex files_mutex;
+    using CacheMetadata = std::unordered_map<Key, KeyMetadataPtr>;
+    CacheMetadata metadata;
+    CacheMetadataGuard metadata_guard;
 
     enum class KeyNotFoundPolicy
     {
@@ -184,37 +190,10 @@ private:
 
     KeyTransactionCreatorPtr getKeyTransactionCreator(const Key & key, KeyTransaction & key_transaction);
 
-    struct PendingRemoveFilesMetadata
-    {
-        std::unordered_set<Key> keys;
-        std::mutex mutex;
-
-        void removeIfExists(const Key & key)
-        {
-            std::lock_guard lock(mutex);
-            keys.erase(key);
-        }
-
-        void add(const Key & key)
-        {
-            std::lock_guard lock(mutex);
-            keys.insert(key);
-        }
-
-        void iterate(std::function<void(const Key &)> && func)
-        {
-            std::lock_guard lock(mutex);
-            for (auto it = keys.begin(); it != keys.end();)
-            {
-                func(*it);
-                it = keys.erase(it);
-            }
-        }
-    };
-    mutable PendingRemoveFilesMetadata remove_files_metadata;
+    KeysQueuePtr cleanup_keys_metadata_queue;
 
     FileCachePriorityPtr main_priority;
-    mutable CachePriorityQueueGuard priority_queue_guard;
+    mutable CacheGuard cache_guard;
 
     struct HitsCountStash
     {
@@ -242,12 +221,12 @@ private:
         class LockedQueryContext;
         using LockedQueryContextPtr = std::unique_ptr<LockedQueryContext>;
 
-        LockedQueryContextPtr tryGetQueryContext(CachePriorityQueueGuard::LockPtr lock);
+        LockedQueryContextPtr tryGetQueryContext(CacheGuard::LockPtr lock);
 
         QueryContextPtr getOrSetQueryContext(
-            const std::string & query_id, const ReadSettings & settings, CachePriorityQueueGuard::LockPtr);
+            const std::string & query_id, const ReadSettings & settings, CacheGuard::LockPtr);
 
-        void removeQueryContext(const std::string & query_id, CachePriorityQueueGuard::LockPtr);
+        void removeQueryContext(const std::string & query_id, CacheGuard::LockPtr);
 
     private:
         using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
@@ -273,7 +252,7 @@ private:
         class LockedQueryContext
         {
         public:
-            LockedQueryContext(QueryContextPtr context_, CachePriorityQueueGuard::LockPtr lock_)
+            LockedQueryContext(QueryContextPtr context_, CacheGuard::LockPtr lock_)
                 : context(context_), lock(lock_), priority(lock_, *context->priority) {}
 
             IFileCachePriority & getPriority() { return *context->priority; }
@@ -293,7 +272,7 @@ private:
 
         private:
             QueryContextPtr context;
-            CachePriorityQueueGuard::LockPtr lock;
+            CacheGuard::LockPtr lock;
             LockedCachePriority priority;
         };
     };
@@ -302,8 +281,7 @@ private:
     QueryLimitPtr query_limit;
 
 public:
-    /// Save a query context information, and adopt different cache policies
-    /// for different queries through the context cache layer.
+    /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable
     {
         QueryContextHolder(const String & query_id_, FileCache * cache_, QueryLimit::QueryContextPtr context_);
@@ -343,21 +321,21 @@ private:
         const CreateFileSegmentSettings & settings,
         KeyTransaction & key_transaction);
 
-    CacheCells::iterator addCell(
+    KeyMetadata::iterator addCell(
         const Key & key,
         size_t offset,
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         KeyTransaction & key_transaction,
-        CachePriorityQueueGuard::LockPtr * queue_lock);
+        CacheGuard::LockPtr * queue_lock);
 
     bool tryReserveUnlocked(
         const Key & key,
         size_t offset,
         size_t size,
         KeyTransactionPtr key_transaction,
-        CachePriorityQueueGuard::LockPtr);
+        CacheGuard::LockPtr);
 
     bool tryReserveImpl(
         IFileCachePriority & priority_queue,
@@ -366,7 +344,7 @@ private:
         size_t size,
         KeyTransactionPtr key_transaction,
         QueryLimit::LockedQueryContext * query_context,
-        CachePriorityQueueGuard::LockPtr priority_lock);
+        CacheGuard::LockPtr priority_lock);
 
     struct IterateAndLockResult
     {
@@ -380,16 +358,42 @@ private:
         KeyTransactionsMap & locked_map);
 };
 
+struct KeysQueue
+{
+    std::unordered_set<FileCacheKey> keys;
+    std::mutex mutex;
+
+    void add(const FileCacheKey & key)
+    {
+        std::lock_guard lock(mutex);
+        keys.insert(key);
+    }
+
+    void clear(std::function<void(const FileCacheKey &)> && func)
+    {
+        std::lock_guard lock(mutex);
+        for (auto it = keys.begin(); it != keys.end();)
+        {
+            func(*it);
+            it = keys.erase(it);
+        }
+    }
+};
+
 struct KeyTransactionCreator
 {
     KeyTransactionCreator(
-        const FileCacheKey & key_, FileCache::CacheCellsPtr offsets_, const FileCache * cache_)
-        : key(key_), offsets(offsets_), cache(cache_) {}
+        const FileCacheKey & key_,
+        FileCache::KeyMetadataPtr offsets_,
+        KeysQueuePtr cleanup_keys_metadata_queue_,
+        const FileCache * cache_)
+        : key(key_), offsets(offsets_), cleanup_keys_metadata_queue(cleanup_keys_metadata_queue_), cache(cache_) {}
 
     KeyTransactionPtr create();
 
     FileCacheKey key;
-    FileCache::CacheCellsPtr offsets;
+    FileCache::KeyMetadataPtr offsets;
+    KeysQueuePtr cleanup_keys_metadata_queue;
     const FileCache * cache;
 };
 using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
@@ -398,22 +402,26 @@ struct KeyTransaction : private boost::noncopyable
 {
     using Key = FileCacheKey;
 
-    KeyTransaction(const Key & key_, FileCache::CacheCellsPtr offsets_, const FileCache * cache_);
+    KeyTransaction(
+        const Key & key_,
+        FileCache::KeyMetadataPtr offsets_,
+        KeysQueuePtr cleanup_keys_metadata_queue_,
+        const FileCache * cache_);
 
     ~KeyTransaction();
 
-    KeyTransactionCreatorPtr getCreator() const { return std::make_unique<KeyTransactionCreator>(key, offsets, cache); }
+    KeyTransactionCreatorPtr getCreator() const { return std::make_unique<KeyTransactionCreator>(key, offsets, cleanup_keys_metadata_queue, cache); }
 
-    void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, CachePriorityQueueGuard::LockPtr);
+    void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, CacheGuard::LockPtr);
 
-    void remove(FileSegmentPtr file_segment, CachePriorityQueueGuard::LockPtr);
+    void remove(FileSegmentPtr file_segment, CacheGuard::LockPtr);
 
-    void remove(size_t offset, const FileSegmentGuard::Lock &, CachePriorityQueueGuard::LockPtr);
+    void remove(size_t offset, const FileSegmentGuard::Lock &, CacheGuard::LockPtr);
 
     bool isLastHolder(size_t offset);
 
-    FileCache::CacheCells & getOffsets() { return *offsets; }
-    const FileCache::CacheCells & getOffsets() const { return *offsets; }
+    FileCache::KeyMetadata & getOffsets() { return *offsets; }
+    const FileCache::KeyMetadata & getOffsets() const { return *offsets; }
 
     std::vector<size_t> delete_offsets;
 
@@ -427,7 +435,8 @@ private:
     KeyGuardPtr guard;
     KeyGuard::Lock lock;
 
-    FileCache::CacheCellsPtr offsets;
+    FileCache::KeyMetadataPtr offsets;
+    KeysQueuePtr cleanup_keys_metadata_queue;
 
     Poco::Logger * log;
 };
