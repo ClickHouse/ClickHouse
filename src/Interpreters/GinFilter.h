@@ -88,7 +88,7 @@ private:
     GinSegmentWithRowIdRangeVector rowid_ranges;
 
     /// Check if the given postings list cache has matched rows by using the filter
-    bool match(const PostingsCache & postings_cache) const;
+    bool match(const GinPostingsCache & postings_cache) const;
 };
 
 using GinFilters = std::vector<GinFilter>;

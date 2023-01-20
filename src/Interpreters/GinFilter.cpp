@@ -93,7 +93,7 @@ bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache
     if (filter.getTerms().empty())
         return true;
 
-    PostingsCachePtr postings_cache = cache_store.getPostings(filter.getQueryString());
+    GinPostingsCachePtr postings_cache = cache_store.getPostings(filter.getQueryString());
     if (postings_cache == nullptr)
     {
         GinIndexStoreDeserializer reader(cache_store.store);
@@ -108,14 +108,14 @@ namespace
 {
 
 /// Helper method for checking if postings list cache is empty
-bool hasEmptyPostingsList(const PostingsCache & postings_cache)
+bool hasEmptyPostingsList(const GinPostingsCache & postings_cache)
 {
     if (postings_cache.empty())
         return true;
 
     for (const auto & term_postings : postings_cache)
     {
-        const SegmentedPostingsListContainer & container = term_postings.second;
+        const GinSegmentedPostingsListContainer & container = term_postings.second;
         if (container.empty())
             return true;
     }
@@ -123,7 +123,7 @@ bool hasEmptyPostingsList(const PostingsCache & postings_cache)
 }
 
 /// Helper method to check if the postings list cache has intersection with given row ID range
-bool matchInRange(const PostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
+bool matchInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
     /// Check for each term
     GinIndexPostingsList intersection_result;
@@ -132,7 +132,7 @@ bool matchInRange(const PostingsCache & postings_cache, UInt32 segment_id, UInt3
     for (const auto & term_postings : postings_cache)
     {
         /// Check if it is in the same segment by searching for segment_id
-        const SegmentedPostingsListContainer & container = term_postings.second;
+        const GinSegmentedPostingsListContainer & container = term_postings.second;
         auto container_it = container.find(segment_id);
         if (container_it == container.cend())
             return false;
@@ -161,7 +161,7 @@ bool matchInRange(const PostingsCache & postings_cache, UInt32 segment_id, UInt3
 
 }
 
-bool GinFilter::match(const PostingsCache & postings_cache) const
+bool GinFilter::match(const GinPostingsCache & postings_cache) const
 {
     if (hasEmptyPostingsList(postings_cache))
         return false;
