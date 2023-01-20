@@ -112,7 +112,6 @@ StorageMergeTree::StorageMergeTree(
     increment.set(getMaxBlockNumber());
 
     loadMutations();
-
     loadDeduplicationLog();
 }
 
@@ -138,6 +137,7 @@ void StorageMergeTree::startup()
     {
         background_operations_assignee.start();
         startBackgroundMovesIfNeeded();
+        startOutdatedDataPartsLoadingTask();
     }
     catch (...)
     {
@@ -170,6 +170,8 @@ void StorageMergeTree::shutdown()
 {
     if (shutdown_called.exchange(true))
         return;
+
+    stopOutdatedDataPartsLoadingTask();
 
     /// Unlock all waiting mutations
     {
@@ -526,14 +528,14 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
     it->second.writeCSN(csn);
 }
 
-void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
+void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, bool force_wait)
 {
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
     Int64 version = startMutation(commands, query_context);
 
-    if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
+    if (force_wait || query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
 }
 
@@ -920,7 +922,7 @@ bool StorageMergeTree::merge(
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelled())
-            throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+            throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
 
         merge_mutate_entry = selectPartsToMerge(
             metadata_snapshot,
@@ -1189,6 +1191,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         scheduled = true;
     }
 
+
     return scheduled;
 }
 
@@ -1300,10 +1303,10 @@ bool StorageMergeTree::optimize(
                     &disable_reason,
                     local_context->getSettingsRef().optimize_skip_merged_partitions))
             {
-                constexpr const char * message = "Cannot OPTIMIZE table: {}";
+                constexpr auto message = "Cannot OPTIMIZE table: {}";
                 if (disable_reason.empty())
                     disable_reason = "unknown reason";
-                LOG_INFO(log, fmt::runtime(message), disable_reason);
+                LOG_INFO(log, message, disable_reason);
 
                 if (local_context->getSettingsRef().optimize_throw_if_noop)
                     throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
@@ -1327,10 +1330,10 @@ bool StorageMergeTree::optimize(
                 &disable_reason,
                 local_context->getSettingsRef().optimize_skip_merged_partitions))
         {
-            constexpr const char * message = "Cannot OPTIMIZE table: {}";
+            constexpr auto message = "Cannot OPTIMIZE table: {}";
             if (disable_reason.empty())
                 disable_reason = "unknown reason";
-            LOG_INFO(log, fmt::runtime(message), disable_reason);
+            LOG_INFO(log, message, disable_reason);
 
             if (local_context->getSettingsRef().optimize_throw_if_noop)
                 throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
@@ -1509,6 +1512,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = stopMergesAndWait();
+    waitForOutdatedPartsToBeLoaded();
 
     Stopwatch watch;
 

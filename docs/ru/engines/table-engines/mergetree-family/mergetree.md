@@ -883,4 +883,3 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `_part_uuid` — Уникальный идентификатор куска (если включена MergeTree настройка `assign_part_uuids`).
 -   `_partition_value` — Значения (кортеж) выражения `partition by`.
 -   `_sample_factor` — Коэффициент сэмплирования (из запроса).
-

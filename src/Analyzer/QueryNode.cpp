@@ -17,6 +17,7 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <Analyzer/Utils.h>
+#include <fmt/core.h>
 
 namespace DB
 {
@@ -178,6 +179,16 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "OFFSET\n";
         getOffset()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasSettingsChanges())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
+        for (const auto & change : settings_changes)
+        {
+            buffer << fmt::format(" {}={}", change.name, toString(change.value));
+        }
+        buffer << '\n';
     }
 }
 

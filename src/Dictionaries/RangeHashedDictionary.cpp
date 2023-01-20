@@ -688,7 +688,9 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
         static constexpr size_t range_columns_size = 2;
 
         auto pipe = source_ptr->loadUpdatedAll();
-        mergeBlockWithPipe<dictionary_key_type>(
+
+        /// Use complex dictionary key type to count range columns as part of complex primary key during update
+        mergeBlockWithPipe<DictionaryKeyType::Complex>(
             dict_struct.getKeysSize() + range_columns_size,
             *update_field_loaded_block,
             std::move(pipe));
