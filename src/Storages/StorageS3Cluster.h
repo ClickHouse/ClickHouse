@@ -26,7 +26,8 @@ public:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool structure_argument_was_provided_);
 
     std::string getName() const override { return "S3Cluster"; }
 
@@ -49,7 +50,7 @@ private:
     String compression_method;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
-    bool add_columns_structure_to_query = false;
+    bool structure_argument_was_provided;
 };
 
 
