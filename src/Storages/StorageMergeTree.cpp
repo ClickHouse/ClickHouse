@@ -922,7 +922,7 @@ bool StorageMergeTree::merge(
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelled())
-            throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+            throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
 
         merge_mutate_entry = selectPartsToMerge(
             metadata_snapshot,
