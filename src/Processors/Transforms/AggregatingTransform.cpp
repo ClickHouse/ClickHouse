@@ -6,6 +6,8 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
 
+#include <Processors/Transforms/SquashingChunksTransform.h>
+
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
@@ -150,26 +152,33 @@ public:
 protected:
     Chunk generate() override
     {
-        if (!convertion_is_done)
+        if (variant->isTwoLevel())
         {
-            blocks = params->aggregator.convertToBlocks(*variant, params->final, 1 /* max_threads */);
-            convertion_is_done = true;
+            if (current_bucket_num < NUM_BUCKETS)
+            {
+                Arena * arena = variant->aggregates_pool;
+                Block block = params->aggregator.convertOneBucketToBlock(*variant, arena, params->final, current_bucket_num++);
+                return convertToChunk(block);
+            }
+        }
+        else if (!single_level_converted)
+        {
+            Block block = params->aggregator.prepareBlockAndFillSingleLevel<true /* return_single_block */>(*variant, params->final);
+            single_level_converted = true;
+            return convertToChunk(block);
         }
 
-        if (blocks.empty())
-            return {};
-
-        auto res = convertToChunk(blocks.front());
-        blocks.pop_front();
-        return res;
+        return {};
     }
 
 private:
+    static constexpr UInt32 NUM_BUCKETS = 256;
+
     AggregatingTransformParamsPtr params;
     AggregatedDataVariantsPtr variant;
 
-    bool convertion_is_done = false;
-    BlocksList blocks;
+    UInt32 current_bucket_num = 0;
+    bool single_level_converted = false;
 };
 
 /// Reads chunks from GroupingAggregatedTransform (stored in ChunksToMerge structure) and outputs them.
@@ -716,18 +725,24 @@ void AggregatingTransform::initGenerate()
                 /// Converts hash tables to blocks with data (finalized or not).
                 pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant));
             Pipe pipe = Pipe::unitePipes(std::move(pipes));
-            if (should_produce_results_in_order_of_bucket_number)
+            if (!pipe.empty())
             {
-                /// Groups chunks with the same bucket_id and outputs them (as a vector of chunks) in order of bucket_id.
-                pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
-                /// Outputs one chunk from group at a time in order of bucket_id.
-                pipe.addTransform(std::make_shared<FlattenChunksToMergeTransform>(pipe.getHeader(), params->getHeader()));
-            }
-            else
-            {
-                /// AggregatingTransform::expandPipeline expects single output port.
-                /// It's not a big problem because we do resize() to max_threads after AggregatingTransform.
-                pipe.resize(1);
+                if (should_produce_results_in_order_of_bucket_number)
+                {
+                    /// Groups chunks with the same bucket_id and outputs them (as a vector of chunks) in order of bucket_id.
+                    pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
+                    /// Outputs one chunk from group at a time in order of bucket_id.
+                    pipe.addTransform(std::make_shared<FlattenChunksToMergeTransform>(pipe.getHeader(), params->getHeader()));
+                }
+                else
+                {
+                    pipe.addSimpleTransform(
+                        [this](const Block & header)
+                        { return std::make_shared<SquashingChunksTransform>(header, params->params.max_block_size, 0); });
+                    /// AggregatingTransform::expandPipeline expects single output port.
+                    /// It's not a big problem because we do resize() to max_threads after AggregatingTransform.
+                    pipe.resize(1);
+                }
             }
             processors = Pipe::detachProcessors(std::move(pipe));
         }

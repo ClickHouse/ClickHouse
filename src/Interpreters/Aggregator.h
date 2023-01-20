@@ -1304,6 +1304,8 @@ private:
         bool final,
         Int32 bucket) const;
 
+    Block convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
+
     Block mergeAndConvertOneBucketToBlock(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
