@@ -104,7 +104,7 @@ struct GinIndexSegment
     UInt64 dict_start_offset = 0;
 };
 
-struct SegmentDictionary
+struct GinSegmentDictionary
 {
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset;
@@ -117,10 +117,7 @@ struct SegmentDictionary
     FST::FiniteStateTransducer offsets;
 };
 
-using SegmentDictionaryPtr = std::shared_ptr<SegmentDictionary>;
-
-/// Dictionaries indexed by segment ID
-using SegmentDictionaries = std::unordered_map<UInt32, SegmentDictionaryPtr>;
+using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 
 /// Gin Index Store which has Gin Index meta data for the corresponding Data Part
 class GinIndexStore
@@ -183,8 +180,11 @@ private:
 
     std::mutex mutex;
 
+    /// Dictionaries indexed by segment ID
+    using GinSegmentDictionaries = std::unordered_map<UInt32, GinSegmentDictionaryPtr>;
+
     /// Dictionaries which are loaded from .gin_dict files
-    SegmentDictionaries dicts;
+    GinSegmentDictionaries dicts;
 
     /// Container for building postings lists during index construction
     GinIndexPostingsBuilderContainer current_postings;

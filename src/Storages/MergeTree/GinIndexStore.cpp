@@ -347,7 +347,7 @@ void GinIndexStoreDeserializer::readSegments()
     for (size_t i = 0; i < num_segments; ++i)
     {
         auto seg_id = segments[i].segment_id;
-        auto dict = std::make_shared<SegmentDictionary>();
+        auto dict = std::make_shared<GinSegmentDictionary>();
         dict->postings_start_offset = segments[i].postings_start_offset;
         dict->dict_start_offset = segments[i].dict_start_offset;
         store->dicts[seg_id] = dict;
