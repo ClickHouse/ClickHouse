@@ -2336,7 +2336,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     }
     catch (...)
     {
-        PartLog::addNewParts(getContext(), res_parts, watch.elapsed(), ExecutionStatus::fromCurrentException("", true));
+        PartLog::addNewParts(getContext(), res_parts, watch.elapsed(), ExecutionStatus::fromCurrentException(true));
 
         for (const auto & res_part : res_parts)
             unlockSharedData(*res_part);
@@ -4185,7 +4185,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     catch (...)
     {
         if (!to_detached)
-            write_part_log(ExecutionStatus::fromCurrentException("", true));
+            write_part_log(ExecutionStatus::fromCurrentException(true));
 
         throw;
     }
@@ -4296,7 +4296,7 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     }
     catch (...)
     {
-        write_part_log(ExecutionStatus::fromCurrentException("", true));
+        write_part_log(ExecutionStatus::fromCurrentException(true));
         throw;
     }
 
@@ -7029,7 +7029,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         }
         catch (...)
         {
-            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException("", true));
+            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException(true));
             for (const auto & dst_part : dst_parts)
                 unlockSharedData(*dst_part);
 
@@ -7255,7 +7255,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         }
         catch (...)
         {
-            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException("", true));
+            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException(true));
 
             for (const auto & dst_part : dst_parts)
                 dest_table_storage->unlockSharedData(*dst_part);
