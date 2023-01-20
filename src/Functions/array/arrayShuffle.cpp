@@ -6,10 +6,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <pcg_random.hpp>
 #include <Common/assert_cast.h>
 #include <Common/randomSeed.h>
+#include <Common/shuffle.h>
 #include <Common/typeid_cast.h>
+
+#include <pcg_random.hpp>
 
 #include <algorithm>
 #include <numeric>
@@ -28,52 +30,83 @@ namespace ErrorCodes
  * arrayShuffle(arr)
  * arrayShuffle(arr, seed)
  */
-class FunctionArrayShuffle : public IFunction
+struct FunctionArrayShuffleTraits
+{
+    static constexpr auto name = "arrayShuffle";
+    static constexpr auto has_limit = false; // Permute the whole array
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1}; }
+    static constexpr auto max_num_params = 2; // array[, seed]
+    static constexpr auto seed_param_idx = 1;
+};
+
+/** Partial shuffle array elements
+ * arrayPartialShuffle(arr)
+ * arrayPartialShuffle(arr, limit)
+ * arrayPartialShuffle(arr, limit, seed)
+ */
+struct FunctionArrayPartialShuffleTraits
+{
+    static constexpr auto name = "arrayPartialShuffle";
+    static constexpr auto has_limit = true;
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2}; }
+    static constexpr auto max_num_params = 3; // array[, limit[, seed]]
+    static constexpr auto seed_param_idx = 2;
+};
+
+template <typename Traits>
+class FunctionArrayShuffleImpl : public IFunction
 {
 public:
-    static constexpr auto name = "arrayShuffle";
-
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffle>(); }
+    static constexpr auto name = Traits::name;
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Traits::getArgumentsThatAreAlwaysConstant(); }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffleImpl<Traits>>(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() > 2 || arguments.empty())
+        if (arguments.size() > Traits::max_num_params || arguments.empty())
         {
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' needs 1 or 2 arguments, passed {}.", getName(), arguments.size());
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function '{}' needs from 1 to {} arguments, passed {}.",
+                getName(),
+                Traits::max_num_params,
+                arguments.size());
         }
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function '{}' must be array", getName());
 
-        if (arguments.size() == 2)
+        auto check_is_integral = [&](auto param_idx)
         {
-            WhichDataType which(arguments[1]);
+            WhichDataType which(arguments[param_idx]);
             if (!which.isUInt() && !which.isInt())
                 throw Exception(
-                    "Illegal type " + arguments[1]->getName() + " of argument of function " + getName() + " (must be UInt or Int)",
+                    "Illegal type " + arguments[param_idx]->getName() + " of argument of function " + getName() + " (must be UInt or Int)",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
+        };
+
+        for (size_t idx = 1; idx < arguments.size(); ++idx)
+            check_is_integral(idx);
 
         return arguments[0];
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
 
 private:
-    static ColumnPtr executeGeneric(const ColumnArray & array, ColumnPtr mapped, pcg64_fast & rng);
+    static ColumnPtr executeGeneric(const ColumnArray & array, pcg64_fast & rng, size_t limit);
 };
 
-ColumnPtr FunctionArrayShuffle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+template <typename Traits>
+ColumnPtr FunctionArrayShuffleImpl<Traits>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (!array)
@@ -82,17 +115,32 @@ ColumnPtr FunctionArrayShuffle::executeImpl(const ColumnsWithTypeAndName & argum
 
     const auto seed = [&]() -> uint64_t
     {
-        if (arguments.size() == 1)
+        // If present, seed comes as the last argument
+        if (arguments.size() != Traits::max_num_params)
             return randomSeed();
-        const auto * val = arguments[1].column.get();
+        const auto * val = arguments[Traits::seed_param_idx].column.get();
         return val->getUInt(0);
     }();
     pcg64_fast rng(seed);
 
-    return executeGeneric(*array, array->getDataPtr(), rng);
+    size_t limit = [&]
+    {
+        if constexpr (Traits::has_limit)
+        {
+            if (arguments.size() > 1)
+            {
+                const auto * val = arguments[1].column.get();
+                return val->getUInt(0);
+            }
+        }
+        return static_cast<size_t>(0);
+    }();
+
+    return executeGeneric(*array, rng, limit);
 }
 
-ColumnPtr FunctionArrayShuffle::executeGeneric(const ColumnArray & array, ColumnPtr /*mapped*/, pcg64_fast & rng)
+template <typename Traits>
+ColumnPtr FunctionArrayShuffleImpl<Traits>::executeGeneric(const ColumnArray & array, pcg64_fast & rng, size_t limit [[maybe_unused]])
 {
     const ColumnArray::Offsets & offsets = array.getOffsets();
 
@@ -105,7 +153,15 @@ ColumnPtr FunctionArrayShuffle::executeGeneric(const ColumnArray & array, Column
     for (size_t i = 0; i < size; ++i)
     {
         auto next_offset = offsets[i];
-        std::shuffle(&permutation[current_offset], &permutation[next_offset], rng);
+        if constexpr (Traits::has_limit)
+        {
+            if (limit && next_offset > limit)
+            {
+                partial_shuffle(&permutation[current_offset], &permutation[next_offset], limit, rng);
+                break;
+            }
+        }
+        shuffle(&permutation[current_offset], &permutation[next_offset], rng);
         current_offset = next_offset;
     }
     return ColumnArray::create(array.getData().permute(permutation, 0), array.getOffsetsPtr());
@@ -113,7 +169,7 @@ ColumnPtr FunctionArrayShuffle::executeGeneric(const ColumnArray & array, Column
 
 REGISTER_FUNCTION(ArrayShuffle)
 {
-    factory.registerFunction<FunctionArrayShuffle>(
+    factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayShuffleTraits>>(
         {
             R"(
 Returns an array of the same size as the original array containing the elements in shuffled order.
@@ -128,6 +184,29 @@ It is possible to override the seed to produce stable results:
          Documentation::Examples{
                 {"random_seed", "SELECT arrayShuffle([1, 2, 3, 4])"},
                 {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)"}},
+            Documentation::Categories{"Array"}
+        },
+        FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(
+        {
+            R"(
+Returns an array of the same size as the original array where elements in range [0..limit) are a random
+subset of the original array. Remaining [limit..n) shall contain the elements not in [0..limit) range in undefined order.
+Value of limit shall be in range [0..n]. Values outside of that range are equivalent to performing full arrayShuffle:
+[example:no_limit1]
+[example:no_limit2]
+
+If no seed is provided a random one will be used:
+[example:random_seed]
+
+It is possible to override the seed to produce stable results:
+[example:explicit_seed]
+)",
+         Documentation::Examples{
+                {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)"},
+                {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])"},
+                {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)"},
+                {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 2, 41)"}},
             Documentation::Categories{"Array"}
         },
         FunctionFactory::CaseInsensitive);
