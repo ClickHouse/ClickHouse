@@ -1203,12 +1203,14 @@ SELECT * FROM json_each_row_nested
 - [input_format_json_read_bools_as_numbers](/docs/en/operations/settings/settings.md/#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
 - [input_format_json_read_numbers_as_strings](/docs/en/operations/settings/settings.md/#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `false`.
 - [input_format_json_read_objects_as_strings](/docs/en/operations/settings/settings.md/#input_format_json_read_objects_as_strings) - allow to parse JSON objects as strings in JSON input formats. Default value - `false`.
+- [input_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings.md/#input_format_json_named_tuples_as_objects) - parse named tuple columns as JSON objects. Default value - `true`.
+- [input_format_json_defaults_for_missing_elements_in_named_tuple](/docs/en/operations/settings/settings.md/#input_format_json_defaults_for_missing_elements_in_named_tuple) - insert default values for missing elements in JSON object while parsing named tuple. Default value - `true`.
 - [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings.md/#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
 - [output_format_json_quote_64bit_floats](/docs/en/operations/settings/settings.md/#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
 - [output_format_json_quote_denormals](/docs/en/operations/settings/settings.md/#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
 - [output_format_json_quote_decimals](/docs/en/operations/settings/settings.md/#output_format_json_quote_decimals) - controls quoting of decimals in JSON output format. Default value - `false`.
 - [output_format_json_escape_forward_slashes](/docs/en/operations/settings/settings.md/#output_format_json_escape_forward_slashes) - controls escaping forward slashes for string outputs in JSON output format. Default value - `true`.
-- [output_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings.md/#output_format_json_named_tuples_as_objects) - serialize named tuple columns as JSON objects. Default value - `false`.
+- [output_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings.md/#output_format_json_named_tuples_as_objects) - serialize named tuple columns as JSON objects. Default value - `true`.
 - [output_format_json_array_of_rows](/docs/en/operations/settings/settings.md/#output_format_json_array_of_rows) - output a JSON array of all rows in JSONEachRow(Compact) format. Default value - `false`.
 - [output_format_json_validate_utf8](/docs/en/operations/settings/settings.md/#output_format_json_validate_utf8) - enables validation of UTF-8 sequences in JSON output formats (note that it doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8). Default value - `false`.
 

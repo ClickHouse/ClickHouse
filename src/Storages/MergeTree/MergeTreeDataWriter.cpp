@@ -193,7 +193,8 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row{});
-        result[0].offsets = chunk_offsets;
+        if (chunk_offsets != nullptr)
+            result[0].offsets = std::move(chunk_offsets->offsets);
         return result;
     }
 
@@ -230,7 +231,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         /// do not interfere with possible calculated primary key columns of the same name.
         result.emplace_back(Block(block), get_partition(0));
         if (!chunk_offsets_with_partition.empty())
-            result[0].offsets = chunk_offsets_with_partition[0];
+            result[0].offsets = std::move(chunk_offsets_with_partition[0]->offsets);
         return result;
     }
 
@@ -245,7 +246,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     }
 
     for (size_t i = 0; i < chunk_offsets_with_partition.size(); ++i)
-        result[i].offsets = chunk_offsets_with_partition[i];
+        result[i].offsets = std::move(chunk_offsets_with_partition[i]->offsets);
 
     return result;
 }
