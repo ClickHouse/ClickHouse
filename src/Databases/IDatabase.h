@@ -239,7 +239,7 @@ public:
         bool /*exchange*/,
         bool /*dictionary*/)
     {
-        throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: renameTable() is not supported", getEngineName());
     }
 
     using ASTModifier = std::function<void(IAST &)>;
@@ -251,7 +251,7 @@ public:
         const StorageID & /*table_id*/,
         const StorageInMemoryMetadata & /*metadata*/)
     {
-        throw Exception(getEngineName() + ": alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
     }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
@@ -296,7 +296,7 @@ public:
 
     virtual void renameDatabase(ContextPtr, const String & /*new_name*/)
     {
-        throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: RENAME DATABASE is not supported", getEngineName());
     }
 
     /// Returns path for persistent data storage if the database supports it, empty string otherwise

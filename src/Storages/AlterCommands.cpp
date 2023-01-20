@@ -101,7 +101,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.codec)
         {
             if (ast_col_decl.default_specifier == "ALIAS")
-                throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             command.codec = ast_col_decl.codec;
         }
         if (command_ast->column)
@@ -1221,7 +1221,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
         {
             if (metadata.settings_changes == nullptr)
-                throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
         {
@@ -1231,8 +1231,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                if (next_command.type == AlterCommand::RENAME_COLUMN)
                {
                    if (next_command.column_name == command.rename_to)
-                       throw Exception{"Transitive renames in a single ALTER query are not allowed (don't make sense)",
-                                                            ErrorCodes::NOT_IMPLEMENTED};
+                       throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transitive renames in a single ALTER query are not allowed (don't make sense)");
                    else if (next_command.column_name == command.column_name)
                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column '{}' to two different names in a single ALTER query",
                                            backQuote(command.column_name));
@@ -1242,7 +1241,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// TODO Implement nested rename
             if (all_columns.hasNested(command.column_name))
             {
-                throw Exception{"Cannot rename whole Nested struct", ErrorCodes::NOT_IMPLEMENTED};
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename whole Nested struct");
             }
 
             if (!all_columns.has(command.column_name))

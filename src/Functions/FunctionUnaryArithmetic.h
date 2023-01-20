@@ -313,7 +313,7 @@ public:
             return false;
         });
         if (!valid)
-            throw Exception(getName() + "'s argument does not match the expected data type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}'s argument does not match the expected data type", getName());
 
         return result_column;
     }

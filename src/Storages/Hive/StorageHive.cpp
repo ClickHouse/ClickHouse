@@ -587,9 +587,8 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
 
     /// Check partition values
     if (partition.values.size() != partition_names.size())
-        throw Exception(
-            fmt::format("Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size()),
-            ErrorCodes::INVALID_PARTITION_VALUE);
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+            "Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size());
 
     /// Join partition values in CSV format
     WriteBufferFromOwnString wb;

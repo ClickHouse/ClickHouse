@@ -607,14 +607,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))
-                throw Exception(
-                    (!input_pipe && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL",
-                    ErrorCodes::ILLEGAL_FINAL);
+            {
+                if (!input_pipe && storage)
+                    throw Exception(ErrorCodes::ILLEGAL_FINAL, "Storage {} doesn't support FINAL", storage->getName());
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_FINAL, "Illegal FINAL");
+            }
 
             if (query.prewhere() && (input_pipe || !storage || !storage->supportsPrewhere()))
-                throw Exception(
-                    (!input_pipe && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE",
-                    ErrorCodes::ILLEGAL_PREWHERE);
+            {
+                if (!input_pipe && storage)
+                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE", storage->getName());
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Illegal PREWHERE");
+            }
 
             /// Save the new temporary tables in the query context
             for (const auto & it : query_analyzer->getExternalTables())

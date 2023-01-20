@@ -283,7 +283,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             auto it = gin_index_stores.find(stream_name);
             if (it == gin_index_stores.cend())
             {
-                throw Exception("Index '" + stream_name + "' does not exist", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index '{}' does not exist", stream_name);
             }
             store = it->second;
         }

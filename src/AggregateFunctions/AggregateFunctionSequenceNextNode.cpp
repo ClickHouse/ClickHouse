@@ -75,8 +75,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 
     if ((base == SequenceBase::Head && direction == SequenceDirection::Backward) ||
         (base == SequenceBase::Tail && direction == SequenceDirection::Forward))
-        throw Exception(fmt::format(
-            "Invalid argument combination of '{}' with '{}'", param_base, param_dir), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument combination of '{}' with '{}'", param_base, param_dir);
 
     if (argument_types.size() < min_required_args)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

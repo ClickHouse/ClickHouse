@@ -610,7 +610,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         else if (col_decl.type)
             column.type = name_type_it->type;
         else
-            throw Exception{"Neither default value expression nor type is provided for a column", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Neither default value expression nor type is provided for a column");
 
         if (col_decl.comment)
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
@@ -618,7 +618,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (col_decl.codec)
         {
             if (col_decl.default_specifier == "ALIAS")
-                throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
         }
@@ -633,7 +633,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
-        throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
 
     return res;
 }
@@ -829,10 +829,10 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             const auto & type = name_and_type_pair.type->getName();
             if (type == "MultiPolygon" || type == "Polygon" || type == "Ring" || type == "Point")
             {
-                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
-                                 + type + "' because experimental geo types are not allowed. "
-                                 + "Set setting allow_experimental_geo_types = 1 in order to allow it";
-                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create table with column '{}' which type is '{}' "
+                                "because experimental geo types are not allowed. "
+                                "Set setting allow_experimental_geo_types = 1 in order to allow it",
+                                name_and_type_pair.name, type);
             }
         }
     }

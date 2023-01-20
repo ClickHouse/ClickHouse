@@ -266,14 +266,14 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::readRestoreInformation(Restor
 
             auto pos = property.find('=');
             if (pos == std::string::npos || pos == 0 || pos == property.length())
-                throw Exception(fmt::format("Invalid property {} in restore file", property), ErrorCodes::UNKNOWN_FORMAT);
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Invalid property {} in restore file", property);
 
             auto key = property.substr(0, pos);
             auto value = property.substr(pos + 1);
 
             auto it = properties.find(key);
             if (it != properties.end())
-                throw Exception(fmt::format("Property key duplication {} in restore file", key), ErrorCodes::UNKNOWN_FORMAT);
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Property key duplication {} in restore file", key);
 
             properties[key] = value;
         }
@@ -291,7 +291,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::readRestoreInformation(Restor
             else if (key == "detached")
                 readBoolTextWord(restore_information.detached, value_buffer);
             else
-                throw Exception(fmt::format("Unknown key {} in restore file", key), ErrorCodes::UNKNOWN_FORMAT);
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown key {} in restore file", key);
         }
     }
     catch (const Exception &)

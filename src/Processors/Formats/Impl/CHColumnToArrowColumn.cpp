@@ -295,8 +295,7 @@ namespace DB
             case TypeIndex::UInt64:
                 return extractIndexesImpl<UInt64>(column, start, end, shift);
             default:
-                throw Exception(fmt::format("Indexes column must be ColumnUInt, got {}.", column->getName()),
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column must be ColumnUInt, got {}.", column->getName());
         }
     }
 
@@ -641,8 +640,7 @@ namespace DB
             case TypeIndex::UInt64:
                 return arrow::int64();
             default:
-                throw Exception(fmt::format("Indexes column for getUniqueIndex must be ColumnUInt, got {}.", indexes_column->getName()),
-                                      ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}.", indexes_column->getName());
         }
     }
 

@@ -53,7 +53,7 @@ std::string toString(const ColumnDefaultKind kind)
     if (it != std::end(map))
         return it->second;
 
-    throw Exception{"Invalid ColumnDefaultKind", ErrorCodes::LOGICAL_ERROR};
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
 }
 
 

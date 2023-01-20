@@ -482,11 +482,7 @@ void MinimalisticDataPartChecksums::checkEqualImpl(const MinimalisticDataPartChe
 
     if (!errors.empty())
     {
-        String error_msg = "Checksums of parts don't match: " + errors.front();
-        for (size_t i = 1; i < errors.size(); ++i)
-            error_msg += ", " + errors[i];
-
-        throw Exception(error_msg, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksums of parts don't match: {}", fmt::join(errors, ", "));
     }
 }
 

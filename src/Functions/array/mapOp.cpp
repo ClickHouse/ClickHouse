@@ -90,7 +90,7 @@ private:
 
             const DataTypeTuple * tup = checkAndGetDataType<DataTypeTuple>(arg.get());
             if (!tup)
-                throw Exception(getName() + " accepts at least two map tuples", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two map tuples", getName());
 
             auto elems = tup->getElements();
             if (elems.size() != 2)
@@ -131,7 +131,7 @@ private:
         {
             const auto * map = checkAndGetDataType<DataTypeMap>(arg.get());
             if (!map)
-                throw Exception(getName() + " accepts at least two maps", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two maps", getName());
 
             const auto & v = map->getValueType();
 
@@ -155,14 +155,14 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
-            throw Exception(getName() + " accepts at least two maps or map tuples", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two maps or map tuples", getName());
 
         if (arguments[0]->getTypeId() == TypeIndex::Tuple)
             return getReturnTypeForTuples(arguments);
         else if (arguments[0]->getTypeId() == TypeIndex::Map)
             return getReturnTypeForMaps(arguments);
         else
-            throw Exception(getName() + " only accepts maps", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} only accepts maps", getName());
     }
 
     template <typename KeyType, typename ValType>

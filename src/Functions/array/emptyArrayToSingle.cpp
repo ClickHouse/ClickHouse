@@ -145,7 +145,7 @@ namespace
 
                 auto * concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
                 if (!concrete_res_data)
-                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error");
 
                 ColumnFixedString::Chars & res_data = concrete_res_data->getChars();
                 size_t size = src_offsets.size();
@@ -211,14 +211,14 @@ namespace
 
                 auto * concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_string_offsets)
-                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error");
                 ColumnString::Offsets & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
                 const ColumnString::Chars & src_data_vec = src_data_concrete->getChars();
 
                 auto * concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_data)
-                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error");
                 ColumnString::Chars & res_data = concrete_res_data->getChars();
 
                 size_t size = src_array_offsets.size();

@@ -52,7 +52,7 @@ public:
         if (!arguments[1].column)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be constant", getName());
         if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is only implemented for types String and FixedString", getName());
 
         const size_t n = arguments[1].column->getUInt(0);
         return std::make_shared<DataTypeFixedString>(n);

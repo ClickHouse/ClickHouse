@@ -207,7 +207,7 @@ private:
         {
             const auto iv_column = arguments[3].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
-                throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} does not support IV", mode.toString());
 
             if (arguments.size() <= 4)
             {
@@ -480,7 +480,7 @@ private:
         {
             const auto iv_column = arguments[3].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
-                throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} does not support IV", mode.toString());
 
             if (arguments.size() <= 4)
             {
@@ -598,9 +598,9 @@ private:
                 {
                     // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
                     if (input_value.size < tag_size)
-                        throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
                                 "should contain at least {} bytes of a tag.",
-                                input_value.size, block_size, tag_size), ErrorCodes::BAD_ARGUMENTS);
+                                input_value.size, block_size, tag_size);
 
                     input_value.size -= tag_size;
                 }

@@ -18,7 +18,7 @@ EnumValues<T>::EnumValues(const Values & values_)
     : values(values_)
 {
     if (values.empty())
-        throw Exception{"DataTypeEnum enumeration cannot be empty", ErrorCodes::EMPTY_DATA_PASSED};
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "DataTypeEnum enumeration cannot be empty");
 
     ::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
     {

@@ -254,7 +254,7 @@ private:
                     if (actions.back().type != PatternActionType::SpecificEvent &&
                         actions.back().type != PatternActionType::AnyEvent &&
                         actions.back().type != PatternActionType::KleeneStar)
-                        throw Exception{"Temporal condition should be preceded by an event condition", ErrorCodes::BAD_ARGUMENTS};
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporal condition should be preceded by an event condition");
 
                     pattern_has_time = true;
                     actions.emplace_back(type, duration);
@@ -479,7 +479,7 @@ protected:
                     break;
             }
             else
-                throw Exception{"Unknown PatternActionType", ErrorCodes::LOGICAL_ERROR};
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown PatternActionType");
 
             if (++i > sequence_match_max_iterations)
                 throw Exception(ErrorCodes::TOO_SLOW, "Pattern application proves too difficult, exceeding max iterations ({})",

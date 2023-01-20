@@ -1292,20 +1292,14 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     }
 
     UInt64 force = settings.force_optimize_skip_unused_shards;
-    if (force)
+    if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS || (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && has_sharding_key))
     {
-        WriteBufferFromOwnString exception_message;
         if (!has_sharding_key)
-            exception_message << "No sharding key";
+            throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "No sharding key");
         else if (!sharding_key_is_usable)
-            exception_message << "Sharding key is not deterministic";
+            throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key is not deterministic");
         else
-            exception_message << "Sharding key " << sharding_key_column_name << " is not used";
-
-        if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS)
-            throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
-        if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && has_sharding_key)
-            throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
+            throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key {} is not used", sharding_key_column_name);
     }
 
     return {};
@@ -1334,7 +1328,7 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 
 #undef CREATE_FOR_TYPE
 
-    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding key expression does not evaluate to an integer type");
 }
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible

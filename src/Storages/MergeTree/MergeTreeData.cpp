@@ -391,7 +391,7 @@ bool MergeTreeData::supportsFinal() const
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
     if (expr.hasArrayJoin())
-        throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain array joins", key_name);
 
     try
     {
@@ -682,13 +682,12 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
         {
             if (!move_ttl.if_exists && !getDestinationForMoveTTL(move_ttl))
             {
-                String message;
                 if (move_ttl.destination_type == DataDestinationType::DISK)
-                    message = "No such disk " + backQuote(move_ttl.destination_name) + " for given storage policy";
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                                    "No such disk {} for given storage policy", backQuote(move_ttl.destination_name));
                 else
-                    message = "No such volume " + backQuote(move_ttl.destination_name) + " for given storage policy";
-
-                throw Exception(message, ErrorCodes::BAD_TTL_EXPRESSION);
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                                    "No such volume {} for given storage policy", backQuote(move_ttl.destination_name));
             }
         }
     }
@@ -2781,9 +2780,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (commands.hasInvertedIndex(new_metadata, getContext()) && !settings.allow_experimental_inverted_index)
     {
-        throw Exception(
-                "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')",
-                ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')");
     }
     commands.apply(new_metadata, getContext());
 
@@ -3399,15 +3397,14 @@ void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & 
 
     if (it_duplicate != data_parts_by_info.end())
     {
-        String message = "Part " + (*it_duplicate)->getNameWithState() + " already exists";
-
         if ((*it_duplicate)->checkState({DataPartState::Outdated, DataPartState::Deleting}))
-            throw Exception(message + ", but it will be deleted soon", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part {} already exists, but it will be deleted soon",
+                            (*it_duplicate)->getNameWithState());
 
         if (transaction.txn)
-            throw Exception(message, ErrorCodes::SERIALIZATION_ERROR);
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Part {} already exists", (*it_duplicate)->getNameWithState());
 
-        throw Exception(message, ErrorCodes::DUPLICATE_DATA_PART);
+        throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists", (*it_duplicate)->getNameWithState());
     }
 }
 
@@ -4533,11 +4530,9 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     {
         String no_parts_to_move_message;
         if (moving_part)
-            no_parts_to_move_message = "Part '" + partition_id + "' is already on disk '" + disk->getName() + "'";
+            throw Exception(ErrorCodes::UNKNOWN_DISK, "Part '{}' is already on disk '{}'", partition_id, disk->getName());
         else
-            no_parts_to_move_message = "All parts of partition '" + partition_id + "' are already on disk '" + disk->getName() + "'";
-
-        throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
+            throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on disk '{}'", partition_id, disk->getName());
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<Space>(disk)))
@@ -4588,11 +4583,9 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     {
         String no_parts_to_move_message;
         if (moving_part)
-            no_parts_to_move_message = "Part '" + partition_id + "' is already on volume '" + volume->getName() + "'";
+            throw Exception(ErrorCodes::UNKNOWN_DISK, "Part '{}' is already on volume '{}'", partition_id, volume->getName());
         else
-            no_parts_to_move_message = "All parts of partition '" + partition_id + "' are already on volume '" + volume->getName() + "'";
-
-        throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
+            throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on volume '{}'", partition_id, volume->getName());
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<Space>(volume)))
@@ -5475,7 +5468,7 @@ inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, Reservatio
     if (reservation)
         return reservation;
 
-    throw Exception(fmt::format("Cannot reserve {}, not enough space", ReadableSize(expected_size)), ErrorCodes::NOT_ENOUGH_SPACE);
+    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Cannot reserve {}, not enough space", ReadableSize(expected_size));
 }
 
 }

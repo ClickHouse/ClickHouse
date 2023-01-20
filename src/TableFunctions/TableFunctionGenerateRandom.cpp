@@ -50,10 +50,9 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     {
         if (!arg->as<const ASTLiteral>())
         {
-            throw Exception(fmt::format(
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "All arguments of table function '{}' must be literals. "
-                "Got '{}' instead", getName(), arg->formatForErrorMessage()),
-                ErrorCodes::BAD_ARGUMENTS);
+                "Got '{}' instead", getName(), arg->formatForErrorMessage());
         }
     }
 

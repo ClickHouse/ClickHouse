@@ -318,8 +318,8 @@ namespace
             size_t dst_tuple_size = type_tuple.getElements().size();
 
             if (src_tuple_size != dst_tuple_size)
-                throw Exception(fmt::format("Bad size of tuple. Expected size: {}, actual size: {}.",
-                    src_tuple_size, dst_tuple_size), ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Bad size of tuple. Expected size: {}, actual size: {}.",
+                    src_tuple_size, dst_tuple_size);
 
             for (size_t i = 0; i < src_tuple_size; ++i)
             {

@@ -45,16 +45,14 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
 
     ASTs & args = args_func.at(0)->children;
 
-    const auto message = fmt::format(
-        "The signature of table function {} shall be the following:\n" \
-        " - cluster, uri\n",\
-        " - cluster, uri, format\n",\
-        " - cluster, uri, format, structure\n",\
-        " - cluster, uri, format, structure, compression_method",
-        getName());
-
     if (args.size() < 2 || args.size() > 5)
-        throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "The signature of table function {} shall be the following:\n"
+                        " - cluster, uri\n",
+                        " - cluster, uri, format\n",
+                        " - cluster, uri, format, structure\n",
+                        " - cluster, uri, format, structure, compression_method",
+                        getName());
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);

@@ -472,19 +472,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
         String graphite_config_name;
-        String error_msg
-            = "Last parameter of GraphiteMergeTree must be the name (in single quotes) of the element in configuration file with the Graphite options";
-        error_msg += getMergeTreeVerboseHelp(is_extended_storage_def);
+        constexpr auto format_str = "Last parameter of GraphiteMergeTree must be the name (in single quotes) of the element in configuration file with the Graphite options{}";
+        String error_msg = getMergeTreeVerboseHelp(is_extended_storage_def);
 
         if (const auto * ast = engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             if (ast->value.getType() != Field::Types::String)
-                throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
 
             graphite_config_name = ast->value.get<String>();
         }
         else
-            throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
 
         --arg_cnt;
         setGraphitePatternsFromConfig(args.getContext(), graphite_config_name, merging_params.graphite_params);

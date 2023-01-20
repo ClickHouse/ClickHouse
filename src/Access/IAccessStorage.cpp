@@ -630,7 +630,7 @@ Poco::Logger * IAccessStorage::getLogger() const
 
 void IAccessStorage::throwNotFound(const UUID & id) const
 {
-    throw Exception(outputID(id) + " not found in " + getStorageName(), ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
+    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "{} not found in {}", getStorageName(), outputID(id));
 }
 
 
@@ -643,36 +643,30 @@ void IAccessStorage::throwNotFound(AccessEntityType type, const String & name) c
 
 void IAccessStorage::throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type)
 {
-    throw Exception(
-        outputID(id) + ": " + formatEntityTypeWithName(type, name) + " expected to be of type " + toString(required_type),
-        ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: {} expected to be of type {}",
+        formatEntityTypeWithName(type, name), toString(required_type), outputID(id));
 }
 
 
 void IAccessStorage::throwIDCollisionCannotInsert(const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const
 {
-    throw Exception(
-        formatEntityTypeWithName(type, name) + ": cannot insert because the " + outputID(id) + " is already used by "
-            + formatEntityTypeWithName(existing_type, existing_name) + " in " + getStorageName(),
-        ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: "
+        "cannot insert because the {} is already used by {} in {}",
+        outputID(id), formatEntityTypeWithName(existing_type, existing_name), getStorageName(), formatEntityTypeWithName(type, name));
 }
 
 
 void IAccessStorage::throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const
 {
-    throw Exception(
-        formatEntityTypeWithName(type, name) + ": cannot insert because " + formatEntityTypeWithName(type, name) + " already exists in "
-            + getStorageName(),
-        ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot insert because {} already exists in {}",
+        formatEntityTypeWithName(type, name), getStorageName(), formatEntityTypeWithName(type, name));
 }
 
 
 void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const
 {
-    throw Exception(
-        formatEntityTypeWithName(type, old_name) + ": cannot rename to " + backQuote(new_name) + " because "
-            + formatEntityTypeWithName(type, new_name) + " already exists in " + getStorageName(),
-        ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",
+        backQuote(new_name), formatEntityTypeWithName(type, new_name), getStorageName(), formatEntityTypeWithName(type, old_name));
 }
 
 

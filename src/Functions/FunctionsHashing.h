@@ -1415,7 +1415,7 @@ public:
         else if (arg_count == 2)
             return executeTwoArgs(arguments);
         else
-            throw Exception{"got into IFunction::execute with unexpected number of arguments", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
     }
 
 private:

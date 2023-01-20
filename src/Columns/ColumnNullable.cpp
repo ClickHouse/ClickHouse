@@ -38,7 +38,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
         throw Exception{getNestedColumn().getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};
 
     if (isColumnConst(*null_map))
-        throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
 }
 
 StringRef ColumnNullable::getDataAt(size_t n) const
@@ -719,7 +719,7 @@ void ColumnNullable::applyNullMapImpl(const NullMap & map)
     NullMap & arr = getNullMapData();
 
     if (arr.size() != map.size())
-        throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent sizes of ColumnNullable objects");
 
     for (size_t i = 0, size = arr.size(); i < size; ++i)
         arr[i] |= negative ^ map[i];

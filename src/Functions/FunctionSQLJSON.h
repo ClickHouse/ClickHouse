@@ -47,7 +47,7 @@ public:
 
             if (arguments.size() < 2)
             {
-                throw Exception{"JSONPath functions require at least 2 arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "JSONPath functions require at least 2 arguments");
             }
 
             const auto & json_column = arguments[0];
@@ -101,7 +101,7 @@ public:
             const bool parse_res = parser.parse(token_iterator, res, expected);
             if (!parse_res)
             {
-                throw Exception{"Unable to parse JSONPath", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse JSONPath");
             }
 
             /// Get data and offsets for 2 argument (JSON)

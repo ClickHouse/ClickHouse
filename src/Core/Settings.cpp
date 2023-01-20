@@ -125,13 +125,12 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
         const auto & name = setting.getName();
         if (config.has(name) && !setting.isObsolete())
         {
-            throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
                 " You can add it to <profiles><default> if you want to change default value of this setting."
                 " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
                 " in the main configuration file.",
-                name, config_path),
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+                name, config_path);
         }
     }
 }

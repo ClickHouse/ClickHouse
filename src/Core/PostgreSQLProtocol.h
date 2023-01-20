@@ -423,11 +423,9 @@ public:
 
             if (payload_size < 0)
             {
-                throw Exception(
-                        Poco::format(
-                                "Size of payload is larger than one declared in the message of type %d.",
-                                getMessageType()),
-                        ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Size of payload is larger than one declared in the message of type {}.",
+                                static_cast<UInt64>(getMessageType()));
             }
         }
         in.ignore();
@@ -871,11 +869,9 @@ public:
             return setPassword(user_name, password->password, session, mt, address);
         }
         else
-            throw Exception(
-                Poco::format(
-                    "Client sent wrong message or closed the connection. Message byte was %d.",
-                    static_cast<Int32>(type)),
-                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                    "Client sent wrong message or closed the connection. Message byte was {}.",
+                    static_cast<Int32>(type));
     }
 
     AuthenticationType getType() const override
@@ -918,7 +914,7 @@ public:
             Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "0A000", "Authentication method is not supported"),
             true);
 
-        throw Exception(Poco::format("Authentication type %d is not supported.", user_auth_type), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Authentication type {} is not supported.", user_auth_type);
     }
 };
 }

@@ -6110,7 +6110,7 @@ void StorageReplicatedMergeTree::fetchPartition(
           * Unreliable (there is a race condition) - such a part may appear a little later.
           */
         if (checkIfDetachedPartExists(part_name))
-            throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Detached part " + part_name + " already exists.");
+            throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Detached part {} already exists.", part_name);
         LOG_INFO(log, "Will fetch part {} from shard {} (zookeeper '{}')", part_name, from_, auxiliary_zookeeper_name);
 
         try

@@ -163,13 +163,13 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
     {
         if constexpr (throw_exception)
         {
-            static constexpr const char * pattern = "Decimal value is too big: {} digits were read: {}e{}."
+            static constexpr auto pattern = "Decimal value is too big: {} digits were read: {}e{}."
                                                     " Expected to read decimal with scale {} and precision {}";
 
             if constexpr (is_big_int_v<typename T::NativeType>)
-                throw Exception(fmt::format(pattern, digits, x.value, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x.value, exponent, scale, precision);
             else
-                throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x, exponent, scale, precision);
         }
         else
             return ReturnType(false);

@@ -107,8 +107,8 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
     }
     catch (Poco::Exception & ex)
     {
-        throw DB::Exception("Can't parse address \"" + std::string(addr_str) + "\": " + ex.what(),
-            ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw DB::Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Can't parse address \"{}\": {}",
+                            std::string(addr_str), ex.what());
     }
 }
 

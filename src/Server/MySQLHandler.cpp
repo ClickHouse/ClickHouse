@@ -181,7 +181,7 @@ void MySQLHandler::run()
                         comPing();
                         break;
                     default:
-                        throw Exception(Poco::format("Command %d is not implemented.", command), ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.", command);
                 }
             }
             catch (const NetException & exc)

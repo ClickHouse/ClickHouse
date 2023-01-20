@@ -90,7 +90,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     Coordination::Stat stat;
     if (!zookeeper->exists(storage.zookeeper_path + "/log", &stat))
-        throw Exception(storage.zookeeper_path + "/log doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+        throw Exception(ErrorCodes::NOT_FOUND_NODE, "{}/log doesn't exist", storage.zookeeper_path);
 
     int children_count = stat.numChildren;
 

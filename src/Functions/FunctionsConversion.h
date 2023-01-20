@@ -2943,7 +2943,7 @@ private:
     WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N) const
     {
         if (!isStringOrFixedString(from_type))
-            throw Exception{"CAST AS FixedString is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED};
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CAST AS FixedString is only implemented for types String and FixedString");
 
         bool exception_mode_null = cast_type == CastType::accurateOrNull;
         return [exception_mode_null, N] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
@@ -3674,7 +3674,7 @@ private:
                 }
                 else
                 {
-                    throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert NULL to a non-nullable type");
                 }
             }
 
@@ -3718,8 +3718,7 @@ private:
                     const auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(arguments[0].column.get());
 
                     if (skip_not_null_check && col_low_cardinality->containsNull())
-                        throw Exception{"Cannot convert NULL value to non-Nullable type",
-                                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+                        throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type");
 
                     arg.column = col_low_cardinality->getDictionary().getNestedColumn();
                     arg.type = from_low_cardinality->getDictionaryType();
@@ -3824,8 +3823,7 @@ private:
                     const auto & null_map = nullable_col.getNullMapData();
 
                     if (!memoryIsZero(null_map.data(), 0, null_map.size()))
-                        throw Exception{"Cannot convert NULL value to non-Nullable type",
-                                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+                        throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type");
                 }
                 const ColumnNullable * nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
                 return wrapper(tmp_args, nested_type, nullable_source, input_rows_count);

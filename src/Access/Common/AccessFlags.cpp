@@ -179,7 +179,7 @@ namespace
             else
             {
                 if (nodes.contains(keyword))
-                    throw Exception(keyword + " declared twice", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "{} declared twice", keyword);
                 node = std::make_unique<Node>(keyword, node_type);
                 nodes[node->keyword] = node.get();
             }

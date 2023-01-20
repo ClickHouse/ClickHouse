@@ -1334,8 +1334,8 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         }
         else
         {
-            throw Exception(fmt::format("Received {} packet after requesting read task",
-                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type));
         }
     }
     UInt64 version;

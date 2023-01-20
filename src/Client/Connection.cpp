@@ -117,7 +117,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
 #else
-                throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
             }
             else

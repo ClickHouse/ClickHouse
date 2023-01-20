@@ -114,7 +114,7 @@ Cluster::Address::Address(
 
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port", default_port));
     if (!port)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}", config_prefix + ".port");
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
     is_local = isLocal(config.getInt(port_type, 0));
 

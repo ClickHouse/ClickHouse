@@ -103,19 +103,19 @@ public:
         auto validate_tuple = [this](size_t i, const DataTypeTuple * tuple)
         {
             if (tuple == nullptr)
-                throw Exception(getMessagePrefix(i) + " must contain a tuple", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain a tuple", getMessagePrefix(i));
 
             const DataTypes & elements = tuple->getElements();
 
             if (elements.size() != 2)
-                throw Exception(getMessagePrefix(i) + " must have exactly two elements", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must have exactly two elements", getMessagePrefix(i));
 
             for (auto j : collections::range(0, elements.size()))
             {
                 if (!isNativeNumber(elements[j]))
                 {
-                    throw Exception(getMessagePrefix(i) + " must contain numeric tuple at position " + toString(j + 1),
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain numeric tuple at position {}",
+                                    toString(j + 1), getMessagePrefix(i));
                 }
             }
         };
@@ -126,8 +126,7 @@ public:
         {
             const auto * array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
             if (array == nullptr)
-                throw Exception(getMessagePrefix(1) + " must contain an array of tuples or an array of arrays of tuples.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain an array of tuples or an array of arrays of tuples.", getMessagePrefix(1));
 
             const auto * nested_array = checkAndGetDataType<DataTypeArray>(array->getNestedType().get());
             if (nested_array != nullptr)
@@ -143,8 +142,7 @@ public:
             {
                 const auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
                 if (array == nullptr)
-                    throw Exception(getMessagePrefix(i) + " must contain an array of tuples",
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain an array of tuples", getMessagePrefix(i));
 
                 validate_tuple(i, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
             }
@@ -493,7 +491,7 @@ private:
             const auto * tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
 
             if (!tuple_col)
-                throw Exception(getMessagePrefix(i) + " must be constant array of tuples", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} must be constant array of tuples", getMessagePrefix(i));
 
             const auto & tuple_columns = tuple_col->getColumns();
             const auto & column_x = tuple_columns[0];
@@ -507,7 +505,7 @@ private:
             auto size = column_x->size();
 
             if (size == 0)
-                throw Exception(getMessagePrefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} shouldn't be empty.", getMessagePrefix(i));
 
             for (auto j : collections::range(0, size))
             {

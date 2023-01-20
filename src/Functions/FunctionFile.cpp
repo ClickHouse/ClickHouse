@@ -73,9 +73,8 @@ public:
         const ColumnPtr column = arguments[0].column;
         const ColumnString * column_src = checkAndGetColumn<ColumnString>(column.get());
         if (!column_src)
-            throw Exception(
-                fmt::format("Illegal column {} of argument of function {}", arguments[0].column->getName(), getName()),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
 
         String default_result;
 

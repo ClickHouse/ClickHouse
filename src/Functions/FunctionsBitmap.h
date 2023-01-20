@@ -512,15 +512,17 @@ public:
         for (size_t i = 0; i < 2; ++i)
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i + 1].get());
-            String msg = "The second and third arguments for function " + getName() + " must be an one of [Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)] but one of them has type " + arguments[i + 1]->getName() + ".";
+            auto exception = Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second and third arguments for function {} "
+                                       "must be an one of [Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)] "
+                                       "but one of them has type {}.", getName(), arguments[i + 1]->getName());
 
             if (!array_type)
-                throw Exception(msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw exception;
 
             auto nested_type = array_type->getNestedType();
             WhichDataType which(nested_type);
             if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
-                throw Exception(msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw exception;
         }
         return arguments[0];
     }

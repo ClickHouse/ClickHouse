@@ -339,7 +339,7 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
         return f(ConverterType<ColumnToPolygonsConverter<Point>>());
     else if (factory.get("MultiPolygon")->equals(*type))
         return f(ConverterType<ColumnToMultiPolygonsConverter<Point>>());
-    throw Exception(fmt::format("Unknown geometry type {}", type->getName()), ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry type {}", type->getName());
 }
 
 

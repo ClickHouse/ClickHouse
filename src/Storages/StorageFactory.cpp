@@ -160,8 +160,7 @@ StoragePtr StorageFactory::get(
             {
                 if (!feature_matcher_fn(it->second.features))
                 {
-                    String msg = "Engine " + name + " doesn't support " + feature_description + ". "
-                        "Currently only the following engines have support for the feature: [";
+                    String msg;
                     auto supporting_engines = getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn);
                     for (size_t index = 0; index < supporting_engines.size(); ++index)
                     {
@@ -169,8 +168,9 @@ StoragePtr StorageFactory::get(
                             msg += ", ";
                         msg += supporting_engines[index];
                     }
-                    msg += "]";
-                    throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support {}. "
+                                    "Currently only the following engines have support for the feature: [{}]",
+                                    name, feature_description, msg);
                 }
             };
 

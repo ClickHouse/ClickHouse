@@ -71,7 +71,7 @@ String Macros::expand(const String & s,
         ++begin;
         size_t end = s.find('}', begin);
         if (end == String::npos)
-            throw Exception("Unbalanced { and } in string with macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unbalanced {{ and }} in string with macros: '{}'", s);
 
         String macro_name = s.substr(begin, end - begin);
         auto it = macros.find(macro_name);

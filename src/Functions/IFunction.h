@@ -162,7 +162,7 @@ public:
       */
     virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, Values /*values*/) const
     {
-        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
     }
 
 #endif
@@ -523,7 +523,7 @@ protected:
 
     virtual llvm::Value * compileImpl(llvm::IRBuilderBase &, const DataTypes &, Values) const
     {
-        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
     }
 
 #endif
