@@ -215,9 +215,6 @@ private:
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 
-/// GinIndexStores indexed by part file path
-using GinIndexStores = std::unordered_map<std::string, GinIndexStorePtr>;
-
 /// Container for postings lists for each segment
 using GinSegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostingsListPtr>;
 
@@ -263,7 +260,7 @@ private:
 };
 
 /// PostingsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
-/// GinPostingsCache is per query string(one query can have multiple query strings): when skipping index(row ID ranges) is used for the part during the
+/// GinPostingsCache is per query string (one query can have multiple query strings): when skipping index (row ID ranges) is used for the part during the
 /// query, the postings cache is created and associated with the store where postings lists are read
 /// for the tokenized query string. The postings caches are released automatically when the query is done.
 struct PostingsCacheForStore
@@ -275,16 +272,10 @@ struct PostingsCacheForStore
     std::unordered_map<String, GinPostingsCachePtr> cache;
 
     /// Get postings lists for query string, return nullptr if not found
-    GinPostingsCachePtr getPostings(const String & query_string) const
-    {
-        auto it = cache.find(query_string);
-        if (it == cache.end())
-            return nullptr;
-        return it->second;
-    }
+    GinPostingsCachePtr getPostings(const String & query_string) const;
 };
 
-/// GinIndexStore Factory, which is a singleton for storing GinIndexStores
+/// A singleton for storing GinIndexStores
 class GinIndexStoreFactory : private boost::noncopyable
 {
 public:
@@ -296,6 +287,9 @@ public:
 
     /// Remove all Gin index files which are under the same part_path
     void remove(const String & part_path);
+
+    /// GinIndexStores indexed by part file path
+    using GinIndexStores = std::unordered_map<std::string, GinIndexStorePtr>;
 
 private:
     GinIndexStores stores;
