@@ -37,7 +37,6 @@ namespace DB
 
 /// GinIndexPostingsList which uses 32-bit Roaring
 using GinIndexPostingsList = roaring::Roaring;
-
 using GinIndexPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;
 
 /// Build a postings list for a term
@@ -51,12 +50,6 @@ public:
 
     /// Add a row_id into the builder
     void add(UInt32 row_id);
-
-    /// Check whether the builder is using roaring bitmap
-    bool useRoaring() const;
-
-    /// Check whether the postings list has been flagged to contain all row ids
-    bool containsAllRows() const;
 
     /// Serialize the content of builder to given WriteBuffer, returns the bytes of serialized data
     UInt64 serialize(WriteBuffer & buffer) const;
@@ -81,10 +74,16 @@ private:
     static constexpr UInt32 CONTAINS_ALL = std::numeric_limits<UInt32>::max();
 
     /// Indicates that roaring bitmap is used, see 'rowid_lst_length'.
-    static constexpr UInt8 UsesBitMap = 0xFF;
+    static constexpr UInt8 USES_BIT_MAP = 0xFF;
 
     /// Clear the postings list and reset it with MATCHALL flags when the size of the postings list is beyond the limit
     UInt64 size_limit;
+
+    /// Check whether the builder is using roaring bitmap
+    bool useRoaring() const { return rowid_lst_length == USES_BIT_MAP; }
+
+    /// Check whether the postings list has been flagged to contain all row ids
+    bool containsAllRows() const { return rowid_lst[0] == CONTAINS_ALL; }
 };
 
 /// Container for postings lists for each segment
