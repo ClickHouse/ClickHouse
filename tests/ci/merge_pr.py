@@ -7,6 +7,7 @@ import logging
 
 from datetime import datetime
 from os import getenv
+from pprint import pformat
 from typing import Dict, List
 
 from github.PullRequestReview import PullRequestReview
@@ -104,6 +105,12 @@ class Reviews:
             )
 
             approved_at = max(review.submitted_at for review in approved.values())
+            if approved_at == datetime.fromtimestamp(0):
+                logging.info(
+                    "Unable to get `datetime.fromtimestamp(0)`, "
+                    "here's debug info about reviews: %s",
+                    "\n".join(pformat(review) for review in self.reviews.values()),
+                )
 
             if approved_at < last_changed:
                 logging.info(
