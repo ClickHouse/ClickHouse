@@ -30,6 +30,16 @@ namespace
         }
         return true;
     }
+
+    bool isSubsetOf(const std::unordered_set<std::string_view> & subset, const std::unordered_set<std::string_view> & set)
+    {
+        for (const auto & element : subset)
+        {
+            if (!set.contains(element))
+                return false;
+        }
+        return true;
+    }
 }
 
 RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
@@ -139,20 +149,12 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     auto first_row_values = format_reader->readRowForHeaderDetection();
 
     /// To understand if the first row is a header with column names, we check
-    /// that all values from this row is a subset of column names from provided header.
+    /// that all values from this row is a subset of column names from provided header
+    /// or column names from provided header is a subset of values from this row
     auto column_names = getPort().getHeader().getNames();
     std::unordered_set<std::string_view> column_names_set(column_names.begin(), column_names.end());
-    bool first_row_is_a_header = true;
-    for (const auto & possible_name : first_row_values)
-    {
-        if (!column_names_set.contains(possible_name))
-        {
-            first_row_is_a_header = false;
-            break;
-        }
-    }
-
-    if (!first_row_is_a_header)
+    std::unordered_set<std::string_view> first_row_values_set(first_row_values.begin(), first_row_values.end());
+    if (!isSubsetOf(first_row_values_set, column_names_set) && !isSubsetOf(column_names_set, first_row_values_set))
     {
         /// Rollback to the beginning of the first row to parse it as data later.
         peekable_buf->rollbackToCheckpoint(true);
