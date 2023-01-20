@@ -271,6 +271,9 @@ You’ll need to create data and metadata folders manually and `chown` them for 
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
+### From CI checks pre-built binaries
+ClickHouse binaries are built for each [commit](/docs/en/development/build.md#you-dont-have-to-build-clickhouse).
+
 ## Launch {#launch}
 
 To start the server as a daemon, run:
