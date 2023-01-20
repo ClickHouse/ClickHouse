@@ -107,7 +107,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     UInt8 postings_list_size = 0;
     buffer.readStrict(reinterpret_cast<char &>(postings_list_size));
 
-    if (postings_list_size != USES_BIT_MAP)
+    if (postings_list_size == USES_BIT_MAP)
     {
         size_t size = 0;
         readVarUInt(size, buffer);
