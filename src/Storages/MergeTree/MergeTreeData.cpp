@@ -2774,6 +2774,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "The following alter commands: '{}' will modify data on disk, but setting `allow_non_metadata_alters` is disabled", queryToString(mutation_commands.ast()));
     }
+
+    if (commands.hasInvertedIndex(new_metadata, getContext()) && !settings.allow_experimental_inverted_index)
+    {
+        throw Exception(
+                "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')",
+                ErrorCodes::SUPPORT_IS_DISABLED);
+    }
     commands.apply(new_metadata, getContext());
 
     /// Set of columns that shouldn't be altered.
