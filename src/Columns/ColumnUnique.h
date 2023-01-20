@@ -355,6 +355,8 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         void operator() (const Int128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const Int256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const UUID & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const IPv4 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const IPv6 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const Float64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const DecimalField<Decimal32> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const DecimalField<Decimal64> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }

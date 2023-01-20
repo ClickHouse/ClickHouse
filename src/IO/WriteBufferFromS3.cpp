@@ -18,6 +18,7 @@
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/StorageClass.h>
 
 #include <utility>
 
@@ -181,12 +182,8 @@ void WriteBufferFromS3::finalizeImpl()
     if (check_objects_after_upload)
     {
         LOG_TRACE(log, "Checking object {} exists after upload", key);
-
-        auto response = S3::headObject(*client_ptr, bucket, key, "", write_settings.for_object_storage);
-        if (!response.IsSuccess())
-            throw S3Exception(fmt::format("Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", key, bucket), response.GetError().GetErrorType());
-        else
-            LOG_TRACE(log, "Object {} exists after upload", key);
+        S3::checkObjectExists(*client_ptr, bucket, key, {}, /* for_disk_s3= */ write_settings.for_object_storage, "Immediately after upload");
+        LOG_TRACE(log, "Object {} exists after upload", key);
     }
 }
 
@@ -473,6 +470,8 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
     req.SetBody(temporary_buffer);
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
+    if (!settings.storage_class_name.empty())
+        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(settings.storage_class_name));
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");

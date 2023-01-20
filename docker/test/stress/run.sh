@@ -78,11 +78,12 @@ EOL
 
     local max_users_mem
     max_users_mem=$((total_mem*30/100)) # 30%
-    echo "Setting max_memory_usage_for_user=$max_users_mem"
+    echo "Setting max_memory_usage_for_user=$max_users_mem and max_memory_usage for queries to 10G"
     cat > /etc/clickhouse-server/users.d/max_memory_usage_for_user.xml <<EOL
 <clickhouse>
     <profiles>
         <default>
+            <max_memory_usage>10G</max_memory_usage>
             <max_memory_usage_for_user>${max_users_mem}</max_memory_usage_for_user>
         </default>
     </profiles>
@@ -128,18 +129,12 @@ EOL
 
 function stop()
 {
+    local max_tries="${1:-90}"
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    clickhouse stop $max_tries --do-not-kill && return
-
-    if [ -n "$1" ]
-    then
-        # temporarily disable it in BC check
-        clickhouse stop --force
-        return
-    fi
+    clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
@@ -160,7 +155,7 @@ function start()
             echo -e "Cannot start clickhouse-server\tFAIL" >> /test_output/test_results.tsv
             cat /var/log/clickhouse-server/stdout.log
             tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
+            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
             break
         fi
         # use root to match with current uid
@@ -303,7 +298,7 @@ start
 
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.final.log)\tFAIL' >> /test_output/test_results.tsv \
-                       && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
+                       && rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
 
 # Remove file application_errors.txt if it's empty
 [ -s /test_output/application_errors.txt ] || rm /test_output/application_errors.txt
@@ -318,20 +313,20 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 # Grep logs for sanitizer asserts, crashes and other critical errors
 
 # Sanitizer asserts
-grep -Fa "==================" /var/log/clickhouse-server/stderr.log | grep -v "in query:" >> /test_output/tmp
-grep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-zgrep -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
+rg -Fa "==================" /var/log/clickhouse-server/stderr.log | rg -v "in query:" >> /test_output/tmp
+rg -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+rg -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
     && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
 rm -f /test_output/tmp
 
 # OOM
-zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
+rg -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
     && echo -e 'OOM killer (or signal 9) in server logs\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No OOM messages in server logs\tOK' >> /test_output/test_results.tsv
 
 # Logical errors
-zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/logical_errors.txt \
+rg -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/logical_errors.txt \
     && echo -e 'Logical error thrown (see server logs or logical_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No logical errors\tOK' >> /test_output/test_results.tsv
 
@@ -339,7 +334,7 @@ zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-serve
 [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
 # No such key errors
-zgrep -Ea "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
+rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
     && echo -e 'S3_ERROR No such key thrown (see server logs or no_such_key_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No lost s3 keys\tOK' >> /test_output/test_results.tsv
 
@@ -347,22 +342,22 @@ zgrep -Ea "Code: 499.*The specified key does not exist" /var/log/clickhouse-serv
 [ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt
 
 # Crash
-zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
+rg -Fa "########################################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
     && echo -e 'Killed by signal (in server logs)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'Not crashed\tOK' >> /test_output/test_results.tsv
 
 # It also checks for crash without stacktrace (printed by watchdog)
-zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server*.log > /test_output/fatal_messages.txt \
+rg -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server*.log > /test_output/fatal_messages.txt \
     && echo -e 'Fatal message in server logs (see fatal_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No fatal messages in server logs\tOK' >> /test_output/test_results.tsv
 
 # Remove file fatal_messages.txt if it's empty
 [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
-zgrep -Fa "########################################" /test_output/* > /dev/null \
+rg -Fa "########################################" /test_output/* > /dev/null \
     && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
 
-zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
+rg -Fa " received signal " /test_output/gdb.log > /dev/null \
     && echo -e 'Found signal in gdb.log\tFAIL' >> /test_output/test_results.tsv
 
 for table in query_log trace_log
@@ -386,7 +381,7 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps
-for core in core.*; do
-    pigz $core
-    mv $core.gz /test_output/
+find . -type f -maxdepth 1 -name 'core.*' | while read core; do
+    zstd --threads=0 $core
+    mv $core.zst /test_output/
 done
