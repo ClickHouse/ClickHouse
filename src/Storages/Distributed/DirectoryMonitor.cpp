@@ -755,6 +755,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 {
     size_t total_rows = 0;
     size_t total_bytes = 0;
+    /// Does the batch had been created from the files in current_batch.txt?
     bool recovered = false;
 
     StorageDistributedDirectoryMonitor & parent;
