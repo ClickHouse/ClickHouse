@@ -278,7 +278,7 @@ private:
             if (next_pos != std::string_view::npos)
                 size = next_pos - pos;
 
-            LOG_FATAL(log, "{}", message.substr(pos, size));
+            LOG_FATAL(log, fmt::runtime(message.substr(pos, size)));
             pos = next_pos;
         }
     }
