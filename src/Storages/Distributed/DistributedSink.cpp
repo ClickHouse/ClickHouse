@@ -835,7 +835,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         const auto & bin_file = bin_files[i];
 
         auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name, /* startup= */ false);
-        directory_monitor.addAndSchedule(bin_file, file_size, sleep_ms.totalMilliseconds());
+        directory_monitor.addFileAndSchedule(bin_file, file_size, sleep_ms.totalMilliseconds());
     }
 }
 

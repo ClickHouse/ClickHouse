@@ -55,7 +55,7 @@ public:
     static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
 
     /// For scheduling via DistributedSink.
-    bool addAndSchedule(const std::string & file_path, size_t file_size, size_t ms);
+    bool addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms);
 
     struct InternalStatus
     {
@@ -83,6 +83,7 @@ private:
 
     bool hasPendingFiles() const;
 
+    void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
     void processFiles();
     void processFile(const std::string & file_path);
