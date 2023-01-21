@@ -1,0 +1,24 @@
+<test>
+    <create_query>CREATE TABLE test (a Int64, b String, c LowCardinality(String)) ENGINE = MergeTree() ORDER BY a</create_query>
+    <create_query>CREATE TABLE test1 (a Int64, b String, c LowCardinality(String)) ENGINE = MergeTree() ORDER BY a</create_query>
+    <create_query>CREATE TABLE test2 (a Int64, b String, c LowCardinality(String)) ENGINE = MergeTree() ORDER BY a</create_query>
+
+    <fill_query>INSERT INTO test SELECT number % 10000, number % 10000, number % 10000 FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO test1 SELECT number, number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO test1 SELECT number, number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO test1 SELECT number, number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO test1 SELECT number, number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO test1 SELECT number, number, number FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO test2 SELECT number, number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO test2 SELECT number, number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO test2 SELECT number, number, number FROM numbers(100000)</fill_query>
+
+    <query tag='INNER'>SELECT MAX(test.b) FROM test INNER JOIN test1 on test.b = test1.b</query>
+    <query tag='MULTI_AND_INNER'>SELECT MAX(test.b) FROM test INNER JOIN test1 on test.a = test1.a INNER JOIN test2 ON test1.b=test2.b</query>
+    <query tag='OR_INNER'>SELECT MAX(test.c) FROM test INNER JOIN test1 on test.a = test1.a OR test.b = test1.b</query>
+    <query tag='AND_INNER'>SELECT MAX(test.c) FROM test INNER JOIN test1 on test.a = test1.a AND test.b = test1.b</query>
+
+    <drop_query>DROP TABLE IF EXISTS test</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test2</drop_query>
+</test>
