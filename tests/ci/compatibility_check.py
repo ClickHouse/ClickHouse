@@ -63,7 +63,8 @@ def process_glibc_check(log_path: str) -> TestResults:
 def process_result(
     result_folder: str, server_log_folder: str
 ) -> Tuple[str, str, TestResults, List[str]]:
-    test_results = process_glibc_check(os.path.join(result_folder, "glibc.log"))
+    glibc_log_path = os.path.join(result_folder, "glibc.log")
+    test_results = process_glibc_check(glibc_log_path)
 
     status = "success"
     description = "Compatibility check passed"
@@ -86,15 +87,16 @@ def process_result(
     server_log_path = os.path.join(server_log_folder, "clickhouse-server.log")
     stderr_log_path = os.path.join(server_log_folder, "stderr.log")
     client_stderr_log_path = os.path.join(server_log_folder, "clientstderr.log")
+
     result_logs = []
     if os.path.exists(server_log_path):
         result_logs.append(server_log_path)
-
     if os.path.exists(stderr_log_path):
         result_logs.append(stderr_log_path)
-
     if os.path.exists(client_stderr_log_path):
         result_logs.append(client_stderr_log_path)
+    if os.path.exists(glibc_log_path):
+        result_logs.append(glibc_log_path)
 
     return status, description, test_results, result_logs
 
@@ -103,9 +105,9 @@ def get_run_commands(
     build_path, result_folder, server_log_folder, image_centos, image_ubuntu
 ):
     return [
-        f"readelf -s {build_path}/usr/bin/clickhouse | grep '@GLIBC_' > {result_folder}/glibc.log",
-        f"readelf -s {build_path}/usr/bin/clickhouse-odbc-bridge | grep '@GLIBC_' >> {result_folder}/glibc.log",
-        f"readelf -s {build_path}/usr/bin/clickhouse-library-bridge | grep '@GLIBC_' >> {result_folder}/glibc.log",
+        f"readelf -s --wide {build_path}/usr/bin/clickhouse | grep '@GLIBC_' > {result_folder}/glibc.log",
+        f"readelf -s --wide {build_path}/usr/bin/clickhouse-odbc-bridge | grep '@GLIBC_' >> {result_folder}/glibc.log",
+        f"readelf -s --wide {build_path}/usr/bin/clickhouse-library-bridge | grep '@GLIBC_' >> {result_folder}/glibc.log",
         f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
         f"--volume={build_path}/etc/clickhouse-server:/config "
         f"--volume={server_log_folder}:/var/log/clickhouse-server {image_ubuntu} > {result_folder}/ubuntu:12.04",
