@@ -550,6 +550,12 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
     {
         while (pending_files.tryPop(file_path))
         {
+            if (!fs::exists(file_path))
+            {
+                LOG_WARNING(log, "File {} does not exists, likely due to current_batch.txt processing", file_path);
+                continue;
+            }
+
             size_t total_rows = 0;
             size_t total_bytes = 0;
             Block header;
