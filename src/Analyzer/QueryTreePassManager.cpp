@@ -32,6 +32,7 @@
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
+#include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
 namespace DB
 {
@@ -67,7 +68,7 @@ public:
 private:
     void visitColumn(ColumnNode * column) const
     {
-        if (column->getColumnSourceOrNull() == nullptr)
+        if (column->getColumnSourceOrNull() == nullptr && column->getColumnName() != "__grouping_set")
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column {} {} query tree node does not have valid source node after running {} pass",
                 column->getColumnName(), column->getColumnType(), pass_name);
@@ -258,6 +259,8 @@ void addQueryTreePasses(QueryTreePassManager & manager)
         manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
 
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
+
+    manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
 }
 
 }
