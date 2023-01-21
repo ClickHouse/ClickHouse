@@ -418,16 +418,8 @@ void DistributedAsyncInsertDirectoryQueue::processFile(const std::string & file_
 
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = DistributedAsyncInsertHeader::read(in, log);
-
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
-            distributed_header.client_info.client_trace_context,
-            this->storage.getContext()->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.addAttribute("clickhouse.shard_num", distributed_header.shard_num);
-        thread_trace_context->root_span.addAttribute("clickhouse.cluster", distributed_header.cluster);
-        thread_trace_context->root_span.addAttribute("clickhouse.distributed", distributed_header.distributed_table);
-        thread_trace_context->root_span.addAttribute("clickhouse.remote", distributed_header.remote_table);
-        thread_trace_context->root_span.addAttribute("clickhouse.rows", distributed_header.rows);
-        thread_trace_context->root_span.addAttribute("clickhouse.bytes", distributed_header.bytes);
+        thread_trace_context =
+            distributed_header.createTracingContextHolder(storage.getContext()->getOpenTelemetrySpanLog());
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
