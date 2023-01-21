@@ -793,24 +793,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// we must try to re-send exactly the same batches.
             /// So we save contents of the current batch into the current_batch_file_path file
             /// and truncate it afterwards if all went well.
-
-            /// Temporary file is required for atomicity.
-            String tmp_file{parent.current_batch_file_path + ".tmp"};
-
-            auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
-            if (fs::exists(tmp_file))
-                LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
-
-            {
-                WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
-                writeText(out);
-
-                out.finalize();
-                if (fsync)
-                    out.sync();
-            }
-
-            fs::rename(tmp_file, parent.current_batch_file_path);
+            serialize();
         }
 
         bool batch_broken = false;
@@ -872,6 +855,34 @@ struct StorageDistributedDirectoryMonitor::Batch
         fs::resize_file(parent.current_batch_file_path, 0);
     }
 
+    void serialize()
+    {
+        /// Temporary file is required for atomicity.
+        String tmp_file{parent.current_batch_file_path + ".tmp"};
+
+        auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
+        if (fs::exists(tmp_file))
+            LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
+
+        {
+            WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
+            writeText(out);
+
+            out.finalize();
+            if (fsync)
+                out.sync();
+        }
+
+        fs::rename(tmp_file, parent.current_batch_file_path);
+    }
+
+    void deserialize()
+    {
+        ReadBufferFromFile in{parent.current_batch_file_path};
+        readText(in);
+    }
+
+private:
     void writeText(WriteBuffer & out)
     {
         for (const auto & file : files)
@@ -893,7 +904,6 @@ struct StorageDistributedDirectoryMonitor::Batch
         recovered = true;
     }
 
-private:
     void sendBatch()
     {
         std::unique_ptr<RemoteInserter> remote;
@@ -1083,8 +1093,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching()
     if (fs::exists(current_batch_file_path))
     {
         Batch batch(*this);
-        ReadBufferFromFile in{current_batch_file_path};
-        batch.readText(in);
+        batch.deserialize();
         batch.send();
 
         auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
