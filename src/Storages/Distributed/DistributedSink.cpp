@@ -724,8 +724,8 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         return guard;
     };
 
-    std::vector<std::string> bin_files;
-    bin_files.reserve(dir_names.size());
+    auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds();
+    size_t file_size;
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
@@ -804,10 +804,16 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
                 out.sync();
         }
 
+        file_size = fs::file_size(first_file_tmp_path);
+
         // Create hardlink here to reuse increment number
-        bin_files.push_back(fs::path(path) / file_name);
-        createHardLink(first_file_tmp_path, bin_files.back());
-        auto dir_sync_guard = make_directory_sync_guard(*it);
+        auto bin_file = (fs::path(path) / file_name).string();
+        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        {
+            createHardLink(first_file_tmp_path, bin_file);
+            auto dir_sync_guard = make_directory_sync_guard(*it);
+        }
+        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
     ++it;
 
@@ -817,26 +823,18 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         const std::string path(fs::path(disk_path) / (data_path + *it));
         fs::create_directory(path);
 
-        bin_files.push_back(fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin"));
-        createHardLink(first_file_tmp_path, bin_files.back());
-        auto dir_sync_guard = make_directory_sync_guard(*it);
+        auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();
+        auto & directory_monitor = storage.getDirectoryQueue(disk, *it);
+        {
+            createHardLink(first_file_tmp_path, bin_file);
+            auto dir_sync_guard = make_directory_sync_guard(*it);
+        }
+        directory_monitor.addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
 
-    auto file_size = fs::file_size(first_file_tmp_path);
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
     /// have removed their corresponding files
     fs::remove(first_file_tmp_path);
-
-    /// Notify
-    auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
-    for (size_t i = 0; i < dir_names.size(); ++i)
-    {
-        const auto & dir_name = dir_names[i];
-        const auto & bin_file = bin_files[i];
-
-        auto & directory_monitor = storage.getDirectoryQueue(disk, dir_name, /* startup= */ false);
-        directory_monitor.addFileAndSchedule(bin_file, file_size, sleep_ms.totalMilliseconds());
-    }
 }
 
 }

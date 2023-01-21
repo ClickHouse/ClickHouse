@@ -166,8 +166,12 @@ private:
 
     /// create directory monitors for each existing subdirectory
     void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
-    /// ensure directory queue thread and connection pool created by disk and subdirectory name
-    DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name, bool startup);
+
+    /// Get directory queue thread and connection pool created by disk and subdirectory name
+    ///
+    /// Used for the INSERT into Distributed in case of insert_distributed_sync==1, from DistributedSink.
+    DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
+
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)

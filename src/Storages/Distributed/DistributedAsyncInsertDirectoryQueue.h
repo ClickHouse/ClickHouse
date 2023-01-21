@@ -54,8 +54,7 @@ public:
         const std::string & relative_path_,
         ConnectionPoolPtr pool_,
         ActionBlocker & monitor_blocker_,
-        BackgroundSchedulePool & bg_pool,
-        bool initialize_from_disk);
+        BackgroundSchedulePool & bg_pool);
 
     ~DistributedAsyncInsertDirectoryQueue();
 
