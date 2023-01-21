@@ -545,78 +545,96 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
     std::unordered_map<BatchHeader, DistributedAsyncInsertBatch, BatchHeader::Hash> header_to_batch;
 
     std::string file_path;
-    while (pending_files.tryPop(file_path))
+
+    try
     {
-        size_t total_rows = 0;
-        size_t total_bytes = 0;
-        Block header;
-        DistributedAsyncInsertHeader distributed_header;
-        try
+        while (pending_files.tryPop(file_path))
         {
-            /// Determine metadata of the current file and check if it is not broken.
-            ReadBufferFromFile in{file_path};
-            distributed_header = DistributedAsyncInsertHeader::read(in, log);
-
-            if (distributed_header.rows)
+            size_t total_rows = 0;
+            size_t total_bytes = 0;
+            Block header;
+            DistributedAsyncInsertHeader distributed_header;
+            try
             {
-                total_rows += distributed_header.rows;
-                total_bytes += distributed_header.bytes;
-            }
+                /// Determine metadata of the current file and check if it is not broken.
+                ReadBufferFromFile in{file_path};
+                distributed_header = DistributedAsyncInsertHeader::read(in, log);
 
-            if (distributed_header.block_header)
-                header = distributed_header.block_header;
-
-            if (!total_rows || !header)
-            {
-                LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
-
-                CompressedReadBuffer decompressing_in(in);
-                NativeReader block_in(decompressing_in, distributed_header.revision);
-
-                while (Block block = block_in.read())
+                if (distributed_header.rows)
                 {
-                    total_rows += block.rows();
-                    total_bytes += block.bytes();
+                    total_rows += distributed_header.rows;
+                    total_bytes += distributed_header.bytes;
+                }
 
-                    if (!header)
-                        header = block.cloneEmpty();
+                if (distributed_header.block_header)
+                    header = distributed_header.block_header;
+
+                if (!total_rows || !header)
+                {
+                    LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
+
+                    CompressedReadBuffer decompressing_in(in);
+                    NativeReader block_in(decompressing_in, distributed_header.revision);
+
+                    while (Block block = block_in.read())
+                    {
+                        total_rows += block.rows();
+                        total_bytes += block.bytes();
+
+                        if (!header)
+                            header = block.cloneEmpty();
+                    }
                 }
             }
-        }
-        catch (const Exception & e)
-        {
-            if (isDistributedSendBroken(e.code(), e.isRemoteException()))
+            catch (const Exception & e)
             {
-                markAsBroken(file_path);
-                tryLogCurrentException(log, "File is marked broken due to");
-                continue;
+                if (isDistributedSendBroken(e.code(), e.isRemoteException()))
+                {
+                    markAsBroken(file_path);
+                    tryLogCurrentException(log, "File is marked broken due to");
+                    continue;
+                }
+                else
+                    throw;
             }
-            else
-                throw;
+
+            BatchHeader batch_header(
+                std::move(distributed_header.insert_settings),
+                std::move(distributed_header.insert_query),
+                std::move(distributed_header.client_info),
+                std::move(header)
+            );
+            DistributedAsyncInsertBatch & batch = header_to_batch.try_emplace(batch_header, *this).first->second;
+
+            batch.files.push_back(file_path);
+            batch.total_rows += total_rows;
+            batch.total_bytes += total_bytes;
+
+            if (batch.isEnoughSize())
+            {
+                batch.send();
+            }
         }
 
-        BatchHeader batch_header(
-            std::move(distributed_header.insert_settings),
-            std::move(distributed_header.insert_query),
-            std::move(distributed_header.client_info),
-            std::move(header)
-        );
-        DistributedAsyncInsertBatch & batch = header_to_batch.try_emplace(batch_header, *this).first->second;
-
-        batch.files.push_back(file_path);
-        batch.total_rows += total_rows;
-        batch.total_bytes += total_bytes;
-
-        if (batch.isEnoughSize())
+        for (auto & kv : header_to_batch)
         {
+            DistributedAsyncInsertBatch & batch = kv.second;
             batch.send();
         }
     }
-
-    for (auto & kv : header_to_batch)
+    catch (...)
     {
-        DistributedAsyncInsertBatch & batch = kv.second;
-        batch.send();
+        /// Revert uncommitted files.
+        for (const auto & [_, batch] : header_to_batch)
+        {
+            for (const auto & file : batch.files)
+            {
+                if (!pending_files.pushFront(file))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot re-schedule a file '{}'", file);
+            }
+        }
+        /// Rethrow exception
+        throw;
     }
 
     {
