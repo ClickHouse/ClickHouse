@@ -27,7 +27,8 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & compression_method_,
-        const StorageURL::Configuration &configuration_);
+        const StorageURL::Configuration &configuration_,
+        bool structure_argument_was_provided_);
 
     std::string getName() const override { return "URLCluster"; }
 
@@ -47,7 +48,7 @@ private:
     String uri;
     String format_name;
     String compression_method;
-    bool add_columns_structure_to_query = false;
+    bool structure_argument_was_provided;
 
 };
 

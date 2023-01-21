@@ -80,7 +80,7 @@ ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr c
 
 
 StoragePtr TableFunctionURLCluster::getStorage(
-    const String & /*source*/, const String & /*format_*/, const ColumnsDescription &, ContextPtr context,
+    const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & /*compression_method_*/) const
 {
     StoragePtr storage;
@@ -92,7 +92,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
             StorageID(getDatabaseName(), table_name),
             format,
             std::nullopt /*format settings*/,
-            getActualTableStructure(context),
+            columns,
             ConstraintsDescription{},
             String{},
             context,
@@ -106,7 +106,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
             context,
             cluster_name, filename, StorageID(getDatabaseName(), table_name),
             format, getActualTableStructure(context), ConstraintsDescription{},
-            compression_method, configuration);
+            compression_method, configuration, structure != "auto");
     }
     return storage;
 }
