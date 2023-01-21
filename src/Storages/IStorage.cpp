@@ -53,10 +53,10 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
-    if (is_dropped)
+    if (is_dropped || is_detached)
     {
         auto table_id = getStorageID();
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
     }
     return result;
 }
@@ -65,7 +65,7 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
-    if (is_dropped)
+    if (is_dropped || is_detached)
     {
         // Table was dropped while acquiring the lock
         result = nullptr;
@@ -84,8 +84,11 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds
                         "Possible deadlock avoided. Client should retry.",
                         getStorageID().getFullTableName(), std::to_string(acquire_timeout.count()));
 
-    if (is_dropped)
-        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+    if (is_dropped || is_detached)
+    {
+        auto table_id = getStorageID();
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
+    }
 
     return lock;
 }
@@ -96,8 +99,11 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     TableExclusiveLockHolder result;
     result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
-    if (is_dropped)
-        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+    if (is_dropped || is_detached)
+    {
+        auto table_id = getStorageID();
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
+    }
 
     return result;
 }
