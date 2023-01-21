@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
 
+#include <bit>
 #include <cstring>
 #include <algorithm>
 #include <type_traits>
@@ -186,8 +187,8 @@ BinaryValueInfo getLeadingAndTrailingBits(const T & value)
 {
     constexpr UInt8 bit_size = sizeof(T) * 8;
 
-    const UInt8 lz = getLeadingZeroBits(value);
-    const UInt8 tz = getTrailingZeroBits(value);
+    const UInt8 lz = std::countl_zero(value);
+    const UInt8 tz = std::countr_zero(value);
     const UInt8 data_size = value == 0 ? 0 : static_cast<UInt8>(bit_size - lz - tz);
 
     return BinaryValueInfo{lz, data_size, tz};
