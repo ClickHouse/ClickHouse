@@ -123,7 +123,7 @@ ColumnPtr FunctionArrayShuffleImpl<Traits>::executeImpl(const ColumnsWithTypeAnd
     }();
     pcg64_fast rng(seed);
 
-    size_t limit = [&]
+    size_t limit = [&]() -> size_t
     {
         if constexpr (Traits::has_limit)
         {
@@ -133,7 +133,7 @@ ColumnPtr FunctionArrayShuffleImpl<Traits>::executeImpl(const ColumnsWithTypeAnd
                 return val->getUInt(0);
             }
         }
-        return static_cast<size_t>(0);
+        return 0;
     }();
 
     return executeGeneric(*array, rng, limit);
