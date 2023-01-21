@@ -3,11 +3,11 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Client/ConnectionPool.h>
-
+#include <IO/ReadBufferFromFile.h>
+#include <Disks/IDisk.h>
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
-#include <IO/ReadBufferFromFile.h>
 
 
 namespace CurrentMetrics { class Increment; }
@@ -32,6 +32,8 @@ class ISource;
   */
 class StorageDistributedDirectoryMonitor
 {
+    friend class DistributedAsyncInsertBatch;
+
 public:
     StorageDistributedDirectoryMonitor(
         StorageDistributed & storage_,
@@ -91,6 +93,8 @@ private:
 
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);
+
+    SyncGuardPtr getDirectorySyncGuard(const std::string & path);
 
     std::string getLoggerName() const;
 
