@@ -335,8 +335,9 @@ void DistributedAsyncInsertDirectoryQueue::addFile(const std::string & file_path
 
 void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
 {
-    /// NOTE: This method does not requires to hold status_mutex, hence, no TSA
-    /// annotations in the header file.
+    /// NOTE: This method does not requires to hold status_mutex (because this
+    /// object is not in the list that the caller may iterate over), hence, no
+    /// TSA annotations in the header file.
 
     fs::directory_iterator end;
 
