@@ -1,5 +1,6 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
@@ -10,6 +11,7 @@
 #include <IO/copyData.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Coordination/pathUtils.h>
+#include <atomic>
 #include <filesystem>
 #include <memory>
 #include <Common/logger_useful.h>
@@ -275,7 +277,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         readBinary(digest_version, in);
         if (digest_version != KeeperStorage::DigestVersion::NO_DIGEST)
         {
-            uint64_t nodes_digest;
+            uint64_t nodes_digest = 0;
             readBinary(nodes_digest, in);
             if (digest_version == KeeperStorage::CURRENT_DIGEST_VERSION)
             {
@@ -336,80 +338,139 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         return node.getData().empty() && node.stat == Coordination::Stat{};
     };
 
+    using PathNodePair = std::pair<std::string, KeeperStorage::Node>;
+    using PathNodePairPtr = std::shared_ptr<PathNodePair>;
+
+    ConcurrentBoundedQueue<PathNodePairPtr> node_queue(snapshot_container_size);
+    std::atomic<bool> force_stop = false;
+    auto node_load_thread = ThreadFromGlobalPool([&]
+    {
+        size_t loaded = 0;
+        while (loaded != snapshot_container_size)
+        {
+            if (force_stop.load(std::memory_order_relaxed))
+                return;
+
+            PathNodePairPtr next_node;
+            if (node_queue.pop(next_node))
+            {
+                auto & [path, node] = *next_node;
+
+                if (recalculate_digest)
+                    storage.nodes_digest += node.getDigest(path);
+
+                const auto ephemeral_owner = node.stat.ephemeralOwner;
+                storage.container.insertOrReplace(path, std::move(node));
+
+                if (ephemeral_owner != 0)
+                    storage.ephemerals[ephemeral_owner].insert(std::move(path));
+
+                ++loaded;
+            }
+        }
+
+        if (force_stop.load(std::memory_order_relaxed))
+            return;
+
+        for (const auto & itr : storage.container)
+        {
+            if (itr.key != "/")
+            {
+                auto parent_path = parentPath(itr.key);
+                storage.container.updateValue(
+                    parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
+            }
+        }
+
+        if (force_stop.load(std::memory_order_relaxed))
+            return;
+
+        for (const auto & itr : storage.container)
+        {
+            if (itr.key != "/")
+            {
+                if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
+                {
+#ifdef NDEBUG
+                    /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
+                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                                " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
+                                " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#endif
+                }
+            }
+        }
+    });
+
+    bool success = false;
+    SCOPE_EXIT(
+    {
+        if (!success)
+        {
+            force_stop.store(true, std::memory_order_relaxed);
+            node_queue.clearAndFinish();
+        }
+
+        if (node_load_thread.joinable())
+            node_load_thread.join();
+    });
+
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
-        std::string path;
+        auto path_node = std::make_shared<PathNodePair>();
+        auto & [path, node] = *path_node;
+
         readBinary(path, in);
-        KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
 
         using enum Coordination::PathMatchResult;
         auto match_result = Coordination::matchPath(path, keeper_system_path);
 
-        const std::string error_msg = fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
+        const auto get_error_msg = [&path = path]
+        {
+            return fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
+        };
+
         if (match_result == IS_CHILD)
         {
             if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
             {
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
                 continue;
             }
             else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+            {
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"),
                     "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                    error_msg);
+                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true "
+                    "or delete the snapshot.",
+                    get_error_msg());
+                std::terminate();
+            }
+
         }
         else if (match_result == EXACT && !is_node_empty(node))
         {
             if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
             {
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
                 node = KeeperStorage::Node{};
             }
             else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                    error_msg);
-        }
-
-        storage.container.insertOrReplace(path, node);
-        if (node.stat.ephemeralOwner != 0)
-            storage.ephemerals[node.stat.ephemeralOwner].insert(path);
-
-        if (recalculate_digest)
-            storage.nodes_digest += node.getDigest(path);
-    }
-
-    for (const auto & itr : storage.container)
-    {
-        if (itr.key != "/")
-        {
-            auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(
-                parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
-        }
-    }
-
-    for (const auto & itr : storage.container)
-    {
-        if (itr.key != "/")
-        {
-            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
             {
-#ifdef NDEBUG
-                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-#else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-#endif
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"),
+                    "{}. Ignoring it can lead to data loss. "
+                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true "
+                    "or delete the snapshot.",
+                    get_error_msg());
+                std::terminate();
             }
         }
+
+        [[maybe_unused]] bool pushed = node_queue.push(std::move(path_node));
+        assert(pushed);
     }
 
 
@@ -457,6 +518,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         buffer->pos(0);
         deserialization_result.cluster_config = ClusterConfig::deserialize(*buffer);
     }
+
+    success = true;
 }
 
 KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_)
