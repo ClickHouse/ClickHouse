@@ -417,7 +417,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(const std::string & file_
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
         ReadBufferFromFile in(file_path);
-        const auto & distributed_header = readDistributedAsyncInsertHeader(in, log);
+        const auto & distributed_header = DistributedAsyncInsertHeader::read(in, log);
 
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
             distributed_header.client_info.client_trace_context,
@@ -563,7 +563,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            distributed_header = readDistributedAsyncInsertHeader(in, log);
+            distributed_header = DistributedAsyncInsertHeader::read(in, log);
 
             if (distributed_header.rows)
             {

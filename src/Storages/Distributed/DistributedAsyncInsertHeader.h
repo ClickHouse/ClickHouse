@@ -31,8 +31,8 @@ struct DistributedAsyncInsertHeader
     /// dumpStructure() of the header -- obsolete
     std::string block_header_string;
     Block block_header;
-};
 
-DistributedAsyncInsertHeader readDistributedAsyncInsertHeader(ReadBufferFromFile & in, Poco::Logger * log);
+    static DistributedAsyncInsertHeader read(ReadBufferFromFile & in, Poco::Logger * log);
+};
 
 }

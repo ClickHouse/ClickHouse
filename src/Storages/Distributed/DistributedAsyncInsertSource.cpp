@@ -22,7 +22,7 @@ struct DistributedAsyncInsertSource::Data
         : log(&Poco::Logger::get("DistributedAsyncInsertSource"))
         , in(file_name)
         , decompressing_in(in)
-        , block_in(decompressing_in, readDistributedAsyncInsertHeader(in, log).revision)
+        , block_in(decompressing_in, DistributedAsyncInsertHeader::read(in, log).revision)
         , first_block(block_in.read())
     {
     }
