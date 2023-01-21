@@ -7,6 +7,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <filesystem>
+#include <queue>
 
 
 namespace DB
