@@ -2068,7 +2068,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-b",
         "--binary",
-        default=find_binary("clickhouse"),
+        default=find_binary("clickhouse") or "clickhouse",
         help="Path to clickhouse binary or name of binary in PATH",
     )
 
@@ -2349,15 +2349,14 @@ if __name__ == "__main__":
         if client_bin is not None:
             args.client = client_bin
             print("Using {args.client} as client program")
-        elif args.binary:
+        elif os.access(args.binary, os.X_OK):
             args.client = args.binary + " client"
             print(f"Using {args.client} as client program (expecting monolithic build)")
         else:
             print(
-                "No 'clickhouse' or 'clickhouse-client' client binary found",
+                "No 'clickhouse' or 'clickhouse-client' binary found",
                 file=sys.stderr,
             )
-            parser.print_help()
             sys.exit(1)
 
     if args.configclient:
@@ -2424,8 +2423,14 @@ if __name__ == "__main__":
     if args.extract_from_config is None:
         if os.access(args.binary + "-extract-from-config", os.X_OK):
             args.extract_from_config = args.binary + "-extract-from-config"
-        else:
+        elif os.access(args.binary, os.X_OK):
             args.extract_from_config = args.binary + " extract-from-config"
+        else:
+            print(
+                "No 'clickhouse' or 'clickhouse-extract-from-config' binary found",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
