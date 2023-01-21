@@ -111,7 +111,7 @@ private:
     /// This is pending data (due to some error) for should_batch_inserts==true
     std::string current_batch_file_path;
     /// This is pending data (due to some error) for should_batch_inserts==false
-    std::string current_batch_file;
+    std::string current_file;
 
     struct BatchHeader;
     struct Batch;

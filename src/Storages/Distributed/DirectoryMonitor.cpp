@@ -570,7 +570,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
 bool StorageDistributedDirectoryMonitor::hasPendingFiles() const
 {
-    return fs::exists(current_batch_file_path) || !current_batch_file.empty() || !pending_files.empty();
+    return fs::exists(current_batch_file_path) || !current_file.empty() || !pending_files.empty();
 }
 
 void StorageDistributedDirectoryMonitor::initializeFilesFromDisk()
@@ -639,11 +639,11 @@ void StorageDistributedDirectoryMonitor::processFiles()
     else
     {
         /// Process unprocessed file.
-        if (!current_batch_file.empty())
-            processFile(current_batch_file);
+        if (!current_file.empty())
+            processFile(current_file);
 
-        while (pending_files.tryPop(current_batch_file))
-            processFile(current_batch_file);
+        while (pending_files.tryPop(current_file))
+            processFile(current_file);
     }
 }
 
@@ -694,7 +694,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
         {
             markAsBroken(file_path);
-            current_batch_file.clear();
+            current_file.clear();
         }
         throw;
     }
@@ -708,7 +708,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
     auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     markAsSend(file_path);
-    current_batch_file.clear();
+    current_file.clear();
     LOG_TRACE(log, "Finished processing `{}` (took {} ms)", file_path, watch.elapsedMilliseconds());
 }
 
