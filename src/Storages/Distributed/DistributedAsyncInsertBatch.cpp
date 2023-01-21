@@ -1,7 +1,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertBatch.h>
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/CurrentMetrics.h>
@@ -52,7 +52,7 @@ bool isSplittableErrorCode(int code, bool remote)
     ;
 }
 
-DistributedAsyncInsertBatch::DistributedAsyncInsertBatch(StorageDistributedDirectoryMonitor & parent_)
+DistributedAsyncInsertBatch::DistributedAsyncInsertBatch(DistributedAsyncInsertDirectoryQueue & parent_)
     : parent(parent_)
     , split_batch_on_failure(parent.split_batch_on_failure)
     , fsync(parent.storage.getDistributedSettingsRef().fsync_after_insert)

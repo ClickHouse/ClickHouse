@@ -1,7 +1,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertBatch.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
@@ -11,7 +11,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
@@ -22,19 +21,9 @@
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/Cluster.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
-#include <Storages/Distributed/DistributedAsyncInsertHeader.h>
-#include <Storages/StorageDistributed.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CheckingCompressedReadBuffer.h>
-#include <IO/ConnectionTimeouts.h>
-#include <IO/Operators.h>
-#include <Disks/IDisk.h>
 #include <Common/logger_useful.h>
+#include <Compression/CheckingCompressedReadBuffer.h>
+#include <IO/Operators.h>
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
 #include <boost/range/adaptor/indexed.hpp>
@@ -56,15 +45,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_FILE_NAME;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int DISTRIBUTED_BROKEN_BATCH_INFO;
-    extern const int DISTRIBUTED_BROKEN_BATCH_FILES;
-    extern const int TOO_MANY_PARTS;
-    extern const int TOO_MANY_BYTES;
-    extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int TOO_MANY_PARTITIONS;
-    extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
 }
 
@@ -132,7 +112,7 @@ uint64_t doubleToUInt64(double d)
 }
 
 
-StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
+DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     StorageDistributed & storage_,
     const DiskPtr & disk_,
     const std::string & relative_path_,
@@ -172,7 +152,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
 }
 
 
-StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
+DistributedAsyncInsertDirectoryQueue::~DistributedAsyncInsertDirectoryQueue()
 {
     if (!pending_files.isFinished())
     {
@@ -181,7 +161,7 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
     }
 }
 
-void StorageDistributedDirectoryMonitor::flushAllData()
+void DistributedAsyncInsertDirectoryQueue::flushAllData()
 {
     if (pending_files.isFinished())
         return;
@@ -192,7 +172,7 @@ void StorageDistributedDirectoryMonitor::flushAllData()
     processFiles();
 }
 
-void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
+void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
 {
     if (!pending_files.isFinished())
     {
@@ -205,7 +185,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
 }
 
 
-void StorageDistributedDirectoryMonitor::run()
+void DistributedAsyncInsertDirectoryQueue::run()
 {
     constexpr const std::chrono::minutes decrease_error_count_period{5};
 
@@ -271,7 +251,7 @@ void StorageDistributedDirectoryMonitor::run()
 }
 
 
-ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
+ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const std::string & name, const StorageDistributed & storage)
 {
     const auto pool_factory = [&storage, &name] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
@@ -344,18 +324,18 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         settings.distributed_replica_error_cap);
 }
 
-bool StorageDistributedDirectoryMonitor::hasPendingFiles() const
+bool DistributedAsyncInsertDirectoryQueue::hasPendingFiles() const
 {
     return fs::exists(current_batch_file_path) || !current_file.empty() || !pending_files.empty();
 }
 
-void StorageDistributedDirectoryMonitor::addFile(const std::string & file_path)
+void DistributedAsyncInsertDirectoryQueue::addFile(const std::string & file_path)
 {
     if (!pending_files.push(fs::absolute(file_path).string()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path);
 }
 
-void StorageDistributedDirectoryMonitor::initializeFilesFromDisk()
+void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
 {
     /// NOTE: This method does not requires to hold status_mutex, hence, no TSA
     /// annotations in the header file.
@@ -413,7 +393,7 @@ void StorageDistributedDirectoryMonitor::initializeFilesFromDisk()
         status.broken_bytes_count = broken_bytes_count;
     }
 }
-void StorageDistributedDirectoryMonitor::processFiles()
+void DistributedAsyncInsertDirectoryQueue::processFiles()
 {
     if (should_batch_inserts)
         processFilesWithBatching();
@@ -428,7 +408,7 @@ void StorageDistributedDirectoryMonitor::processFiles()
     }
 }
 
-void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
+void DistributedAsyncInsertDirectoryQueue::processFile(const std::string & file_path)
 {
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
@@ -493,7 +473,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     LOG_TRACE(log, "Finished processing `{}` (took {} ms)", file_path, watch.elapsedMilliseconds());
 }
 
-struct StorageDistributedDirectoryMonitor::BatchHeader
+struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 {
     Settings settings;
     String query;
@@ -527,7 +507,7 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
     };
 };
 
-bool StorageDistributedDirectoryMonitor::addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
+bool DistributedAsyncInsertDirectoryQueue::addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
 {
     /// NOTE: It is better not to throw in this case, since the file is already
     /// on disk (see DistributedSink), and it will be processed next time.
@@ -549,14 +529,14 @@ bool StorageDistributedDirectoryMonitor::addFileAndSchedule(const std::string & 
     return task_handle->scheduleAfter(ms, false);
 }
 
-StorageDistributedDirectoryMonitor::Status StorageDistributedDirectoryMonitor::getStatus()
+DistributedAsyncInsertDirectoryQueue::Status DistributedAsyncInsertDirectoryQueue::getStatus()
 {
     std::lock_guard status_lock(status_mutex);
     Status current_status{status, path, monitor_blocker.isCancelled()};
     return current_status;
 }
 
-void StorageDistributedDirectoryMonitor::processFilesWithBatching()
+void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
 {
     /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
     if (fs::exists(current_batch_file_path))
@@ -658,7 +638,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching()
     }
 }
 
-void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path)
+void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file_path)
 {
     const String & broken_file_path = fs::path(broken_path) / fs::path(file_path).filename();
 
@@ -683,7 +663,7 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
     LOG_ERROR(log, "Renamed `{}` to `{}`", file_path, broken_file_path);
 }
 
-void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_path)
+void DistributedAsyncInsertDirectoryQueue::markAsSend(const std::string & file_path)
 {
     size_t file_size = fs::file_size(file_path);
 
@@ -697,19 +677,19 @@ void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_pat
     fs::remove(file_path);
 }
 
-SyncGuardPtr StorageDistributedDirectoryMonitor::getDirectorySyncGuard(const std::string & dir_path)
+SyncGuardPtr DistributedAsyncInsertDirectoryQueue::getDirectorySyncGuard(const std::string & dir_path)
 {
     if (dir_fsync)
         return disk->getDirectorySyncGuard(dir_path);
     return nullptr;
 }
 
-std::string StorageDistributedDirectoryMonitor::getLoggerName() const
+std::string DistributedAsyncInsertDirectoryQueue::getLoggerName() const
 {
     return storage.getStorageID().getFullTableName() + ".DirectoryMonitor." + disk->getName();
 }
 
-void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_relative_path)
+void DistributedAsyncInsertDirectoryQueue::updatePath(const std::string & new_relative_path)
 {
     task_handle->deactivate();
     std::lock_guard lock{mutex};

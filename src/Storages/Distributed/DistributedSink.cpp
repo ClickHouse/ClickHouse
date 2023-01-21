@@ -1,5 +1,5 @@
 #include <Storages/Distributed/DistributedSink.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
@@ -834,7 +834,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         const auto & dir_name = dir_names[i];
         const auto & bin_file = bin_files[i];
 
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name, /* startup= */ false);
+        auto & directory_monitor = storage.getDirectoryQueue(disk, dir_name, /* startup= */ false);
         directory_monitor.addFileAndSchedule(bin_file, file_size, sleep_ms.totalMilliseconds());
     }
 }
