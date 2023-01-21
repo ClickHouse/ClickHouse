@@ -7,7 +7,6 @@ CREATE TABLE test_table
     value String
 ) ENGINE=MergeTree ORDER BY id;
 
-
 INSERT INTO test_table SELECT 0, 'Value_0';
 
 DROP TABLE IF EXISTS test_table_data;

@@ -409,13 +409,13 @@ BlockIO InterpreterInsertQuery::execute()
                 }
                 else
                 {
-                    InterpreterSelectWithUnionQuery interpreter_select{
-                        query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+                    InterpreterSelectWithUnionQuery interpreter_select(query.select, new_context, select_query_options);
                     pipeline = interpreter_select.buildQueryPipeline();
                 }
             }
             else
             {
+                /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
                 if (settings.allow_experimental_analyzer)
@@ -425,9 +425,7 @@ BlockIO InterpreterInsertQuery::execute()
                 }
                 else
                 {
-                    /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-                    InterpreterSelectWithUnionQuery interpreter_select{
-                        query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+                    InterpreterSelectWithUnionQuery interpreter_select(query.select, getContext(), select_query_options);
                     pipeline = interpreter_select.buildQueryPipeline();
                 }
             }
