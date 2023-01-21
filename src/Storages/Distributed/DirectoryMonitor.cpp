@@ -573,6 +573,12 @@ bool StorageDistributedDirectoryMonitor::hasPendingFiles() const
     return fs::exists(current_batch_file_path) || !current_file.empty() || !pending_files.empty();
 }
 
+void StorageDistributedDirectoryMonitor::addFile(const std::string & file_path)
+{
+    if (!pending_files.push(fs::absolute(file_path).string()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path);
+}
+
 void StorageDistributedDirectoryMonitor::initializeFilesFromDisk()
 {
     /// NOTE: This method does not requires to hold status_mutex, hence, no TSA
@@ -591,8 +597,7 @@ void StorageDistributedDirectoryMonitor::initializeFilesFromDisk()
             if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(base_name))
             {
                 const std::string & file_path_str = file_path.string();
-                if (!pending_files.push(file_path_str))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add pending file");
+                addFile(file_path_str);
                 bytes_count += fs::file_size(file_path);
             }
             else if (base_name != "tmp" && base_name != "broken")
@@ -882,7 +887,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         {
             UInt64 idx;
             in >> idx >> "\n";
-            files.push_back(fmt::format("{}/{}.bin", parent.path, idx));
+            files.push_back(fs::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
         }
 
         recovered = true;
@@ -1043,7 +1048,7 @@ std::shared_ptr<ISource> StorageDistributedDirectoryMonitor::createSourceFromFil
     return std::make_shared<DirectoryMonitorSource>(file_name);
 }
 
-bool StorageDistributedDirectoryMonitor::addAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
+bool StorageDistributedDirectoryMonitor::addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
 {
     /// NOTE: It is better not to throw in this case, since the file is already
     /// on disk (see DistributedSink), and it will be processed next time.
@@ -1053,8 +1058,7 @@ bool StorageDistributedDirectoryMonitor::addAndSchedule(const std::string & file
         return false;
     }
 
-    if (!pending_files.push(file_path))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add pending file");
+    addFile(file_path);
 
     {
         std::lock_guard lock(status_mutex);
