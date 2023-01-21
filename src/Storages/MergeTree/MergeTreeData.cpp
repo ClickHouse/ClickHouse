@@ -2021,7 +2021,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             }
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
-            bool reached_removal_time = part_remove_time < time_now && time_now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds();
+            bool reached_removal_time = part_remove_time <= time_now && time_now - part_remove_time >= getSettings()->old_parts_lifetime.totalSeconds();
             if ((reached_removal_time && !has_skipped_mutation_parent(part))
                 || force
                 || isInMemoryPart(part)     /// Remove in-memory parts immediately to not store excessive data in RAM
@@ -2458,35 +2458,43 @@ size_t MergeTreeData::clearEmptyParts()
     if (!getSettings()->remove_empty_parts)
         return 0;
 
-    size_t cleared_count = 0;
-    auto parts = getDataPartsVectorForInternalUsage();
-    for (const auto & part : parts)
+    std::vector<std::string> parts_names_to_drop;
+
     {
-        if (part->rows_count != 0)
-            continue;
-
-        /// Do not try to drop uncommitted parts. If the newest tx doesn't see it that is probably hasn't been committed jet
-        if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
-            continue;
-
-        /// Don't drop empty parts that cover other parts
-        /// Otherwise covered parts resurrect
+        /// Need to destroy parts vector before clearing them from filesystem.
+        auto parts = getDataPartsVectorForInternalUsage();
+        for (const auto & part : parts)
         {
-            auto lock = lockParts();
-            if (part->getState() != DataPartState::Active)
+            if (part->rows_count != 0)
                 continue;
 
-            DataPartsVector covered_parts = getCoveredOutdatedParts(part, lock);
-            if (!covered_parts.empty())
+            /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
+            if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
                 continue;
+
+            /// Don't drop empty parts that cover other parts
+            /// Otherwise covered parts resurrect
+            {
+                auto lock = lockParts();
+                if (part->getState() != DataPartState::Active)
+                    continue;
+
+                DataPartsVector covered_parts = getCoveredOutdatedParts(part, lock);
+                if (!covered_parts.empty())
+                    continue;
+            }
+
+            parts_names_to_drop.emplace_back(part->name);
         }
-
-        LOG_INFO(log, "Will drop empty part {}", part->name);
-
-        dropPartNoWaitNoThrow(part->name);
-        ++cleared_count;
     }
-    return cleared_count;
+
+    for (auto & name : parts_names_to_drop)
+    {
+        LOG_INFO(log, "Will drop empty part {}", name);
+        dropPartNoWaitNoThrow(name);
+    }
+
+    return parts_names_to_drop.size();
 }
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
