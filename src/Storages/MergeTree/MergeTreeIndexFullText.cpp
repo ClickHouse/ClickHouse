@@ -646,6 +646,8 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     std::vector<size_t> key_position;
 
     Columns columns = prepared_set->getSetElements();
+    size_t prepared_set_total_row_count = prepared_set->getTotalRowCount();
+
     for (const auto & elem : key_tuple_mapping)
     {
         bloom_filters.emplace_back();
@@ -653,7 +655,8 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
 
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
-        for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
+
+        for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
             bloom_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
