@@ -33,6 +33,11 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 
 namespace DB
@@ -167,6 +172,21 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     return select;
 }
 
+QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
+{
+    auto ast = prepareQueryAffectedAST(commands, storage, context);
+    auto query_tree = buildQueryTree(ast, context);
+
+    auto & query_node = query_tree->as<QueryNode &>();
+    query_node.getJoinTree() = std::make_shared<TableNode>(storage, context);
+
+    QueryTreePassManager query_tree_pass_manager(context);
+    addQueryTreePasses(query_tree_pass_manager);
+    query_tree_pass_manager.run(query_tree);
+
+    return query_tree;
+}
+
 ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns)
 {
     NameSet new_updated_columns = updated_columns;
@@ -221,16 +241,29 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
-    ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
-
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
 
-    /// Interpreter must be alive, when we use result of execute() method.
-    /// For some reason it may copy context and give it into ExpressionTransform
-    /// after that we will use context from destroyed stack frame in our stream.
-    InterpreterSelectQuery interpreter(
-        select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
-    auto io = interpreter.execute();
+    std::optional<InterpreterSelectQuery> interpreter_select_query;
+    BlockIO io;
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage.shared_from_this(), context);
+        InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits().ignoreProjections());
+        io = interpreter.execute();
+    }
+    else
+    {
+        ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
+        /// Interpreter must be alive, when we use result of execute() method.
+        /// For some reason it may copy context and give it into ExpressionTransform
+        /// after that we will use context from destroyed stack frame in our stream.
+        interpreter_select_query.emplace(
+            select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
+
+        io = interpreter_select_query->execute();
+    }
+
     PullingAsyncPipelineExecutor executor(io.pipeline);
 
     Block block;

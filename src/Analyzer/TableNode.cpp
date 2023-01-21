@@ -26,6 +26,13 @@ TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, Storage
 {
 }
 
+TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
+    : TableNode(storage_,
+        storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout),
+        storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context))
+{
+}
+
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "TABLE id: " << format_state.getNodeId(this);
