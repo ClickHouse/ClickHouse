@@ -133,27 +133,20 @@ The dictionary is completely stored in memory in the form of a hash table. The d
 
 The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
 
-If `preallocate` is `true` (default is `false`) the hash table will be preallocated (this will make the dictionary load faster). But note that you should use it only if:
-
-- The source support an approximate number of elements (for now it is supported only by the `ClickHouse` source).
-- There are no duplicates in the data (otherwise it may increase memory usage for the hashtable).
-
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 Configuration example:
 
 ``` xml
 <layout>
-  <hashed>
-    <preallocate>0</preallocate>
-  </hashed>
+  <hashed />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(HASHED(PREALLOCATE 0))
+LAYOUT(HASHED())
 ```
 
 If `shards` greater then 1 (default is `1`) the dictionary will load data in parallel, useful if you have huge amount of elements in one dictionary.
@@ -189,8 +182,6 @@ Similar to `hashed`, but uses less memory in favor more CPU usage.
 
 The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
 
-It will be also preallocated so as `hashed` (with `preallocate` set to `true`), and note that it is even more significant for `sparse_hashed`.
-
 Configuration example:
 
 ``` xml
@@ -202,7 +193,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
+LAYOUT(SPARSE_HASHED())
 ```
 
 It is also possible to use `shards` for this type of dictionary, and again it is more important for `sparse_hashed` then for `hashed`, since `sparse_hashed` is slower.
@@ -216,7 +207,6 @@ Configuration example:
 ``` xml
 <layout>
   <complex_key_hashed>
-    <preallocate>0</preallocate>
     <shards>1</shards>
     <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
   </complex_key_hashed>
@@ -226,7 +216,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_HASHED([PREALLOCATE 0] [SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 ```
 
 ### complex_key_sparse_hashed
@@ -238,7 +228,6 @@ Configuration example:
 ``` xml
 <layout>
   <complex_key_sparse_hashed>
-    <preallocate>0</preallocate>
     <shards>1</shards>
   </complex_key_sparse_hashed>
 </layout>
@@ -247,7 +236,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_SPARSE_HASHED([PREALLOCATE 0] [SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 ```
 
 ### hashed_array

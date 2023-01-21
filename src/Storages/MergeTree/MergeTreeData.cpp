@@ -2774,6 +2774,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "The following alter commands: '{}' will modify data on disk, but setting `allow_non_metadata_alters` is disabled", queryToString(mutation_commands.ast()));
     }
+
+    if (commands.hasInvertedIndex(new_metadata, getContext()) && !settings.allow_experimental_inverted_index)
+    {
+        throw Exception(
+                "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')",
+                ErrorCodes::SUPPORT_IS_DISABLED);
+    }
     commands.apply(new_metadata, getContext());
 
     /// Set of columns that shouldn't be altered.
@@ -2862,15 +2869,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             }
             else if (command.type == AlterCommand::DROP_COLUMN)
             {
-                throw Exception(
-                    "Trying to ALTER DROP version " + backQuoteIfNeed(command.column_name) + " column",
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP version {} column", backQuoteIfNeed(command.column_name));
             }
             else if (command.type == AlterCommand::RENAME_COLUMN)
             {
-                throw Exception(
-                    "Trying to ALTER RENAME version " + backQuoteIfNeed(command.column_name) + " column",
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER RENAME version {} column", backQuoteIfNeed(command.column_name));
             }
         }
 
@@ -2922,9 +2927,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             if (columns_in_keys.contains(command.column_name))
             {
-                throw Exception(
-                    "Trying to ALTER DROP key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP key {} column which is a part of key expression", backQuoteIfNeed(command.column_name));
             }
 
             if (!command.clear)
@@ -2932,10 +2936,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 const auto & deps_mv = name_deps[command.column_name];
                 if (!deps_mv.empty())
                 {
-                    throw Exception(
-                        "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                            + toString(deps_mv),
-                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                        backQuoteIfNeed(command.column_name), toString(deps_mv));
                 }
             }
 
