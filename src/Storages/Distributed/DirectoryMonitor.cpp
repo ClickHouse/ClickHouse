@@ -1092,6 +1092,8 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching()
     /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
     if (fs::exists(current_batch_file_path))
     {
+        LOG_DEBUG(log, "Restoring the batch");
+
         Batch batch(*this);
         batch.deserialize();
         batch.send();
