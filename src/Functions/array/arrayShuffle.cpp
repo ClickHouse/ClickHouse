@@ -155,13 +155,13 @@ ColumnPtr FunctionArrayShuffleImpl<Traits>::executeGeneric(const ColumnArray & a
         auto next_offset = offsets[i];
         if constexpr (Traits::has_limit)
         {
-            if (limit && next_offset > limit)
-            {
+            if (limit)
                 partial_shuffle(&permutation[current_offset], &permutation[next_offset], limit, rng);
-                break;
-            }
+            else
+                shuffle(&permutation[current_offset], &permutation[next_offset], rng);
         }
-        shuffle(&permutation[current_offset], &permutation[next_offset], rng);
+        else
+            shuffle(&permutation[current_offset], &permutation[next_offset], rng);
         current_offset = next_offset;
     }
     return ColumnArray::create(array.getData().permute(permutation, 0), array.getOffsetsPtr());
