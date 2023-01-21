@@ -156,7 +156,10 @@ ColumnPtr FunctionArrayShuffleImpl<Traits>::executeGeneric(const ColumnArray & a
         if constexpr (Traits::has_limit)
         {
             if (limit)
-                partial_shuffle(&permutation[current_offset], &permutation[next_offset], limit, rng);
+            {
+                const auto effective_limit = std::min(limit, next_offset - current_offset);
+                partial_shuffle(&permutation[current_offset], &permutation[next_offset], effective_limit, rng);
+            }
             else
                 shuffle(&permutation[current_offset], &permutation[next_offset], rng);
         }
