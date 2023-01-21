@@ -47,6 +47,7 @@ SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,10], 4, 0xbad_cafe);
 SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,10], 8, 0xbad_cafe);
 SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,10], 9, 0xbad_cafe);
 SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,10], 10, 0xbad_cafe);
+SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,10], 100, 0xbad_cafe);
 SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,10.1], 4, 0xbad_cafe);
 SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,9223372036854775808], 4, 0xbad_cafe);
 SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,NULL], 4, 0xbad_cafe);
