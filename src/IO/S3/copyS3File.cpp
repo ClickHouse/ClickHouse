@@ -1,4 +1,4 @@
-#include <IO/S3/copyDataToS3.h>
+#include <IO/S3/copyS3File.h>
 
 #if USE_AWS_S3
 
@@ -22,8 +22,15 @@ namespace ProfileEvents
 {
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
-    extern const Event S3UploadPart;
     extern const Event S3PutObject;
+    extern const Event S3UploadPart;
+    extern const Event S3UploadPartCopy;
+
+    extern const Event DiskS3CreateMultipartUpload;
+    extern const Event DiskS3CompleteMultipartUpload;
+    extern const Event DiskS3PutObject;
+    extern const Event DiskS3UploadPart;
+    extern const Event DiskS3UploadPartCopy;
 }
 
 
@@ -50,6 +57,7 @@ namespace
             const S3Settings::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunner<void> schedule_,
+            bool for_disk_s3_,
             const Poco::Logger * log_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
@@ -59,6 +67,7 @@ namespace
             , max_unexpected_write_error_retries(request_settings_.max_unexpected_write_error_retries)
             , object_metadata(object_metadata_)
             , schedule(schedule_)
+            , for_disk_s3(for_disk_s3_)
             , log(log_)
         {
         }
@@ -74,6 +83,7 @@ namespace
         size_t max_unexpected_write_error_retries;
         const std::optional<std::map<String, String>> & object_metadata;
         ThreadPoolCallbackRunner<void> schedule;
+        bool for_disk_s3;
         const Poco::Logger * log;
 
         struct UploadPartTask
@@ -111,6 +121,8 @@ namespace
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(settings.storage_class_name));
 
             ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
+            if (for_disk_s3)
+                ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
             auto outcome = client_ptr->CreateMultipartUpload(request);
 
@@ -151,6 +163,8 @@ namespace
             for (size_t i = 0; i < max_retry; ++i)
             {
                 ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
+                if (for_disk_s3)
+                    ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
                 auto outcome = client_ptr->CompleteMultipartUpload(request);
 
@@ -379,11 +393,11 @@ namespace
         }
     };
 
-    /// Helper class to help implementing copyDataToS3().
-    class CopyDataToS3Helper : public UploadHelper
+    /// Helper class to help implementing copyDataToS3File().
+    class CopyDataToFileHelper : public UploadHelper
     {
     public:
-        CopyDataToS3Helper(
+        CopyDataToFileHelper(
             const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer_,
             size_t offset_,
             size_t size_,
@@ -392,8 +406,9 @@ namespace
             const String & dest_key_,
             const S3Settings::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, &Poco::Logger::get("copyDataToS3"))
+            ThreadPoolCallbackRunner<void> schedule_,
+            bool for_disk_s3_)
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, &Poco::Logger::get("copyDataToS3File"))
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -448,6 +463,9 @@ namespace
             for (size_t i = 0; i < max_retry; ++i)
             {
                 ProfileEvents::increment(ProfileEvents::S3PutObject);
+                if (for_disk_s3)
+                    ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
+
                 auto outcome = client_ptr->PutObject(request);
 
                 if (outcome.IsSuccess())
@@ -523,6 +541,8 @@ namespace
             auto & req = typeid_cast<Aws::S3::Model::UploadPartRequest &>(request);
 
             ProfileEvents::increment(ProfileEvents::S3UploadPart);
+            if (for_disk_s3)
+                ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
             auto outcome = client_ptr->UploadPart(req);
             if (!outcome.IsSuccess())
@@ -535,11 +555,11 @@ namespace
         }
     };
 
-    /// Helper class to help implementing copyFileS3ToS3().
-    class CopyFileS3ToS3Helper : public UploadHelper
+    /// Helper class to help implementing copyS3File().
+    class CopyFileHelper : public UploadHelper
     {
     public:
-        CopyFileS3ToS3Helper(
+        CopyFileHelper(
             const std::shared_ptr<const Aws::S3::S3Client> & client_ptr_,
             const String & src_bucket_,
             const String & src_key_,
@@ -549,8 +569,9 @@ namespace
             const String & dest_key_,
             const S3Settings::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, &Poco::Logger::get("copyFileS3ToS3"))
+            ThreadPoolCallbackRunner<void> schedule_,
+            bool for_disk_s3_)
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, &Poco::Logger::get("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -676,6 +697,10 @@ namespace
         {
             auto & req = typeid_cast<Aws::S3::Model::UploadPartCopyRequest &>(request);
 
+            ProfileEvents::increment(ProfileEvents::S3UploadPartCopy);
+            if (for_disk_s3)
+                ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
+
             auto outcome = client_ptr->UploadPartCopy(req);
             if (!outcome.IsSuccess())
             {
@@ -689,7 +714,7 @@ namespace
 }
 
 
-void copyDataToS3(
+void copyDataToS3File(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
@@ -698,14 +723,15 @@ void copyDataToS3(
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
     const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule)
+    ThreadPoolCallbackRunner<void> schedule,
+    bool for_disk_s3)
 {
-    CopyDataToS3Helper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule};
+    CopyDataToFileHelper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3};
     helper.performCopy();
 }
 
 
-void copyFileS3ToS3(
+void copyS3File(
     const std::shared_ptr<const Aws::S3::S3Client> & s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -715,9 +741,10 @@ void copyFileS3ToS3(
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
     const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule)
+    ThreadPoolCallbackRunner<void> schedule,
+    bool for_disk_s3)
 {
-    CopyFileS3ToS3Helper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, object_metadata, schedule};
+    CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3};
     helper.performCopy();
 }
 
