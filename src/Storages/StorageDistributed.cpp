@@ -578,9 +578,9 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     bool has_aggregates = query_info.has_aggregates;
     if (query_info.syntax_analyzer_result)
-        has_aggregates = query_info.syntax_analyzer_result->aggregates.empty();
+        has_aggregates = !query_info.syntax_analyzer_result->aggregates.empty();
 
-    if (!has_aggregates || group_by)
+    if (has_aggregates || group_by)
     {
         if (!optimize_sharding_key_aggregation || !group_by || !expr_contains_sharding_key(group_by->children))
             return {};
