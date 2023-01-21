@@ -997,8 +997,7 @@ void BackupImpl::increaseProcessedSize(UInt64 file_size) const
 
 void BackupImpl::increaseProcessedSize(const FileInfo & info)
 {
-    if ((info.size > info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)))
-        increaseProcessedSize(info.size - info.base_size);
+    increaseProcessedSize(info.size);
 }
 
 void BackupImpl::setCompressedSize()
