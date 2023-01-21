@@ -118,8 +118,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     const std::string & relative_path_,
     ConnectionPoolPtr pool_,
     ActionBlocker & monitor_blocker_,
-    BackgroundSchedulePool & bg_pool,
-    bool initialize_from_disk)
+    BackgroundSchedulePool & bg_pool)
     : storage(storage_)
     , pool(std::move(pool_))
     , disk(disk_)
@@ -144,8 +143,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
 {
     fs::create_directory(broken_path);
 
-    if (initialize_from_disk)
-        initializeFilesFromDisk();
+    initializeFilesFromDisk();
 
     task_handle = bg_pool.createTask(getLoggerName() + "/Bg", [this]{ run(); });
     task_handle->activateAndSchedule();

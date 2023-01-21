@@ -1225,14 +1225,14 @@ void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
             }
             else
             {
-                getDirectoryQueue(disk, dir_path.filename().string(), /* startup= */ true);
+                getDirectoryQueue(disk, dir_path.filename().string());
             }
         }
     }
 }
 
 
-DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(const DiskPtr & disk, const std::string & name, bool startup)
+DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(const DiskPtr & disk, const std::string & name)
 {
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
@@ -1246,8 +1246,7 @@ DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(con
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
             monitors_blocker,
-            getContext()->getDistributedSchedulePool(),
-            /* initialize_from_disk= */ startup);
+            getContext()->getDistributedSchedulePool());
     }
     return *node_data.directory_monitor;
 }
