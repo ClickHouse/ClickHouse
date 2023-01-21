@@ -12,10 +12,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
-#include <Storages/Distributed/Defines.h>
+#include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/StorageDistributed.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
@@ -277,7 +276,7 @@ namespace
         return nullptr;
     }
 
-    void writeAndConvert(RemoteInserter & remote, const DistributedHeader & distributed_header, ReadBufferFromFile & in)
+    void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInsertHeader & distributed_header, ReadBufferFromFile & in)
     {
         CompressedReadBuffer decompressing_in(in);
         NativeReader block_in(decompressing_in, distributed_header.revision);
@@ -296,7 +295,7 @@ namespace
     }
 
     void writeRemoteConvert(
-        const DistributedHeader & distributed_header,
+        const DistributedAsyncInsertHeader & distributed_header,
         RemoteInserter & remote,
         bool compression_expected,
         ReadBufferFromFile & in,
@@ -662,7 +661,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
         ReadBufferFromFile in(file_path);
-        const auto & distributed_header = readDistributedHeader(in, log);
+        const auto & distributed_header = readDistributedAsyncInsertHeader(in, log);
 
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
             distributed_header.client_info.client_trace_context,
@@ -915,7 +914,7 @@ private:
         for (const auto & file : files)
         {
             ReadBufferFromFile in(file);
-            const auto & distributed_header = readDistributedHeader(in, parent.log);
+            const auto & distributed_header = readDistributedAsyncInsertHeader(in, parent.log);
 
             OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
                 distributed_header.client_info.client_trace_context,
@@ -954,7 +953,7 @@ private:
             try
             {
                 ReadBufferFromFile in(file);
-                const auto & distributed_header = readDistributedHeader(in, parent.log);
+                const auto & distributed_header = readDistributedAsyncInsertHeader(in, parent.log);
 
                 // this function is called in a separated thread, so we set up the trace context from the file
                 OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
@@ -1111,12 +1110,12 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching()
         size_t total_rows = 0;
         size_t total_bytes = 0;
         Block header;
-        DistributedHeader distributed_header;
+        DistributedAsyncInsertHeader distributed_header;
         try
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            distributed_header = readDistributedHeader(in, log);
+            distributed_header = readDistributedAsyncInsertHeader(in, log);
 
             if (distributed_header.rows)
             {
