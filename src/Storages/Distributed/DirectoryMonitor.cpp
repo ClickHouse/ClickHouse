@@ -1048,7 +1048,10 @@ bool StorageDistributedDirectoryMonitor::addAndSchedule(const std::string & file
     /// NOTE: It is better not to throw in this case, since the file is already
     /// on disk (see DistributedSink), and it will be processed next time.
     if (pending_files.isFinished())
+    {
+        LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file_path);
         return false;
+    }
 
     if (!pending_files.push(file_path))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add pending file");
