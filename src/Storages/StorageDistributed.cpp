@@ -1204,14 +1204,11 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         const auto & dir_path = it->path();
         if (std::filesystem::is_directory(dir_path))
         {
-            /// Created by DistributedSink
             const auto & tmp_path = dir_path / "tmp";
+
+            /// "tmp" created by DistributedSink
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
-
-            const auto & broken_path = dir_path / "broken";
-            if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
-                std::filesystem::remove(broken_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
@@ -1221,14 +1218,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
             }
             else
             {
-                requireDirectoryMonitor(disk, dir_path.filename().string(), /* startup= */ true);
+                requireDirectoryMonitor(disk, dir_path.filename().string());
             }
         }
     }
 }
 
 
-StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup)
+StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name)
 {
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
@@ -1242,8 +1239,7 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
             monitors_blocker,
-            getContext()->getDistributedSchedulePool(),
-            /* initialize_from_disk= */ startup);
+            getContext()->getDistributedSchedulePool());
     }
     return *node_data.directory_monitor;
 }
