@@ -2065,10 +2065,18 @@ if __name__ == "__main__":
     parser.add_argument("-q", "--queries", help="Path to queries dir")
     parser.add_argument("--tmp", help="Path to tmp dir")
 
+    clickhouse_binary = find_binary("clickhouse")
+    if clickhouse_binary is None:
+        print(
+            "No 'clickhouse' binary found",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     parser.add_argument(
         "-b",
         "--binary",
-        default=find_binary("clickhouse") or "clickhouse",
+        default=clickhouse_binary,
         help="Path to clickhouse binary or name of binary in PATH",
     )
 
