@@ -56,7 +56,7 @@ void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
     /// breaking some functionality because of unexpected "File not
     /// found" (or similar) error.
     ///
-    /// For example StorageDistributedDirectoryMonitor will mark batch
+    /// For example DistributedAsyncInsertDirectoryQueue will mark batch
     /// as broken, some MergeTree code can also be affected.
     ///
     /// Also note, that we cannot log the exception here, since this

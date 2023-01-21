@@ -6,14 +6,14 @@
 namespace DB
 {
 
-class StorageDistributedDirectoryMonitor;
+class DistributedAsyncInsertDirectoryQueue;
 class WriteBuffer;
 class ReadBuffer;
 
 class DistributedAsyncInsertBatch
 {
 public:
-    explicit DistributedAsyncInsertBatch(StorageDistributedDirectoryMonitor & parent_);
+    explicit DistributedAsyncInsertBatch(DistributedAsyncInsertDirectoryQueue & parent_);
 
     bool isEnoughSize() const;
     void send();
@@ -31,7 +31,7 @@ private:
     void sendBatch();
     void sendSeparateFiles();
 
-    StorageDistributedDirectoryMonitor & parent;
+    DistributedAsyncInsertDirectoryQueue & parent;
 
     /// Does the batch had been created from the files in current_batch.txt?
     bool recovered = false;
