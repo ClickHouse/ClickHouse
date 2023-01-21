@@ -38,6 +38,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class StorageDistributed final : public IStorage, WithContext
 {
     friend class DistributedSink;
+    friend class DistributedAsyncInsertBatch;
     friend class StorageDistributedDirectoryMonitor;
     friend class StorageSystemDistributionQueue;
 
