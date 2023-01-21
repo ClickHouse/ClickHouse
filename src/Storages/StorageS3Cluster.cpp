@@ -46,13 +46,15 @@ StorageS3Cluster::StorageS3Cluster(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool structure_argument_was_provided_)
     : IStorageCluster(table_id_)
     , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.request_settings, configuration_.headers}
     , filename(configuration_.url)
     , cluster_name(configuration_.cluster_name)
     , format_name(configuration_.format)
     , compression_method(configuration_.compression_method)
+    , structure_argument_was_provided(structure_argument_was_provided_)
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI{filename});
     StorageInMemoryMetadata storage_metadata;
@@ -68,7 +70,6 @@ StorageS3Cluster::StorageS3Cluster(
         auto columns = StorageS3::getTableStructureFromDataImpl(format_name, s3_configuration, compression_method,
             /*distributed_processing_*/false, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
-        add_columns_structure_to_query = true;
     }
     else
         storage_metadata.setColumns(columns_);
@@ -111,7 +112,7 @@ Pipe StorageS3Cluster::read(
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
     ASTPtr query_to_send = interpreter.getQueryInfo().query->clone();
-    if (add_columns_structure_to_query)
+    if (!structure_argument_was_provided)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
 

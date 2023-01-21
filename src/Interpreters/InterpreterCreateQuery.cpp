@@ -41,6 +41,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/GinFilter.h>
 
 #include <Access/Common/AccessRightsElement.h>
 
@@ -100,6 +101,7 @@ namespace ErrorCodes
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
     extern const int SYNTAX_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace fs = std::filesystem;
@@ -677,12 +679,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
             {
-                properties.indices.push_back(
-                    IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
-                    if (properties.indices.back().type == "annoy" && !getContext()->getSettingsRef().allow_experimental_annoy_index)
-                        throw Exception("Annoy index is disabled. Turn on allow_experimental_annoy_index", ErrorCodes::INCORRECT_QUERY);
-            }
+                IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext());
+                if (index_desc.type == GinFilter::FilterName && getContext()->getSettingsRef().allow_experimental_inverted_index == false)
+                {
+                    throw Exception(
+                            "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')",
+                            ErrorCodes::SUPPORT_IS_DISABLED);
+                }
+                if (index_desc.type == "annoy" && !getContext()->getSettingsRef().allow_experimental_annoy_index)
+                    throw Exception("Annoy index is disabled. Turn on allow_experimental_annoy_index", ErrorCodes::INCORRECT_QUERY);
 
+                properties.indices.push_back(index_desc);
+            }
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
