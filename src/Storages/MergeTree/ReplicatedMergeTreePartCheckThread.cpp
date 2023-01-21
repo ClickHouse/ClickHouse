@@ -373,9 +373,9 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                     throw;
 
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
-                String message = "Part " + part_name + " looks broken. Removing it and will try to fetch.";
-                LOG_ERROR(log, fmt::runtime(message));
+                constexpr auto fmt_string = "Part {} looks broken. Removing it and will try to fetch.";
+                String message = fmt::format(fmt_string, part_name);
+                LOG_ERROR(log, fmt_string, part_name);
 
                 /// Delete part locally.
                 storage.outdateBrokenPartAndCloneToDetached(part, "broken");
@@ -392,9 +392,9 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             /// Probably, someone just wrote down the part, and has not yet added to ZK.
             /// Therefore, delete only if the part is old (not very reliable).
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
-
-            String message = "Unexpected part " + part_name + " in filesystem. Removing.";
-            LOG_ERROR(log, fmt::runtime(message));
+            constexpr auto fmt_string = "Unexpected part {} in filesystem. Removing.";
+            String message = fmt::format(fmt_string, part_name);
+            LOG_ERROR(log, fmt_string, part_name);
             storage.outdateBrokenPartAndCloneToDetached(part, "unexpected");
             return {part_name, false, message};
         }
