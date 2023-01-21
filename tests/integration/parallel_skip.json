@@ -51,5 +51,10 @@
   "test_global_overcommit_tracker/test.py::test_global_overcommit",
 
   "test_user_ip_restrictions/test.py::test_ipv4",
-  "test_user_ip_restrictions/test.py::test_ipv6"
+  "test_user_ip_restrictions/test.py::test_ipv6",
+
+  "test_backup_restore_on_cluster/test_disallow_concurrency.py::test_concurrent_backups_on_same_node",
+  "test_backup_restore_on_cluster/test_disallow_concurrency.py::test_concurrent_backups_on_different_nodes",
+  "test_backup_restore_on_cluster/test_disallow_concurrency.py::test_concurrent_restores_on_same_node",
+  "test_backup_restore_on_cluster/test_disallow_concurrency.py::test_concurrent_restores_on_different_node"
 ]
