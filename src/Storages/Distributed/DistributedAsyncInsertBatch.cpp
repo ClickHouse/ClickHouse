@@ -198,37 +198,59 @@ void DistributedAsyncInsertBatch::sendBatch()
 
     IConnectionPool::Entry connection;
 
-    for (const auto & file : files)
+    /// Since the batch is sent as a whole (in case of failure, the whole batch
+    /// will be repeated), we need to mark the whole batch as failed in case of
+    /// error).
+    std::vector<OpenTelemetry::TracingContextHolderPtr> tracing_contexts;
+    UInt64 batch_start_time = clock_gettime_ns();
+
+    try
     {
-        ReadBufferFromFile in(file);
-        const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
-
-        OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
-            distributed_header.client_info.client_trace_context,
-            parent.storage.getContext()->getOpenTelemetrySpanLog());
-
-        if (!remote)
+        for (const auto & file : files)
         {
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-            connection = parent.pool->get(timeouts);
-            compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+            ReadBufferFromFile in(file);
+            const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
-            LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
-                files.size(),
-                connection->getDescription(),
-                formatReadableQuantity(total_rows),
-                formatReadableSizeWithBinarySuffix(total_bytes));
+            tracing_contexts.emplace_back(distributed_header.createTracingContextHolder(
+                parent.storage.getContext()->getOpenTelemetrySpanLog()));
+            tracing_contexts.back()->root_span.addAttribute("clickhouse.distributed_batch_start_time", batch_start_time);
 
-            remote = std::make_unique<RemoteInserter>(*connection, timeouts,
-                distributed_header.insert_query,
-                distributed_header.insert_settings,
-                distributed_header.client_info);
+            if (!remote)
+            {
+                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
+                connection = parent.pool->get(timeouts);
+                compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+
+                LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
+                    files.size(),
+                    connection->getDescription(),
+                    formatReadableQuantity(total_rows),
+                    formatReadableSizeWithBinarySuffix(total_bytes));
+
+                remote = std::make_unique<RemoteInserter>(*connection, timeouts,
+                    distributed_header.insert_query,
+                    distributed_header.insert_settings,
+                    distributed_header.client_info);
+            }
+            writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
-        writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
-    }
 
-    if (remote)
-        remote->onFinish();
+        if (remote)
+            remote->onFinish();
+    }
+    catch (...)
+    {
+        try
+        {
+            for (auto & tracing_context : tracing_contexts)
+                tracing_context->root_span.addAttribute(std::current_exception());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(parent.log, "Cannot append exception to tracing context");
+        }
+        throw;
+    }
 }
 
 void DistributedAsyncInsertBatch::sendSeparateFiles()
@@ -237,14 +259,15 @@ void DistributedAsyncInsertBatch::sendSeparateFiles()
 
     for (const auto & file : files)
     {
+        OpenTelemetry::TracingContextHolderPtr trace_context;
+
         try
         {
             ReadBufferFromFile in(file);
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
             // This function is called in a separated thread, so we set up the trace context from the file
-            OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
-                distributed_header.client_info.client_trace_context,
+            trace_context = distributed_header.createTracingContextHolder(
                 parent.storage.getContext()->getOpenTelemetrySpanLog());
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
@@ -261,6 +284,8 @@ void DistributedAsyncInsertBatch::sendSeparateFiles()
         }
         catch (Exception & e)
         {
+            trace_context->root_span.addAttribute(std::current_exception());
+
             if (isDistributedSendBroken(e.code(), e.isRemoteException()))
             {
                 parent.markAsBroken(file);

@@ -11,6 +11,12 @@ namespace DB
 
 class ReadBufferFromFile;
 
+namespace OpenTelemetry
+{
+struct TracingContextHolder;
+using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
+}
+
 /// Header for the binary files that are stored on disk for async INSERT into Distributed.
 struct DistributedAsyncInsertHeader
 {
@@ -33,6 +39,7 @@ struct DistributedAsyncInsertHeader
     Block block_header;
 
     static DistributedAsyncInsertHeader read(ReadBufferFromFile & in, Poco::Logger * log);
+    OpenTelemetry::TracingContextHolderPtr createTracingContextHolder(std::shared_ptr<OpenTelemetrySpanLog> open_telemetry_span_log) const;
 };
 
 }

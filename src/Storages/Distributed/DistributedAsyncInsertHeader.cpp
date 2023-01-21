@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 
 
@@ -104,6 +105,21 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
     in.readStrict(distributed_header.insert_query.data(), query_size);
 
     return distributed_header;
+}
+
+OpenTelemetry::TracingContextHolderPtr DistributedAsyncInsertHeader::createTracingContextHolder(std::shared_ptr<OpenTelemetrySpanLog> open_telemetry_span_log) const
+{
+    OpenTelemetry::TracingContextHolderPtr trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
+        __PRETTY_FUNCTION__,
+        client_info.client_trace_context,
+        std::move(open_telemetry_span_log));
+    trace_context->root_span.addAttribute("clickhouse.shard_num", shard_num);
+    trace_context->root_span.addAttribute("clickhouse.cluster", cluster);
+    trace_context->root_span.addAttribute("clickhouse.distributed", distributed_table);
+    trace_context->root_span.addAttribute("clickhouse.remote", remote_table);
+    trace_context->root_span.addAttribute("clickhouse.rows", rows);
+    trace_context->root_span.addAttribute("clickhouse.bytes", bytes);
+    return trace_context;
 }
 
 }
