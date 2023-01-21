@@ -5667,7 +5667,10 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 {
                     auto * identifier_node = join_using_node->as<IdentifierNode>();
                     if (!identifier_node)
-                        continue;
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "JOIN {} USING clause expected identifier. Actual {}",
+                            join_node.formatASTForErrorMessage(),
+                            join_using_node->formatASTForErrorMessage());
 
                     const auto & identifier_full_name = identifier_node->getIdentifier().getFullName();
 
