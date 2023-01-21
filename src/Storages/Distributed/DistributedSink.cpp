@@ -340,9 +340,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         size_t rows = shard_block.rows();
 
         span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-        span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
-        span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
-        span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
+        span.addAttribute("clickhouse.cluster", storage.cluster_name);
+        span.addAttribute("clickhouse.distributed", storage.getStorageID().getFullNameNotQuoted());
+        span.addAttribute("clickhouse.remote", [this]() { return storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(); });
         span.addAttribute("clickhouse.rows", rows);
         span.addAttribute("clickhouse.bytes", [&shard_block]() { return toString(shard_block.bytes()); });
 
@@ -476,7 +476,7 @@ void DistributedSink::writeSync(const Block & block)
 
     span.addAttribute("clickhouse.start_shard", start);
     span.addAttribute("clickhouse.end_shard", end);
-    span.addAttribute("db.statement", this->query_string);
+    span.addAttribute("db.statement", query_string);
 
     if (num_shards > 1)
     {
@@ -659,9 +659,9 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-    span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
-    span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
-    span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
+    span.addAttribute("clickhouse.cluster", storage.cluster_name);
+    span.addAttribute("clickhouse.distributed", storage.getStorageID().getFullNameNotQuoted());
+    span.addAttribute("clickhouse.remote", [this]() { return storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(); });
     span.addAttribute("clickhouse.rows", [&block]() { return toString(block.rows()); });
     span.addAttribute("clickhouse.bytes", [&block]() { return toString(block.bytes()); });
 
@@ -782,9 +782,9 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             }
 
             writeVarUInt(shard_info.shard_num, header_buf);
-            writeStringBinary(this->storage.cluster_name, header_buf);
-            writeStringBinary(this->storage.getStorageID().getFullNameNotQuoted(), header_buf);
-            writeStringBinary(this->storage.remote_database + "." + this->storage.remote_table, header_buf);
+            writeStringBinary(storage.cluster_name, header_buf);
+            writeStringBinary(storage.getStorageID().getFullNameNotQuoted(), header_buf);
+            writeStringBinary(storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(), header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
