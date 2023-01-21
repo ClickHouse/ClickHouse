@@ -377,14 +377,14 @@ void DatabaseOnDisk::renameTable(
     if (dictionary && table && !table->isDictionary())
         throw Exception("Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables", ErrorCodes::INCORRECT_QUERY);
 
+    table_lock = table->lockExclusively(
+        local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+
     detachTable(local_context, table_name);
 
     UUID prev_uuid = UUIDHelpers::Nil;
     try
     {
-        table_lock = table->lockExclusively(
-            local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-
         table_metadata_path = getObjectMetadataPath(table_name);
         attach_query = parseQueryFromMetadata(log, local_context, table_metadata_path);
         auto & create = attach_query->as<ASTCreateQuery &>();
