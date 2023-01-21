@@ -201,7 +201,7 @@ void DistributedAsyncInsertBatch::sendBatch()
     for (const auto & file : files)
     {
         ReadBufferFromFile in(file);
-        const auto & distributed_header = readDistributedAsyncInsertHeader(in, parent.log);
+        const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
         OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
             distributed_header.client_info.client_trace_context,
@@ -240,7 +240,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles()
         try
         {
             ReadBufferFromFile in(file);
-            const auto & distributed_header = readDistributedAsyncInsertHeader(in, parent.log);
+            const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
             // This function is called in a separated thread, so we set up the trace context from the file
             OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
