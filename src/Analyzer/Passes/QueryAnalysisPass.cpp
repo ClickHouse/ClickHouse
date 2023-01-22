@@ -1107,7 +1107,7 @@ private:
 
     static QueryTreeNodePtr wrapExpressionNodeInTupleElement(QueryTreeNodePtr expression_node, IdentifierView nested_path);
 
-    static QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
+    QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
 
     void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth, ContextPtr context);
 
@@ -1206,6 +1206,9 @@ private:
 
     /// Lambdas that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> lambdas_in_resolve_process;
+
+    /// Function name to user defined lambda map
+    std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
 
     /// Array join expressions counter
     size_t array_join_expressions_counter = 0;
@@ -1710,6 +1713,10 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunctions(const st
     if (!user_defined_function)
         return {};
 
+    auto it = function_name_to_user_defined_lambda.find(function_name);
+    if (it != function_name_to_user_defined_lambda.end())
+        return it->second;
+
     const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
     auto result_node = buildQueryTree(create_function_query->function_core, context);
     if (result_node->getNodeType() != QueryTreeNodeType::LAMBDA)
@@ -1717,6 +1724,8 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunctions(const st
             "SQL user defined function {} must represent lambda expression. Actual {}",
             function_name,
             create_function_query->function_core->formatForErrorMessage());
+
+    function_name_to_user_defined_lambda.emplace(function_name, result_node);
 
     return result_node;
 }
@@ -2271,11 +2280,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
             identifier_bind_part,
             scope.scope_node->formatASTForErrorMessage());
 
-    if (auto root_expression_wih_alias = scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part))
+    if (auto root_expression_with_alias = scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part))
     {
         const auto top_expression = scope.expressions_in_resolve_process_stack.getTop();
 
-        if (!isNodePartOfTree(top_expression.get(), root_expression_wih_alias.get()))
+        if (!isNodePartOfTree(top_expression.get(), root_expression_with_alias.get()))
             throw Exception(ErrorCodes::CYCLIC_ALIASES,
                 "Cyclic aliases for identifier '{}'. In scope {}",
                 identifier_lookup.identifier.getFullName(),
