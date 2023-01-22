@@ -403,7 +403,7 @@ UInt32 CompressionCodecGorilla::doCompressData(const char * source, UInt32 sourc
         break;
     }
 
-    return 1 + 1 + result_size;
+    return 2 + bytes_to_skip + result_size;
 }
 
 void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
