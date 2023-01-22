@@ -158,7 +158,7 @@ bool isPartitionKeySuitsGroupByKey(const ReadFromMergeTree & reading, ActionsDAG
 
     /// We are interested only in calculations required to obtain group by keys.
     group_by_actions->removeUnusedActions(aggregating.getParams().keys);
-    if (group_by_actions->hasArrayJoin() || group_by_actions->hasStatefulFunctions() /* || group_by_actions->assertDeterministic() */)
+    if (group_by_actions->hasArrayJoin() || group_by_actions->hasStatefulFunctions() || group_by_actions->hasNonDeterministic())
         return false;
     const auto & gb_key_required_columns = group_by_actions->getRequiredColumnsNames();
 
