@@ -2929,7 +2929,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     }
 
     if (source_replica.empty())
-        throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
+        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are lost");
 
     if (is_new_replica)
         LOG_INFO(log, "Will mimic {}", source_replica);
@@ -3049,17 +3049,17 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
             if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-                LOG_INFO(log, fmt::runtime(e.displayText()));
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
-                LOG_INFO(log, fmt::runtime(e.message()));
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
-                LOG_INFO(log, fmt::runtime(e.displayText()));
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
                 cleanup_thread.wakeup();
             }
             else
@@ -4787,13 +4787,14 @@ bool StorageReplicatedMergeTree::optimize(
     assertNotReadonly();
 
     if (!is_leader)
-        throw Exception("OPTIMIZE cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
+        throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
 
-    auto handle_noop = [&] (const char * fmt_string, auto ...args)
+    auto handle_noop = [&]<typename... Args>(FormatStringHelper<Args...> fmt_string, Args && ...args)
     {
-        LOG_DEBUG(log, fmt::runtime(fmt_string), args...);
+        PreformattedMessage message = fmt_string.format(std::forward<Args...>(args)...);
+        LOG_DEBUG(log, message);
         if (query_context->getSettingsRef().optimize_throw_if_noop)
-            throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, fmt::runtime(fmt_string), args...);
+            throw Exception(message, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
         return false;
     };
 
@@ -6116,7 +6117,7 @@ void StorageReplicatedMergeTree::fetchPartition(
                 && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
                 throw;
 
-            LOG_INFO(log, fmt::runtime(e.displayText()));
+            LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
         }
         return;
     }
@@ -6252,7 +6253,7 @@ void StorageReplicatedMergeTree::fetchPartition(
                     && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
                     throw;
 
-                LOG_INFO(log, fmt::runtime(e.displayText()));
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
             }
 
             if (!fetched)
