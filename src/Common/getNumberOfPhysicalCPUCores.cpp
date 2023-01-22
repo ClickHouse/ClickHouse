@@ -37,21 +37,25 @@ static uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 
     return std::min(default_cpu_count, quota_count);
 }
+#endif
 
-/// Returns number of physical cores. If Intel hyper-threading (2-way SMP) is enabled, then getPhysicalConcurrency() returns half of of
-/// std::thread::hardware_concurrency(), otherwise both values are the same.
-static uint32_t physical_concurrency()
+/// Returns number of physical cores, unlike std::thread::hardware_concurrency() which returns the logical core count. With 2-way SMT
+/// (HyperThreading) enabled, physical_concurrency() returns half of of std::thread::hardware_concurrency(), otherwise return the same.
+static unsigned physical_concurrency()
+#if defined(OS_LINUX)
 try
 {
-    /// Derive physical cores from /proc/cpuinfo. Unfortunately, the CPUID instruction isn't reliable accross different vendors / CPU
-    /// models. Implementation based on boost::thread::physical_concurrency(). See
-    /// https://doc.callmematthi.eu/static/webArticles/Understanding%20Linux%20_proc_cpuinfo.pdf for semantics of /proc/cpuinfo in the
-    /// presence of multiple cores per socket, multiple sockets and multiple hyperthreading cores per physical core.
+    /// The CPUID instruction isn't reliable across different vendors and CPU models. The best option to get the physical core count is
+    /// to parse /proc/cpuinfo. boost::thread::physical_concurrency() does the same, so use their implementation.
+    ///
+    /// See https://doc.callmematthi.eu/static/webArticles/Understanding%20Linux%20_proc_cpuinfo.pdf
     std::ifstream proc_cpuinfo("/proc/cpuinfo");
 
-    using CoreEntry = std::pair<size_t, size_t>;
+    using CoreEntry = std::pair<size_t, size_t>; /// physical id, core id
+    using CoreEntrySet = std::set<CoreEntry>;
 
-    std::set<CoreEntry> core_entries;
+    CoreEntrySet core_entries;
+
     CoreEntry cur_core_entry;
     std::string line;
 
@@ -64,45 +68,44 @@ try
         std::string key = line.substr(0, pos);
         std::string val = line.substr(pos + 1);
 
-        boost::trim(key);
-        boost::trim(val);
-
-        if (key == "physical id")
+        if (key.find("physical id") != std::string::npos)
         {
             cur_core_entry.first = std::stoi(val);
             continue;
         }
 
-        if (key == "core id")
+        if (key.find("core id") != std::string::npos)
         {
             cur_core_entry.second = std::stoi(val);
             core_entries.insert(cur_core_entry);
             continue;
         }
     }
-    return core_entries.empty() ? /*unexpected format*/ std::thread::hardware_concurrency() : static_cast<uint32_t>(core_entries.size());
+    return core_entries.empty() ? /*unexpected format*/ std::thread::hardware_concurrency() : static_cast<unsigned>(core_entries.size());
 }
 catch (...)
 {
-    /// parsing error
+    return std::thread::hardware_concurrency(); /// parsing error
+}
+#else
+{
     return std::thread::hardware_concurrency();
 }
 #endif
 
 static unsigned getNumberOfPhysicalCPUCoresImpl()
 {
-    unsigned cpu_count = std::thread::hardware_concurrency(); /// logical cores
+    unsigned cpu_count = std::thread::hardware_concurrency(); /// logical cores (with SMT/HyperThreading)
 
-    /// Most x86_64 CPUs have 2-way Hyper-Threading
+    /// Most x86_64 CPUs have 2-way SMT (Hyper-Threading).
     /// Aarch64 and RISC-V don't have SMT so far.
-    /// POWER has SMT and it can be multiple way (like 8-way), but we don't know how ClickHouse really behaves, so use all of them.
+    /// POWER has SMT and it can be multi-way (e.g. 8-way), but we don't know how ClickHouse really behaves, so use all of them.
 
 #if defined(__x86_64__)
-    /// On big machines, Hyper-Threading is detrimental to performance (+ ~5% overhead in ClickBench).
-    /// Let's limit ourself to of physical cores.
-    /// For few cores - maybe it is a small machine, or runs in a VM or is a limited cloud instance --> it is reasonable to use all the cores.
-        if (cpu_count >= 32)
-            cpu_count = physical_concurrency();
+    /// On really big machines, SMT is detrimental to performance (+ ~5% overhead in ClickBench). On such machines, we limit ourself to the physical cores.
+    /// Few cores indicate it is a small machine, runs in a VM or is a limited cloud instance --> it is reasonable to use all the cores.
+    if (cpu_count >= 32)
+        cpu_count = physical_concurrency();
 #endif
 
 #if defined(OS_LINUX)
