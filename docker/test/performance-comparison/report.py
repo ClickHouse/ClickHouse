@@ -384,7 +384,7 @@ if args.report == "main":
             return
 
         global unstable_backward_incompatible_queries, slow_average_tests, tables
-        text = tableStart("Partial Queries")
+        text = tableStart("Backward-incompatible queries")
         columns = ["Median time, s", "Relative time variance", "Test", "#", "Query"]
         text += tableHeader(columns)
         attrs = ["" for c in columns]
