@@ -757,14 +757,24 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     auto drop_unused_columns_after_join_actions_dag = std::make_shared<ActionsDAG>(result_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs updated_outputs;
     std::unordered_set<std::string_view> updated_outputs_names;
+    std::optional<size_t> first_skipped_column_node_index;
 
-    for (auto & output : drop_unused_columns_after_join_actions_dag->getOutputs())
+    auto & drop_unused_columns_after_join_actions_dag_outputs = drop_unused_columns_after_join_actions_dag->getOutputs();
+    size_t drop_unused_columns_after_join_actions_dag_outputs_size = drop_unused_columns_after_join_actions_dag_outputs.size();
+
+    for (size_t i = 0; i < drop_unused_columns_after_join_actions_dag_outputs_size; ++i)
     {
+        const auto & output = drop_unused_columns_after_join_actions_dag_outputs[i];
+
         const auto & global_planner_context = planner_context->getGlobalPlannerContext();
         if (updated_outputs_names.contains(output->result_name)
-            || !global_planner_context->hasColumnIdentifier(output->result_name)
-            || !outer_scope_columns.contains(output->result_name))
+            || !global_planner_context->hasColumnIdentifier(output->result_name))
+            continue;
+
+        if (!outer_scope_columns.contains(output->result_name))
         {
+            if (!first_skipped_column_node_index)
+                first_skipped_column_node_index = i;
             continue;
         }
 
@@ -772,7 +782,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         updated_outputs_names.insert(output->result_name);
     }
 
-    drop_unused_columns_after_join_actions_dag->getOutputs() = std::move(updated_outputs);
+    /** It is expected that JOIN TREE query plan will contain at least 1 column, even if there are no columns in outer scope.
+      *
+      * Example: SELECT count() FROM test_table_1 AS t1, test_table_2 AS t2;
+      */
+    if (updated_outputs.empty() && first_skipped_column_node_index)
+        updated_outputs.push_back(drop_unused_columns_after_join_actions_dag_outputs[*first_skipped_column_node_index]);
+
+    drop_unused_columns_after_join_actions_dag_outputs = std::move(updated_outputs);
 
     auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentDataStream(), std::move(drop_unused_columns_after_join_actions_dag));
     drop_unused_columns_after_join_transform_step->setStepDescription("DROP unused columns after JOIN");
