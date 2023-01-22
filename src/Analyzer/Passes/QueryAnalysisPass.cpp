@@ -4151,7 +4151,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
         if (function_in_arguments_nodes.size() != 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' expects 2 arguments", function_name);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
 
         auto & in_second_argument = function_in_arguments_nodes[1];
         auto * table_node = in_second_argument->as<TableNode>();
