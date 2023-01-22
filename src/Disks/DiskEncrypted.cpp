@@ -209,7 +209,8 @@ DiskEncrypted::DiskEncrypted(
 }
 
 DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
-    : DiskDecorator(settings_->wrapped_disk)
+    : IDisk(name_)
+    , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
@@ -288,6 +289,12 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    if (read_hint && *read_hint > 0)
+        read_hint = *read_hint + FileEncryption::Header::kSize;
+
+    if (file_size && *file_size > 0)
+        file_size = *file_size + FileEncryption::Header::kSize;
+
     auto wrapped_path = wrappedPath(path);
     auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
     if (buffer->eof())

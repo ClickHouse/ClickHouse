@@ -19,6 +19,15 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
+void ASTColumnsTransformerList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    for (const auto & child : children)
+    {
+        settings.ostr << ' ';
+        child->formatImpl(settings, state, frame);
+    }
+}
+
 void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
 {
     if (const auto * apply = transformer->as<ASTColumnsApplyTransformer>())
@@ -217,7 +226,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
         for (const auto & child : children)
             expected_columns.insert(child->as<const ASTIdentifier &>().name());
 
-        for (auto it = nodes.begin(); it != nodes.end();)
+        for (auto * it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
@@ -234,7 +243,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     }
     else
     {
-        for (auto it = nodes.begin(); it != nodes.end();)
+        for (auto * it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {

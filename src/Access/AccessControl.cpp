@@ -25,8 +25,6 @@
 #include <IO/Operators.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <re2/re2.h>
 #include <filesystem>
 #include <mutex>
@@ -577,7 +575,9 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
 
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
-        throw Exception(message.str(), ErrorCodes::AUTHENTICATION_FAILED);
+        throw Exception(PreformattedMessage{message.str(),
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}"},
+                        ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 
@@ -695,14 +695,7 @@ std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(
 
     /// Extract the last entry from comma separated list of X-Forwarded-For addresses.
     /// Only the last proxy can be trusted (if any).
-    Strings forwarded_addresses;
-    boost::split(forwarded_addresses, client_info.forwarded_for, boost::is_any_of(","));
-    if (!forwarded_addresses.empty())
-    {
-        String & last_forwarded_address = forwarded_addresses.back();
-        boost::trim(last_forwarded_address);
-        params.forwarded_address = last_forwarded_address;
-    }
+    params.forwarded_address = client_info.getLastForwardedFor();
 
     return getContextAccess(params);
 }

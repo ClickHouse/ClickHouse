@@ -375,7 +375,7 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
         return new_part_info.getPartNameV0(min_date, max_date);
     }
     else
-        return new_part_info.getPartName();
+        return new_part_info.getPartNameV1();
 }
 
 std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & column_name) const
@@ -575,6 +575,9 @@ void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPa
             states_str += stateString(affordable_state);
             states_str += ' ';
         }
+
+        if (!states_str.empty())
+            states_str.pop_back();
 
         throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
     }
@@ -1670,6 +1673,8 @@ void IMergeTreeDataPart::remove()
     metadata_manager->deleteAll(false);
     metadata_manager->assertAllDeleted(false);
 
+    GinIndexStoreFactory::instance().remove(getDataPartStoragePtr()->getRelativePath());
+
     std::list<IDataPartStorage::ProjectionChecksums> projection_checksums;
 
     for (const auto & [p_name, projection_part] : projection_parts)
@@ -1719,7 +1724,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix)
     part_is_probably_removed_from_disk = true;
 }
 
-void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     auto storage_settings = storage.getSettings();
 
@@ -1732,9 +1737,9 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
     bool broken = !prefix.empty();
     auto maybe_path_in_detached = getRelativePathForDetachedPart(prefix, broken);
     if (!maybe_path_in_detached)
-        return;
+        return nullptr;
 
-    getDataPartStorage().freeze(
+    return getDataPartStorage().freeze(
         storage.relative_data_path,
         *maybe_path_in_detached,
         /*make_source_readonly*/ true,

@@ -14,7 +14,6 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
-#include <fcntl.h>
 #include <unistd.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -91,7 +90,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
     format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
-    format_settings.json.named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
+    format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
+    format_settings.json.read_named_tuples_as_objects = settings.input_format_json_named_tuples_as_objects;
+    format_settings.json.defaults_for_missing_elements_in_named_tuple = settings.input_format_json_defaults_for_missing_elements_in_named_tuple;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_64bit_floats = settings.output_format_json_quote_64bit_floats;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
@@ -103,7 +104,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
     format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
-    format_settings.json.try_infer_objects = context->getSettingsRef().allow_experimental_object_type;
+    format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
@@ -169,6 +170,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.schema_inference_hints = settings.schema_inference_hints;
+    format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
     format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
@@ -182,6 +184,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
     format_settings.max_binary_string_size = settings.format_binary_max_string_size;
+    format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -315,6 +318,9 @@ static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr
         auto current_progress = element_id->getProgressIn();
         Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
         format->onProgress(read_progress);
+
+        /// Update the start of the statistics to use the start of the query, and not the creation of the format class
+        format->setStartTime(element_id->getQueryCPUStartTime(), true);
     }
 }
 
@@ -323,7 +329,6 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     WriteBuffer & buf,
     const Block & sample,
     ContextPtr context,
-    WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_creator;
@@ -337,9 +342,9 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
         && !settings.output_format_json_array_of_rows)
     {
-        auto formatter_creator = [output_getter, sample, callback, format_settings] (WriteBuffer & output) -> OutputFormatPtr
+        auto formatter_creator = [output_getter, sample, format_settings] (WriteBuffer & output) -> OutputFormatPtr
         {
-            return output_getter(output, sample, {callback}, format_settings);
+            return output_getter(output, sample, format_settings);
         };
 
         ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
@@ -352,7 +357,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         return format;
     }
 
-    return getOutputFormat(name, buf, sample, context, callback, _format_settings);
+    return getOutputFormat(name, buf, sample, context, _format_settings);
 }
 
 
@@ -361,7 +366,6 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     WriteBuffer & buf,
     const Block & sample,
     ContextPtr context,
-    WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_creator;
@@ -371,15 +375,12 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     if (context->hasQueryContext() && context->getSettingsRef().log_queries)
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
-    RowOutputFormatParams params;
-    params.callback = std::move(callback);
-
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    auto format = output_getter(buf, sample, params, format_settings);
+    auto format = output_getter(buf, sample, format_settings);
 
     /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
     if (format_settings.enable_streaming)
@@ -406,9 +407,8 @@ String FormatFactory::getContentType(
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
     Block empty_block;
-    RowOutputFormatParams empty_params;
     WriteBufferFromOwnString empty_buffer;
-    auto format = output_getter(empty_buffer, empty_block, empty_params, format_settings);
+    auto format = output_getter(empty_buffer, empty_block, format_settings);
 
     return format->getContentType();
 }
