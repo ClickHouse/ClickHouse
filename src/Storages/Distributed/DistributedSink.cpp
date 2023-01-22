@@ -724,6 +724,9 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         return guard;
     };
 
+    std::vector<std::string> bin_files;
+    bin_files.reserve(dir_names.size());
+
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
     /// hardlinking to ensure the inode is not freed until we're done
@@ -802,8 +805,8 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         }
 
         // Create hardlink here to reuse increment number
-        const std::string block_file_path(fs::path(path) / file_name);
-        createHardLink(first_file_tmp_path, block_file_path);
+        bin_files.push_back(fs::path(path) / file_name);
+        createHardLink(first_file_tmp_path, bin_files.back());
         auto dir_sync_guard = make_directory_sync_guard(*it);
     }
     ++it;
@@ -814,8 +817,8 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         const std::string path(fs::path(disk_path) / (data_path + *it));
         fs::create_directory(path);
 
-        const std::string block_file_path(fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin"));
-        createHardLink(first_file_tmp_path, block_file_path);
+        bin_files.push_back(fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin"));
+        createHardLink(first_file_tmp_path, bin_files.back());
         auto dir_sync_guard = make_directory_sync_guard(*it);
     }
 
@@ -826,10 +829,13 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 
     /// Notify
     auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
-    for (const auto & dir_name : dir_names)
+    for (size_t i = 0; i < dir_names.size(); ++i)
     {
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
-        directory_monitor.addAndSchedule(file_size, sleep_ms.totalMilliseconds());
+        const auto & dir_name = dir_names[i];
+        const auto & bin_file = bin_files[i];
+
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name, /* startup= */ false);
+        directory_monitor.addAndSchedule(bin_file, file_size, sleep_ms.totalMilliseconds());
     }
 }
 
