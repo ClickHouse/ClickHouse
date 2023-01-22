@@ -160,13 +160,13 @@ GROUP BY UserID;
 ```
 
 :::warning
-Performance of such a query heavily depends on the table layout. Because of that it is not enabled by default.
+Performance of such a query heavily depends on the table layout. Because of that the optimisation is not enabled by default.
 :::
 
-The key factors are:
+The key factors for a good performance:
 
--   number of partitions involved in the query should be sufficiently large (at least `max_threads / 2`), otherwise query will underutilize the machine
--   number of partitions involved in the query should be not too big, so batch processing won't degenerate into row-by-row processing
+-   number of partitions involved in the query should be sufficiently large (more than `max_threads / 2`), otherwise query will underutilize the machine
+-   partitions shouldn't be too small, so batch processing won't degenerate into row-by-row processing
 -   partitions should be comparable in size, so all threads will do roughly the same amount of work
 
 :::info

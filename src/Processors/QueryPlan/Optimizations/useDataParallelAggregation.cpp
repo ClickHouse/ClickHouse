@@ -89,7 +89,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     if (visited.contains(node))
         return visited[node];
 
-    auto has_match_in_group_by_actions = [&irreducible_nodes, &matches, &node]()
+    auto has_match_in_group_by_actions_that_is_also_irreducible = [&irreducible_nodes, &matches, &node]()
     {
         /// `matches` maps partition key nodes into nodes in group by actions
         if (matches.contains(node))
@@ -104,7 +104,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
         return false;
     };
 
-    bool res = has_match_in_group_by_actions();
+    bool res = has_match_in_group_by_actions_that_is_also_irreducible();
     if (!res)
     {
         switch (node->type)
@@ -160,13 +160,13 @@ bool isPartitionKeySuitsGroupByKey(const ReadFromMergeTree & reading, ActionsDAG
     group_by_actions->removeUnusedActions(aggregating.getParams().keys);
     if (group_by_actions->hasArrayJoin() || group_by_actions->hasStatefulFunctions() /* || group_by_actions->assertDeterministic() */)
         return false;
-    const auto & gb_keys = group_by_actions->getRequiredColumnsNames();
+    const auto & gb_key_required_columns = group_by_actions->getRequiredColumnsNames();
 
     const auto partition_actions = reading.getStorageMetadata()->getPartitionKey().expression->getActionsDAG().clone();
 
     /// Check that PK columns is a subset of GBK columns.
     for (const auto & col : partition_actions->getRequiredColumnsNames())
-        if (std::ranges::find(gb_keys, col) == gb_keys.end())
+        if (std::ranges::find(gb_key_required_columns, col) == gb_key_required_columns.end())
             return false;
 
     const auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(group_by_actions);

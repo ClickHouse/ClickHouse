@@ -1697,7 +1697,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
 
 Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
 {
-    auto method = variants.type;
+    const auto method = variants.type;
     Block block;
 
     if (false) {} // NOLINT
