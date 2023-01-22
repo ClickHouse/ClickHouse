@@ -3,19 +3,12 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-n1 = cluster.add_instance(
-    "n1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
-)
-n2 = cluster.add_instance(
-    "n2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
-)
-n3 = cluster.add_instance(
-    "n3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
-)
-n4 = cluster.add_instance(
-    "n4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
-)
-nodes = [n1, n2, n3, n4]
+nodes = [
+    cluster.add_instance(
+        f"n{i}", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    )
+    for i in range(1, 5)
+]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -28,6 +21,7 @@ def start_cluster():
 
 
 def create_tables(cluster):
+    n1 = nodes[0]
     n1.query("DROP TABLE IF EXISTS dist_table")
     n1.query(f"DROP TABLE IF EXISTS test_table ON CLUSTER {cluster}")
 
@@ -49,6 +43,7 @@ def create_tables(cluster):
 
 def insert_data(cluster, row_num):
     create_tables(cluster)
+    n1 = nodes[0]
     n1.query(f"INSERT INTO dist_table SELECT number, number FROM numbers({row_num})")
     n1.query("SYSTEM FLUSH DISTRIBUTED dist_table")
 
@@ -65,6 +60,8 @@ def test_parallel_replicas_custom_key(start_cluster, cluster, custom_key, filter
 
     row_num = 1000
     insert_data(cluster, row_num)
+
+    n1 = nodes[0]
     assert (
         int(
             n1.query(
