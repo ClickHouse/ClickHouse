@@ -3,7 +3,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-
 #include <numeric>
 
 #include <boost/algorithm/string.hpp>
@@ -106,6 +105,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("annoy", annoyIndexCreator);
     registerValidator("annoy", annoyIndexValidator);
 #endif
+    registerCreator("inverted", ginIndexCreator);
+    registerValidator("inverted", ginIndexValidator);
+
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

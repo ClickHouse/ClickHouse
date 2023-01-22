@@ -1058,6 +1058,8 @@ private:
 
     static bool isTableExpressionNodeType(QueryTreeNodeType node_type);
 
+    static DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
+
     static ProjectionName calculateFunctionProjectionName(const QueryTreeNodePtr & function_node,
         const ProjectionNames & parameters_projection_names,
         const ProjectionNames & arguments_projection_names);
@@ -1239,6 +1241,34 @@ bool QueryAnalyzer::isTableExpressionNodeType(QueryTreeNodeType node_type)
 {
     return node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION ||
         node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
+DataTypePtr QueryAnalyzer::getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
+{
+    auto node_type = query_tree_node->getNodeType();
+
+    switch (node_type)
+    {
+        case QueryTreeNodeType::CONSTANT:
+            [[fallthrough]];
+        case QueryTreeNodeType::COLUMN:
+        {
+            return query_tree_node->getResultType();
+        }
+        case QueryTreeNodeType::FUNCTION:
+        {
+            auto & function_node = query_tree_node->as<FunctionNode &>();
+            if (function_node.isResolved())
+                return function_node.getResultType();
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    return nullptr;
 }
 
 ProjectionName QueryAnalyzer::calculateFunctionProjectionName(const QueryTreeNodePtr & function_node, const ProjectionNames & parameters_projection_names,
@@ -1546,12 +1576,12 @@ void QueryAnalyzer::collectScopeValidIdentifiersForTypoCorrection(
             auto expression_identifier = Identifier(name);
             valid_identifiers_result.insert(expression_identifier);
 
-            auto expression_node_type = expression->getNodeType();
+            auto result_type = getExpressionNodeResultTypeOrNull(expression);
 
-            if (identifier_is_compound && isExpressionNodeType(expression_node_type))
+            if (identifier_is_compound && result_type)
             {
                 collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                    expression->getResultType(),
+                    result_type,
                     expression_identifier,
                     valid_identifiers_result);
             }
@@ -1583,21 +1613,23 @@ void QueryAnalyzer::collectScopeValidIdentifiersForTypoCorrection(
 
     for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
     {
+        assert(expression);
         auto expression_node_type = expression->getNodeType();
 
         if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))
         {
             auto expression_identifier = Identifier(argument_name);
+            valid_identifiers_result.insert(expression_identifier);
 
-            if (identifier_is_compound)
+            auto result_type = getExpressionNodeResultTypeOrNull(expression);
+
+            if (identifier_is_compound && result_type)
             {
                 collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                    expression->getResultType(),
+                    result_type,
                     expression_identifier,
                     valid_identifiers_result);
             }
-
-            valid_identifiers_result.insert(expression_identifier);
         }
         else if (identifier_is_short && allow_function_identifiers && isFunctionExpressionNodeType(expression_node_type))
         {
@@ -4320,7 +4352,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             bool force_grouping_standard_compatibility = scope.context->getSettingsRef().force_grouping_standard_compatibility;
             auto grouping_function = std::make_shared<FunctionGrouping>(force_grouping_standard_compatibility);
             auto grouping_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_function));
-            function_node.resolveAsFunction(grouping_function_adaptor->build({}));
+            function_node.resolveAsFunction(grouping_function_adaptor->build(argument_columns));
+
             return result_projection_names;
         }
     }

@@ -182,24 +182,26 @@ static void logException(ContextPtr context, QueryLogElement & elem)
     if (!elem.log_comment.empty())
         comment = fmt::format(" (comment: {})", elem.log_comment);
 
+    /// Message patterns like "{} (from {}){} (in query: {})" are not really informative,
+    /// so we pass elem.exception_format_string as format string instead.
+    PreformattedMessage message;
+    message.format_string = elem.exception_format_string;
+
     if (elem.stack_trace.empty())
-        LOG_ERROR(
-            &Poco::Logger::get("executeQuery"),
-            "{} (from {}){} (in query: {})",
-            elem.exception,
-            context->getClientInfo().current_address.toString(),
-            comment,
-            toOneLineQuery(elem.query));
+        message.message = fmt::format("{} (from {}){} (in query: {})", elem.exception,
+                        context->getClientInfo().current_address.toString(),
+                        comment,
+                        toOneLineQuery(elem.query));
     else
-        LOG_ERROR(
-            &Poco::Logger::get("executeQuery"),
-            "{} (from {}){} (in query: {})"
-            ", Stack trace (when copying this message, always include the lines below):\n\n{}",
+        message.message = fmt::format(
+            "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
             toOneLineQuery(elem.query),
             elem.stack_trace);
+
+    LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
 }
 
 static void onExceptionBeforeStart(
@@ -244,7 +246,9 @@ static void onExceptionBeforeStart(
     // We don't calculate databases, tables and columns when the query isn't able to start
 
     elem.exception_code = getCurrentExceptionCode();
-    elem.exception = getCurrentExceptionMessage(false);
+    auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
+    elem.exception = std::move(exception_message.message);
+    elem.exception_format_string = exception_message.format_string;
 
     elem.client_info = context->getClientInfo();
 
@@ -1074,7 +1078,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
                 elem.exception_code = getCurrentExceptionCode();
-                elem.exception = getCurrentExceptionMessage(false);
+                auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
+                elem.exception = std::move(exception_message.message);
+                elem.exception_format_string = exception_message.format_string;
 
                 QueryStatusPtr process_list_elem = context->getProcessListElement();
                 const Settings & current_settings = context->getSettingsRef();
