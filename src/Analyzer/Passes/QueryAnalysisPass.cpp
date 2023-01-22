@@ -4073,7 +4073,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_exists = function_name == "exists";
 
         /// Handle SELECT count(*) FROM test_table
-        if (function_name == "count" && function_node_ptr->getArguments().getNodes().size() == 1)
+        if (Poco::toLower(function_name) == "count" && function_node_ptr->getArguments().getNodes().size() == 1)
         {
             auto * matcher_node = function_node_ptr->getArguments().getNodes().front()->as<MatcherNode>();
             if (matcher_node && matcher_node->isUnqualified())
