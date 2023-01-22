@@ -42,7 +42,7 @@ namespace MutationHelpers
 static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeListEntry * mutate_entry)
 {
     if (merges_blocker.isCancelled() || (*mutate_entry)->is_cancelled)
-        throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
 
     return true;
 }

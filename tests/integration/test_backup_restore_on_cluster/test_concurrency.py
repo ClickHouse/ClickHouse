@@ -1,4 +1,4 @@
-from random import randint
+from random import random, randint
 import pytest
 import os.path
 import time
@@ -79,7 +79,7 @@ def create_and_fill_table():
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x Int32"
         ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY x"
+        "ORDER BY tuple()"
     )
     for i in range(num_nodes):
         nodes[i].query(f"INSERT INTO tbl VALUES ({i})")
@@ -285,3 +285,42 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
         node0.query(
             f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_names[id]}"
         )
+
+
+def test_kill_mutation_during_backup():
+    repeat_count = 1
+
+    for n in range(repeat_count):
+        create_and_fill_table()
+
+        node0.query("ALTER TABLE tbl UPDATE x=x+1 WHERE 1")
+        node0.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
+        node0.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
+
+        backup_name = new_backup_name()
+
+        id = node0.query(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+        ).split("\t")[0]
+
+        time.sleep(random())
+        node0.query(
+            "KILL MUTATION WHERE database = 'default' AND table = 'tbl' AND mutation_id = '0000000001'"
+        )
+
+        time.sleep(random())
+        node0.query(
+            "KILL MUTATION WHERE database = 'default' AND table = 'tbl' AND mutation_id = '0000000002'"
+        )
+
+        assert_eq_with_retry(
+            node0,
+            f"SELECT status, error FROM system.backups WHERE id='{id}'",
+            TSV([["BACKUP_CREATED", ""]]),
+        )
+
+        node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+        node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+
+        if n != repeat_count - 1:
+            node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
