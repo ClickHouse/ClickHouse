@@ -15,10 +15,8 @@ function run_with_custom_key {
     , parallel_replicas_mode='custom_key'\
     , parallel_replicas_custom_key='$2'\
     , parallel_replicas_custom_key_filter_type='$filter_type'\
-    , max_threads=4\
     , prefer_localhost_replica=$prefer_localhost_replica"
                 $CLICKHOUSE_CLIENT --query="$query"
-                $CLICKHOUSE_CLIENT --query="EXPLAIN PIPELINE $query"
             done
         done
     done
