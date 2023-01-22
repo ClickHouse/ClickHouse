@@ -96,18 +96,22 @@ static void extractMergingAndGatheringColumns(
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
-    // projection parts have different prefix and suffix compared to normal parts.
-    // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
-    const String local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
+    String local_tmp_prefix;
+    if (global_ctx->need_prefix)
+    {
+        // projection parts have different prefix and suffix compared to normal parts.
+        // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
+        local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
+    }
     const String local_tmp_suffix = global_ctx->parent_part ? ctx->suffix : "";
 
     if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
 
     /// We don't want to perform merge assigned with TTL as normal merge, so
     /// throw exception
     if (isTTLMergeType(global_ctx->future_part->merge_type) && global_ctx->ttl_merges_blocker->isCancelled())
-        throw Exception("Cancelled merging parts with TTL", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
 
     LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {}",
         global_ctx->future_part->parts.size(),
@@ -408,10 +412,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     global_ctx->merged_pipeline.reset();
 
     if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
-        throw Exception("Cancelled merging parts with expired TTL", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
 
     const auto data_settings = global_ctx->data->getSettings();
     const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
@@ -537,7 +541,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 {
     const String & column_name = ctx->it_name_and_type->name;
     if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
 
     ctx->executor.reset();
     auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns);
@@ -653,6 +657,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->deduplicate,
             global_ctx->deduplicate_by_columns,
             projection_merging_params,
+            global_ctx->need_prefix,
             global_ctx->new_data_part.get(),
             ".proj",
             NO_TRANSACTION_PTR,

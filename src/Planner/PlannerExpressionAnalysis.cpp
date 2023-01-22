@@ -52,7 +52,7 @@ FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_no
 /** Construct aggregation analysis result if query tree has GROUP BY or aggregates.
   * Actions before aggregation are added into actions chain, if result is not null optional.
   */
-std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & query_tree,
+std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
@@ -65,7 +65,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
     ColumnsWithTypeAndName aggregates_columns;
     aggregates_columns.reserve(aggregates_descriptions.size());
     for (auto & aggregate_description : aggregates_descriptions)
-        aggregates_columns.emplace_back(nullptr, aggregate_description.function->getReturnType(), aggregate_description.column_name);
+        aggregates_columns.emplace_back(nullptr, aggregate_description.function->getResultType(), aggregate_description.column_name);
 
     Names aggregation_keys;
 
@@ -79,7 +79,6 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
 
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
-    bool disable_grouping_sets = false;
 
     PlannerActionsVisitor actions_visitor(planner_context);
 
@@ -137,13 +136,6 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
 
                 grouping_sets_parameter.used_keys = std::move(grouping_sets_keys);
             }
-
-            /// It is expected by execution layer that if there are only 1 grouping sets it will be removed
-            if (grouping_sets_parameters_list.size() == 1)
-            {
-                disable_grouping_sets = true;
-                grouping_sets_parameters_list.clear();
-            }
         }
         else
         {
@@ -190,10 +182,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
     /** For non ordinary GROUP BY we add virtual __grouping_set column
       * With set number, which is used as an additional key at the stage of merging aggregating data.
       */
-    if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || (query_node.isGroupByWithGroupingSets() && !disable_grouping_sets))
+    if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets())
         aggregates_columns.emplace_back(nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set");
-
-    resolveGroupingFunctions(query_tree, aggregation_keys, grouping_sets_parameters_list, *planner_context);
 
     /// Only aggregation keys and aggregates are available for next steps after GROUP BY step
     auto aggregate_step = std::make_unique<ActionsChainStep>(before_aggregation_actions, ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
@@ -212,7 +202,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
 /** Construct window analysis result if query tree has window functions.
   * Actions before window functions are added into actions chain, if result is not null optional.
   */
-std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
+std::optional<WindowAnalysisResult> analyzeWindow(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
@@ -284,7 +274,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
 
     for (auto & window_description : window_descriptions)
         for (auto & window_function : window_description.window_functions)
-            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getReturnType(), window_function.column_name);
+            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
 
     auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
         ActionsChainStep::AvailableOutputColumnsStrategy::ALL_NODES,
@@ -417,7 +407,7 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
 
 }
 
-PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(QueryTreeNodePtr query_tree,
+PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context)
 {
@@ -463,13 +453,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(QueryTreeNodePtr 
     project_names_actions->project(projection_analysis_result.projection_column_names_with_display_aliases);
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));
 
-    // std::cout << "Chain dump before finalize" << std::endl;
-    // std::cout << actions_chain.dump() << std::endl;
-
     actions_chain.finalize();
-
-    // std::cout << "Chain dump after finalize" << std::endl;
-    // std::cout << actions_chain.dump() << std::endl;
 
     projection_analysis_result.project_names_actions = std::move(project_names_actions);
 

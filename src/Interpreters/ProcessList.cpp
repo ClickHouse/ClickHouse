@@ -69,7 +69,8 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 
-ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context)
+ProcessList::EntryPtr
+ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds)
 {
     EntryPtr res;
 
@@ -162,8 +163,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                 if (running_query != user_process_list->second.queries.end())
                 {
                     if (!settings.replace_running_query)
-                        throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
-                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING, "Query with id = {} is already running.", client_info.current_query_id);
 
                     /// Ask queries to cancel. They will check this flag.
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
@@ -179,8 +179,9 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                             return false;
                         }))
                     {
-                        throw Exception("Query with id = " + client_info.current_query_id + " is already running and can't be stopped",
-                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                        "Query with id = {} is already running and can't be stopped",
+                                        client_info.current_query_id);
                     }
                  }
             }
@@ -192,8 +193,9 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             if (user_process_list.first == client_info.current_user)
                 continue;
             if (auto running_query = user_process_list.second.queries.find(client_info.current_query_id); running_query != user_process_list.second.queries.end())
-                throw Exception("Query with id = " + client_info.current_query_id + " is already running by user " + user_process_list.first,
-                    ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                "Query with id = {} is already running by user {}",
+                                client_info.current_query_id, user_process_list.first);
         }
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
@@ -218,7 +220,6 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                     user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
             }
             thread_group->query = query_;
-            thread_group->one_line_query = toOneLineQuery(query_);
             thread_group->normalized_query_hash = normalizedQueryHash<false>(query_);
 
             /// Set query-level memory trackers
@@ -243,13 +244,16 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             ///  since allocation and deallocation could happen in different threads
         }
 
-        auto process_it = processes.emplace(processes.end(), std::make_shared<QueryStatus>(
-            query_context,
-            query_,
-            client_info,
-            priorities.insert(static_cast<int>(settings.priority)),
-            std::move(thread_group),
-            query_kind));
+        auto process_it = processes.emplace(
+            processes.end(),
+            std::make_shared<QueryStatus>(
+                query_context,
+                query_,
+                client_info,
+                priorities.insert(static_cast<int>(settings.priority)),
+                std::move(thread_group),
+                query_kind,
+                watch_start_nanoseconds));
 
         increaseQueryKindAmount(query_kind);
 
@@ -344,11 +348,13 @@ QueryStatus::QueryStatus(
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
     ThreadGroupStatusPtr && thread_group_,
-    IAST::QueryKind query_kind_)
+    IAST::QueryKind query_kind_,
+    UInt64 watch_start_nanoseconds)
     : WithContext(context_)
     , query(query_)
     , client_info(client_info_)
     , thread_group(std::move(thread_group_))
+    , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
     , global_overcommit_tracker(context_->getGlobalOvercommitTracker())
     , query_kind(query_kind_)
@@ -392,7 +398,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     if (is_killed.load())
-        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
     assert(std::find(executors.begin(), executors.end(), e) == executors.end());
@@ -409,7 +415,7 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 bool QueryStatus::checkTimeLimit()
 {
     if (is_killed.load())
-        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     return limits.checkTimeLimit(watch, overflow_mode);
 }
@@ -522,7 +528,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
 
     res.query             = query;
     res.client_info       = client_info;
-    res.elapsed_seconds   = watch.elapsedSeconds();
+    res.elapsed_microseconds = watch.elapsedMicroseconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
     res.is_all_data_sent  = is_all_data_sent.load(std::memory_order_relaxed);
     res.read_rows         = progress_in.read_rows;

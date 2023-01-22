@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 namespace
 {
@@ -75,6 +76,9 @@ namespace
 
         const size_t next_slash = suffix_with_globs.find('/', 1);
         re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
+        if (!matcher.ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
@@ -599,7 +603,7 @@ Pipe StorageHDFS::read(
             { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
 
         if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
 
         columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());

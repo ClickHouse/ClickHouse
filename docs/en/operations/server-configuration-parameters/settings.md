@@ -757,6 +757,10 @@ Possible values:
 
 Default value: `0`.
 
+**See Also**
+
+-   [Concurrency Control](/docs/en/development/architecture.md#concurrency-control)
+
 ## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores}
 The maximum number of query processing threads as multiple of number of logical cores.
 More details: [concurrent_threads_soft_limit_num](#concurrent-threads-soft-limit-num).
@@ -767,6 +771,12 @@ Possible values:
 -   0 — No limit.
 
 Default value: `0`.
+
+**Example**
+
+``` xml
+<concurrent_threads_soft_limit_ratio_to_cores>3</concurrent_threads_soft_limit_ratio_to_cores>
+```
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
@@ -890,7 +900,7 @@ The maximum number of open files.
 
 By default: `maximum`.
 
-We recommend using this option in Mac OS X since the `getrlimit()` function returns an incorrect value.
+We recommend using this option in macOS since the `getrlimit()` function returns an incorrect value.
 
 **Example**
 
@@ -1181,6 +1191,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 **Example**
 
@@ -1244,6 +1255,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1271,6 +1283,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 If the table does not exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1298,6 +1311,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 If the table does not exist, ClickHouse will create it. If the structure of the query views log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1324,6 +1338,7 @@ Parameters:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 **Example**
 ```xml
@@ -1351,6 +1366,7 @@ Parameters:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 The default server configuration file `config.xml` contains the following settings section:
 

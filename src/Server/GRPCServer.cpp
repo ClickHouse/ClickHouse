@@ -1296,7 +1296,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, fmt::runtime(getExceptionMessage(exception, true)));
+        LOG_ERROR(log, getExceptionMessageAndPattern(exception, /* with_stacktrace */ true));
 
         if (responder && !responder_finished)
         {

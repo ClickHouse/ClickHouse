@@ -91,7 +91,6 @@ StorageMergeTree::StorageMergeTree(
     bool has_force_restore_data_flag)
     : MergeTreeData(
         table_id_,
-        relative_data_path_,
         metadata_,
         context_,
         date_column_name,
@@ -101,8 +100,10 @@ StorageMergeTree::StorageMergeTree(
         attach)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, getContext()->getMergeMutateExecutor()->getMaxTasksCount())
+    , merger_mutator(*this)
 {
+    initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
+
     loadDataParts(has_force_restore_data_flag);
 
     if (!attach && !getDataPartsForInternalUsage().empty())
@@ -111,7 +112,6 @@ StorageMergeTree::StorageMergeTree(
     increment.set(getMaxBlockNumber());
 
     loadMutations();
-
     loadDeduplicationLog();
 }
 
@@ -137,6 +137,7 @@ void StorageMergeTree::startup()
     {
         background_operations_assignee.start();
         startBackgroundMovesIfNeeded();
+        startOutdatedDataPartsLoadingTask();
     }
     catch (...)
     {
@@ -169,6 +170,8 @@ void StorageMergeTree::shutdown()
 {
     if (shutdown_called.exchange(true))
         return;
+
+    stopOutdatedDataPartsLoadingTask();
 
     /// Unlock all waiting mutations
     {
@@ -525,14 +528,14 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
     it->second.writeCSN(csn);
 }
 
-void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
+void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, bool force_wait)
 {
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
     Int64 version = startMutation(commands, query_context);
 
-    if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
+    if (force_wait || query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
 }
 
@@ -813,9 +816,47 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         /// This predicate is checked for the first part of each range.
         /// (left = nullptr, right = "first part of partition")
         if (!left)
-            return !currently_merging_mutating_parts.contains(right);
-        return !currently_merging_mutating_parts.contains(left) && !currently_merging_mutating_parts.contains(right)
-            && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock) && partsContainSameProjections(left, right);
+        {
+            if (currently_merging_mutating_parts.contains(right))
+            {
+                if (disable_reason)
+                    *disable_reason = "Some part currently in a merging or mutating process";
+                return false;
+            }
+            else
+                return true;
+        }
+
+        if (currently_merging_mutating_parts.contains(left) || currently_merging_mutating_parts.contains(right))
+        {
+            if (disable_reason)
+                *disable_reason = "Some part currently in a merging or mutating process";
+            return false;
+        }
+
+        if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
+        {
+            if (disable_reason)
+                *disable_reason = "Some parts have differ mmutatuon version";
+            return false;
+        }
+
+        if (!partsContainSameProjections(left, right))
+        {
+            if (disable_reason)
+                *disable_reason = "Some parts contains differ projections";
+            return false;
+        }
+
+        auto max_possible_level = getMaxLevelInBetween(left, right);
+        if (max_possible_level > std::max(left->info.level, right->info.level))
+        {
+            if (disable_reason)
+                *disable_reason = fmt::format("There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have", left->name, right->name, max_possible_level);
+            return false;
+        }
+
+        return true;
     };
 
     SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
@@ -855,8 +896,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             if (final
                 && select_decision != SelectPartsDecision::SELECTED
                 && !currently_merging_mutating_parts.empty()
-                && out_disable_reason
-                && out_disable_reason->empty())
+                && out_disable_reason)
             {
                 LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
                     currently_merging_mutating_parts.size());
@@ -919,7 +959,7 @@ bool StorageMergeTree::merge(
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelled())
-            throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+            throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
 
         merge_mutate_entry = selectPartsToMerge(
             metadata_snapshot,
@@ -1094,6 +1134,30 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     return {};
 }
 
+UInt32 StorageMergeTree::getMaxLevelInBetween(const DataPartPtr & left, const DataPartPtr & right) const
+{
+    auto parts_lock = lockParts();
+
+    auto begin = data_parts_by_info.find(left->info);
+    if (begin == data_parts_by_info.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find left part, left part {}. It's a bug", left->name);
+
+    auto end = data_parts_by_info.find(right->info);
+    if (end == data_parts_by_info.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find right part, right part {}. It's a bug", right->name);
+
+    UInt32 level = 0;
+
+    for (auto it = begin++; it != end; ++it)
+    {
+        if (it == data_parts_by_info.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "left and right parts in the wrong order, left part {}, right part {}. It's a bug", left->name, right->name);
+
+        level = std::max(level, (*it)->info.level);
+    }
+
+    return level;
+}
 
 bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) //-V657
 {
@@ -1105,7 +1169,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     auto metadata_snapshot = getInMemoryMetadataPtr();
     MergeMutateSelectedEntryPtr merge_entry, mutate_entry;
 
-    auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
     MergeTreeTransactionHolder transaction_for_merge;
     MergeTreeTransactionPtr txn;
@@ -1122,17 +1186,17 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
-        merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock, txn);
+        merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, shared_lock, lock, txn);
 
         if (!merge_entry && !current_mutations_by_version.empty())
-            mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock, lock);
+            mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, shared_lock, lock);
 
         has_mutations = !current_mutations_by_version.empty();
     }
 
     if (merge_entry)
     {
-        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
+        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
@@ -1143,7 +1207,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
     if (mutate_entry)
     {
-        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, metadata_snapshot, mutate_entry, share_lock, common_assignee_trigger);
+        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, metadata_snapshot, mutate_entry, shared_lock, common_assignee_trigger);
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
@@ -1160,7 +1224,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             getSettings()->merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
-            [this, share_lock] ()
+            [this, shared_lock] ()
             {
                 return clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
@@ -1171,7 +1235,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             getSettings()->merge_tree_clear_old_parts_interval_seconds))
     {
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
-            [this, share_lock] ()
+            [this, shared_lock] ()
             {
                 /// All use relative_data_path which changes during rename
                 /// so execute under share lock.
@@ -1187,6 +1251,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
         scheduled = true;
     }
+
 
     return scheduled;
 }
@@ -1299,10 +1364,10 @@ bool StorageMergeTree::optimize(
                     &disable_reason,
                     local_context->getSettingsRef().optimize_skip_merged_partitions))
             {
-                constexpr const char * message = "Cannot OPTIMIZE table: {}";
+                constexpr auto message = "Cannot OPTIMIZE table: {}";
                 if (disable_reason.empty())
                     disable_reason = "unknown reason";
-                LOG_INFO(log, fmt::runtime(message), disable_reason);
+                LOG_INFO(log, message, disable_reason);
 
                 if (local_context->getSettingsRef().optimize_throw_if_noop)
                     throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
@@ -1326,10 +1391,10 @@ bool StorageMergeTree::optimize(
                 &disable_reason,
                 local_context->getSettingsRef().optimize_skip_merged_partitions))
         {
-            constexpr const char * message = "Cannot OPTIMIZE table: {}";
+            constexpr auto message = "Cannot OPTIMIZE table: {}";
             if (disable_reason.empty())
                 disable_reason = "unknown reason";
-            LOG_INFO(log, fmt::runtime(message), disable_reason);
+            LOG_INFO(log, message, disable_reason);
 
             if (local_context->getSettingsRef().optimize_throw_if_noop)
                 throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
@@ -1364,18 +1429,18 @@ ActionLock StorageMergeTree::stopMergesAndWait()
     return merge_blocker;
 }
 
-MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force)
+MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout)
 {
     if (force)
     {
         /// Forcefully stop merges and make part outdated
         auto merge_blocker = stopMergesAndWait();
         auto parts_lock = lockParts();
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}, &parts_lock);
+        auto part = getPartIfExistsUnlocked(part_name, {MergeTreeDataPartState::Active}, parts_lock);
         if (!part)
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
-        removePartsFromWorkingSet(txn, {part}, true, &parts_lock);
+        removePartsFromWorkingSet(txn, {part}, clear_without_timeout, &parts_lock);
         return part;
     }
     else
@@ -1384,7 +1449,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         std::unique_lock lock(currently_processing_in_background_mutex);
         auto parts_lock = lockParts();
 
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}, &parts_lock);
+        auto part = getPartIfExistsUnlocked(part_name, {MergeTreeDataPartState::Active}, parts_lock);
         /// It's okay, part was already removed
         if (!part)
             return nullptr;
@@ -1394,14 +1459,14 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         if (currently_merging_mutating_parts.contains(part))
             return nullptr;
 
-        removePartsFromWorkingSet(txn, {part}, true, &parts_lock);
+        removePartsFromWorkingSet(txn, {part}, clear_without_timeout, &parts_lock);
         return part;
     }
 }
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
-    if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false))
+    if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
     {
         if (deduplication_log)
         {
@@ -1412,8 +1477,6 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
         part.reset();
 
         clearOldPartsFromFilesystem();
-
-        LOG_INFO(log, "Removed 1 part {}.", part_name);
     }
 
     /// Else nothing to do, part was removed in some different way
@@ -1508,6 +1571,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = stopMergesAndWait();
+    waitForOutdatedPartsToBeLoaded();
 
     Stopwatch watch;
 

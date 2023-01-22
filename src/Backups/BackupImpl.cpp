@@ -167,17 +167,19 @@ BackupImpl::BackupImpl(
     const ContextPtr & context_,
     bool is_internal_backup_,
     const std::shared_ptr<IBackupCoordination> & coordination_,
-    const std::optional<UUID> & backup_uuid_)
+    const std::optional<UUID> & backup_uuid_,
+    bool deduplicate_files_)
     : backup_name_for_logging(backup_name_for_logging_)
     , archive_params(archive_params_)
     , use_archives(!archive_params.archive_name.empty())
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
     , is_internal_backup(is_internal_backup_)
-    , coordination(coordination_ ? coordination_ : std::make_shared<BackupCoordinationLocal>())
+    , coordination(coordination_)
     , uuid(backup_uuid_)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
+    , deduplicate_files(deduplicate_files_)
     , log(&Poco::Logger::get("BackupImpl"))
 {
     open(context_);
@@ -287,6 +289,7 @@ void BackupImpl::writeBackupMetadata()
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->setInt("version", CURRENT_BACKUP_VERSION);
+    config->setBool("deduplicate_files", deduplicate_files);
     config->setString("timestamp", toString(LocalDateTime{timestamp}));
     config->setString("uuid", toString(*uuid));
 
@@ -759,7 +762,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     };
 
     /// Empty file, nothing to backup
-    if (info.size == 0)
+    if (info.size == 0 && deduplicate_files)
     {
         coordination->addFileInfo(info);
         return;
@@ -828,7 +831,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
 
     /// Maybe we have a copy of this file in the backup already.
-    if (coordination->getFileInfo(std::pair{info.size, info.checksum}))
+    if (coordination->getFileInfo(std::pair{info.size, info.checksum}) && deduplicate_files)
     {
         LOG_TRACE(log, "File {} already exist in current backup, adding reference", adjusted_path);
         coordination->addFileInfo(info);
@@ -861,7 +864,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     bool is_data_file_required;
     coordination->addFileInfo(info, is_data_file_required);
-    if (!is_data_file_required)
+    if (!is_data_file_required && deduplicate_files)
     {
         LOG_TRACE(log, "File {} doesn't exist in current backup, but we have file with same size and checksum", adjusted_path);
         return; /// We copy data only if it's a new combination of size & checksum.
@@ -871,23 +874,18 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     /// We need to copy whole file without archive, we can do it faster
     /// if source and destination are compatible
-    if (!use_archives && info.base_size == 0 && writer->supportNativeCopy(reader_description))
+    if (!use_archives && writer->supportNativeCopy(reader_description))
     {
         /// Should be much faster than writing data through server.
         LOG_TRACE(log, "Will copy file {} using native copy", adjusted_path);
 
         /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
 
-        writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.data_file_name);
+        writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.base_size, info.size - info.base_size, info.data_file_name);
     }
     else
     {
-        LOG_TRACE(log, "Will copy file {} through memory buffers", adjusted_path);
-        auto read_buffer = entry->getReadBuffer();
-
-        /// If we have prefix in base we will seek to the start of the suffix which differs
-        if (info.base_size != 0)
-            read_buffer->seek(info.base_size, SEEK_SET);
+        LOG_TRACE(log, "Will copy file {}", adjusted_path);
 
         if (!num_files_written)
             checkLockFile(true);
@@ -916,13 +914,18 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
                 coordination->updateFileInfo(info);
             }
             auto out = getArchiveWriter(current_archive_suffix)->writeFile(info.data_file_name);
+            auto read_buffer = entry->getReadBuffer();
+            if (info.base_size != 0)
+                read_buffer->seek(info.base_size, SEEK_SET);
             copyData(*read_buffer, *out);
             out->finalize();
         }
         else
         {
+            auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
+
             /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
-            writer->copyFileThroughBuffer(std::move(read_buffer), info.data_file_name);
+            writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name);
         }
     }
 

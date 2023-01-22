@@ -78,7 +78,7 @@ struct ModuloByConstantImpl
 #pragma GCC diagnostic pop
 
         if (unlikely(static_cast<A>(b) == 0))
-            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         /// Division by min negative value.
         if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())

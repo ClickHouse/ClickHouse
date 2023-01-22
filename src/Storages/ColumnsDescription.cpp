@@ -123,6 +123,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             {
                 default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
                 default_desc.expression = std::move(col_ast->default_expression);
+                default_desc.ephemeral_default = col_ast->ephemeral_default;
             }
 
             if (col_ast->comment)
@@ -199,8 +200,8 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
 void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
 {
     if (has(column.name))
-        throw Exception("Cannot add column " + column.name + ": column with this name already exists",
-            ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot add column {}: column with this name already exists", column.name);
 
     /// Normalize ASTs to be compatible with InterpreterCreateQuery.
     if (column.default_desc.expression)

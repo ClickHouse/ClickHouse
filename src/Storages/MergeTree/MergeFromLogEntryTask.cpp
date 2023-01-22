@@ -109,10 +109,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             /// 2. We have some larger merged part which covers new_part_name (and therefore it covers source_part_name too)
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
-            constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            LOG_WARNING(log, fmt::runtime(message), source_part_name, source_part_or_covering->name, entry.new_part_name);
+            constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
+            String message;
+            LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, message);
 
             return PrepareResult{
                 .prepared_successfully = false,
@@ -297,9 +298,14 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 {
     part = merge_task->getFuture().get();
 
-    /// Task is not needed
-    merge_task.reset();
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
+    /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
+    /// not able to remove the part and will throw an exception (because someone holds the pointer).
+    ///
+    /// Why we cannot reset task right after obtaining part from getFuture()? Because it holds RAII wrapper for
+    /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
+    /// and it's really needed.
+    merge_task.reset();
 
     try
     {

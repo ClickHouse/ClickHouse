@@ -14,6 +14,7 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -63,38 +64,54 @@ InterpreterInsertQuery::InterpreterInsertQuery(
 
 StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 {
+    auto current_context = getContext();
+
     if (query.table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
-        TableFunctionPtr table_function_ptr = factory.get(query.table_function, getContext());
+        TableFunctionPtr table_function_ptr = factory.get(query.table_function, current_context);
 
         /// If table function needs structure hint from select query
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
-            InterpreterSelectWithUnionQuery interpreter_select{
-                query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-            auto tmp_pipeline = interpreter_select.buildQueryPipeline();
-            ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
+            Block header_block;
+            auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+            if (current_context->getSettingsRef().allow_experimental_analyzer)
+            {
+                InterpreterSelectQueryAnalyzer interpreter_select(query.select, current_context, select_query_options);
+                header_block = interpreter_select.getSampleBlock();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter_select{
+                    query.select, current_context, select_query_options};
+                auto tmp_pipeline = interpreter_select.buildQueryPipeline();
+                header_block = tmp_pipeline.getHeader();
+            }
+
+            ColumnsDescription structure_hint{header_block.getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
         }
 
-        return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName());
+        return table_function_ptr->execute(query.table_function, current_context, table_function_ptr->getName(),
+                                           /* cached_columns */ {}, /* use_global_context */ false, /* is_insert_query */true);
     }
 
     if (query.table_id)
     {
-        query.table_id = getContext()->resolveStorageID(query.table_id);
+        query.table_id = current_context->resolveStorageID(query.table_id);
     }
     else
     {
         /// Insert query parser does not fill table_id because table and
         /// database can be parameters and be filled after parsing.
         StorageID local_table_id(query.getDatabase(), query.getTable());
-        query.table_id = getContext()->resolveStorageID(local_table_id);
+        query.table_id = current_context->resolveStorageID(local_table_id);
     }
 
-    return DatabaseCatalog::instance().getTable(query.table_id, getContext());
+    return DatabaseCatalog::instance().getTable(query.table_id, current_context);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -332,7 +349,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
+    if (query.select && settings.parallel_distributed_insert_select)
         // Distributed INSERT SELECT
         distributed_pipeline = table->distributedWrite(query, getContext());
 
@@ -383,16 +400,34 @@ BlockIO InterpreterInsertQuery::execute()
                 new_context->setSettings(new_settings);
                 new_context->setInsertionTable(getContext()->getInsertionTable());
 
-                InterpreterSelectWithUnionQuery interpreter_select{
-                    query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                pipeline = interpreter_select.buildQueryPipeline();
+                auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+                if (settings.allow_experimental_analyzer)
+                {
+                    InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, new_context, select_query_options);
+                    pipeline = interpreter_select_analyzer.buildQueryPipeline();
+                }
+                else
+                {
+                    InterpreterSelectWithUnionQuery interpreter_select(query.select, new_context, select_query_options);
+                    pipeline = interpreter_select.buildQueryPipeline();
+                }
             }
             else
             {
                 /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-                InterpreterSelectWithUnionQuery interpreter_select{
-                    query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                pipeline = interpreter_select.buildQueryPipeline();
+                auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+                if (settings.allow_experimental_analyzer)
+                {
+                    InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, getContext(), select_query_options);
+                    pipeline = interpreter_select_analyzer.buildQueryPipeline();
+                }
+                else
+                {
+                    InterpreterSelectWithUnionQuery interpreter_select(query.select, getContext(), select_query_options);
+                    pipeline = interpreter_select.buildQueryPipeline();
+                }
             }
 
             pipeline.dropTotalsAndExtremes();
