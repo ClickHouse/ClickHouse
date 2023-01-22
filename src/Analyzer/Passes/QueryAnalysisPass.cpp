@@ -4769,29 +4769,32 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
             {
                 node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope).resolved_identifier;
 
-                /// If table identifier is resolved as CTE clone it and resolve
-                auto * subquery_node = node->as<QueryNode>();
-                auto * union_node = node->as<UnionNode>();
-                bool resolved_as_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
-
-                if (resolved_as_cte)
+                if (node)
                 {
-                    node = node->clone();
-                    subquery_node = node->as<QueryNode>();
-                    union_node = node->as<UnionNode>();
+                    /// If table identifier is resolved as CTE clone it and resolve
+                    auto * subquery_node = node->as<QueryNode>();
+                    auto * union_node = node->as<UnionNode>();
+                    bool resolved_as_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
 
-                    if (subquery_node)
-                        subquery_node->setIsCTE(false);
-                    else
-                        union_node->setIsCTE(false);
+                    if (resolved_as_cte)
+                    {
+                        node = node->clone();
+                        subquery_node = node->as<QueryNode>();
+                        union_node = node->as<UnionNode>();
 
-                    IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
-                    subquery_scope.subquery_depth = scope.subquery_depth + 1;
+                        if (subquery_node)
+                            subquery_node->setIsCTE(false);
+                        else
+                            union_node->setIsCTE(false);
 
-                    if (subquery_node)
-                        resolveQuery(node, subquery_scope);
-                    else
-                        resolveUnion(node, subquery_scope);
+                        IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
+                        subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+                        if (subquery_node)
+                            resolveQuery(node, subquery_scope);
+                        else
+                            resolveUnion(node, subquery_scope);
+                    }
                 }
             }
 
