@@ -998,7 +998,7 @@ void Planner::buildPlanForUnionNode()
         query_plans.push_back(std::move(query_node_plan));
     }
 
-    Block union_common_header = buildCommonHeaderForUnion(query_plans_headers);
+    Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
     DataStreams query_plans_streams;
     query_plans_streams.reserve(query_plans.size());
 
