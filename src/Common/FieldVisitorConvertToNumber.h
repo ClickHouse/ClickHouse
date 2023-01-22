@@ -55,6 +55,8 @@ public:
     T operator() (const Int64 & x) const { return T(x); }
     T operator() (const Int128 & x) const { return T(x); }
     T operator() (const UUID & x) const { return T(x.toUnderType()); }
+    T operator() (const IPv4 & x) const { return T(x.toUnderType()); }
+    T operator() (const IPv6 & x) const { return T(x.toUnderType()); }
 
     T operator() (const Float64 & x) const
     {

@@ -92,8 +92,10 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Common/typeid_cast.h>
 
+#include "config_version.h"
 
 namespace DB
 {
@@ -505,13 +507,41 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
+        NameToNameMap parameter_values;
+        NameToNameMap parameter_types;
         if (view)
-            view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot);
+        {
+            query_info.is_parameterized_view = view->isParameterizedView();
+            /// We need to fetch the parameters set for SELECT ... FROM parameterized_view(<params>) before the query is replaced.
+            /// replaceWithSubquery replaces the function child and adds the subquery in its place.
+            /// the parameters are children of function child, if function (which corresponds to parametrised view and has
+            /// parameters in its arguments: `parametrised_view(<params>)`) is replaced the parameters are also gone from tree
+            /// So we need to get the parameters before they are removed from the tree
+            /// and after query is replaced, we use these parameters to substitute in the parameterized view query
+            if (query_info.is_parameterized_view)
+            {
+                parameter_values = analyzeFunctionParamValues(query_ptr);
+                view->setParameterValues(parameter_values);
+                parameter_types = view->getParameterValues();
+            }
+            view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
+            if (query_info.is_parameterized_view)
+            {
+                view->replaceQueryParametersIfParametrizedView(query_ptr);
+            }
+
+        }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
             TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot),
-            options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
+            options,
+            joined_tables.tablesWithColumns(),
+            required_result_column_names,
+            table_join,
+            query_info.is_parameterized_view,
+            parameter_values,
+            parameter_types);
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         context->setDistributed(syntax_analyzer_result->is_remote_storage);
@@ -568,7 +598,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             syntax_analyzer_result,
             context,
             metadata_snapshot,
-            NameSet(required_result_column_names.begin(), required_result_column_names.end()),
+            required_result_column_names,
             !options.only_analyze,
             options,
             prepared_sets);
@@ -638,7 +668,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_info.filter_asts.push_back(query_info.additional_filter_ast);
             }
 
-            source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
+            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, parameter_values);
         }
 
         /// Calculate structure of the result.
@@ -1776,7 +1806,8 @@ static void executeMergeAggregatedImpl(
         query_plan.getCurrentDataStream(),
         params,
         final,
-        settings.distributed_aggregation_memory_efficient && is_remote_storage,
+        /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
+        settings.distributed_aggregation_memory_efficient && is_remote_storage && !has_grouping_sets,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
         should_produce_results_in_order_of_bucket_number,
@@ -1876,6 +1907,9 @@ void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t repl
     context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     context->getClientInfo().count_participating_replicas = replica_count;
     context->getClientInfo().number_of_current_replica = replica_num;
+    context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
+    context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
+    context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
 }
 
 RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
@@ -2040,7 +2074,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         }
 
         auto syntax_result
-            = TreeRewriter(context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, storage_snapshot);
+            = TreeRewriter(context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, storage_snapshot, options.is_create_parameterized_view);
         alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, context).getActionsDAG(true);
 
         /// The set of required columns could be added as a result of adding an action to calculate ALIAS.

@@ -402,7 +402,7 @@ void TCPHandler::runImpl()
                     {
                         auto callback = [this]()
                         {
-                            std::lock_guard lock(fatal_error_mutex);
+                            std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
 
                             if (isQueryCancelled())
                                 return true;
@@ -420,6 +420,9 @@ void TCPHandler::runImpl()
                 }
 
                 state.io.onFinish();
+
+                std::lock_guard lock(task_callback_mutex);
+
                 /// Send final progress after calling onFinish(), since it will update the progress.
                 ///
                 /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
@@ -442,8 +445,11 @@ void TCPHandler::runImpl()
             if (state.is_connection_closed)
                 break;
 
-            sendLogs();
-            sendEndOfStream();
+            {
+                std::lock_guard lock(task_callback_mutex);
+                sendLogs();
+                sendEndOfStream();
+            }
 
             /// QueryState should be cleared before QueryScope, since otherwise
             /// the MemoryTracker will be wrong for possible deallocations.
@@ -531,7 +537,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, fmt::runtime(getExceptionMessage(e, true)));
+                LOG_ERROR(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ true));
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -756,6 +762,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         }
     }
 
+    /// Defer locking to cover a part of the scope below and everything after it
+    std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
+
     {
         PullingAsyncPipelineExecutor executor(pipeline);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
@@ -791,6 +800,11 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                     sendData(block);
             }
         }
+
+        /// This lock wasn't acquired before and we make .lock() call here
+        /// so everything under this line is covered even together
+        /// with sendProgress() out of the scope
+        progress_lock.lock();
 
         /** If data has run out, we will send the profiling data and total values to
           * the last zero block to be able to use
