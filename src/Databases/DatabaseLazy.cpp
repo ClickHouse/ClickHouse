@@ -102,7 +102,7 @@ time_t DatabaseLazy::getObjectMetadataModificationTime(const String & table_name
     auto it = tables_cache.find(table_name);
     if (it != tables_cache.end())
         return it->second.metadata_modification_time;
-    throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist.", backQuote(database_name), backQuote(table_name));
 }
 
 void DatabaseLazy::alterTable(
@@ -185,7 +185,7 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         std::lock_guard lock(mutex);
         auto it = tables_cache.find(table_name);
         if (it == tables_cache.end())
-            throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist.", backQuote(database_name), backQuote(table_name));
         res = it->second.table;
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);

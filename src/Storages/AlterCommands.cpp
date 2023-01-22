@@ -1064,19 +1064,20 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (all_columns.has(column_name) || all_columns.hasNested(column_name))
             {
                 if (!command.if_not_exists)
-                    throw Exception{"Cannot add column " + backQuote(column_name) + ": column with this name already exists",
-                                    ErrorCodes::DUPLICATE_COLUMN};
+                    throw Exception(ErrorCodes::DUPLICATE_COLUMN,
+                                    "Cannot add column {}: column with this name already exists",
+                                    backQuote(column_name));
                 else
                     continue;
             }
 
             if (!command.data_type)
-                throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
-                                ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Data type have to be specified for column {} to add", backQuote(column_name));
 
             if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception{"Cannot add column " + backQuote(column_name) + ": this column name is reserved for lightweight delete feature",
-                               ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
+                                "this column name is reserved for lightweight delete feature", backQuote(column_name));
 
             if (command.codec)
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
@@ -1099,8 +1100,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
 
             if (renamed_columns.contains(column_name))
-                throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
-                                ErrorCodes::NOT_IMPLEMENTED};
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
+                                                             "in a single ALTER query", backQuote(column_name));
 
             if (command.codec)
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
@@ -1259,16 +1260,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
 
             if (all_columns.has(command.rename_to))
-                throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
-                                ErrorCodes::DUPLICATE_COLUMN};
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Cannot rename to {}: "
+                                "column with this name already exists", backQuote(command.rename_to));
 
             if (command.rename_to == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": this column name is reserved for lightweight delete feature",
-                               ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
+                                "this column name is reserved for lightweight delete feature", backQuote(command.rename_to));
 
             if (modified_columns.contains(column_name))
-                throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
-                                ErrorCodes::NOT_IMPLEMENTED};
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
+                                                             "in a single ALTER query", backQuote(column_name));
 
             String from_nested_table_name = Nested::extractTableName(command.column_name);
             String to_nested_table_name = Nested::extractTableName(command.rename_to);
@@ -1278,7 +1279,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (from_nested && to_nested)
             {
                 if (from_nested_table_name != to_nested_table_name)
-                    throw Exception{"Cannot rename column from one nested name to another", ErrorCodes::BAD_ARGUMENTS};
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
             }
             else if (!from_nested && !to_nested)
             {
@@ -1288,16 +1289,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
             else
             {
-                throw Exception{"Cannot rename column from nested struct to normal column and vice versa", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from nested struct to normal column and vice versa");
             }
         }
         else if (command.type == AlterCommand::REMOVE_TTL && !metadata.hasAnyTableTTL())
         {
-            throw Exception{"Table doesn't have any table TTL expression, cannot remove", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have any table TTL expression, cannot remove");
         }
         else if (command.type == AlterCommand::REMOVE_SAMPLE_BY && !metadata.hasSamplingKey())
         {
-            throw Exception{"Table doesn't have SAMPLE BY, cannot remove", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have SAMPLE BY, cannot remove");
         }
 
         /// Collect default expressions for MODIFY and ADD commands
@@ -1341,7 +1342,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     }
 
     if (all_columns.empty())
-        throw Exception{"Cannot DROP or CLEAR all columns", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
