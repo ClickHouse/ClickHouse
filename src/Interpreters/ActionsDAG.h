@@ -225,6 +225,7 @@ public:
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
+    bool hasNonDeterministic() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});

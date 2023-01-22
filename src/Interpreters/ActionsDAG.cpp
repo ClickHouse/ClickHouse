@@ -1055,6 +1055,14 @@ void ActionsDAG::assertDeterministic() const
                 "Expression must be deterministic but it contains non-deterministic part `{}`", node.result_name);
 }
 
+bool ActionsDAG::hasNonDeterministic() const
+{
+    for (const auto & node : nodes)
+        if (!node.is_deterministic)
+            return true;
+    return false;
+}
+
 void ActionsDAG::addMaterializingOutputActions()
 {
     for (auto & output_node : outputs)

@@ -228,3 +228,13 @@ select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
 ) where explain like '%Skip merging: %';
 
 drop table t19;
+
+create table t20(a UInt32, b UInt32) engine=MergeTree order by a partition by a;
+
+insert into t20 select number, number from numbers_mt(50);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select a1 from t20 group by rand(a) as a1
+) where explain like '%Skip merging: %';
+
+drop table t20;
