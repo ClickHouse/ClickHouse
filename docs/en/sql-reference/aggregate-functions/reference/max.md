@@ -21,4 +21,3 @@ If you need non-aggregate function to choose a maximum of two values, see `great
 ```
 SELECT greatest(a, b) FROM table;
 ```
-

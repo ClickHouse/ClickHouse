@@ -55,6 +55,7 @@ else ()
 endif ()
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
+add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (magic-enum-cmake magic_enum)
@@ -178,6 +179,10 @@ add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
 add_contrib (morton-nd-cmake morton-nd)
+
+if (ARCH_S390X)
+    add_contrib(crc32-s390x-cmake crc32-s390x)
+endif()
 
 add_contrib (annoy-cmake annoy)
 

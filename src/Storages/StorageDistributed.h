@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -165,7 +166,7 @@ private:
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const DiskPtr & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name);
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
@@ -206,6 +207,9 @@ private:
     const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
 
     void delayInsertOrThrowIfNeeded() const;
+
+    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     String remote_database;
     String remote_table;
