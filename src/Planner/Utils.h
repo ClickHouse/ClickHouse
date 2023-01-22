@@ -4,6 +4,7 @@
 #include <Core/SortDescription.h>
 
 #include <Parsers/IAST.h>
+#include <Parsers/SelectUnionMode.h>
 
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ActionsDAG.h>
@@ -26,7 +27,7 @@ String dumpQueryPlan(QueryPlan & query_plan);
 String dumpQueryPipeline(QueryPlan & query_plan);
 
 /// Build common header for UNION query
-Block buildCommonHeaderForUnion(const Blocks & queries_headers);
+Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
