@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Client/ConnectionPool.h>
 
 #include <atomic>
@@ -38,7 +39,8 @@ public:
         const std::string & relative_path_,
         ConnectionPoolPtr pool_,
         ActionBlocker & monitor_blocker_,
-        BackgroundSchedulePool & bg_pool);
+        BackgroundSchedulePool & bg_pool,
+        bool initialize_from_disk);
 
     ~StorageDistributedDirectoryMonitor();
 
@@ -53,7 +55,7 @@ public:
     static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
 
     /// For scheduling via DistributedSink.
-    bool addAndSchedule(size_t file_size, size_t ms);
+    bool addAndSchedule(const std::string & file_path, size_t file_size, size_t ms);
 
     struct InternalStatus
     {
@@ -79,14 +81,15 @@ public:
 private:
     void run();
 
-    std::map<UInt64, std::string> getFiles();
-    bool processFiles(const std::map<UInt64, std::string> & files);
+    bool hasPendingFiles() const;
+
+    void initializeFilesFromDisk();
+    void processFiles();
     void processFile(const std::string & file_path);
-    void processFilesWithBatching(const std::map<UInt64, std::string> & files);
+    void processFilesWithBatching();
 
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);
-    bool maybeMarkAsBroken(const std::string & file_path, const Exception & e);
 
     std::string getLoggerName() const;
 
@@ -96,25 +99,33 @@ private:
     DiskPtr disk;
     std::string relative_path;
     std::string path;
+    std::string broken_relative_path;
+    std::string broken_path;
 
     const bool should_batch_inserts = false;
     const bool split_batch_on_failure = true;
     const bool dir_fsync = false;
     const size_t min_batched_block_size_rows = 0;
     const size_t min_batched_block_size_bytes = 0;
-    String current_batch_file_path;
+
+    /// This is pending data (due to some error) for should_batch_inserts==true
+    std::string current_batch_file_path;
+    /// This is pending data (due to some error) for should_batch_inserts==false
+    std::string current_batch_file;
 
     struct BatchHeader;
     struct Batch;
 
     std::mutex status_mutex;
+
     InternalStatus status;
+
+    ConcurrentBoundedQueue<std::string> pending_files;
 
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
     const std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
-    std::atomic<bool> quit {false};
     std::mutex mutex;
     Poco::Logger * log;
     ActionBlocker & monitor_blocker;
