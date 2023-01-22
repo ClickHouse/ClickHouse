@@ -88,8 +88,9 @@ Pipe outputPerPartitionIfRequested(
     }
     else
     {
-        const size_t partitions_per_stream = std::max<size_t>(1, countPartitions(parts_with_ranges) / num_streams);
-        num_streams = std::max<size_t>(1, num_streams / countPartitions(parts_with_ranges));
+        const size_t partitions_cnt = countPartitions(parts_with_ranges);
+        const size_t partitions_per_stream = std::max<size_t>(1, partitions_cnt / num_streams);
+        num_streams = std::max<size_t>(1, num_streams / partitions_cnt);
 
         Pipes pipes;
         for (auto begin = parts_with_ranges.begin(), end = begin; end != parts_with_ranges.end(); begin = end)
@@ -718,6 +719,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderImpl(
 
         Pipe pipe = Pipe::unitePipes(std::move(pipes));
 
+        /// In contrast with usual aggregation in order that allocates separate AggregatingTransform for each data part,
+        /// aggregation of partitioned data uses the same AggregatingTransform for all parts of the same partition.
+        /// Thus we need to merge all partition parts into a single sorted stream.
         if (output_each_partition_through_separate_port)
             add_merge(pipe);
 

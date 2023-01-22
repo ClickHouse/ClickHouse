@@ -81,7 +81,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                 continue;
 
             /// Create an empty match for current node.
-            /// natch.node will be set if match is found.
+            /// match.node will be set if match is found.
             auto & match = matches[frame.node];
 
             if (frame.node->type == ActionsDAG::ActionType::INPUT || frame.node->type == ActionsDAG::ActionType::COLUMN)
@@ -153,7 +153,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                                 {
                                     bool all_children_matched = true;
                                     for (size_t i = 0; all_children_matched && i < num_children; ++i)
-                                        all_children_matched &= frame.mapped_children[i] == children[i];
+                                        all_children_matched = frame.mapped_children[i] == children[i];
 
                                     if (all_children_matched)
                                     {

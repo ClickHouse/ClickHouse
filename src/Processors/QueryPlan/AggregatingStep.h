@@ -84,7 +84,7 @@ private:
     SortDescription group_by_sort_description;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
-    bool should_produce_results_in_order_of_bucket_number;
+    const bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
 
     Processors aggregating_in_order;

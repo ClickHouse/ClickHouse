@@ -183,7 +183,7 @@ private:
     AggregatedDataVariants & variants;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
-    bool should_produce_results_in_order_of_bucket_number = true; /// Currently makes difference only if skip_merging == true.
+    bool should_produce_results_in_order_of_bucket_number = true;
     bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
 
     /// TODO: calculate time only for aggregation.

@@ -208,3 +208,23 @@ select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
 settings force_aggregate_partitions_independently = 0, max_threads = 4;
 
 drop table t17;
+
+create table t18(a UInt32, b UInt32) engine=MergeTree order by a partition by a;
+
+insert into t18 select number, number from numbers_mt(50);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select a1 from t18 group by intDiv(a, 2) as a1
+) where explain like '%Skip merging: %';
+
+drop table t18;
+
+create table t19(a UInt32, b UInt32) engine=MergeTree order by a partition by a;
+
+insert into t19 select number, number from numbers_mt(50);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select a1 from t19 group by blockNumber() as a1
+) where explain like '%Skip merging: %';
+
+drop table t19;
