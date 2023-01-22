@@ -8,6 +8,7 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/Context.h>
 
@@ -105,14 +106,22 @@ private:
             if (WhichDataType(expected_argument_types[i]).isFunction())
                 continue;
 
-            if (!expected_argument_types[i]->equals(*actual_argument_columns[i].type))
+            const auto & expected_argument_type = expected_argument_types[i];
+            const auto & actual_argument_type = actual_argument_columns[i].type;
+
+            if (!expected_argument_type->equals(*actual_argument_type))
             {
+                /// Aggregate functions remove low cardinality for their argument types
+                if ((function->isAggregateFunction() || function->isWindowFunction()) &&
+                    expected_argument_type->equals(*recursiveRemoveLowCardinality(actual_argument_type)))
+                    continue;
+
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Function {} expects {} argument to have {} type but receives {} after running {} pass",
                     function->toAST()->formatForErrorMessage(),
                     i + 1,
-                    expected_argument_types[i]->getName(),
-                    actual_argument_columns[i].type->getName(),
+                    expected_argument_type->getName(),
+                    actual_argument_type->getName(),
                     pass_name);
             }
         }
