@@ -158,7 +158,8 @@ void DistinctSortedTransform::transform(Chunk & chunk)
         return;
     }
 
-    if (!set_size_limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    size_t data_total_row_count = data.getTotalRowCount();
+    if (!set_size_limits.check(data_total_row_count, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
     {
         stopReading();
         chunk.clear();
@@ -166,7 +167,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
     }
 
     /// Stop reading if we already reached the limit.
-    if (limit_hint && data.getTotalRowCount() >= limit_hint)
+    if (limit_hint && data_total_row_count >= limit_hint)
         stopReading();
 
     prev_chunk.chunk = std::move(chunk);

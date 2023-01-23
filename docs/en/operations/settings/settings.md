@@ -408,51 +408,51 @@ Several algorithms can be specified, and an available one would be chosen for a 
 
 Possible values:
 
-### `default` 
+- default
 
-This is the equivalent of `hash` or `direct`, if possible (same as `direct,hash`)
+ This is the equivalent of `hash` or `direct`, if possible (same as `direct,hash`)
 
-### `grace_hash` 
+- grace_hash
 
-[Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
+ [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
-The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
 
-### `hash`
+- hash
 
-[Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
+ [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
-### `parallel_hash` 
+- parallel_hash
 
-A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
+ A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
 
-When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
-### `partial_merge` 
+- partial_merge
 
-A variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
+ A variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
 
-The `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
+ The `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 
-When using the `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by the `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
+ When using the `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by the `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
 
-### `direct` 
+- direct
 
-This algorithm can be applied when the storage for the right table supports key-value requests.
+ This algorithm can be applied when the storage for the right table supports key-value requests.
 
-The `direct` algorithm performs a lookup in the right table using rows from the left table as keys. It's supported only by special storage such as [Dictionary](../../engines/table-engines/special/dictionary.md/#dictionary) or [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md) and only the `LEFT` and `INNER` JOINs.
+ The `direct` algorithm performs a lookup in the right table using rows from the left table as keys. It's supported only by special storage such as [Dictionary](../../engines/table-engines/special/dictionary.md/#dictionary) or [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md) and only the `LEFT` and `INNER` JOINs.
 
-### `auto` 
+- auto
 
-When set to `auto`, `hash` join is tried first, and the algorithm is switched on the fly to another algorithm if the memory limit is violated.
+ When set to `auto`, `hash` join is tried first, and the algorithm is switched on the fly to another algorithm if the memory limit is violated.
 
-### `full_sorting_merge` 
+- full_sorting_merge
 
-[Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
+ [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
 
-### `prefer_partial_merge` 
+- prefer_partial_merge
 
-ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
+ ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
 
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
@@ -1300,6 +1300,81 @@ Possible values:
 
 Default value: `3`.
 
+## enable_experimental_query_result_cache {#enable-experimental-query-result-cache}
+
+If turned on, results of SELECT queries are stored in and (if available) retrieved from the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
+## enable_experimental_query_result_cache_passive_usage {#enable-experimental-query-result-cache-passive-usage}
+
+If turned on, results of SELECT queries are (if available) retrieved from the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
+## query_result_cache_store_results_of_queries_with_nondeterministic_functions {#query-result-cache-store-results-of-queries-with-nondeterministic-functions}
+
+If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
+## query_result_cache_min_query_runs {#query-result-cache-min-query-runs}
+
+Minimum number of times a SELECT query must run before its result is stored in the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `0`
+
+## query_result_cache_min_query_duration {#query-result-cache-min-query-duration}
+
+Minimum duration in milliseconds a query needs to run for its result to be stored in the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `0`
+
+## query_result_cache_ttl {#query-result-cache-ttl}
+
+After this time in seconds entries in the [query result cache](../query-result-cache.md) become stale.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `60`
+
+## query_result_cache_share_between_users {#query-result-cache-share-between-users}
+
+If turned on, the result of SELECT queries cached in the [query result cache](../query-result-cache.md) can be read by other users.
+It is not recommended to enable this setting due to security reasons.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables the quorum writes.
@@ -1393,6 +1468,22 @@ Default value: 1.
 By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
 For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
 For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
+
+## async_insert_deduplicate {#settings-async-insert-deduplicate}
+
+Enables or disables insert deduplication of `ASYNC INSERT` (for Replicated\* tables).
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+By default, async inserts are inserted into replicated tables by the `INSERT` statement enabling [async_isnert](#async-insert) are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
+For the replicated tables, by default, only 10000 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-async-inserts), [replicated_deduplication_window_seconds_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-seconds-async-inserts)).
+We recommend enabling the [async_block_ids_cache](merge-tree-settings.md/#use-async-block-ids-cache) to increase the efficiency of deduplication.
+This function does not work for non-replicated tables.
 
 ## deduplicate_blocks_in_dependent_materialized_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
