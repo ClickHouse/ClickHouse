@@ -399,7 +399,7 @@ clickhouse-local --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
--- Separately process 'partial' queries which we could only run on the new server
+-- Separately process backward-incompatible ('partial') queries which we could only run on the new server
 -- because they use new functions. We can't make normal stats for them, but still
 -- have to show some stats so that the PR author can tweak them.
 create view partial_queries as select test, query_index
@@ -650,7 +650,7 @@ create view partial_query_times as select * from
         'test text, query_index int, time_stddev float, time_median double')
     ;
 
--- Report for partial queries that we could only run on the new server (e.g.
+-- Report for backward-incompatible ('partial') queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
     settings output_format_decimal_trailing_zeros = 1
@@ -829,7 +829,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 -- Guess the number of query runs used for this test. The number is required to
 -- calculate and check the average query run time in the report.
 -- We have to be careful, because we will encounter:
---  1) partial queries which run only on one server
+--  1) backward-incompatible ('partial') queries which run only on one server
 --  3) some errors that make query run for a different number of times on a
 --     particular server.
 --
