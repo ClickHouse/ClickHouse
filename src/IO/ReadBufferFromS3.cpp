@@ -26,6 +26,8 @@ namespace ProfileEvents
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
+    extern const Event RemoteReadThrottlerBytes;
+    extern const Event RemoteReadThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -186,7 +188,7 @@ bool ReadBufferFromS3::nextImpl()
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
     if (read_settings.remote_throttler)
-        read_settings.remote_throttler->add(working_buffer.size());
+        read_settings.remote_throttler->add(working_buffer.size(), ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
     return true;
 }

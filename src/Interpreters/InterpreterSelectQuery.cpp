@@ -95,6 +95,8 @@
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Common/typeid_cast.h>
 
+#include "config_version.h"
+
 namespace DB
 {
 
@@ -1908,6 +1910,9 @@ void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t repl
     context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     context->getClientInfo().count_participating_replicas = replica_count;
     context->getClientInfo().number_of_current_replica = replica_num;
+    context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
+    context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
+    context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
 }
 
 RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const

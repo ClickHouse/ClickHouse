@@ -294,10 +294,13 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         parts_ranges.back().emplace_back(part_info);
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
-        if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
-            && part->info.min_block <= (*prev_part)->info.max_block)
+        if (prev_part)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
+            if (part->info.contains((*prev_part)->info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", part->name, (*prev_part)->name);
+
+            if (!part->info.isDisjoint((*prev_part)->info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
         }
 
         prev_part = &part;

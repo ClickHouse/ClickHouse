@@ -39,6 +39,9 @@ namespace ProfileEvents
     extern const Event DiskS3CompleteMultipartUpload;
     extern const Event DiskS3UploadPart;
     extern const Event DiskS3PutObject;
+
+    extern const Event RemoteWriteThrottlerBytes;
+    extern const Event RemoteWriteThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -108,7 +111,7 @@ void WriteBufferFromS3::nextImpl()
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
     last_part_size += offset();
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset());
+        write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
     if (multipart_upload_id.empty() && last_part_size > settings.max_single_part_upload_size)

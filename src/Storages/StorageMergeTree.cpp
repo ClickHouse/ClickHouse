@@ -820,9 +820,47 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         /// This predicate is checked for the first part of each range.
         /// (left = nullptr, right = "first part of partition")
         if (!left)
-            return !currently_merging_mutating_parts.contains(right);
-        return !currently_merging_mutating_parts.contains(left) && !currently_merging_mutating_parts.contains(right)
-            && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock) && partsContainSameProjections(left, right);
+        {
+            if (currently_merging_mutating_parts.contains(right))
+            {
+                if (disable_reason)
+                    *disable_reason = "Some part currently in a merging or mutating process";
+                return false;
+            }
+            else
+                return true;
+        }
+
+        if (currently_merging_mutating_parts.contains(left) || currently_merging_mutating_parts.contains(right))
+        {
+            if (disable_reason)
+                *disable_reason = "Some part currently in a merging or mutating process";
+            return false;
+        }
+
+        if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
+        {
+            if (disable_reason)
+                *disable_reason = "Some parts have differ mmutatuon version";
+            return false;
+        }
+
+        if (!partsContainSameProjections(left, right))
+        {
+            if (disable_reason)
+                *disable_reason = "Some parts contains differ projections";
+            return false;
+        }
+
+        auto max_possible_level = getMaxLevelInBetween(left, right);
+        if (max_possible_level > std::max(left->info.level, right->info.level))
+        {
+            if (disable_reason)
+                *disable_reason = fmt::format("There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have", left->name, right->name, max_possible_level);
+            return false;
+        }
+
+        return true;
     };
 
     SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
@@ -862,8 +900,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             if (final
                 && select_decision != SelectPartsDecision::SELECTED
                 && !currently_merging_mutating_parts.empty()
-                && out_disable_reason
-                && out_disable_reason->empty())
+                && out_disable_reason)
             {
                 LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
                     currently_merging_mutating_parts.size());
@@ -1101,6 +1138,30 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     return {};
 }
 
+UInt32 StorageMergeTree::getMaxLevelInBetween(const DataPartPtr & left, const DataPartPtr & right) const
+{
+    auto parts_lock = lockParts();
+
+    auto begin = data_parts_by_info.find(left->info);
+    if (begin == data_parts_by_info.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find left part, left part {}. It's a bug", left->name);
+
+    auto end = data_parts_by_info.find(right->info);
+    if (end == data_parts_by_info.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find right part, right part {}. It's a bug", right->name);
+
+    UInt32 level = 0;
+
+    for (auto it = begin++; it != end; ++it)
+    {
+        if (it == data_parts_by_info.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "left and right parts in the wrong order, left part {}, right part {}. It's a bug", left->name, right->name);
+
+        level = std::max(level, (*it)->info.level);
+    }
+
+    return level;
+}
 
 bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) //-V657
 {
@@ -1372,7 +1433,7 @@ ActionLock StorageMergeTree::stopMergesAndWait()
     return merge_blocker;
 }
 
-MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force)
+MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout)
 {
     if (force)
     {
@@ -1383,7 +1444,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         if (!part)
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
-        removePartsFromWorkingSet(txn, {part}, true, &parts_lock);
+        removePartsFromWorkingSet(txn, {part}, clear_without_timeout, &parts_lock);
         return part;
     }
     else
@@ -1402,14 +1463,14 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         if (currently_merging_mutating_parts.contains(part))
             return nullptr;
 
-        removePartsFromWorkingSet(txn, {part}, true, &parts_lock);
+        removePartsFromWorkingSet(txn, {part}, clear_without_timeout, &parts_lock);
         return part;
     }
 }
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
-    if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false))
+    if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
     {
         if (deduplication_log)
         {
@@ -1420,8 +1481,6 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
         part.reset();
 
         clearOldPartsFromFilesystem();
-
-        LOG_INFO(log, "Removed 1 part {}.", part_name);
     }
 
     /// Else nothing to do, part was removed in some different way

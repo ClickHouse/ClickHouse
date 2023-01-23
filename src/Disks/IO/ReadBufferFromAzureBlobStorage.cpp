@@ -7,7 +7,14 @@
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
 #include <base/sleep.h>
+#include <Common/ProfileEvents.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event RemoteReadThrottlerBytes;
+    extern const Event RemoteReadThrottlerSleepMicroseconds;
+}
 
 namespace DB
 {
@@ -91,7 +98,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         {
             bytes_read = data_stream->ReadToCount(reinterpret_cast<uint8_t *>(data_ptr), to_read_bytes);
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->add(bytes_read);
+                read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
             break;
         }
         catch (const Azure::Storage::StorageException & e)

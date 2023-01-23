@@ -875,23 +875,18 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     /// We need to copy whole file without archive, we can do it faster
     /// if source and destination are compatible
-    if (!use_archives && info.base_size == 0 && writer->supportNativeCopy(reader_description))
+    if (!use_archives && writer->supportNativeCopy(reader_description))
     {
         /// Should be much faster than writing data through server.
         LOG_TRACE(log, "Will copy file {} using native copy", adjusted_path);
 
         /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
 
-        writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.data_file_name);
+        writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.base_size, info.size - info.base_size, info.data_file_name);
     }
     else
     {
-        LOG_TRACE(log, "Will copy file {} through memory buffers", adjusted_path);
-        auto read_buffer = entry->getReadBuffer();
-
-        /// If we have prefix in base we will seek to the start of the suffix which differs
-        if (info.base_size != 0)
-            read_buffer->seek(info.base_size, SEEK_SET);
+        LOG_TRACE(log, "Will copy file {}", adjusted_path);
 
         if (!num_files_written)
             checkLockFile(true);
@@ -920,13 +915,18 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
                 coordination->updateFileInfo(info);
             }
             auto out = getArchiveWriter(current_archive_suffix)->writeFile(info.data_file_name);
+            auto read_buffer = entry->getReadBuffer();
+            if (info.base_size != 0)
+                read_buffer->seek(info.base_size, SEEK_SET);
             copyData(*read_buffer, *out);
             out->finalize();
         }
         else
         {
+            auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
+
             /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
-            writer->copyFileThroughBuffer(std::move(read_buffer), info.data_file_name);
+            writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name);
         }
     }
 
