@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Common/NamePrompter.h>
+#include <Common/ProfileEvents.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -66,6 +67,14 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/HashUtils.h>
+
+namespace ProfileEvents
+{
+    extern const Event ScalarSubqueriesGlobalCacheHit;
+    extern const Event ScalarSubqueriesCacheMiss;
+}
 
 #include <Common/checkStackSize.h>
 
@@ -1049,6 +1058,8 @@ private:
 
     static bool isTableExpressionNodeType(QueryTreeNodeType node_type);
 
+    static DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
+
     static ProjectionName calculateFunctionProjectionName(const QueryTreeNodePtr & function_node,
         const ProjectionNames & parameters_projection_names,
         const ProjectionNames & arguments_projection_names);
@@ -1097,7 +1108,7 @@ private:
 
     static QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
 
-    static void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth, ContextPtr context);
+    void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth, ContextPtr context);
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
@@ -1207,6 +1218,9 @@ private:
     /// Global resolve expression node to projection names map
     std::unordered_map<QueryTreeNodePtr, ProjectionNames> resolved_expressions;
 
+    /// Results of scalar sub queries
+    std::unordered_map<QueryTreeNodeConstRawPtrWithHash, std::shared_ptr<ConstantValue>> scalars;
+
 };
 
 /// Utility functions implementation
@@ -1227,6 +1241,34 @@ bool QueryAnalyzer::isTableExpressionNodeType(QueryTreeNodeType node_type)
 {
     return node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION ||
         node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
+DataTypePtr QueryAnalyzer::getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
+{
+    auto node_type = query_tree_node->getNodeType();
+
+    switch (node_type)
+    {
+        case QueryTreeNodeType::CONSTANT:
+            [[fallthrough]];
+        case QueryTreeNodeType::COLUMN:
+        {
+            return query_tree_node->getResultType();
+        }
+        case QueryTreeNodeType::FUNCTION:
+        {
+            auto & function_node = query_tree_node->as<FunctionNode &>();
+            if (function_node.isResolved())
+                return function_node.getResultType();
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    return nullptr;
 }
 
 ProjectionName QueryAnalyzer::calculateFunctionProjectionName(const QueryTreeNodePtr & function_node, const ProjectionNames & parameters_projection_names,
@@ -1534,12 +1576,12 @@ void QueryAnalyzer::collectScopeValidIdentifiersForTypoCorrection(
             auto expression_identifier = Identifier(name);
             valid_identifiers_result.insert(expression_identifier);
 
-            auto expression_node_type = expression->getNodeType();
+            auto result_type = getExpressionNodeResultTypeOrNull(expression);
 
-            if (identifier_is_compound && isExpressionNodeType(expression_node_type))
+            if (identifier_is_compound && result_type)
             {
                 collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                    expression->getResultType(),
+                    result_type,
                     expression_identifier,
                     valid_identifiers_result);
             }
@@ -1571,21 +1613,23 @@ void QueryAnalyzer::collectScopeValidIdentifiersForTypoCorrection(
 
     for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
     {
+        assert(expression);
         auto expression_node_type = expression->getNodeType();
 
         if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))
         {
             auto expression_identifier = Identifier(argument_name);
+            valid_identifiers_result.insert(expression_identifier);
 
-            if (identifier_is_compound)
+            auto result_type = getExpressionNodeResultTypeOrNull(expression);
+
+            if (identifier_is_compound && result_type)
             {
                 collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                    expression->getResultType(),
+                    result_type,
                     expression_identifier,
                     valid_identifiers_result);
             }
-
-            valid_identifiers_result.insert(expression_identifier);
         }
         else if (identifier_is_short && allow_function_identifiers && isFunctionExpressionNodeType(expression_node_type))
         {
@@ -1687,6 +1731,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
+    auto scalars_iterator = scalars.find(node.get());
+    if (scalars_iterator != scalars.end())
+    {
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+        node = std::make_shared<ConstantNode>(scalars_iterator->second, node);
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
+
     auto subquery_context = Context::createCopy(context);
 
     Settings subquery_settings = context->getSettings();
@@ -1695,13 +1749,14 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     subquery_context->setSettings(subquery_settings);
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
-    auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, options, subquery_context);
+    auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, subquery_context, options);
 
     auto io = interpreter->execute();
 
-    Block block;
     PullingAsyncPipelineExecutor executor(io.pipeline);
     io.pipeline.setProgressCallback(context->getProgressCallback());
+
+    Block block;
 
     while (block.rows() == 0 && executor.pull(block))
     {
@@ -1743,7 +1798,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     block = materializeBlock(block);
     size_t columns = block.columns();
 
-    // Block scalar;
     Field scalar_value;
     DataTypePtr scalar_type;
 
@@ -1770,6 +1824,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     }
 
     auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
+    scalars[node.get()] = constant_value;
     node = std::make_shared<ConstantNode>(std::move(constant_value), node);
 }
 
@@ -2027,7 +2082,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
     auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
 
-    return std::make_shared<TableNode>(std::move(storage), storage_lock, storage_snapshot);
+    return std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
 }
 
 /// Resolve identifier from compound expression
@@ -4297,7 +4352,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             bool force_grouping_standard_compatibility = scope.context->getSettingsRef().force_grouping_standard_compatibility;
             auto grouping_function = std::make_shared<FunctionGrouping>(force_grouping_standard_compatibility);
             auto grouping_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_function));
-            function_node.resolveAsFunction(grouping_function_adaptor->build({}));
+            function_node.resolveAsFunction(grouping_function_adaptor->build(argument_columns));
+
             return result_projection_names;
         }
     }
