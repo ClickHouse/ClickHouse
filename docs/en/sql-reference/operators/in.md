@@ -233,11 +233,12 @@ If `some_predicate` is not selective enough, it will return large amount of data
 
 ### Distributed Subqueries and max_parallel_replicas
 
-When max_parallel_replicas is greater than 1, distributed queries are further transformed. For example, the following:
+When [max_parallel_replicas](#settings-max_parallel_replicas) is greater than 1, distributed queries are further transformed.
 
+For example, if [parallel_replicas_mode](#settings-parallel_replicas_mode) is set to `sample_key`, the following:
 ```sql
 SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
-SETTINGS max_parallel_replicas=3
+SETTINGS max_parallel_replicas=3, parallel_replicas_mode='sample_key'
 ```
 
 is transformed on each server into
@@ -247,8 +248,12 @@ SELECT CounterID, count() FROM local_table_1 WHERE UserID IN (SELECT UserID FROM
 SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
 ```
 
-where M is between 1 and 3 depending on which replica the local query is executing on. These settings affect every MergeTree-family table in the query and have the same effect as applying `SAMPLE 1/3 OFFSET (M-1)/3` on each table.
+where M is between 1 and 3 depending on which replica the local query is executing on.
 
-Therefore adding the max_parallel_replicas setting will only produce correct results if both tables have the same replication scheme and are sampled by UserID or a subkey of it. In particular, if local_table_2 does not have a sampling key, incorrect results will be produced. The same rule applies to JOIN.
+These settings affect every MergeTree-family table in the query and have the same effect as applying `SAMPLE 1/3 OFFSET (M-1)/3` on each table.
+
+Therefore adding the [max_parallel_replicas](#settings-max_parallel_replicas) setting will only produce correct results if both tables have the same replication scheme and are sampled by UserID or a subkey of it. In particular, if local_table_2 does not have a sampling key, incorrect results will be produced. The same rule applies to JOIN.
 
 One workaround if local_table_2 does not meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.
+
+If a table doesn't have a sampling key, more flexible options for [parallel_replicas_mode](#settings-parallel_replicas_mode) can be used that can produce different and more optimal behaviour.
