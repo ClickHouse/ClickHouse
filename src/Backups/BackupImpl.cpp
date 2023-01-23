@@ -991,6 +991,7 @@ void BackupImpl::increaseUncompressedSize(const FileInfo & info)
 
 void BackupImpl::increaseProcessedSize(UInt64 file_size) const
 {
+    std::lock_guard lock{mutex};
     processed_files_size += file_size;
     ++num_processed_files;
 }
