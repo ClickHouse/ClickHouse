@@ -387,7 +387,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
 
             if (tuple_data_type->getElements().size() != key_node_function_arguments_size || tuple_column->getColumns().size() != key_node_function_arguments_size)
-                throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
 
             bool match_with_subtype = false;
             const auto & sub_columns = tuple_column->getColumns();
@@ -678,7 +678,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)
-                throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
 
             bool match_with_subtype = false;
             const DataTypes & subtypes = value_tuple_data_type->getElements();
