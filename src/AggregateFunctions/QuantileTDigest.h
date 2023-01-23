@@ -309,7 +309,7 @@ public:
         readVarUInt(size, buf);
 
         if (size > max_centroids_deserialize)
-            throw Exception("Too large t-digest centroids size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large t-digest centroids size");
 
         count = 0;
         unmerged = 0;
@@ -321,7 +321,7 @@ public:
         for (const auto & c : centroids)
         {
             if (c.count <= 0 || std::isnan(c.count)) // invalid count breaks compress()
-                throw Exception("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid centroid {}:{}", c.count, std::to_string(c.mean));
             if (!std::isnan(c.mean))
             {
                 count += c.count;
@@ -483,7 +483,7 @@ private:
         ResultType result;
         if (accurate::convertNumeric(val, result))
             return result;
-        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
     }
 };
 

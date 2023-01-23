@@ -81,8 +81,8 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
     auto s = data.size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -466,11 +466,10 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
     if (start + length > src_vec.data.size())
-        throw Exception("Parameters start = "
-            + toString(start) + ", length = "
-            + toString(length) + " are out of bound in ColumnVector<T>::insertRangeFrom method"
-            " (data.size() = " + toString(src_vec.data.size()) + ").",
-            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                        "Parameters start = {}, length = {} are out of bound "
+                        "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
+                        toString(start), toString(length), toString(src_vec.data.size()));
 
     size_t old_size = data.size();
     data.resize(old_size + length);

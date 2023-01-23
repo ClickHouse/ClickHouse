@@ -187,22 +187,22 @@ FillingTransform::FillingTransform(
         const auto & type = header_.getByPosition(block_position).type;
 
         if (!tryConvertFields(descr, type))
-            throw Exception("Incompatible types of WITH FILL expression values with column type "
-                                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Incompatible types of WITH FILL expression values with column type {}", type->getName());
 
         if (type->isValueRepresentedByUnsignedInteger() &&
             ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
              (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
         {
-            throw Exception("WITH FILL bound values cannot be negative for unsigned type "
-                                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "WITH FILL bound values cannot be negative for unsigned type {}", type->getName());
         }
     }
 
     std::set<size_t> unique_positions;
     for (auto pos : fill_column_positions)
         if (!unique_positions.insert(pos).second)
-            throw Exception("Multiple WITH FILL for identical expressions is not supported in ORDER BY", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Multiple WITH FILL for identical expressions is not supported in ORDER BY");
 
     size_t idx = 0;
     for (const ColumnWithTypeAndName & column : header_.getColumnsWithTypeAndName())
