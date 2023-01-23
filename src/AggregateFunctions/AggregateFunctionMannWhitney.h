@@ -226,7 +226,7 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         if (!this->data(place).size_x || !this->data(place).size_y)
-            throw Exception("Aggregate function " + getName() + " require both samples to be non empty", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} require both samples to be non empty", getName());
 
         auto [u_statistic, p_value] = this->data(place).getResult(alternative, continuity_correction);
 
