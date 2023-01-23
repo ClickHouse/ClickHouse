@@ -185,18 +185,18 @@ ALTER TABLE users MODIFY COLUMN c2 String FIRST;
 
 DESCRIBE users;
 
-─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
- c2   │ String │              │                    │         │                  │                │
- c1   │ Int16  │              │                    │         │                  │                │
-──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name─┬─type───┬
+│ c2   │ String │
+│ c1   │ Int16  │
+└──────┴────────┴
 
 ALTER TABLE users ALTER COLUMN c2 TYPE String AFTER c1;
 
 DESCRIBE users;
-┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ c1   │ Int16  │              │                    │         │                  │                │
-│ c2   │ String │              │                    │         │                  │                │
-└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name─┬─type───┬
+│ c1   │ Int16  │
+│ c2   │ String │
+└──────┴────────┴
 ```
 
 The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
