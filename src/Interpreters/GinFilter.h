@@ -70,7 +70,7 @@ public:
 
     /// Getter
     const String & getQueryString() const { return query_string; }
-    const std::vector<String> & getTerms() const { return terms;}
+    const std::vector<String> & getTerms() const { return terms; }
     const GinSegmentWithRowIdRangeVector & getFilter() const { return rowid_ranges; }
     GinSegmentWithRowIdRangeVector & getFilter() { return rowid_ranges; }
 
