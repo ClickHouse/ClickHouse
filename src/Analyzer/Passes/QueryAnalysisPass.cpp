@@ -1765,6 +1765,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
     io.pipeline.setProgressCallback(context->getProgressCallback());
+    io.pipeline.setProcessListElement(context->getProcessListElement());
 
     Block block;
 
