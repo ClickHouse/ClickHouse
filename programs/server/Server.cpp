@@ -1465,7 +1465,7 @@ try
     size_t max_cache_size = static_cast<size_t>(memory_amount * cache_size_to_ram_max_ratio);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
-    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "SLRU");
     LOG_INFO(log, "Uncompressed cache policy name {}", uncompressed_cache_policy);
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size > max_cache_size)
@@ -1491,7 +1491,7 @@ try
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
-    String mark_cache_policy = config().getString("mark_cache_policy", "");
+    String mark_cache_policy = config().getString("mark_cache_policy", "SLRU");
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
