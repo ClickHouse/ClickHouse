@@ -6,6 +6,18 @@
 namespace DB
 {
 
+enum QuotingStrategy
+{
+    WithQuoting,
+    WithoutQuoting
+};
+
+enum EscapingStrategy
+{
+    WithEscaping,
+    WithoutEscaping
+};
+
 struct StateHandler
 {
     StateHandler(char escape_character, std::optional<char> enclosing_character);

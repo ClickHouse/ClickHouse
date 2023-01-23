@@ -41,8 +41,12 @@ ColumnPtr ExtractKeyValuePairs::chInline(
     CharArgument enclosing_character,
     SetArgument)
 {
-    InlineEscapingKeyStateHandler key_state_handler(*key_value_pair_delimiter, *escape_character, *enclosing_character);
-    InlineEscapingValueStateHandler value_state_handler(*escape_character, *item_delimiter, *enclosing_character);
+    using ValueStateHandler = InlineEscapingValueStateHandler<QuotingStrategy::WithoutQuoting, EscapingStrategy::WithoutEscaping>;
+    using KeyStateHandler = InlineEscapingKeyStateHandler<QuotingStrategy::WithoutQuoting, EscapingStrategy::WithoutEscaping>;
+
+    KeyStateHandler key_state_handler(*key_value_pair_delimiter, *escape_character, *enclosing_character);
+
+    ValueStateHandler value_state_handler(*escape_character, *item_delimiter, *enclosing_character);
     CHKeyValuePairExtractor ch_extractor(key_state_handler, value_state_handler);
 
     auto offsets = ColumnUInt64::create();
@@ -244,46 +248,6 @@ std::shared_ptr<KeyValuePairExtractor<ExtractKeyValuePairs::EscapingProcessorOut
     }
 
     return builder.build();
-}
-
-std::shared_ptr<KeyValuePairExtractor<std::unordered_map<std::string, std::string>>> ExtractKeyValuePairs::getExtractor2(
-    CharArgument escape_character,
-    CharArgument key_value_pair_delimiter,
-    CharArgument item_delimiter,
-    CharArgument enclosing_character,
-    SetArgument)
-{
-    InlineEscapingKeyStateHandler key_state_handler(*key_value_pair_delimiter, *escape_character, enclosing_character);
-    InlineEscapingValueStateHandler value_state_handler(*escape_character, *item_delimiter, enclosing_character);
-
-    return std::make_shared<InlineKeyValuePairExtractor>(key_state_handler, value_state_handler);
-//    auto builder = KeyValuePairExtractorBuilder<ExtractKeyValuePairs::EscapingProcessorOutput>();
-//
-//    if (escape_character)
-//    {
-//        builder.withEscapeCharacter(escape_character.value());
-//    }
-//
-//    if (key_value_pair_delimiter)
-//    {
-//        builder.withKeyValuePairDelimiter(key_value_pair_delimiter.value());
-//    }
-//
-//    if (item_delimiter)
-//    {
-//        builder.withItemDelimiter(item_delimiter.value());
-//    }
-//
-//    if (enclosing_character)
-//    {
-//        builder.withEnclosingCharacter(enclosing_character.value());
-//    }
-//
-//    builder.withEscapingProcessor<NoOpEscapingProcessor>();
-//
-//    builder.withValueSpecialCharacterAllowList(value_special_characters_allow_list);
-//
-//    return builder.build();
 }
 
 ExtractKeyValuePairs::RawColumns ExtractKeyValuePairs::extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column)
