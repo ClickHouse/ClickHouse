@@ -92,6 +92,8 @@ select count() from (select throwIf(count() != 2) from t6 group by a);
 
 drop table t6;
 
+set optimize_aggregation_in_order = 0;
+
 create table t7(a UInt32) engine=MergeTree order by a partition by intDiv(a, 2);
 
 insert into t7 select number from numbers_mt(100);
@@ -238,3 +240,11 @@ select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
 ) where explain like '%Skip merging: %';
 
 drop table t20;
+
+create table t21(a UInt64, b UInt64) engine=MergeTree order by a partition by a % 16;
+
+insert into t21 select number, number from numbers_mt(1e6);
+
+select a from t21 group by a limit 10 format Null;
+
+drop table t21;

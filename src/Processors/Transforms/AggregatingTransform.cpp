@@ -736,9 +736,16 @@ void AggregatingTransform::initGenerate()
                 }
                 else
                 {
-                    pipe.addSimpleTransform(
-                        [this](const Block & header)
-                        { return std::make_shared<SquashingChunksTransform>(header, params->params.max_block_size, 0); });
+                    /// If this is a final stage, we no longer have to keep chunks from different buckets into different chunks.
+                    /// So now we can insert transform that will keep chunks size under control. It makes few times difference in exec time in some cases.
+                    if (params->final)
+                    {
+                        pipe.addSimpleTransform(
+                            [this](const Block & header)
+                            {
+                                return std::make_shared<SimpleSquashingChunksTransform>(header, params->params.max_block_size, 1024 * 1024);
+                            });
+                    }
                     /// AggregatingTransform::expandPipeline expects single output port.
                     /// It's not a big problem because we do resize() to max_threads after AggregatingTransform.
                     pipe.resize(1);
