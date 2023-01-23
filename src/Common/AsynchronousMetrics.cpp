@@ -894,13 +894,16 @@ void AsynchronousMetrics::update(TimePoint update_time)
             readText(cgroup_mem_limit_in_bytes, *cgroupmem_limit_in_bytes);
             readText(cgroup_mem_usage_in_bytes, *cgroupmem_usage_in_bytes);
 
-            if (!cgroup_mem_limit_in_bytes || !cgroup_mem_usage_in_bytes)
+            if (cgroup_mem_limit_in_bytes && cgroup_mem_usage_in_bytes)
             {
-                break;
+                new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes." };
+                new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
+            } 
+            else 
+            {
+                LOG_DEBUG(log, "Cannot read statistics about the cgroup memory total and used. Total got '{}', Used got '{}'.",
+                    cgroup_mem_limit_in_bytes, cgroup_mem_usage_in_bytes);
             }
-
-            new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes." };
-            new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
         }
         catch (...)
         {
