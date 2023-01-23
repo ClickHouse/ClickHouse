@@ -78,7 +78,7 @@ BlockIO InterpreterDescribeQuery::execute()
         if (settings.allow_experimental_analyzer)
         {
             SelectQueryOptions select_query_options;
-            names_and_types = InterpreterSelectQueryAnalyzer(select_query, select_query_options, current_context).getSampleBlock().getNamesAndTypesList();
+            names_and_types = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock().getNamesAndTypesList();
         }
         else
         {

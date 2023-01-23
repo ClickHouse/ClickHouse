@@ -138,7 +138,7 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
-bool StorageMerge::canMoveConditionsToPrewhere() const
+bool StorageMerge::tableSupportsPrewhere() const
 {
     /// NOTE: This check is used during query analysis as condition for applying
     /// "move to PREWHERE" optimization. However, it contains a logical race:
@@ -146,9 +146,9 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
     /// will appear after this check and before calling "read" method, the optimized query may fail.
     /// Since it's quite rare case, we just ignore this possibility.
     const auto & table_doesnt_support_prewhere = getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); });
-    bool can_move = (table_doesnt_support_prewhere == nullptr);
+    bool supports_prewhere = (table_doesnt_support_prewhere == nullptr);
 
-    if (!can_move)
+    if (!supports_prewhere)
         return false;
 
     if (!getInMemoryMetadataPtr())
@@ -165,9 +165,9 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
     {
         const auto & metadata_ptr = table->getInMemoryMetadataPtr();
         if (!metadata_ptr)
-            can_move = false;
+            supports_prewhere = false;
 
-        if (!can_move)
+        if (!supports_prewhere)
             return;
 
         for (const auto & column : metadata_ptr->getColumns().getAll())
@@ -175,13 +175,18 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
             const auto * src_type = column_types[column.name];
             if (src_type && !src_type->equals(*column.type))
             {
-                can_move = false;
+                supports_prewhere = false;
                 return;
             }
         }
     });
 
-    return can_move;
+    return supports_prewhere;
+}
+
+bool StorageMerge::canMoveConditionsToPrewhere() const
+{
+    return tableSupportsPrewhere();
 }
 
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
@@ -294,6 +299,12 @@ void StorageMerge::read(
       */
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("optimize_move_to_prewhere", false);
+
+    if (query_info.prewhere_info && !tableSupportsPrewhere())
+        throw DB::Exception(
+            DB::ErrorCodes::ILLEGAL_PREWHERE,
+            "Cannot use PREWHERE with table {}, probably some columns don't have same type or an underlying table doesn't support PREWHERE",
+            getStorageID().getTableName());
 
     bool has_database_virtual_column = false;
     bool has_table_virtual_column = false;
@@ -838,10 +849,9 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                    backQuoteIfNeed(command.column_name), toString(deps_mv));
             }
         }
     }

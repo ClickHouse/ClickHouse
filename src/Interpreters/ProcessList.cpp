@@ -164,8 +164,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 if (running_query != user_process_list->second.queries.end())
                 {
                     if (!settings.replace_running_query)
-                        throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
-                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING, "Query with id = {} is already running.", client_info.current_query_id);
 
                     /// Ask queries to cancel. They will check this flag.
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
@@ -181,8 +180,9 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                             return false;
                         }))
                     {
-                        throw Exception("Query with id = " + client_info.current_query_id + " is already running and can't be stopped",
-                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                        "Query with id = {} is already running and can't be stopped",
+                                        client_info.current_query_id);
                     }
                  }
             }
@@ -194,8 +194,9 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             if (user_process_list.first == client_info.current_user)
                 continue;
             if (auto running_query = user_process_list.second.queries.find(client_info.current_query_id); running_query != user_process_list.second.queries.end())
-                throw Exception("Query with id = " + client_info.current_query_id + " is already running by user " + user_process_list.first,
-                    ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                "Query with id = {} is already running by user {}",
+                                client_info.current_query_id, user_process_list.first);
         }
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
@@ -408,7 +409,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     if (is_killed.load())
-        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
     assert(std::find(executors.begin(), executors.end(), e) == executors.end());
@@ -425,7 +426,7 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 bool QueryStatus::checkTimeLimit()
 {
     if (is_killed.load())
-        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     return limits.checkTimeLimit(watch, overflow_mode);
 }

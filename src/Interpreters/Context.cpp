@@ -1888,8 +1888,11 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     auto lock = getLock();
 
+    const bool allow_concurrent_backups = this->getConfigRef().getBool("allow_concurrent_backups", true);
+    const bool allow_concurrent_restores = this->getConfigRef().getBool("allow_concurrent_restores", true);
+
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads);
+        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads, allow_concurrent_backups, allow_concurrent_restores);
 
     return *shared->backups_worker;
 }
@@ -1975,11 +1978,13 @@ void Context::dropMarkCache() const
 
 ThreadPool & Context::getLoadMarksThreadpool() const
 {
+    const auto & config = getConfigRef();
+
     auto lock = getLock();
     if (!shared->load_marks_threadpool)
     {
-        constexpr size_t pool_size = 50;
-        constexpr size_t queue_size = 1000000;
+        auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
+        auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
     }
     return *shared->load_marks_threadpool;

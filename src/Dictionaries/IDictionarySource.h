@@ -4,7 +4,6 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <vector>
-#include <atomic>
 
 
 namespace DB
@@ -25,44 +24,6 @@ public:
 
     /// Returns a pipe with updated data available from this source.
     virtual QueryPipeline loadUpdatedAll() = 0;
-
-    /**
-     * result_size_hint - approx number of rows in the stream.
-     * Returns a pipe with all the data available from this source.
-     *
-     * NOTE: result_size_hint may be changed during you are reading (usually it
-     * will be non zero for the first block and zero for others, since it uses
-     * Progress::total_rows_approx,) from the pipe, and may be called
-     * in parallel, so you should use something like this:
-     *
-     *   ...
-     *   std::atomic<uint64_t> new_size = 0;
-     *
-     *   QueryPipeline pipeline;
-     *   pipeline.init(source->loadAll(&new_size));
-     *   PullingPipelineExecutor executor;
-     *
-     *   Block block;
-     *   while (executor.pull(block))
-     *   {
-     *       if (new_size)
-     *       {
-     *           size_t current_new_size = new_size.exchange(0);
-     *           if (current_new_size)
-     *               resize(current_new_size);
-     *       }
-     *       else
-     *       {
-     *           resize(block.rows());
-     *       }
-     *   }
-     *
-     *   ...
-     */
-    virtual QueryPipeline loadAllWithSizeHint(std::atomic<size_t> * /* result_size_hint */)
-    {
-        return loadAll();
-    }
 
     /** Indicates whether this source supports "random access" loading of data
       *  loadId and loadIds can only be used if this function returns true.

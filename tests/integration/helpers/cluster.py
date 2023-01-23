@@ -467,6 +467,7 @@ class ClickHouseCluster:
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
+        self.kafka_dir = os.path.join(self.instances_dir, "kafka")
         self.kafka_port = get_free_port()
         self.kafka_docker_id = None
         self.schema_registry_host = "schema-registry"
@@ -476,6 +477,7 @@ class ClickHouseCluster:
         self.coredns_host = "coredns"
 
         # available when with_kerberozed_kafka == True
+        # reuses kafka_dir
         self.kerberized_kafka_host = "kerberized_kafka1"
         self.kerberized_kafka_port = get_free_port()
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(
@@ -2235,13 +2237,22 @@ class ClickHouseCluster:
         retries = 0
         while True:
             if check_kafka_is_available(kafka_docker_id, kafka_port):
-                break
+                return
             else:
                 retries += 1
                 if retries > max_retries:
-                    raise Exception("Kafka is not available")
+                    break
                 logging.debug("Waiting for Kafka to start up")
                 time.sleep(1)
+
+        try:
+            with open(os.path.join(self.kafka_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_kafka_cmd + ["logs"], stdout=f
+                )
+        except Exception as e:
+            logging.debug("Unable to get logs from docker.")
+        raise Exception("Kafka is not available")
 
     def wait_kerberos_kdc_is_available(self, kerberos_kdc_docker_id, max_retries=50):
         retries = 0
@@ -2601,6 +2612,7 @@ class ClickHouseCluster:
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug("Setup Kafka")
+                os.mkdir(self.kafka_dir)
                 subprocess_check_call(
                     self.base_kafka_cmd + common_opts + ["--renew-anon-volumes"]
                 )
@@ -2610,6 +2622,7 @@ class ClickHouseCluster:
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug("Setup kerberized kafka")
+                os.mkdir(self.kafka_dir)
                 run_and_check(
                     self.base_kerberized_kafka_cmd
                     + common_opts
