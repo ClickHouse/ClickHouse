@@ -11,10 +11,15 @@ struct NameHasTokenCaseInsensitive
     static constexpr auto name = "hasTokenCaseInsensitive";
 };
 
+struct NameHasTokenCaseInsensitiveOrNull
+{
+    static constexpr auto name = "hasTokenCaseInsensitiveOrNull";
+};
+
 using FunctionHasTokenCaseInsensitive
     = DB::FunctionsStringSearch<DB::HasTokenImpl<NameHasTokenCaseInsensitive, DB::VolnitskyCaseInsensitiveToken, false>>;
 using FunctionHasTokenCaseInsensitiveOrNull = DB::FunctionsStringSearch<
-    DB::HasTokenImpl<NameHasTokenCaseInsensitive, DB::VolnitskyCaseInsensitiveToken, false>,
+    DB::HasTokenImpl<NameHasTokenCaseInsensitiveOrNull, DB::VolnitskyCaseInsensitiveToken, false>,
     DB::ExecutionErrorPolicy::Null>;
 }
 

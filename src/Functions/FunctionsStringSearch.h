@@ -60,7 +60,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -74,16 +73,7 @@ template <typename Impl, ExecutionErrorPolicy execution_error_policy = Execution
 class FunctionsStringSearch : public IFunction
 {
 public:
-    inline static auto name = std::invoke(
-        []() -> std::string
-        {
-            if (execution_error_policy == ExecutionErrorPolicy::Null)
-                return std::string(Impl::name) + "OrNull";
-            else if (execution_error_policy == ExecutionErrorPolicy::Throw)
-                return Impl::name;
-
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled execution error policy");
-        });
+    static constexpr auto name = Impl::name;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearch>(); }
 
@@ -158,18 +148,29 @@ public:
         using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
         auto & vec_res = col_res->getData();
+
+        const auto create_null_map = [&]() -> ColumnUInt8::MutablePtr
+        {
+            if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
+                return ColumnUInt8::create(vec_res.size());
+
+            return {};
+        };
+
         if constexpr (!Impl::use_default_implementation_for_constants)
         {
             if (col_haystack_const && col_needle_const)
             {
                 const auto is_col_start_pos_const = !column_start_pos || isColumnConst(*column_start_pos);
                 vec_res.resize(is_col_start_pos_const ? 1 : column_start_pos->size());
+                const auto null_map = create_null_map();
 
                 Impl::constantConstant(
                     col_haystack_const->getValue<String>(),
                     col_needle_const->getValue<String>(),
                     column_start_pos,
-                    vec_res);
+                    vec_res,
+                    null_map.get());
 
                 if (is_col_start_pos_const)
                     return result_type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
@@ -179,6 +180,7 @@ public:
         }
 
         vec_res.resize(column_haystack->size());
+        auto null_map = create_null_map();
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
         const ColumnFixedString * col_haystack_vector_fixed = checkAndGetColumn<ColumnFixedString>(&*column_haystack);
@@ -191,30 +193,16 @@ public:
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
                 column_start_pos,
-                vec_res);
+                vec_res,
+                null_map.get());
         else if (col_haystack_vector && col_needle_const)
-        {
-            if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
-            {
-                auto null_map = ColumnUInt8::create(vec_res.size());
-                Impl::vectorConstant(
-                    col_haystack_vector->getChars(),
-                    col_haystack_vector->getOffsets(),
-                    col_needle_const->getValue<String>(),
-                    column_start_pos,
-                    vec_res,
-                    null_map.get());
-
-                return ColumnNullable::create(std::move(col_res), std::move(null_map));
-            }
-            else
-                Impl::vectorConstant(
-                    col_haystack_vector->getChars(),
-                    col_haystack_vector->getOffsets(),
-                    col_needle_const->getValue<String>(),
-                    column_start_pos,
-                    vec_res);
-        }
+            Impl::vectorConstant(
+                col_haystack_vector->getChars(),
+                col_haystack_vector->getOffsets(),
+                col_needle_const->getValue<String>(),
+                column_start_pos,
+                vec_res,
+                null_map.get());
         else if (col_haystack_vector_fixed && col_needle_vector)
             Impl::vectorFixedVector(
                 col_haystack_vector_fixed->getChars(),
@@ -222,20 +210,23 @@ public:
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
                 column_start_pos,
-                vec_res);
+                vec_res,
+                null_map.get());
         else if (col_haystack_vector_fixed && col_needle_const)
             Impl::vectorFixedConstant(
                 col_haystack_vector_fixed->getChars(),
                 col_haystack_vector_fixed->getN(),
                 col_needle_const->getValue<String>(),
-                vec_res);
+                vec_res,
+                null_map.get());
         else if (col_haystack_const && col_needle_vector)
             Impl::constantVector(
                 col_haystack_const->getValue<String>(),
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
                 column_start_pos,
-                vec_res);
+                vec_res,
+                null_map.get());
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -243,6 +234,9 @@ public:
                 arguments[0].column->getName(),
                 arguments[1].column->getName(),
                 getName());
+
+        if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
+            return ColumnNullable::create(std::move(col_res), std::move(null_map));
 
         return col_res;
     }

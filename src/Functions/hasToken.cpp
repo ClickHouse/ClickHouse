@@ -11,9 +11,14 @@ struct NameHasToken
     static constexpr auto name = "hasToken";
 };
 
+struct NameHasTokenOrNull
+{
+    static constexpr auto name = "hasTokenOrNull";
+};
+
 using FunctionHasToken = DB::FunctionsStringSearch<DB::HasTokenImpl<NameHasToken, DB::VolnitskyCaseSensitiveToken, false>>;
-using FunctionHasTokenOrNull
-    = DB::FunctionsStringSearch<DB::HasTokenImpl<NameHasToken, DB::VolnitskyCaseSensitiveToken, false>, DB::ExecutionErrorPolicy::Null>;
+using FunctionHasTokenOrNull = DB::
+    FunctionsStringSearch<DB::HasTokenImpl<NameHasTokenOrNull, DB::VolnitskyCaseSensitiveToken, false>, DB::ExecutionErrorPolicy::Null>;
 }
 
 REGISTER_FUNCTION(HasToken)
