@@ -1776,7 +1776,7 @@ catch (...)
 {
     LOG_ERROR(log, "Loading of outdated parts failed. "
         "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
-        "Exception: ", getCurrentExceptionMessage(true));
+        "Exception: {}", getCurrentExceptionMessage(true));
     std::terminate();
 }
 

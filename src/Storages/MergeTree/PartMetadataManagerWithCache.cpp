@@ -177,7 +177,7 @@ void PartMetadataManagerWithCache::assertAllDeleted(bool include_projection) con
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Data part {} with type {} with meta file {} with projection name still in cache",
+                        "Data part {} with type {} with meta file {} with projection name {} still in cache",
                         part->name,
                         part->getType().toString(),
                         file_path,

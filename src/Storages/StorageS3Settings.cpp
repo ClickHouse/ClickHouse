@@ -116,20 +116,17 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
     if (!upload_part_size_multiply_factor)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_factor cannot be zero",
-            upload_part_size_multiply_factor);
+            "Setting upload_part_size_multiply_factor cannot be zero");
 
     if (!upload_part_size_multiply_parts_count_threshold)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero",
-            upload_part_size_multiply_parts_count_threshold);
+            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
 
     if (!max_part_number)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_part_number cannot be zero",
-            max_part_number);
+            "Setting max_part_number cannot be zero");
 
     static constexpr size_t max_part_number_limit = 10000;
     if (max_part_number > max_part_number_limit)
