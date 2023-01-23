@@ -6,7 +6,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
-#include <Common/ConcurrentBoundedQueue.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -22,6 +21,9 @@ namespace Poco
     class Logger;
 }
 
+
+template <class T>
+class ConcurrentBoundedQueue;
 
 namespace DB
 {

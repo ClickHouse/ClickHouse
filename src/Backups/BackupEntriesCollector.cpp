@@ -130,7 +130,7 @@ BackupEntries BackupEntriesCollector::run()
 
 Strings BackupEntriesCollector::setStage(const String & new_stage, const String & message)
 {
-    LOG_TRACE(log, "{}", toUpperFirst(new_stage));
+    LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
     current_stage = new_stage;
 
     backup_coordination->setStage(backup_settings.host_id, new_stage, message);
@@ -215,7 +215,7 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
             if (std::chrono::steady_clock::now() > consistent_metadata_snapshot_end_time)
                 inconsistency_error->rethrow();
             else
-                LOG_WARNING(log, "{}", inconsistency_error->displayText());
+                LOG_WARNING(log, getExceptionMessageAndPattern(*inconsistency_error, /* with_stacktrace */ false));
         }
 
         auto sleep_time = getSleepTimeAfterInconsistencyError(pass);
