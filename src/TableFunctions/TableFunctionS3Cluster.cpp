@@ -60,7 +60,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
                                 " - cluster, url, access_key_id, secret_access_key, format, structure, compression_method";
     auto message = PreformattedMessage{fmt::format(fmt_string, getName()), fmt_string};
     if (args.size() < 2 || args.size() > 7)
-        throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception::createDeprecated(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     /// This arguments are always the first
     configuration.cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");

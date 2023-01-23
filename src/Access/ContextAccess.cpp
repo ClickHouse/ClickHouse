@@ -490,7 +490,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
             LOG_TRACE(trace_log, "Access denied: {}{}", (AccessRightsElement{flags, args...}.toStringWithoutOptions()),
                       (grant_option ? " WITH GRANT OPTION" : ""));
         if constexpr (throw_if_denied)
-            throw Exception(getUserName() + ": " + error_msg, error_code);
+            throw Exception::createDeprecated(getUserName() + ": " + error_msg, error_code);
         return false;
     };
 
@@ -683,7 +683,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
     {
         UNUSED(this);
         if constexpr (throw_if_denied)
-            throw Exception(getUserName() + ": " + msg, error_code);
+            throw Exception::createDeprecated(getUserName() + ": " + msg, error_code);
     };
 
     if (is_full_access)

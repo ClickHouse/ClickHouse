@@ -40,7 +40,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     String cluster_description;
 
     if (args_func.size() != 1)
-        throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception::createDeprecated(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = args_func.at(0)->children;
 
@@ -119,7 +119,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         /// clusterAllReplicas() - same as cluster()
 
         if (args.size() < 2 || args.size() > max_args)
-            throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception::createDeprecated(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         size_t arg_num = 0;
         auto get_string_literal = [](const IAST & node, String & res)
@@ -168,7 +168,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             {
                 if (arg_num >= args.size())
                 {
-                    throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                    throw Exception::createDeprecated(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
                 }
                 else
                 {
@@ -220,7 +220,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         }
 
         if (arg_num < args.size())
-            throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception::createDeprecated(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
     if (!cluster_name.empty())

@@ -266,7 +266,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change, const Field & n
     if (!explain.empty())
     {
         if (reaction == THROW_ON_VIOLATION)
-            throw Exception(explain, code);
+            throw Exception::createDeprecated(explain, code);
         else
             return false;
     }

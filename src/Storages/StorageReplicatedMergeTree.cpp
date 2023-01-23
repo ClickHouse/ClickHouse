@@ -4798,7 +4798,7 @@ bool StorageReplicatedMergeTree::optimize(
         PreformattedMessage message = fmt_string.format(std::forward<Args...>(args)...);
         LOG_DEBUG(log, message);
         if (query_context->getSettingsRef().optimize_throw_if_noop)
-            throw Exception(message, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+            throw Exception::createDeprecated(message, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
         return false;
     };
 

@@ -3503,7 +3503,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
         if (part->isEmpty() || (hierarchy.intersected_parts.size() == 1 && hierarchy.intersected_parts.back()->isEmpty()))
         {
             message += fmt::format(" One of them is empty part. That is a race between drop operation under transaction and a merge/mutation.");
-            throw Exception(message, ErrorCodes::SERIALIZATION_ERROR);
+            throw Exception::createDeprecated(message, ErrorCodes::SERIALIZATION_ERROR);
         }
 
         if (hierarchy.intersected_parts.size() > 1)

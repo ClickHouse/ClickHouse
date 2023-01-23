@@ -207,8 +207,9 @@ private:
         if (size >= MMAP_THRESHOLD)
         {
             if (alignment > mmap_min_alignment)
-                throw DB::Exception(fmt::format("Too large alignment {}: more than page size when allocating {}.",
-                    ReadableSize(alignment), ReadableSize(size)), DB::ErrorCodes::BAD_ARGUMENTS);
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                                    "Too large alignment {}: more than page size when allocating {}.",
+                                    ReadableSize(alignment), ReadableSize(size));
 
             buf = mmap(getMmapHint(), size, PROT_READ | PROT_WRITE,
                        mmap_flags, -1, 0);

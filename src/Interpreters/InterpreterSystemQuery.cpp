@@ -121,7 +121,7 @@ void executeCommandsAndThrowIfError(Callables && ... commands)
 {
     auto status = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
     if (status.code != 0)
-        throw Exception(status.message, status.code);
+        throw Exception::createDeprecated(status.message, status.code);
 }
 
 

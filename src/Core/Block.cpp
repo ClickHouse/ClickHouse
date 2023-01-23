@@ -33,7 +33,7 @@ template <typename ReturnType>
 static ReturnType onError(const std::string & message [[maybe_unused]], int code [[maybe_unused]])
 {
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(message, code);
+        throw Exception::createDeprecated(message, code);
     else
         return false;
 }

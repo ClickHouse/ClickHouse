@@ -719,7 +719,7 @@ bool Client::processWithFuzzing(const String & full_query)
             // uniformity.
             // Surprisingly, this is a client exception, because we get the
             // server exception w/o throwing (see onReceiveException()).
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -854,7 +854,7 @@ bool Client::processWithFuzzing(const String & full_query)
         }
         catch (...)
         {
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 

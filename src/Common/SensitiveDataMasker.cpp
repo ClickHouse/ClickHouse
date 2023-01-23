@@ -62,10 +62,10 @@ public:
         , replacement(replacement_string)
     {
         if (!regexp.ok())
-            throw DB::Exception(
-                "SensitiveDataMasker: cannot compile re2: " + regexp_string_ + ", error: " + regexp.error()
-                    + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
-                DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "SensitiveDataMasker: cannot compile re2: {}, error: {}. "
+                "Look at https://github.com/google/re2/wiki/Syntax for reference.",
+                regexp_string_, regexp.error());
     }
 
     uint64_t apply(std::string & data) const

@@ -398,9 +398,8 @@ Chunk DDLQueryStatusSource::generate()
             if (throw_on_timeout)
             {
                 if (!first_exception)
-                    first_exception = std::make_unique<Exception>(
-                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts),
-                        ErrorCodes::TIMEOUT_EXCEEDED);
+                    first_exception = std::make_unique<Exception>(ErrorCodes::TIMEOUT_EXCEEDED,
+                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts));
 
                 /// For Replicated database print a list of unfinished hosts as well. Will return empty block on next iteration.
                 if (is_replicated_database)
@@ -423,12 +422,11 @@ Chunk DDLQueryStatusSource::generate()
             /// Paradoxically, this exception will be throw even in case of "never_throw" mode.
 
             if (!first_exception)
-                first_exception = std::make_unique<Exception>(
+                first_exception = std::make_unique<Exception>(ErrorCodes::UNFINISHED,
                     fmt::format(
                         "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
                         " since it was finished (or its lifetime is expired)",
-                        node_path),
-                    ErrorCodes::UNFINISHED);
+                        node_path));
             return {};
         }
 
@@ -464,8 +462,8 @@ Chunk DDLQueryStatusSource::generate()
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "There was an error on {}: {} (probably it's a bug)", host_id, status.message);
 
                 auto [host, port] = parseHostAndPort(host_id);
-                first_exception = std::make_unique<Exception>(
-                    fmt::format("There was an error on [{}:{}]: {}", host, port, status.message), status.code);
+                first_exception = std::make_unique<Exception>(status.code,
+                    fmt::format("There was an error on [{}:{}]: {}", host, port, status.message));
             }
 
             ++num_hosts_finished;
