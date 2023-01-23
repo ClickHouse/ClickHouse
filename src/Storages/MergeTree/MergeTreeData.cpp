@@ -2021,7 +2021,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             }
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
-            bool reached_removal_time = part_remove_time < time_now && time_now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds();
+            bool reached_removal_time = part_remove_time <= time_now && time_now - part_remove_time >= getSettings()->old_parts_lifetime.totalSeconds();
             if ((reached_removal_time && !has_skipped_mutation_parent(part))
                 || force
                 || isInMemoryPart(part)     /// Remove in-memory parts immediately to not store excessive data in RAM
@@ -2458,35 +2458,43 @@ size_t MergeTreeData::clearEmptyParts()
     if (!getSettings()->remove_empty_parts)
         return 0;
 
-    size_t cleared_count = 0;
-    auto parts = getDataPartsVectorForInternalUsage();
-    for (const auto & part : parts)
+    std::vector<std::string> parts_names_to_drop;
+
     {
-        if (part->rows_count != 0)
-            continue;
-
-        /// Do not try to drop uncommitted parts. If the newest tx doesn't see it that is probably hasn't been committed jet
-        if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
-            continue;
-
-        /// Don't drop empty parts that cover other parts
-        /// Otherwise covered parts resurrect
+        /// Need to destroy parts vector before clearing them from filesystem.
+        auto parts = getDataPartsVectorForInternalUsage();
+        for (const auto & part : parts)
         {
-            auto lock = lockParts();
-            if (part->getState() != DataPartState::Active)
+            if (part->rows_count != 0)
                 continue;
 
-            DataPartsVector covered_parts = getCoveredOutdatedParts(part, lock);
-            if (!covered_parts.empty())
+            /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
+            if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
                 continue;
+
+            /// Don't drop empty parts that cover other parts
+            /// Otherwise covered parts resurrect
+            {
+                auto lock = lockParts();
+                if (part->getState() != DataPartState::Active)
+                    continue;
+
+                DataPartsVector covered_parts = getCoveredOutdatedParts(part, lock);
+                if (!covered_parts.empty())
+                    continue;
+            }
+
+            parts_names_to_drop.emplace_back(part->name);
         }
-
-        LOG_INFO(log, "Will drop empty part {}", part->name);
-
-        dropPartNoWaitNoThrow(part->name);
-        ++cleared_count;
     }
-    return cleared_count;
+
+    for (auto & name : parts_names_to_drop)
+    {
+        LOG_INFO(log, "Will drop empty part {}", name);
+        dropPartNoWaitNoThrow(name);
+    }
+
+    return parts_names_to_drop.size();
 }
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
@@ -2774,6 +2782,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "The following alter commands: '{}' will modify data on disk, but setting `allow_non_metadata_alters` is disabled", queryToString(mutation_commands.ast()));
     }
+
+    if (commands.hasInvertedIndex(new_metadata, getContext()) && !settings.allow_experimental_inverted_index)
+    {
+        throw Exception(
+                "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')",
+                ErrorCodes::SUPPORT_IS_DISABLED);
+    }
     commands.apply(new_metadata, getContext());
 
     /// Set of columns that shouldn't be altered.
@@ -2862,15 +2877,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             }
             else if (command.type == AlterCommand::DROP_COLUMN)
             {
-                throw Exception(
-                    "Trying to ALTER DROP version " + backQuoteIfNeed(command.column_name) + " column",
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP version {} column", backQuoteIfNeed(command.column_name));
             }
             else if (command.type == AlterCommand::RENAME_COLUMN)
             {
-                throw Exception(
-                    "Trying to ALTER RENAME version " + backQuoteIfNeed(command.column_name) + " column",
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER RENAME version {} column", backQuoteIfNeed(command.column_name));
             }
         }
 
@@ -2922,9 +2935,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             if (columns_in_keys.contains(command.column_name))
             {
-                throw Exception(
-                    "Trying to ALTER DROP key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP key {} column which is a part of key expression", backQuoteIfNeed(command.column_name));
             }
 
             if (!command.clear)
@@ -2932,10 +2944,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 const auto & deps_mv = name_deps[command.column_name];
                 if (!deps_mv.empty())
                 {
-                    throw Exception(
-                        "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                            + toString(deps_mv),
-                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                        backQuoteIfNeed(command.column_name), toString(deps_mv));
                 }
             }
 

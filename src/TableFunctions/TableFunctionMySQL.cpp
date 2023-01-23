@@ -67,8 +67,8 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr contex
 
     const auto columns = tables_and_columns.find(configuration->table);
     if (columns == tables_and_columns.end())
-        throw Exception("MySQL table " + (configuration->database.empty() ? "" : (backQuote(configuration->database) + "."))
-            + backQuote(configuration->table) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.",
+                        (configuration->database.empty() ? "" : (backQuote(configuration->database) + "." + backQuote(configuration->table))));
 
     return columns->second;
 }
