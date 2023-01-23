@@ -324,13 +324,14 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
     }
 }
 
-std::string HTTPException::makeExceptionMessage(
+Exception HTTPException::makeExceptionMessage(
+    int code,
     const std::string & uri,
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
     const std::string & body)
 {
-    return fmt::format(
+    return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} {}, "
         "body: {}",
