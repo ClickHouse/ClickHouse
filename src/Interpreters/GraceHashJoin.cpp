@@ -394,7 +394,7 @@ void GraceHashJoin::addBucket(Buckets & destination)
 
 void GraceHashJoin::checkTypesOfKeys(const Block & block) const
 {
-    assert(hash_join);
+    chassert(hash_join);
     return hash_join->checkTypesOfKeys(block);
 }
 
@@ -447,7 +447,7 @@ size_t GraceHashJoin::getTotalRowCount() const
 size_t GraceHashJoin::getTotalByteCount() const
 {
     std::lock_guard lock(hash_join_mutex);
-    assert(hash_join);
+    chassert(hash_join);
     return hash_join->getTotalByteCount();
 }
 
@@ -461,9 +461,14 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
         std::shared_lock lock(rehash_mutex);
         return std::all_of(buckets.begin(), buckets.end(), [](const auto & bucket) { return bucket->empty(); });
     }();
-    bool hash_join_is_empty = hash_join && hash_join->alwaysReturnsEmptySet();
 
-    return hash_join_is_empty && file_buckets_are_empty;
+    if (!file_buckets_are_empty)
+        return false;
+
+    chassert(hash_join);
+    bool hash_join_is_empty = hash_join->alwaysReturnsEmptySet();
+
+    return hash_join_is_empty;
 }
 
 IBlocksStreamPtr GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
@@ -621,6 +626,9 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
     {
         std::lock_guard lock(hash_join_mutex);
 
+        if (!hash_join)
+            hash_join = makeInMemoryJoin();
+
         hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
 
         if (!hasMemoryOverflow(hash_join))
@@ -629,6 +637,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         current_block = {};
 
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
+        hash_join = nullptr;
 
         buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
 
