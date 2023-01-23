@@ -676,20 +676,6 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     }
 }
 
-Block HashJoin::structureRightBlock(const Block & block) const
-{
-    Block structured_block;
-    for (const auto & sample_column : savedBlockSample().getColumnsWithTypeAndName())
-    {
-        ColumnWithTypeAndName column = block.getByName(sample_column.name);
-        if (sample_column.column->isNullable())
-            JoinCommon::convertColumnToNullable(column);
-        structured_block.insert(column);
-    }
-
-    return structured_block;
-}
-
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
 {
     Block structured_block;
