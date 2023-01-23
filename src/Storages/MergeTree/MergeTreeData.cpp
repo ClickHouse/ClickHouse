@@ -7286,6 +7286,10 @@ try
     {
         part_log_elem.profile_counters = profile_counters;
     }
+    else
+    {
+        LOG_WARNING(log, "{}: {}", __PRETTY_FUNCTION__, "Profile counters are not set");
+    }
 
     part_log->add(part_log_elem);
 }

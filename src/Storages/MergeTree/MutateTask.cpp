@@ -20,6 +20,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace CurrentMetrics
@@ -801,8 +802,8 @@ public:
 
     bool executeStep() override
     {
-        /// Metrics will be saved in the thread_group.
-        CurrentThread::ScopedAttach scoped_attach(thread_group);
+        /// Metrics will be saved in the local profile_counters.
+        ScopedProfileEvents profile_events_scope(&profile_counters);
 
         auto & current_level_parts = level_parts[current_level];
         auto & next_level_parts = level_parts[next_level];
@@ -905,7 +906,7 @@ private:
     /// TODO(nikitamikhaylov): make this constant a setting
     static constexpr size_t max_parts_to_merge_in_one_level = 10;
 
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
+    ProfileEvents::Counters profile_counters;
 };
 
 
@@ -1127,8 +1128,8 @@ public:
 
     bool executeStep() override
     {
-        /// Metrics will be saved in the thread_group.
-        CurrentThread::ScopedAttach scoped_attach(thread_group);
+        /// Metrics will be saved in the local profile_counters.
+        ScopedProfileEvents profile_events_scope(&profile_counters);
 
         switch (state)
         {
@@ -1245,7 +1246,7 @@ private:
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
 
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
+    ProfileEvents::Counters profile_counters;
 };
 
 
@@ -1260,8 +1261,8 @@ public:
 
     bool executeStep() override
     {
-        /// Metrics will be saved in the thread_group.
-        CurrentThread::ScopedAttach scoped_attach(thread_group);
+        /// Metrics will be saved in the local profile_counters.
+        ScopedProfileEvents profile_events_scope(&profile_counters);
 
         switch (state)
         {
@@ -1454,7 +1455,7 @@ private:
     MergedColumnOnlyOutputStreamPtr out;
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
+    ProfileEvents::Counters profile_counters;
 };
 
 

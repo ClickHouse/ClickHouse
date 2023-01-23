@@ -83,7 +83,7 @@ private:
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
 
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
+    ProfileEvents::Counters profile_counters;
 };
 
 

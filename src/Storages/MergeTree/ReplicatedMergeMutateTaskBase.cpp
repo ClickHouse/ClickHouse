@@ -2,6 +2,7 @@
 
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace DB
@@ -29,8 +30,8 @@ void ReplicatedMergeMutateTaskBase::onCompleted()
 
 bool ReplicatedMergeMutateTaskBase::executeStep()
 {
-    /// Metrics will be saved in the thread_group.
-    CurrentThread::ScopedAttach scoped_attach(thread_group);
+    /// Metrics will be saved in the local profile_counters.
+    ScopedProfileEvents profile_events_scope(&profile_counters);
 
     std::exception_ptr saved_exception;
 

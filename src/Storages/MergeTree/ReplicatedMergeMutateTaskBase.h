@@ -86,7 +86,7 @@ private:
     PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
+    ProfileEvents::Counters profile_counters;
 };
 
 }

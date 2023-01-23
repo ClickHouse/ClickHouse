@@ -106,6 +106,7 @@ using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
  * - https://github.com/ClickHouse/ClickHouse/pull/40078
  */
 extern thread_local constinit ThreadStatus * current_thread;
+extern thread_local constinit ProfileEvents::Counters * subthread_profile_events;
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
@@ -138,6 +139,7 @@ public:
     Deleter deleter;
 
 protected:
+    /// Group of threads, to which this thread attached
     ThreadGroupStatusPtr thread_group;
 
     std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
@@ -242,6 +244,8 @@ public:
 
     /// Attaches slave thread to existing thread group
     void attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached = true);
+
+    void attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope);
 
     InternalTextLogsQueuePtr getInternalTextLogsQueue() const
     {

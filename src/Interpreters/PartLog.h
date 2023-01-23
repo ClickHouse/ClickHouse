@@ -109,14 +109,42 @@ class PartLog : public SystemLog<PartLogElement>
     using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
     using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
 
+    using ProfileCountersSnapshotPtr = std::shared_ptr<ProfileEvents::Counters::Snapshot>;
+
 public:
+    struct PartLogEntry
+    {
+        std::shared_ptr<IMergeTreeDataPart> part;
+        ProfileCountersSnapshotPtr profile_counters;
+        UInt64 elapsed_ns;
+
+        PartLogEntry(std::shared_ptr<IMergeTreeDataPart> part_, UInt64 elapsed_ns_)
+            : part(std::move(part_)), elapsed_ns(elapsed_ns_)
+        {
+        }
+
+        PartLogEntry(std::shared_ptr<IMergeTreeDataPart> part_, UInt64 elapsed_ns_, ProfileCountersSnapshotPtr profile_counters_)
+            : part(std::move(part_))
+            , profile_counters(std::move(profile_counters_))
+            , elapsed_ns(elapsed_ns_)
+        {
+        }
+    };
+
+    using PartLogEntries = std::vector<PartLogEntry>;
+
+    /// Add a record about creation of new part.
+    static bool addNewPart(ContextPtr context, const PartLogEntry & part,
+                           const ExecutionStatus & execution_status = {});
+
+    static bool addNewParts(ContextPtr context, const PartLogEntries & parts,
+                            const ExecutionStatus & execution_status = {});
+
     /// Add a record about creation of new part.
     static bool addNewPart(ContextPtr context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
-                           const ExecutionStatus & execution_status = {},
-                           std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters_ = {});
+                           const ExecutionStatus & execution_status = {});
     static bool addNewParts(ContextPtr context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
-                            const ExecutionStatus & execution_status = {},
-                            std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters_ = {});
+                            const ExecutionStatus & execution_status = {});
 };
 
 }

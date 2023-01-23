@@ -107,22 +107,8 @@ public:
     private:
         bool attached = false;
     public:
-        explicit ScopedAttach(const ThreadGroupStatusPtr & thread_group)
-        {
-            if (!CurrentThread::getGroup())
-            {
-                CurrentThread::attachToIfDetached(thread_group);
-                attached = true;
-            }
-        }
-
-        ~ScopedAttach()
-        {
-            if (attached)
-            {
-                CurrentThread::detachQuery();
-            }
-        }
+        explicit ScopedAttach(const ThreadGroupStatusPtr & thread_group);
+        ~ScopedAttach();
     };
 
 private:

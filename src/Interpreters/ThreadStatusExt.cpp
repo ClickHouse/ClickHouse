@@ -161,6 +161,12 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     setupState(thread_group_);
 }
 
+void ThreadStatus::attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope)
+{
+    subthread_profile_events = performance_counters_scope;
+    performance_counters_scope->setParent(&performance_counters);
+}
+
 void ThreadStatus::initPerformanceCounters()
 {
     performance_counters_finalized = false;

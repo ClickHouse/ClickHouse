@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
 #include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -40,6 +41,8 @@ ThreadStatus & CurrentThread::get()
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
+    if (unlikely(subthread_profile_events))
+        return *subthread_profile_events;
     return current_thread ? current_thread->performance_counters : ProfileEvents::global_counters;
 }
 
@@ -108,6 +111,32 @@ ThreadGroupStatusPtr CurrentThread::getGroup()
         return nullptr;
 
     return current_thread->getThreadGroup();
+}
+
+
+CurrentThread::ScopedAttach::ScopedAttach(const ThreadGroupStatusPtr & thread_group)
+{
+    const auto & current_group = CurrentThread::getGroup();
+    if (!current_group)
+    {
+        CurrentThread::attachToIfDetached(thread_group);
+        attached = true;
+    }
+    else
+    {
+        LOG_WARNING(&Poco::Logger::get("CurrentThread"),
+            "Thread is already attached to a query '{}' (with {} threads), cannot attach to '{}' containing {} threads, ",
+            current_group->query, current_group->threads.size(),
+            thread_group->query, thread_group->threads.size());
+    }
+}
+
+CurrentThread::ScopedAttach::~ScopedAttach()
+{
+    if (attached)
+    {
+        CurrentThread::detachQuery();
+    }
 }
 
 }
