@@ -111,8 +111,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     {
         if (query.if_exists)
             return {};
-        throw Exception("Temporary table " + backQuoteIfNeed(table_id.table_name) + " doesn't exist",
-                        ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
     }
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
@@ -287,6 +286,10 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                 /// Delete table data
                 table->drop();
                 table->is_dropped = true;
+            }
+            else if (kind == ASTDropQuery::Kind::Detach)
+            {
+                table->is_detached = true;
             }
         }
     }

@@ -469,7 +469,6 @@ void StorageLiveView::drop()
     DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
 
     std::lock_guard lock(mutex);
-    is_dropped = true;
     condition.notify_all();
 }
 
