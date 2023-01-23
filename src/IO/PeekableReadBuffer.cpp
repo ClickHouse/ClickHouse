@@ -237,29 +237,29 @@ void PeekableReadBuffer::checkStateCorrect() const
         if (checkpointInOwnMemory())
         {
             if (!peeked_size)
-                throw DB::Exception("Checkpoint in empty own buffer", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Checkpoint in empty own buffer");
             if (currentlyReadFromOwnMemory() && pos < *checkpoint)
-                throw DB::Exception("Current position in own buffer before checkpoint in own buffer", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Current position in own buffer before checkpoint in own buffer");
             if (!currentlyReadFromOwnMemory() && pos < sub_buf->position())
-                throw DB::Exception("Current position in subbuffer less than sub_buf->position()", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Current position in subbuffer less than sub_buf->position()");
         }
         else
         {
             if (peeked_size)
-                throw DB::Exception("Own buffer is not empty", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Own buffer is not empty");
             if (currentlyReadFromOwnMemory())
-                throw DB::Exception("Current position in own buffer before checkpoint in subbuffer", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Current position in own buffer before checkpoint in subbuffer");
             if (pos < *checkpoint)
-                throw DB::Exception("Current position in subbuffer before checkpoint in subbuffer", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Current position in subbuffer before checkpoint in subbuffer");
         }
     }
     else
     {
         if (!currentlyReadFromOwnMemory() && peeked_size)
-            throw DB::Exception("Own buffer is not empty", ErrorCodes::LOGICAL_ERROR);
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Own buffer is not empty");
     }
     if (currentlyReadFromOwnMemory() && !peeked_size)
-        throw DB::Exception("Pos in empty own buffer", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Pos in empty own buffer");
 }
 
 void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
@@ -329,7 +329,7 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
 void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
 {
     if (!checkpoint)
-        throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "There is no checkpoint");
     checkStateCorrect();
 
     if (!checkpointInOwnMemory() || currentlyReadFromOwnMemory())

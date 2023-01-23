@@ -151,7 +151,7 @@ void assertEOF(ReadBuffer & buf)
 void assertNotEOF(ReadBuffer & buf)
 {
     if (buf.eof())
-        throw Exception("Attempt to read after EOF", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF");
 }
 
 
@@ -326,7 +326,7 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     if (buf.eof())
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+            throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Cannot parse escape sequence");
         else
             return ReturnType(false);
     }
@@ -865,13 +865,16 @@ void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, 
 {
     /// Check that delimiters are not empty.
     if (first_delimiter.empty() || second_delimiter.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read CSV field with two possible delimiters, one of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot read CSV field with two possible delimiters, one "
+                        "of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
 
     /// Read all data until first_delimiter or second_delimiter
     while (true)
     {
         if (buf.eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA, R"(Unexpected EOF while reading CSV string, expected on of delimiters "{}" or "{}")", first_delimiter, second_delimiter);
+            throw Exception(ErrorCodes::INCORRECT_DATA, R"(Unexpected EOF while reading CSV string, expected on "
+                            "of delimiters "{}" or "{}")", first_delimiter, second_delimiter);
 
         char * next_pos = buf.position();
         while (next_pos != buf.buffer().end() && *next_pos != first_delimiter[0] && *next_pos != second_delimiter[0])
@@ -1053,7 +1056,7 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     auto error = []
     {
         if constexpr (throw_exception)
-            throw Exception("Cannot parse date: value is too short", ErrorCodes::CANNOT_PARSE_DATE);
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date: value is too short");
         return ReturnType(false);
     };
 
@@ -1224,7 +1227,7 @@ template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateL
 void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
 {
     if (buf.eof())
-        throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
     else if (*buf.position() == '"') /// skip double-quoted string
     {
         NullOutput sink;
@@ -1237,7 +1240,7 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
 
         double v;
         if (!tryReadFloatText(v, buf))
-            throw Exception("Expected a number field for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field.toString());
     }
     else if (*buf.position() == 'n') /// skip null
     {
@@ -1278,7 +1281,7 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
                 break;
             }
             else
-                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
         }
     }
     else if (*buf.position() == '{') /// skip whole object
@@ -1295,12 +1298,12 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
                 readJSONStringInto(sink, buf);
             }
             else
-                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
 
             // ':'
             skipWhitespaceIfAny(buf);
             if (buf.eof() || !(*buf.position() == ':'))
-                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
             ++buf.position();
             skipWhitespaceIfAny(buf);
 
@@ -1316,12 +1319,13 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
         }
 
         if (buf.eof())
-            throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
         ++buf.position();
     }
     else
     {
-        throw Exception("Unexpected symbol '" + std::string(*buf.position(), 1) + "' for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol '{}' for key '{}'",
+                        std::string(*buf.position(), 1), name_of_field.toString());
     }
 }
 
