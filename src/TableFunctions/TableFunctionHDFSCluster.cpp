@@ -109,7 +109,7 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
         storage = std::make_shared<StorageHDFSCluster>(
             context,
             cluster_name, filename, StorageID(getDatabaseName(), table_name),
-            format, getActualTableStructure(context), ConstraintsDescription{},
+            format, columns, ConstraintsDescription{},
             compression_method, structure != "auto");
     }
     return storage;
