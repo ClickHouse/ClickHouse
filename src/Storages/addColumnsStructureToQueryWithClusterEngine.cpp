@@ -37,7 +37,8 @@ void addColumnsStructureToQueryWithClusterEngine(ASTPtr & query, const String & 
     auto structure_literal = std::make_shared<ASTLiteral>(structure);
 
     if (expression_list->children.size() < 2 || expression_list->children.size() > max_arguments)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 to {} arguments in {} table functions, got {}", function_name, max_arguments, expression_list->children.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 to {} arguments in {} table functions, got {}",
+                        function_name, max_arguments, expression_list->children.size());
 
     if (expression_list->children.size() == 2 || expression_list->children.size() == max_arguments - 1)
     {

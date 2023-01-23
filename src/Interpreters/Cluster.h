@@ -224,7 +224,7 @@ public:
     const ShardInfo & getAnyShardInfo() const
     {
         if (shards_info.empty())
-            throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
         return shards_info.front();
     }
 
