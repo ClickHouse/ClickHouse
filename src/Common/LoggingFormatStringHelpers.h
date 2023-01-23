@@ -78,10 +78,7 @@ consteval ssize_t formatStringCountArgsNum(const char * const str, size_t len)
     return cnt;
 }
 
-[[noreturn]] void functionThatFailsCompilationOfConstevalFunctions(const char * error)
-{
-    throw std::runtime_error(error);
-}
+[[noreturn]] void functionThatFailsCompilationOfConstevalFunctions(const char * error);
 
 /// fmt::format checks that there are enough arguments, but ignores extra arguments (e.g. fmt::format("{}", 1, 2) compiles)
 /// This function will fail to compile if the number of "{}" substitutions does not exactly match
@@ -97,7 +94,6 @@ consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs)
 template <typename... Args>
 struct CheckArgsNumHelperImpl
 {
-    //std::enable_if_t<std::is_same_v<std::decay_t<T>, PreformattedMessage>>
     template<typename T>
     consteval CheckArgsNumHelperImpl(T && str)
     {

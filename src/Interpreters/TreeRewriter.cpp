@@ -1220,6 +1220,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     if (!unknown_required_source_columns.empty())
     {
+        constexpr auto format_string = "Missing columns: {} while processing query: '{}', required columns:{}{}";
         WriteBufferFromOwnString ss;
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
@@ -1276,7 +1277,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 ss << " '" << name << "'";
         }
 
-        throw Exception::createDeprecated(ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
+        throw Exception::createDeprecated(PreformattedMessage{ss.str(), format_string}, ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
     required_source_columns.swap(source_columns);
