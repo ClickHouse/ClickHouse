@@ -5570,7 +5570,38 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 }
             }
 
-            resolveExpressionNodeList(table_function_node.getArgumentsNode(), scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+            QueryTreeNodes result_nodes;
+
+            for (auto & node : table_function_node.getArguments())
+            {
+                if (auto * identifier_node = node->as<IdentifierNode>())
+                {
+                    const auto & unresolved_identifier = identifier_node->getIdentifier();
+                    auto identifier_resolve_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
+                    auto resolved_identifier = std::move(identifier_resolve_result.resolved_identifier);
+
+                    if (resolved_identifier && resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+                        result_nodes.push_back(resolved_identifier);
+                    else
+                        result_nodes.push_back(node);
+                }
+                else
+                {
+                    resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+                    if (auto * expression_list = node->as<ListNode>())
+                    {
+                        for (auto & expression_list_node : expression_list->getNodes())
+                            result_nodes.push_back(expression_list_node);
+                    }
+                    else
+                    {
+                        result_nodes.push_back(node);
+                    }
+                }
+            }
+
+            table_function_node.getArguments().getNodes() = std::move(result_nodes);
 
             auto table_function_ast = table_function_node.toAST();
             table_function_ptr->parseArguments(table_function_ast, scope_context);
