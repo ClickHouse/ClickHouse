@@ -248,3 +248,13 @@ insert into t21 select number, number from numbers_mt(1e6);
 select a from t21 group by a limit 10 format Null;
 
 drop table t21;
+
+create table t22(a UInt32, b UInt32) engine=SummingMergeTree order by a partition by a % 16;
+
+insert into t22 select number, number from numbers_mt(1e6);
+
+select replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') from (
+    explain actions=1 select a from t22 final group by a
+) where explain like '%Skip merging: %';
+
+drop table t22;
