@@ -1,1 +1,1 @@
-SELECT * FROM system.formats WHERE name IN ('CSV', 'Parquet') ORDER BY name;
+SELECT * FROM system.formats WHERE name IN ('CSV', 'Native') ORDER BY name;
