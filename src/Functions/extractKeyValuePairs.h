@@ -70,13 +70,6 @@ private:
         CharArgument item_delimiter,
         CharArgument enclosing_character);
 
-    static std::shared_ptr<KeyValuePairExtractor<std::unordered_map<std::string, std::string>>> getExtractor2(
-        CharArgument escape_character,
-        CharArgument key_value_pair_delimiter,
-        CharArgument item_delimiter,
-        CharArgument enclosing_character,
-        SetArgument value_special_characters_allow_list);
-
     static RawColumns extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column);
 
     static ColumnPtr escape(RawColumns & raw_columns, char escape_character);

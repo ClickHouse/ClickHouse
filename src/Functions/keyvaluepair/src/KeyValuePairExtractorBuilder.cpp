@@ -29,10 +29,14 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withEnclosingCharac
 
 std::shared_ptr<KeyValuePairExtractor<std::unordered_map<std::string, std::string>>> KeyValuePairExtractorBuilder::build()
 {
-    InlineEscapingKeyStateHandler key_state_handler(key_value_pair_delimiter, escape_character, enclosing_character);
-    InlineEscapingValueStateHandler value_state_handler(escape_character, item_delimiter, enclosing_character);
+    using KeyStateHandler = InlineEscapingKeyStateHandler<QuotingStrategy::WithoutQuoting, EscapingStrategy::WithoutEscaping>;
+    using ValueStateHandler = InlineEscapingValueStateHandler<QuotingStrategy::WithoutQuoting, EscapingStrategy::WithoutEscaping>;
 
-    return std::make_shared<InlineKeyValuePairExtractor>(key_state_handler, value_state_handler);
+    CInlineEscapingKeyStateHandler auto key_state_handler = KeyStateHandler(key_value_pair_delimiter, escape_character, enclosing_character);
+
+    CInlineEscapingValueStateHandler auto value_state_handler = ValueStateHandler(escape_character, item_delimiter, enclosing_character);
+
+    return std::make_shared<InlineKeyValuePairExtractor<KeyStateHandler, ValueStateHandler>>(key_state_handler, value_state_handler);
 }
 
 }
