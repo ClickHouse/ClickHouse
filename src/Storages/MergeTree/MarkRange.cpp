@@ -48,4 +48,15 @@ std::string toString(const MarkRanges & ranges)
     return result;
 }
 
+void assertSortedAndNonIntersecting(const MarkRanges & ranges)
+{
+    MarkRanges ranges_copy(ranges.begin(), ranges.end());
+    /// Should also throw an exception if interseting range is found during comparison.
+    std::sort(ranges_copy.begin(), ranges_copy.end());
+    if (ranges_copy != ranges)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Expected sorted and non intersecting ranges. Ranges: {}",
+            toString(ranges));
+}
+
 }

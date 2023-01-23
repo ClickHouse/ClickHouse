@@ -201,6 +201,8 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
     for (const auto i : collections::range(0, parts.size()))
     {
         const auto & part = parts[i];
+        assertSortedAndNonIntersecting(part.ranges);
+
         bool part_on_remote_disk = part.data_part->isStoredOnRemoteDisk();
         is_part_on_remote_disk[i] = part_on_remote_disk;
         do_not_steal_tasks |= part_on_remote_disk;
