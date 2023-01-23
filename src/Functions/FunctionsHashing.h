@@ -71,6 +71,38 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace impl
+{
+    struct SipHashKey
+    {
+        UInt64 key0 = 0;
+        UInt64 key1 = 0;
+    };
+
+    static SipHashKey parseSipHashKey(const ColumnWithTypeAndName & key)
+    {
+        SipHashKey ret;
+
+        const auto * tuple = checkAndGetColumn<ColumnTuple>(key.column.get());
+        if (!tuple)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "key must be a tuple");
+
+        if (tuple->tupleSize() != 2)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
+
+        if (const auto * key0col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(0))))
+            ret.key0 = key0col->get64(0);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "first element of the key tuple is not UInt64");
+
+        if (const auto * key1col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(1))))
+            ret.key1 = key1col->get64(0);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "second element of the key tuple is not UInt64");
+
+        return ret;
+    }
+}
 
 /** Hashing functions.
   *
@@ -274,6 +306,25 @@ struct SipHash64Impl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+struct SipHash64KeyedImpl
+{
+    static constexpr auto name = "sipHash64Keyed";
+    using ReturnType = UInt64;
+    using Key = impl::SipHashKey;
+
+    static Key parseKey(const ColumnWithTypeAndName & key) { return impl::parseSipHashKey(key); }
+
+    static UInt64 applyKeyed(const Key & key, const char * begin, size_t size) { return sipHash64Keyed(key.key0, key.key1, begin, size); }
+
+    static UInt64 combineHashesKeyed(const Key & key, UInt64 h1, UInt64 h2)
+    {
+        UInt64 hashes[] = {h1, h2};
+        return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt64));
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 struct SipHash128Impl
 {
     static constexpr auto name = "sipHash128";
@@ -288,6 +339,25 @@ struct SipHash128Impl
     static UInt128 apply(const char * data, const size_t size)
     {
         return sipHash128(data, size);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct SipHash128KeyedImpl
+{
+    static constexpr auto name = "sipHash128Keyed";
+    using ReturnType = UInt128;
+    using Key = impl::SipHashKey;
+
+    static Key parseKey(const ColumnWithTypeAndName & key) { return impl::parseSipHashKey(key); }
+
+    static UInt128 applyKeyed(const Key & key, const char * begin, size_t size) { return sipHash128Keyed(key.key0, key.key1, begin, size); }
+
+    static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
+    {
+        UInt128 hashes[] = {h1, h2};
+        return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -1539,6 +1609,7 @@ struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
+using FunctionSipHash64Keyed = FunctionAnyHash<SipHash64KeyedImpl, true, SipHash64KeyedImpl::Key>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
 #if USE_SSL
@@ -1552,6 +1623,7 @@ using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
 using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
 using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
+using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
