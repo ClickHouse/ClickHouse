@@ -4,7 +4,7 @@ sidebar_position: 51
 sidebar_label: LowCardinality
 ---
 
-# LowCardinality Data Type
+# LowCardinality
 
 Changes the internal representation of other data types to be dictionary-encoded.
 

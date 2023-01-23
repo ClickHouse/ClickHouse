@@ -184,15 +184,11 @@ void validateFunctionArgumentTypes(const IFunction & func,
             return result;
         };
 
-        throw Exception("Incorrect number of arguments for function " + func.getName()
-                        + " provided " + std::to_string(arguments.size())
-                        + (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{})
-                        + ", expected " + std::to_string(mandatory_args.size())
-                        + (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
-                        + " (" + join_argument_types(mandatory_args)
-                        + (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : "")
-                        + ")",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for function {} provided {}{}, expected {}{} ({}{})",
+            func.getName(), arguments.size(), (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{}),
+            mandatory_args.size(), (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : ""),
+            join_argument_types(mandatory_args), (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : ""));
     }
 
     validateArgumentsImpl(func, arguments, 0, mandatory_args);

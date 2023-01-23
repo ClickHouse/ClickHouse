@@ -8,6 +8,13 @@
 #include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event RemoteWriteThrottlerBytes;
+    extern const Event RemoteWriteThrottlerSleepMicroseconds;
+}
+
 namespace DB
 {
 
@@ -17,7 +24,6 @@ extern const int NETWORK_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int CANNOT_FSYNC;
 }
-
 
 struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 {
@@ -59,12 +65,12 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     int write(const char * start, size_t size) const
     {
         int bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
-        if (write_settings.remote_throttler)
-            write_settings.remote_throttler->add(bytes_written);
-
         if (bytes_written < 0)
             throw Exception("Fail to write HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
                 ErrorCodes::NETWORK_ERROR);
+
+        if (write_settings.remote_throttler)
+            write_settings.remote_throttler->add(bytes_written, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
         return bytes_written;
     }

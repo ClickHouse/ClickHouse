@@ -61,8 +61,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 
     if (!storage)
-        throw Exception("Table " + table_id.getNameForLogs() + " doesn't exist.",
-        ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist.", table_id.getNameForLogs());
 
     auto storage_name = storage->getName();
     if (storage_name == "LiveView"

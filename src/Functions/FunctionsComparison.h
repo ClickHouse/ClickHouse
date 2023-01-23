@@ -1166,8 +1166,8 @@ public:
             }
             catch (const Exception &)
             {
-                throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
-                    " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
+                    " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
             }
         }
 
