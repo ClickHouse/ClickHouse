@@ -770,7 +770,7 @@ void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     /// Just validate
     size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
-    Float64 density = index.arguments.size() < 2 ? 1.0l : index.arguments[1].get<Float64>();
+    Float64 density = index.arguments.size() < 2 ? 1.0 : index.arguments[1].get<Float64>();
     GinFilterParameters params(ngrams, density);
 }
 
