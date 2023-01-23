@@ -19,7 +19,7 @@ void DB::TaskCluster::loadTasks(const Poco::Util::AbstractConfiguration & config
 
     clusters_prefix = prefix + "remote_servers";
     if (!config.has(clusters_prefix))
-        throw Exception("You should specify list of clusters in " + clusters_prefix, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "You should specify list of clusters in {}", clusters_prefix);
 
     Poco::Util::AbstractConfiguration::Keys tables_keys;
     config.keys(prefix + "tables", tables_keys);

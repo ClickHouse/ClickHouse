@@ -470,7 +470,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
         /// If the current user has been dropped we always throw an exception (even if `throw_if_denied` is false)
         /// because dropping of the current user is considered as a situation which is exceptional enough to stop
         /// query execution.
-        throw Exception(getUserName() + ": User has been dropped", ErrorCodes::UNKNOWN_USER);
+        throw Exception(ErrorCodes::UNKNOWN_USER, "{}: User has been dropped", getUserName());
     }
 
     if (is_full_access)
@@ -790,7 +790,7 @@ void ContextAccess::checkGranteeIsAllowed(const UUID & grantee_id, const IAccess
 
     auto current_user = getUser();
     if (!current_user->grantees.match(grantee_id))
-        throw Exception(grantee.formatTypeWithName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
+        throw Exception(ErrorCodes::ACCESS_DENIED, "{} is not allowed as grantee", grantee.formatTypeWithName());
 }
 
 void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const

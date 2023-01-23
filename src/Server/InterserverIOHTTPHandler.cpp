@@ -63,7 +63,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     /// Locked for read while query processing
     std::shared_lock lock(endpoint->rwlock);
     if (endpoint->blocker.isCancelled())
-        throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
 
     if (compress)
     {
