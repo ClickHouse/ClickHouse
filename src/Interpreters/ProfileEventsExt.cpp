@@ -19,6 +19,22 @@ std::shared_ptr<DB::DataTypeEnum8> TypeEnum = std::make_shared<DB::DataTypeEnum8
     { "gauge",     static_cast<Int8>(GAUGE)},
 });
 
+String dumpToString(const Counters::Snapshot & counters, bool nonzero_only)
+{
+    std::vector<String> ss;
+    for (Event event = 0; event < Counters::num_counters; ++event)
+    {
+        UInt64 value = counters[event];
+
+        if (nonzero_only && 0 == value)
+            continue;
+
+        const char * desc = getName(event);
+        ss.push_back(fmt::format("{}: {}", desc, value));
+    }
+    return fmt::format("[{}]", fmt::join(ss, ", "));
+}
+
 /// Put implementation here to avoid extra linking dependencies for clickhouse_common_io
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only)
 {

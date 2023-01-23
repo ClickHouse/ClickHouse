@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Common/ProfileEventsScope.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ void MergePlainMergeTreeTask::onCompleted()
 bool MergePlainMergeTreeTask::executeStep()
 {
     /// Metrics will be saved in the thread_group.
-    CurrentThread::ScopedAttach scoped_attach(thread_group);
+    ScopedProfileEvents profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
@@ -90,7 +91,7 @@ void MergePlainMergeTreeTask::prepare()
     {
         auto & thread_status = CurrentThread::get();
         thread_status.finalizePerformanceCounters();
-        auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         merge_task.reset();
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
@@ -100,7 +101,7 @@ void MergePlainMergeTreeTask::prepare()
             new_part,
             future_part->parts,
             merge_list_entry.get(),
-            profile_counters);
+            std::move(profile_counters_snapshot));
     };
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(

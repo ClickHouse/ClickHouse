@@ -20,6 +20,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace CurrentMetrics
@@ -814,8 +815,8 @@ public:
 
     bool executeStep() override
     {
-        /// Metrics will be saved in the thread_group.
-        CurrentThread::ScopedAttach scoped_attach(thread_group);
+        /// Metrics will be saved in the local profile_counters.
+        ScopedProfileEvents profile_events_scope(&profile_counters);
 
         auto & current_level_parts = level_parts[current_level];
         auto & next_level_parts = level_parts[next_level];
@@ -918,7 +919,7 @@ private:
     /// TODO(nikitamikhaylov): make this constant a setting
     static constexpr size_t max_parts_to_merge_in_one_level = 10;
 
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
+    ProfileEvents::Counters profile_counters;
 };
 
 
@@ -929,7 +930,9 @@ private:
 
 // In short it executed a mutation for the part an original part and for its every projection
 
-/** An overview of how the process of mutation works for projections:
+/**
+ *
+ * An overview of how the process of mutation works for projections:
  *
  * The mutation for original parts is executed block by block,
  * but additionally we execute a SELECT query for each projection over a current block.
@@ -1140,8 +1143,8 @@ public:
 
     bool executeStep() override
     {
-        /// Metrics will be saved in the thread_group.
-        CurrentThread::ScopedAttach scoped_attach(thread_group);
+        /// Metrics will be saved in the local profile_counters.
+        ScopedProfileEvents profile_events_scope(&profile_counters);
 
         switch (state)
         {
@@ -1176,6 +1179,7 @@ public:
     }
 
 private:
+
     void prepare()
     {
         if (ctx->new_data_part->isStoredOnDisk())
@@ -1258,7 +1262,7 @@ private:
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
 
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
+    ProfileEvents::Counters profile_counters;
 };
 
 
@@ -1273,8 +1277,8 @@ public:
 
     bool executeStep() override
     {
-        /// Metrics will be saved in the thread_group.
-        CurrentThread::ScopedAttach scoped_attach(thread_group);
+        /// Metrics will be saved in the local profile_counters.
+        ScopedProfileEvents profile_events_scope(&profile_counters);
 
         switch (state)
         {
@@ -1308,6 +1312,7 @@ public:
     }
 
 private:
+
     void prepare()
     {
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
@@ -1466,7 +1471,7 @@ private:
     MergedColumnOnlyOutputStreamPtr out;
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
+    ProfileEvents::Counters profile_counters;
 };
 
 

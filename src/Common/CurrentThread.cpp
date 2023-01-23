@@ -40,6 +40,8 @@ ThreadStatus & CurrentThread::get()
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
+    if (unlikely(subthread_profile_events))
+        return *subthread_profile_events;
     return current_thread ? current_thread->performance_counters : ProfileEvents::global_counters;
 }
 

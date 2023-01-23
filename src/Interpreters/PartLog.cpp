@@ -189,16 +189,8 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     }
 }
 
-
-bool PartLog::addNewPart(
-    ContextPtr current_context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters_)
-{
-    return addNewParts(current_context, {part}, elapsed_ns, execution_status, std::move(profile_counters_));
-}
-
-
 bool PartLog::addNewParts(
-    ContextPtr current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns, const ExecutionStatus & execution_status, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters_)
+    ContextPtr current_context, const PartLog::PartLogEntries & parts, const ExecutionStatus & execution_status)
 {
     if (parts.empty())
         return true;
@@ -207,15 +199,17 @@ bool PartLog::addNewParts(
 
     try
     {
-        auto table_id = parts.front()->storage.getStorageID();
+        auto table_id = parts.front().part->storage.getStorageID();
         part_log = current_context->getPartLog(table_id.database_name); // assume parts belong to the same table
         if (!part_log)
             return false;
 
         auto query_id = CurrentThread::getQueryId();
 
-        for (const auto & part : parts)
+        for (const auto & part_log_entry : parts)
         {
+            const auto & part = part_log_entry.part;
+
             PartLogElement elem;
 
             if (!query_id.empty())
@@ -228,7 +222,7 @@ bool PartLog::addNewParts(
             const auto time_now = std::chrono::system_clock::now();
             elem.event_time = timeInSeconds(time_now);
             elem.event_time_microseconds = timeInMicroseconds(time_now);
-            elem.duration_ms = elapsed_ns / 1000000;
+            elem.duration_ms = part_log_entry.elapsed_ns / 1000000;
 
             elem.database_name = table_id.database_name;
             elem.table_name = table_id.table_name;
@@ -245,7 +239,7 @@ bool PartLog::addNewParts(
             elem.error = static_cast<UInt16>(execution_status.code);
             elem.exception = execution_status.message;
 
-            elem.profile_counters = profile_counters_;
+            elem.profile_counters = part_log_entry.profile_counters;
 
             part_log->add(elem);
         }
@@ -257,6 +251,30 @@ bool PartLog::addNewParts(
     }
 
     return true;
+}
+
+bool PartLog::addNewPart(ContextPtr context, const PartLog::PartLogEntry & part, const ExecutionStatus & execution_status)
+{
+    return addNewParts(context, {part}, execution_status);
+}
+
+bool PartLog::addNewParts(ContextPtr context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns,
+                 const ExecutionStatus & execution_status)
+{
+    PartLog::PartLogEntries part_log_entries;
+    part_log_entries.reserve(parts.size());
+
+    for (const auto & part : parts)
+        part_log_entries.emplace_back(part, elapsed_ns);
+
+    return addNewParts(context, part_log_entries, execution_status);
+}
+
+bool PartLog::addNewPart(ContextPtr context, const PartLog::MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
+{
+    PartLog::PartLogEntries part_log_entries;
+    part_log_entries.emplace_back(part, elapsed_ns);
+    return addNewParts(context, part_log_entries, execution_status);
 }
 
 }

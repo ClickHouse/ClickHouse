@@ -2,8 +2,10 @@
 
 #include <cstddef>
 #include <ranges>
-#include "Common/hex.h"
+
+#include <Common/hex.h>
 #include <Common/Macros.h>
+#include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
@@ -1592,6 +1594,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     if (entry.type == LogEntry::ATTACH_PART)
     {
+        ScopedProfileEvents profile_events_scope;
+
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry))
         {
             LOG_TRACE(log, "Found valid local part for {}, preparing the transaction", part->name);
@@ -1602,11 +1606,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             renameTempPartAndReplace(part, transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
-            auto & thread_status = CurrentThread::get();
-            thread_status.finalizePerformanceCounters();
-            auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
-                part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr, std::move(profile_counters));
+                part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
+                profile_events_scope.getSnapshot());
 
             return true;
         }
@@ -4007,15 +4009,14 @@ bool StorageReplicatedMergeTree::fetchPart(
     Stopwatch stopwatch;
     MutableDataPartPtr part;
     DataPartsVector replaced_parts;
+    ScopedProfileEvents profile_events_scope;
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        auto & thread_status = CurrentThread::get();
-        thread_status.finalizePerformanceCounters();
-        auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
-            part_name, part, replaced_parts, nullptr, std::move(profile_counters));
+            part_name, part, replaced_parts, nullptr,
+            profile_events_scope.getSnapshot());
     };
 
     DataPartPtr part_to_clone;
@@ -4246,15 +4247,14 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     Stopwatch stopwatch;
     MutableDataPartPtr part;
     DataPartsVector replaced_parts;
+    ScopedProfileEvents profile_events_scope;
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        auto & thread_status = CurrentThread::get();
-        thread_status.finalizePerformanceCounters();
-        auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
-            part_name, part, replaced_parts, nullptr, std::move(profile_counters));
+            part_name, part, replaced_parts, nullptr,
+            profile_events_scope.getSnapshot());
     };
 
     std::function<MutableDataPartPtr()> get_part;

@@ -102,29 +102,6 @@ public:
         bool log_peak_memory_usage_in_destructor = true;
     };
 
-    class ScopedAttach : private boost::noncopyable
-    {
-    private:
-        bool attached = false;
-    public:
-        explicit ScopedAttach(const ThreadGroupStatusPtr & thread_group)
-        {
-            if (!CurrentThread::getGroup())
-            {
-                CurrentThread::attachToIfDetached(thread_group);
-                attached = true;
-            }
-        }
-
-        ~ScopedAttach()
-        {
-            if (attached)
-            {
-                CurrentThread::detachQuery();
-            }
-        }
-    };
-
 private:
     static void defaultThreadDeleter();
 

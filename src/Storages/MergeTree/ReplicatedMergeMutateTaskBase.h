@@ -11,9 +11,9 @@ namespace DB
 
 class StorageReplicatedMergeTree;
 
-
-/** This is used as a base of MergeFromLogEntryTask and MutateFromLogEntryTaskBase
-  */
+/**
+ * This is used as a base of MergeFromLogEntryTask and MutateFromLogEntryTaskBase
+ */
 class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
@@ -33,11 +33,8 @@ public:
     }
 
     ~ReplicatedMergeMutateTaskBase() override = default;
-
     void onCompleted() override;
-
     StorageID getStorageID() override;
-
     bool executeStep() override;
 
 protected:
@@ -63,6 +60,8 @@ protected:
     MergeList::EntryPtr merge_mutate_entry{nullptr};
     Poco::Logger * log;
     StorageReplicatedMergeTree & storage;
+    /// ProfileEvents for current part will be stored here
+    ProfileEvents::Counters profile_counters;
 
 private:
     enum class CheckExistingPartResult
@@ -86,7 +85,6 @@ private:
     PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
 };
 
 }

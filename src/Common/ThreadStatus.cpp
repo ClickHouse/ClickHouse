@@ -25,6 +25,7 @@ namespace ErrorCodes
 }
 
 thread_local ThreadStatus constinit * current_thread = nullptr;
+thread_local ProfileEvents::Counters constinit * subthread_profile_events = nullptr;
 
 #if !defined(SANITIZER)
 namespace
