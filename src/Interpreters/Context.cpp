@@ -1888,8 +1888,8 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     auto lock = getLock();
 
-    const bool allow_concurrent_backups = this->getConfigRef().getBool("allow_concurrent_backups", true);
-    const bool allow_concurrent_restores = this->getConfigRef().getBool("allow_concurrent_restores", true);
+    const bool allow_concurrent_backups = this->getConfigRef().getBool("backups.allow_concurrent_backups", true);
+    const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
     if (!shared->backups_worker)
         shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads, allow_concurrent_backups, allow_concurrent_restores);
