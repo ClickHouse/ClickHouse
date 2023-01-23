@@ -48,6 +48,12 @@ public:
 
     Exception() = default;
 
+    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.message), code)
+    {
+        message_format_string = msg.format_string;
+    }
+
+protected:
     // used to remove the sensitive information from exceptions if query_masking_rules is configured
     struct MessageMasked
     {
@@ -62,9 +68,11 @@ public:
     // delegating constructor to mask sensitive information from the message
     Exception(const std::string & msg, int code, bool remote_ = false): Exception(MessageMasked(msg), code, remote_) {}
     Exception(std::string && msg, int code, bool remote_ = false): Exception(MessageMasked(std::move(msg)), code, remote_) {}
-    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.message), code)
+
+public:
+    static Exception createDeprecated(const std::string & msg, int code, bool remote_ = false)
     {
-        message_format_string = msg.format_string;
+        return Exception(msg, code, remote_);
     }
 
     template<typename T, typename = std::enable_if_t<std::is_convertible_v<T, String>>>

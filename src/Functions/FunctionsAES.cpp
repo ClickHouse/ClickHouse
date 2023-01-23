@@ -22,7 +22,7 @@ namespace OpenSSLDetails
 void onError(std::string error_message)
 {
     error_message += ". OpenSSL error code: " + std::to_string(ERR_get_error());
-    throw DB::Exception(error_message, DB::ErrorCodes::OPENSSL_ERROR);
+    throw DB::Exception::createDeprecated(error_message, DB::ErrorCodes::OPENSSL_ERROR);
 }
 
 StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, StringRef key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key)

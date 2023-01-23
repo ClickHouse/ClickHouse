@@ -161,7 +161,7 @@ public:
         {
             String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
             appendHintsMessage(exception_message, column_name);
-            throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
+            throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
         }
 
         removeSubcolumns(it->name);

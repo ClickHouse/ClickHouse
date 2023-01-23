@@ -501,8 +501,7 @@ void PocoHTTPClient::makeRequestInternal(
 
             return;
         }
-        throw Exception(String("Too many redirects while trying to access ") + request.GetUri().GetURIString(),
-            ErrorCodes::TOO_MANY_REDIRECTS);
+        throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", request.GetUri().GetURIString());
     }
     catch (...)
     {

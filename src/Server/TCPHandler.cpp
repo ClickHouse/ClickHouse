@@ -515,7 +515,7 @@ void TCPHandler::runImpl()
         catch (...)
         {
             state.io.onException();
-            exception = std::make_unique<DB::Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            exception = std::make_unique<DB::Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
         }
 
         try

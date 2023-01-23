@@ -381,7 +381,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw Exception(message, code);
+            throw Exception::createDeprecated(message, code);
         return ReturnType(false);
     };
 
@@ -1341,7 +1341,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code, remote_exception);
+    return Exception::createDeprecated(out.str(), code, remote_exception);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)

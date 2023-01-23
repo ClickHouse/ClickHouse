@@ -1276,7 +1276,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 ss << " '" << name << "'";
         }
 
-        throw Exception(ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
+        throw Exception::createDeprecated(ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
     required_source_columns.swap(source_columns);
