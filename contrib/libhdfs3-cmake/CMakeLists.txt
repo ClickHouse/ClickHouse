@@ -1,4 +1,4 @@
-if(NOT ARCH_AARCH64 AND NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE)
+if(NOT ARCH_AARCH64 AND NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE AND NOT ARCH_S390X)
     option(ENABLE_HDFS "Enable HDFS" ${ENABLE_LIBRARIES})
 elseif(ENABLE_HDFS)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use HDFS3 with current configuration")
@@ -70,6 +70,7 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/client/Token.cpp"
     "${HDFS3_SOURCE_DIR}/client/PacketPool.cpp"
     "${HDFS3_SOURCE_DIR}/client/OutputStream.cpp"
+    "${HDFS3_SOURCE_DIR}/client/DataReader.cpp"
     "${HDFS3_SOURCE_DIR}/rpc/RpcChannelKey.cpp"
     "${HDFS3_SOURCE_DIR}/rpc/RpcProtocolInfo.cpp"
     "${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp"
