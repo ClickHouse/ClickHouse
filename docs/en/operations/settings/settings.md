@@ -2870,6 +2870,14 @@ Possible values:
 
 Default value: `0`.
 
+## engine_file_allow_create_multiple_files 
+
+Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc. 
+
+Disabled by default.
+
 ## allow_experimental_geo_types {#allow-experimental-geo-types}
 
 Allows working with experimental [geo data types](../../sql-reference/data-types/geo.md).
@@ -5227,3 +5235,34 @@ Disabled by default.
 The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit.
 
 Default value: `1GiB`
+
+## S3 settings
+
+### s3_truncate_on_insert 
+
+Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists. 
+
+Disabled by default.
+
+### s3_create_new_file_on_insert 
+
+Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
+
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+
+Disabled by default.
+
+## HDFS settings
+
+### hdfs_truncate_on_insert 
+
+Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists. 
+
+Disabled by default.
+
+### hdfs_create_new_file_on_insert
+
+Enables or disables creating a new file on each insert in HDFS engine tables. If enabled, on each insert a new HDFS file will be created with the name, similar to initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+
+Disabled by default.
+
