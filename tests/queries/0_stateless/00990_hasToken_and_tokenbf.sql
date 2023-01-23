@@ -1,4 +1,3 @@
-
 DROP TABLE IF EXISTS bloom_filter;
 
 CREATE TABLE bloom_filter
