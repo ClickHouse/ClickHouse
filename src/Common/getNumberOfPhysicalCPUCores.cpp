@@ -101,7 +101,7 @@ static unsigned getNumberOfPhysicalCPUCoresImpl()
     /// Aarch64 and RISC-V don't have SMT so far.
     /// POWER has SMT and it can be multi-way (e.g. 8-way), but we don't know how ClickHouse really behaves, so use all of them.
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) && defined(OS_LINUX)
     /// On really big machines, SMT is detrimental to performance (+ ~5% overhead in ClickBench). On such machines, we limit ourself to the physical cores.
     /// Few cores indicate it is a small machine, runs in a VM or is a limited cloud instance --> it is reasonable to use all the cores.
     if (cpu_count >= 32)
