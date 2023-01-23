@@ -53,3 +53,64 @@ template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) 
 /// For implicit conversion of fmt::basic_runtime<> to char* for std::string ctor
 template <typename T, typename... Ts> constexpr auto firstArg(fmt::basic_runtime<T> && data, Ts &&...) { return data.str.data(); }
 
+consteval ssize_t formatStringCountArgsNum(const char * const str, size_t len)
+{
+    /// It does not count named args, but we don't use them
+    size_t cnt = 0;
+    size_t i = 0;
+    while (i + 1 < len)
+    {
+        if (str[i] == '{' && str[i + 1] == '}')
+        {
+            i += 2;
+            cnt += 1;
+        }
+        else if (str[i] == '{')
+        {
+            /// Ignore checks for complex formatting like "{:.3f}"
+            return -1;
+        }
+        else
+        {
+            i += 1;
+        }
+    }
+    return cnt;
+}
+
+[[noreturn]] void functionThatFailsCompilationOfConstevalFunctions(const char * error)
+{
+    throw std::runtime_error(error);
+}
+
+/// fmt::format checks that there are enough arguments, but ignores extra arguments (e.g. fmt::format("{}", 1, 2) compiles)
+/// This function will fail to compile if the number of "{}" substitutions does not exactly match
+consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs)
+{
+    if (str.empty())
+        return;
+    ssize_t cnt = formatStringCountArgsNum(str.data(), str.size());
+    if (0 <= cnt && cnt != nargs)
+        functionThatFailsCompilationOfConstevalFunctions("unexpected number of arguments in a format string");
+}
+
+template <typename... Args>
+struct CheckArgsNumHelperImpl
+{
+    //std::enable_if_t<std::is_same_v<std::decay_t<T>, PreformattedMessage>>
+    template<typename T>
+    consteval CheckArgsNumHelperImpl(T && str)
+    {
+        formatStringCheckArgsNumImpl(tryGetStaticFormatString(str), sizeof...(Args));
+    }
+
+    /// No checks for fmt::runtime and PreformattedMessage
+    template<typename T> CheckArgsNumHelperImpl(fmt::basic_runtime<T> &&) {}
+    template<> CheckArgsNumHelperImpl(PreformattedMessage &) {}
+    template<> CheckArgsNumHelperImpl(const PreformattedMessage &) {}
+    template<> CheckArgsNumHelperImpl(PreformattedMessage &&) {}
+
+};
+
+template <typename... Args> using CheckArgsNumHelper = CheckArgsNumHelperImpl<std::type_identity_t<Args>...>;
+template <typename... Args> void formatStringCheckArgsNum(CheckArgsNumHelper<Args...>, Args &&...) {}

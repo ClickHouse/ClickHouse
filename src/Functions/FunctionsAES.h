@@ -597,7 +597,7 @@ private:
                     if (input_value.size < tag_size)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
                                 "should contain at least {} bytes of a tag.",
-                                input_value.size, block_size, tag_size);
+                                input_value.size, tag_size);
 
                     input_value.size -= tag_size;
                 }

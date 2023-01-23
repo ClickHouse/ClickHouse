@@ -2046,7 +2046,7 @@ void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, 
     auto lock = getLock();
 
     if (shared->query_result_cache)
-        throw Exception("Query result cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query result cache has been already created.");
 
     shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_records);
 }

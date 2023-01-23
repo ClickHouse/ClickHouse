@@ -23,7 +23,10 @@ struct FormatStringHelperImpl
     std::string_view message_format_string;
     fmt::format_string<Args...> fmt_str;
     template<typename T>
-    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str)) {}
+    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str))
+    {
+        formatStringCheckArgsNumImpl(message_format_string, sizeof...(Args));
+    }
     template<typename T>
     FormatStringHelperImpl(fmt::basic_runtime<T> && str) : message_format_string(), fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {}
 
