@@ -332,8 +332,8 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
 
     String quorum_status;
     if (!quorum_parallel && zookeeper->tryGet(quorum_info.status_path, quorum_status))
-        throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status,
-                        ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
+        throw Exception(ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE,
+                        "Quorum for previous write has not been satisfied yet. Status: {}", quorum_status);
 
     /// Both checks are implicitly made also later (otherwise there would be a race condition).
 

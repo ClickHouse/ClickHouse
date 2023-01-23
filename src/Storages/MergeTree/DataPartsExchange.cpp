@@ -445,7 +445,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     DiskPtr disk)
 {
     if (blocker.isCancelled())
-        throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Fetching of part was cancelled");
 
     const auto data_settings = data.getSettings();
 
@@ -794,7 +794,7 @@ void Fetcher::downloadBasePartOrProjectionPartToDiskRemoteMeta(
                 /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
                 /// performing a poll with a not very large timeout.
                 /// And now we check it only between read chunks (in the `copyData` function).
-                throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+                throw Exception(ErrorCodes::ABORTED, "Fetching of part was cancelled");
             }
 
             MergeTreeDataPartChecksum::uint128 expected_hash;
@@ -853,7 +853,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
             /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
             /// performing a poll with a not very large timeout.
             /// And now we check it only between read chunks (in the `copyData` function).
-            throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+            throw Exception(ErrorCodes::ABORTED, "Fetching of part was cancelled");
         }
 
         MergeTreeDataPartChecksum::uint128 expected_hash;
