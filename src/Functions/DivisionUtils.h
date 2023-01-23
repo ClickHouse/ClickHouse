@@ -26,7 +26,7 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
     /// Is it better to use siglongjmp instead of checks?
 
     if (unlikely(b == 0))
-        throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
     /// http://avva.livejournal.com/2548306.html
     if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
