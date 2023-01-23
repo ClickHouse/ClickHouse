@@ -920,6 +920,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         /// It makes sense when default_table_engine setting is used, but not for temporary tables.
         /// For temporary tables we ignore this setting to allow CREATE TEMPORARY TABLE query without specifying ENGINE
         /// even if setting is set to MergeTree or something like that (otherwise MergeTree will be substituted and query will fail).
+        /*
         if (create.storage && !create.storage->engine)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table: must be either ENGINE = Memory or empty");
 
@@ -930,6 +931,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         auto storage_ast = std::make_shared<ASTStorage>();
         storage_ast->set(storage_ast->engine, engine_ast);
         create.set(create.storage, storage_ast);
+        */
         return;
     }
 
@@ -1368,6 +1370,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.temporary)
         {
             String temporary_table_name = create.getTable();
+            // ASTPtr original_create = create.clone();
             auto creator = [&](const StorageID & table_id)
             {
                 return StorageFactory::instance().get(create,
