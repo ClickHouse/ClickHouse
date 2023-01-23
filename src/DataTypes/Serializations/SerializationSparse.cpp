@@ -211,6 +211,7 @@ void SerializationSparse::enumerateStreams(
 
     settings.path.back() = Substream::SparseElements;
 
+    /// Currently there is only one possible subcolumn in Nullable column -- ".null".
     if (nested_non_nullable)
         settings.path.back().creator = std::make_shared<NullMapSubcolumnCreator>(offsets_data.column, column_size);
     else
@@ -529,7 +530,7 @@ void SerializationSparseNullMap::enumerateStreams(
     settings.path.pop_back();
 }
 
-void SerializationSparseNullMap::assertSettings(const SerializeBinaryBulkSettings & settings) const
+void SerializationSparseNullMap::assertSettings(const SerializeBinaryBulkSettings & settings)
 {
     if (settings.position_independent_encoding)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -595,6 +596,7 @@ void SerializationSparseNullMap::deserializeBinaryBulkWithMultipleStreams(
 
     PaddedPODArray<UInt64> data_offsets;
 
+    /// Read offsets of sparse columns.
     size_t read_rows = 0;
     settings.path.push_back(Substream::SparseOffsets);
     if (auto * stream = settings.getter(settings.path))
@@ -604,6 +606,7 @@ void SerializationSparseNullMap::deserializeBinaryBulkWithMultipleStreams(
 
     if (read_rows)
     {
+        /// Restore null map from offsets.
         null_map_data.resize_fill(null_map_data.size() + read_rows, static_cast<UInt8>(1));
         for (UInt64 offset : data_offsets)
             null_map_data[offset] = 0;

@@ -21,6 +21,10 @@ class ColumnSparse;
  *    there is written number of default values in the suffix of part of column,
  *    that we currently writing. This value also marked with a flag, that means the end of portion of data.
  *    This value is used, e.g. to allow independent reading of granules in MergeTree.
+ *
+ * Sparse serialization of Nullable columns is supported too.
+ * In that case NULL  is used as implicit default value,
+ * null map is not written but can be restored from offsets.
  */
 class SerializationSparse final : public ISerialization
 {
@@ -47,7 +51,7 @@ public:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state) const override;
 
-    /// Allows to write ColumnSparse and other columns in sparse serialization.
+    /// Allows to write ColumnSparse and full columns in sparse serialization.
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
@@ -92,12 +96,14 @@ private:
         return nested_non_nullable ? nested_non_nullable : nested;
     }
 
+    /// Deserialized values of ColumnSparse.
     void deserializeValuesWithMultipleStreams(
         ColumnPtr & values,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state) const;
 
+    /// Serializes ColumnSparse in sparse serialization.
     void serializeWithMultipleStreamsSparse(
         const ColumnSparse & column,
         size_t offset,
@@ -105,6 +111,7 @@ private:
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const;
 
+    /// Serializes full column in sparse serialization.
     void serializeWithMultipleStreamsGeneric(
         const IColumn & column,
         size_t offset,
@@ -112,6 +119,7 @@ private:
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const;
 
+    /// Serializes non-default values of sparse column.
     void serializeValuesWithMultipleStreams(
         const IColumn & values,
         size_t offset,
@@ -145,11 +153,19 @@ private:
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
+    /// Serialization of nested column.
     SerializationPtr nested;
+
+    /// Serialization of nested non-nullable column.
+    /// If @nested is not Nullable then nullptr.
     SerializationPtr nested_non_nullable;
 };
 
 
+/// Special serialization that allows to read ".null" (which represents null map)
+/// subcolumn from Nullable column written in Sparse serialziaton.
+/// It modifies only 'enumerateStreams' and 'deserializeBinaryBulkWithMultipleStreams'
+/// methods and builds a null map in full serialization from offset of Sparse column.
 class SerializationSparseNullMap final : public SerializationNumber<UInt8>
 {
 public:
@@ -188,7 +204,7 @@ public:
         SubstreamsCache * cache) const override;
 
 private:
-    void assertSettings(const SerializeBinaryBulkSettings & settings) const;
+    static void assertSettings(const SerializeBinaryBulkSettings & settings);
 };
 
 }
