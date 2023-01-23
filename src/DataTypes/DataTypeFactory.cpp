@@ -56,7 +56,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & full_name) const
     {
         String out_err;
         const char * start = full_name.data();
-        ast = tryParseQuery(parser, start, start + full_name.size(), out_err, false, "data type", 0, DBMS_DEFAULT_MAX_QUERY_SIZE, data_type_max_parse_depth);
+        ast = tryParseQuery(parser, start, start + full_name.size(), out_err, false, "data type", false, DBMS_DEFAULT_MAX_QUERY_SIZE, data_type_max_parse_depth);
         if (!ast)
             return nullptr;
     }
