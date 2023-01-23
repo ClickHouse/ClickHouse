@@ -4450,13 +4450,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Aggregate function '{}' does not support lambda arguments",
                 function_name);
 
+        auto function_name_lowercase = Poco::toLower(function_name);
+
+        if (function_name_lowercase == "countdistinct")
+        {
+            function_name = scope.context->getSettingsRef().count_distinct_implementation;
+        }
+        else if (function_name_lowercase == "countdistinctif" || function_name_lowercase == "countifdistinct")
+        {
+            function_name = scope.context->getSettingsRef().count_distinct_implementation;
+            function_name += "If";
+        }
+
         bool need_add_or_null = settings.aggregate_functions_null_for_empty && !function_name.ends_with("OrNull");
+        if (need_add_or_null)
+            function_name += "OrNull";
 
         AggregateFunctionProperties properties;
-        auto aggregate_function = need_add_or_null
-            ? AggregateFunctionFactory::instance().get(function_name + "OrNull", argument_types, parameters, properties)
-            : AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+
         return result_projection_names;
     }
 
