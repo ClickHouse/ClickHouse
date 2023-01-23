@@ -61,24 +61,24 @@ public:
             real_dict_name = real_name_lowercase;
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: can't create alias '{}', the real name '{}' is not registered",
-                alias_name, real_name, factory_name);
+                            factory_name, alias_name, real_name);
 
         String alias_name_lowercase = Poco::toLower(alias_name);
 
         if (creator_map.count(alias_name) || case_insensitive_creator_map.count(alias_name_lowercase))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: the alias name '{}' is already registered as real name",
-                alias_name, factory_name);
+                            factory_name, alias_name);
 
         if (case_sensitiveness == CaseInsensitive)
         {
             if (!case_insensitive_aliases.emplace(alias_name_lowercase, real_dict_name).second)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: case insensitive alias name '{}' is not unique",
-                    alias_name, factory_name);
+                                factory_name, alias_name);
             case_insensitive_name_mapping[alias_name_lowercase] = real_name;
         }
 
         if (!aliases.emplace(alias_name, real_dict_name).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: alias name '{}' is not unique", alias_name, factory_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: alias name '{}' is not unique", factory_name, alias_name);
     }
 
     std::vector<String> getAllRegisteredNames() const override
@@ -103,7 +103,7 @@ public:
         else if (auto jt = case_insensitive_aliases.find(Poco::toLower(name)); jt != case_insensitive_aliases.end())
             return jt->second;
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: name '{}' is not alias", name, getFactoryName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: name '{}' is not alias", getFactoryName(), name);
     }
 
     bool isAlias(const String & name) const

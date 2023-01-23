@@ -115,7 +115,7 @@ public:
                 if (!isNativeNumber(elements[j]))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain numeric tuple at position {}",
-                                    toString(j + 1), getMessagePrefix(i));
+                                    getMessagePrefix(i), j + 1);
                 }
             }
         };

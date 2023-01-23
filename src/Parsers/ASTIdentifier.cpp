@@ -257,7 +257,7 @@ String getIdentifierName(const IAST * ast)
         return res;
     if (ast)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an identifier", queryToString(*ast));
-throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "AST node is nullptr");
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "AST node is nullptr");
 }
 
 std::optional<String> tryGetIdentifierName(const IAST * ast)

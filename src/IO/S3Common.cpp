@@ -980,7 +980,7 @@ namespace S3
         /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
         if (bucket.length() < 3 || bucket.length() > 63)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
-                            quoteString(bucket), !uri.empty() ? " ({})" : "", uri.toString());
+                            quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
     bool isNotFoundError(Aws::S3::S3Errors error)

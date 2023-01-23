@@ -122,7 +122,7 @@ public:
             const auto & nested_type = array_type->getNestedType();
             if (!isNativeNumber(nested_type) && !isEnum(nested_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}",
-                    nested_type->getName(), getName());
+                                getName(), nested_type->getName());
             nested_types[i] = nested_type;
         }
 

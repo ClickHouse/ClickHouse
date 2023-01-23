@@ -53,7 +53,7 @@ public:
                     getName());
 
             if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", getName(), datepart_param);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
             result_type_is_date = (datepart_kind == IntervalKind::Year)
                 || (datepart_kind == IntervalKind::Quarter) || (datepart_kind == IntervalKind::Month)

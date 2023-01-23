@@ -1440,7 +1440,7 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
     if (result.object && (!check_no_errors || !result.exception))
         return;
     if (result.status == ExternalLoader::Status::LOADING)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' is still loading", result.name, type_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' is still loading", type_name, result.name);
     if (result.exception)
     {
         // Exception is shared for multiple threads.
@@ -1466,9 +1466,9 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
         }
     }
     if (result.status == ExternalLoader::Status::NOT_EXIST)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not found", result.name, type_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not found", type_name, result.name);
     if (result.status == ExternalLoader::Status::NOT_LOADED)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not tried to load", result.name, type_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not tried to load", type_name, result.name);
 }
 
 void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results,

@@ -27,7 +27,7 @@ void ConnectionMySQLSettings::loadFromQuery(ASTStorage & storage_def)
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNKNOWN_SETTING)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} for database {}", storage_def.engine->name, e.message());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} for database {}", e.message(), storage_def.engine->name);
             else
                 e.rethrow();
         }

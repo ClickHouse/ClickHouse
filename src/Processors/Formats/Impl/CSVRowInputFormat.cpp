@@ -53,8 +53,8 @@ CSVRowInputFormat::CSVRowInputFormat(
 {
     const String bad_delimiters = " \t\"'.UL";
     if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}'. Try use CustomSeparated format instead.",
-            String("CSV format may not work correctly with delimiter '") + format_settings.csv.delimiter);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CSV format may not work correctly with delimiter '{}'. "
+                        "Try use CustomSeparated format instead.", format_settings.csv.delimiter);
 }
 
 void CSVRowInputFormat::syncAfterError()

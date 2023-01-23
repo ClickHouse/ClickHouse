@@ -249,7 +249,8 @@ void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
 
     if (were_captured + wanna_capture > args)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture {} columns because function {} has {} arguments{}.",
-                        wanna_capture, function->getName(), args, (were_captured ? " and {} columns have already been captured" : ""), toString(were_captured));
+                        wanna_capture, function->getName(), args,
+                        (were_captured ? " and " + toString(were_captured) + " columns have already been captured" : ""));
 
     for (const auto & column : columns)
         appendArgument(column);

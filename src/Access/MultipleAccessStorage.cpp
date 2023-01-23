@@ -317,7 +317,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
                     if (storage->find(new_entity->getType(), new_entity->getName()))
                     {
                         throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",
-                            backQuote(new_entity->getName()), new_entity->formatTypeWithName(), storage->getStorageName(), old_entity->formatTypeWithName());
+                            old_entity->formatTypeWithName(), backQuote(new_entity->getName()), new_entity->formatTypeWithName(), storage->getStorageName());
                     }
                 }
             }

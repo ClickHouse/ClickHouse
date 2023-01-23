@@ -69,14 +69,14 @@ void getAggregateFunctionNameAndParametersArray(
     size_t pos = aggregate_function_name_with_params.find('(');
     if (pos == std::string::npos || pos + 2 >= aggregate_function_name_with_params.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like aggregate function name in {}.",
-            error_context, aggregate_function_name_with_params);
+                        aggregate_function_name_with_params, error_context);
 
     aggregate_function_name = aggregate_function_name_with_params.substr(0, pos);
     std::string parameters_str = aggregate_function_name_with_params.substr(pos + 1, aggregate_function_name_with_params.size() - pos - 2);
 
     if (aggregate_function_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like aggregate function name in {}.",
-            error_context, aggregate_function_name_with_params);
+                        aggregate_function_name_with_params, error_context);
 
     ParserExpressionList params_parser(false);
     ASTPtr args_ast = parseQuery(params_parser,
