@@ -396,6 +396,8 @@ StorageDistributed::StorageDistributed(
         if (num_local_shards && (remote_database.empty() || remote_database == id_.database_name) && remote_table == id_.table_name)
             throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
+
+    initializeFromDisk();
 }
 
 
@@ -578,9 +580,9 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     bool has_aggregates = query_info.has_aggregates;
     if (query_info.syntax_analyzer_result)
-        has_aggregates = query_info.syntax_analyzer_result->aggregates.empty();
+        has_aggregates = !query_info.syntax_analyzer_result->aggregates.empty();
 
-    if (!has_aggregates || group_by)
+    if (has_aggregates || group_by)
     {
         if (!optimize_sharding_key_aggregation || !group_by || !expr_contains_sharding_key(group_by->children))
             return {};
@@ -1065,10 +1067,9 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                    backQuoteIfNeed(command.column_name), toString(deps_mv));
             }
         }
     }
@@ -1085,8 +1086,7 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     setInMemoryMetadata(new_metadata);
 }
 
-
-void StorageDistributed::startup()
+void StorageDistributed::initializeFromDisk()
 {
     if (!storage_policy)
         return;
@@ -1135,6 +1135,7 @@ void StorageDistributed::shutdown()
     cluster_nodes_data.clear();
     LOG_DEBUG(log, "Background threads for async INSERT joined");
 }
+
 void StorageDistributed::drop()
 {
     // Some INSERT in-between shutdown() and drop() can call
@@ -1205,14 +1206,11 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         const auto & dir_path = it->path();
         if (std::filesystem::is_directory(dir_path))
         {
-            /// Created by DistributedSink
             const auto & tmp_path = dir_path / "tmp";
+
+            /// "tmp" created by DistributedSink
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
-
-            const auto & broken_path = dir_path / "broken";
-            if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
-                std::filesystem::remove(broken_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
@@ -1222,14 +1220,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
             }
             else
             {
-                requireDirectoryMonitor(disk, dir_path.filename().string(), /* startup= */ true);
+                requireDirectoryMonitor(disk, dir_path.filename().string());
             }
         }
     }
 }
 
 
-StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup)
+StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name)
 {
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
@@ -1243,8 +1241,7 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
             monitors_blocker,
-            getContext()->getDistributedSchedulePool(),
-            /* initialize_from_disk= */ startup);
+            getContext()->getDistributedSchedulePool());
     }
     return *node_data.directory_monitor;
 }

@@ -327,10 +327,11 @@ bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
 bool GraceHashJoin::fitsInMemory() const
 {
     /// One row can't be split, avoid loop
-    if (hash_join->getTotalRowCount() < 2)
+    size_t total_row_count = hash_join->getTotalRowCount();
+    if (total_row_count < 2)
         return true;
 
-    return table_join->sizeLimits().softCheck(hash_join->getTotalRowCount(), hash_join->getTotalByteCount());
+    return table_join->sizeLimits().softCheck(total_row_count, hash_join->getTotalByteCount());
 }
 
 GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)

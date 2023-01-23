@@ -207,7 +207,7 @@ public:
 
             if (arguments.size() < 2)
             {
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "{}", arguments.size());
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
             }
 
             const auto * first_array_type = checkAndGetDataType<typename Impl::data_type>(arguments[1].type.get());
