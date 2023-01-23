@@ -10,6 +10,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/Increment.h>
 #include <Common/noexcept_scope.h>
+#include <Common/ProfileEventsScope.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/SimpleIncrement.h>
@@ -7347,6 +7348,10 @@ try
     {
         part_log_elem.profile_counters = profile_counters;
     }
+    else
+    {
+        LOG_WARNING(log, "Profile counters are not set");
+    }
 
     part_log->add(part_log_elem);
 }
@@ -7483,6 +7488,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
     {
         Stopwatch stopwatch;
         MutableDataPartPtr cloned_part;
+        ScopedProfileEvents profile_events_scope;
 
         auto write_part_log = [&](const ExecutionStatus & execution_status)
         {
@@ -7494,7 +7500,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                 cloned_part,
                 {moving_part.part},
                 nullptr,
-                nullptr);
+                profile_events_scope.getSnapshot());
         };
 
         // Register in global moves list (StorageSystemMoves)

@@ -21,6 +21,8 @@ struct ProfileEventsSnapshot
 
 using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, Counters::Snapshot>;
 
+String dumpToString(const Counters::Snapshot & counters, bool nonzero_only = true);
+
 /// Dumps profile events to columns Map(String, UInt64)
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only = true);
 

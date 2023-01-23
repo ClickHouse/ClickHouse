@@ -2,6 +2,7 @@
 
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
+#include <Common/ProfileEventsScope.h>
 
 namespace DB
 {
@@ -38,9 +39,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
-        auto & thread_status = CurrentThread::get();
-        thread_status.finalizePerformanceCounters();
-        auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         mutate_task.reset();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
@@ -50,7 +49,7 @@ void MutatePlainMergeTreeTask::prepare()
             new_part,
             future_part->parts,
             merge_list_entry.get(),
-            profile_counters);
+            std::move(profile_counters_snapshot));
     };
 
     fake_query_context = Context::createCopy(storage.getContext());
@@ -65,8 +64,8 @@ void MutatePlainMergeTreeTask::prepare()
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
-    /// Metrics will be saved in the thread_group.
-    CurrentThread::ScopedAttach scoped_attach(thread_group);
+    /// Metrics will be saved in the local profile_counters.
+    ScopedProfileEvents profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;

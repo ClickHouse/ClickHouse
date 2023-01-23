@@ -78,7 +78,7 @@ private:
     ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
 
-    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
+    ProfileEvents::Counters profile_counters;
 };
 
 
