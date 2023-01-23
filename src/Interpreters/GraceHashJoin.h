@@ -116,6 +116,7 @@ private:
     size_t getNumBuckets() const;
     Buckets getCurrentBuckets() const;
 
+    /// Structure block to store in the HashJoin according to sample_block.
     Block prepareRightBlock(const Block & block);
 
     Poco::Logger * log;

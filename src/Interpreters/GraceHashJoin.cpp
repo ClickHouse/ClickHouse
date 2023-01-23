@@ -166,15 +166,15 @@ public:
     AccumulatedBlockReader startJoining()
     {
         LOG_TRACE(log, "Joining file bucket {}", idx);
+        {
+            std::unique_lock<std::mutex> left_lock(left_file_mutex);
+            std::unique_lock<std::mutex> right_lock(right_file_mutex);
 
-        std::unique_lock<std::mutex> left_lock(left_file_mutex);
-        std::unique_lock<std::mutex> right_lock(right_file_mutex);
+            left_file.finishWriting();
+            right_file.finishWriting();
 
-        left_file.finishWriting();
-        right_file.finishWriting();
-
-        state = State::JOINING_BLOCKS;
-
+            state = State::JOINING_BLOCKS;
+        }
         return AccumulatedBlockReader(right_file, right_file_mutex);
     }
 

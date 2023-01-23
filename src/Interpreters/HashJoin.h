@@ -356,9 +356,7 @@ public:
     RightTableDataPtr getJoinedData() const { return data; }
     BlocksList releaseJoinedBlocks(bool restructure = false);
 
-    Block structureRightBlock(const Block & block) const;
-
-    /// Modify (structure) right block to save it in block list
+    /// Modify right block (update structure according to sample block) to save it in block list
     static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);
     Block prepareRightBlock(const Block & block) const;
 
