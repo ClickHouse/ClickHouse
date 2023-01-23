@@ -1073,6 +1073,9 @@
 
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+
+        <!-- example of using a different storage policy for a system table -->
+        <!-- storage_policy>local_ssd</storage_policy -->
     </query_log>
 
     <!-- Trace log. Stores stack traces collected by query profilers.

@@ -828,7 +828,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
     for (const auto & dir_name : dir_names)
     {
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name, /* startup= */ false);
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
         directory_monitor.addAndSchedule(file_size, sleep_ms.totalMilliseconds());
     }
 }

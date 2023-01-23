@@ -118,6 +118,16 @@ struct MatchImpl
         if (haystack_offsets.empty())
             return;
 
+        /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
+        /// - col [not] [i]like '%' / '%%'
+        /// - match(col, '.*')
+        if ((is_like && (needle == "%" or needle == "%%")) || (!is_like && (needle == ".*" || needle == ".*?")))
+        {
+            for (auto & x : res)
+                x = !negate;
+            return;
+        }
+
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
         if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
@@ -266,6 +276,16 @@ struct MatchImpl
 
         if (haystack.empty())
             return;
+
+        /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
+        /// - col [not] [i]like '%' / '%%'
+        /// - match(col, '.*')
+        if ((is_like && (needle == "%" or needle == "%%")) || (!is_like && (needle == ".*" || needle == ".*?")))
+        {
+            for (auto & x : res)
+                x = !negate;
+            return;
+        }
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;

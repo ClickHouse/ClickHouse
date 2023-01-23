@@ -4,6 +4,7 @@
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
@@ -335,6 +336,7 @@ private:
     friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
+    friend class AsyncBlockIDsCache;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreeAttachThread;
@@ -443,6 +445,8 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
+    AsyncBlockIDsCache async_block_ids_cache;
+
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
 
@@ -462,8 +466,6 @@ private:
 
     /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
     const RenamingRestrictions renaming_restrictions;
-
-    const size_t replicated_fetches_pool_size;
 
     /// Throttlers used in DataPartsExchange to lower maximum fetch/sends
     /// speed.
