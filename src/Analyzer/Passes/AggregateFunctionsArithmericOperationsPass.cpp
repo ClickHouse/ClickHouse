@@ -99,6 +99,9 @@ public:
         const auto * left_argument_constant_node = arithmetic_function_arguments_nodes[0]->as<ConstantNode>();
         const auto * right_argument_constant_node = arithmetic_function_arguments_nodes[1]->as<ConstantNode>();
 
+        if (!left_argument_constant_node && !right_argument_constant_node)
+            return;
+
         /** If we extract negative constant, aggregate function name must be updated.
           *
           * Example: SELECT min(-1 * id);
