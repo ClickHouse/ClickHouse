@@ -4,7 +4,7 @@ sidebar_position: 45
 sidebar_label: FixedString(N)
 ---
 
-# Fixedstring
+# FixedString
 
 A fixed-length string of `N` bytes (neither characters nor code points).
 

@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 class IOutputFormat;
@@ -170,10 +171,15 @@ public:
 
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
+        request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
 
         outcome_future = listObjectsAsync();
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
+        if (!matcher->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "Cannot compile regex from glob ({}): {}", globbed_uri.key, matcher->error());
+
         recursive = globbed_uri.key == "/**" ? true : false;
         fillInternalBufferAssumeLocked();
     }
@@ -209,7 +215,24 @@ private:
         if (is_finished)
             return {};
 
-        fillInternalBufferAssumeLocked();
+        try
+        {
+            fillInternalBufferAssumeLocked();
+        }
+        catch (...)
+        {
+            /// In case of exception thrown while listing new batch of files
+            /// iterator may be partially initialized and its further using may lead to UB.
+            /// Iterator is used by several processors from several threads and
+            /// it may take some time for threads to stop processors and they
+            /// may still use this iterator after exception is thrown.
+            /// To avoid this UB, reset the buffer and return defaults for further calls.
+            is_finished = true;
+            buffer.clear();
+            buffer_iter = buffer.begin();
+            throw;
+        }
+
         return nextAssumeLocked();
     }
 
@@ -221,9 +244,11 @@ private:
         auto outcome = outcome_future.get();
 
         if (!outcome.IsSuccess())
+        {
             throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
                             quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
                             backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+        }
 
         const auto & result_batch = outcome.GetResult().GetContents();
 
@@ -444,7 +469,7 @@ public:
             /// (which means we eventually need this info anyway, so it should be ok to do it now)
             if (object_infos_)
             {
-                info = S3::getObjectInfo(client_, bucket, key, version_id_, true, false);
+                info = S3::getObjectInfo(client_, bucket, key, version_id_);
                 total_size += info->size;
 
                 String path = fs::path(bucket) / key;
@@ -569,9 +594,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     if (current_key.empty())
         return {};
 
-    size_t object_size = info
-        ? info->size
-        : S3::getObjectSize(*client, bucket, current_key, version_id, true, false);
+    size_t object_size = info ? info->size : S3::getObjectSize(*client, bucket, current_key, version_id);
 
     int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
     auto read_buf = wrapReadBufferWithCompressionMethod(
@@ -1523,7 +1546,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
                 /// Note that in case of exception in getObjectInfo returned info will be empty,
                 /// but schema cache will handle this case and won't return columns from cache
                 /// because we can't say that it's valid without last modification time.
-                info = S3::getObjectInfo(*s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, false, false);
+                info = S3::getObjectInfo(*s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, {}, /* throw_on_error= */ false);
                 if (object_infos)
                     (*object_infos)[path] = info;
             }
