@@ -396,6 +396,8 @@ StorageDistributed::StorageDistributed(
         if (num_local_shards && (remote_database.empty() || remote_database == id_.database_name) && remote_table == id_.table_name)
             throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
+
+    initializeFromDisk();
 }
 
 
@@ -1084,8 +1086,7 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     setInMemoryMetadata(new_metadata);
 }
 
-
-void StorageDistributed::startup()
+void StorageDistributed::initializeFromDisk()
 {
     if (!storage_policy)
         return;
@@ -1134,6 +1135,7 @@ void StorageDistributed::shutdown()
     cluster_nodes_data.clear();
     LOG_DEBUG(log, "Background threads for async INSERT joined");
 }
+
 void StorageDistributed::drop()
 {
     // Some INSERT in-between shutdown() and drop() can call
