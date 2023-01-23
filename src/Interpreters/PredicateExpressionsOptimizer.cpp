@@ -91,8 +91,9 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
     bool is_rewrite_tables = false;
 
     if (tables_element.size() != tables_predicates.size())
-        throw Exception("Unexpected elements count in predicate push down: `set enable_optimize_predicate_expression = 0` to disable",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected elements count in predicate push down: "
+                        "`set enable_optimize_predicate_expression = 0` to disable");
 
     for (size_t index = tables_element.size(); index > 0; --index)
     {

@@ -155,9 +155,8 @@ ColumnsDescription getStructureOfRemoteTable(
         }
     }
 
-    throw NetException(
-        "All attempts to get table structure failed. Log: \n\n" + fail_messages + "\n",
-        ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
+    throw NetException(ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
+        "All attempts to get table structure failed. Log: \n\n{}\n", fail_messages);
 }
 
 ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
@@ -220,7 +219,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     }
 
     if (columns.empty())
-        throw NetException("All attempts to get table structure failed", ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
+        throw NetException(ErrorCodes::NO_REMOTE_SHARD_AVAILABLE, "All attempts to get table structure failed");
 
     return columns;
 }
