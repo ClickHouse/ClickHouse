@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 SET use_uncompressed_cache = 0;
 
 DROP TABLE IF EXISTS adaptive_table;
