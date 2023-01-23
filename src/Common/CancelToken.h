@@ -15,7 +15,7 @@
 namespace DB
 {
 
-// Scoped object, enabling thread cancellation (cannot be nested).
+// Scoped object, enabling thread cancellation.
 // Intended to be used once per cancelable task. It erases any previously held cancellation signal.
 // Note that by default thread is not cancelable.
 struct Cancelable

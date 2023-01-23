@@ -206,14 +206,23 @@ void CancelToken::signalImpl(int code, const String & message)
     state.store(canceled);
 }
 
+
+static int & CancelableDepth()
+{
+    static thread_local int depth = 0;
+    return depth;
+}
+
 Cancelable::Cancelable()
 {
-    CancelToken::local().reset();
+    if (CancelableDepth()++ == 0)
+        CancelToken::local().reset();
 }
 
 Cancelable::~Cancelable()
 {
-    CancelToken::local().disable();
+    if (--CancelableDepth() == 0)
+        CancelToken::local().disable();
 }
 
 NonCancelable::NonCancelable()
