@@ -2031,6 +2031,13 @@ def find_binary(name):
 
     raise Exception(f"{name} was not found in PATH")
 
+def find_clickhouse_command(binary, command):
+    symlink = binary + "-" + command
+    if os.access(symlink, os.X_OK):
+        return symlink
+
+    # To avoid requiring symlinks (in case you download binary from CI)
+    return binary + " " + command
 
 def get_additional_client_options(args):
     if args.client_option:
@@ -2056,19 +2063,6 @@ def parse_args():
         help="Path to clickhouse binary or name of binary in PATH",
     )
 
-    parser.add_argument(
-        "-c",
-        "--client",
-        default=find_binary("clickhouse-client"),
-        help="Path to clickhouse-client, this option is useless"
-        "name of binary in PATH",
-    )
-
-    parser.add_argument(
-        "--extract_from_config",
-        default=find_binary("clickhouse-extract-from-config"),
-        help="extract-from-config program",
-    )
     parser.add_argument(
         "--configclient", help="Client config (if you use not default ports)"
     )
@@ -2358,6 +2352,9 @@ if __name__ == "__main__":
 
     if args.tmp is None:
         args.tmp = args.queries
+
+    args.client = find_clickhouse_command(args.binary, "client")
+    args.extract_from_config = find_clickhouse_command(args.binary, "extract-from-config")
 
     if args.configclient:
         args.client += " --config-file=" + args.configclient
