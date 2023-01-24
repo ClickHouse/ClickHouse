@@ -522,7 +522,7 @@ String DataPartStorageOnDisk::getUniqueId() const
 {
     auto disk = volume->getDisk();
     if (!disk->supportZeroCopyReplication())
-        throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk {} doesn't support zero-copy replication", disk->getName());
 
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
@@ -739,6 +739,17 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
         return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings, /* autocommit = */ false);
 
     return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings);
+}
+
+std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
+    const String & name,
+    size_t buf_size,
+    WriteMode mode,
+    const WriteSettings & settings)
+{
+    if (transaction)
+        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, /* autocommit = */ false);
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeTransactionFile(WriteMode mode) const

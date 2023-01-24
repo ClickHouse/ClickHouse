@@ -31,8 +31,8 @@ AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
         res.reset(createWithNumericType<FunctionTemplate>(*data_type, argument_types));
 
     if (!res)
-        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                        argument_types[0]->getName(), name);
     return res;
 }
 
@@ -45,8 +45,8 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
 
     AggregateFunctionPtr res(createWithTwoBasicNumericTypes<FunctionTemplate>(*argument_types[0], *argument_types[1], argument_types));
     if (!res)
-        throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
-            + " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of arguments for aggregate function {}",
+            argument_types[0]->getName(), argument_types[1]->getName(), name);
 
     return res;
 }

@@ -92,9 +92,9 @@ public:
     {
         size_t number_of_arguments = data_types.size();
         if (number_of_arguments > 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(number_of_arguments) + ", should be 0 or 1.",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
+                            getName(), number_of_arguments);
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
